@@ -1,4 +1,5 @@
 #include "soul-widget.hpp"
+#include "tools-ui.hpp"
 #include "module.hpp"
 #include "features.hpp"
 #include "options-ui.hpp"
@@ -13,7 +14,8 @@ struct Object{std::string type,text;std::map<std::string,Obj> fields;std::map<st
 struct MethodInfo{std::string name;};
 std::map<std::string,std::unique_ptr<std::string>> types;std::vector<std::unique_ptr<Object>> objects;std::vector<std::unique_ptr<MethodInfo>> methods;
 std::map<GCHandle,Obj> handles;GCHandle next=1;Obj service{},nativeToggle{},menuToggle{},nativeItem{},tipService{},root{},bindingBox{},lastTooltip{};int changes=0,foreign=0,tooltipAdds=0,tooltipRemoves=0;
-bool failRemoveTooltip=false;std::vector<std::string> logs;
+bool failRemoveTooltip=false,notebook=false,treasure=false,refuseNotebook=false;
+int toolToggles=0,failAddCountdown=-1;std::vector<std::string> logs;
 using ToggleFn=void(*)(Obj,Method);ToggleFn toggle=nullptr;
 void Check(bool b,const char* m){if(!b)throw std::runtime_error(m);}
 Object& Get(Obj o){Check(o!=nullptr,"Null fake widget");return *static_cast<Object*>(o);}
@@ -61,7 +63,15 @@ void Setup(){service=Make("gml");root=Make("WidgetControls");auto manager=Make("
     Get(service).fields["<dzqi>k__BackingField"]=manager;Get(manager).fields["dzyi"]=binding;
     for(auto o:{nativeToggle,menuToggle,nativeItem})Get(o).fields["parent"]=root;
     Get(root).children={nativeToggle,menuToggle,nativeItem};}
-Obj Owned(){Check(Get(root).children.size()==4,"Exactly one additional native module toggle");auto b=Get(root).children[1];Check(Get(root).children[0]==nativeToggle&&Get(root).children[2]==menuToggle&&Get(root).children[3]==nativeItem,"Soul button before Menu, native siblings preserved");return b;}
+Obj TooltipFor(Obj control){for(const auto& o:objects)if(o->type=="TooltipManipulator"&&o->fields["target"]==control)return o.get();throw std::runtime_error("Missing native tooltip");}
+Obj Owned(){
+    Check(Get(root).children.size()==6,"Exactly three additional native toolbar controls");
+    auto b=Get(root).children[1];
+    Check(Get(root).children[0]==nativeToggle&&Get(root).children[4]==menuToggle&&Get(root).children[5]==nativeItem,"Soul and its adjacent tools precede Menu; foreign siblings preserved");
+    Check(Get(Get(Get(root).children[2]).fields["set_name"]).text=="dofus_miniatures_treasure_toggle"&&
+        Get(Get(Get(root).children[3]).fields["set_name"]).text=="dofus_miniatures_notebook_toggle","Both tools sit directly beside Capture d'âme");
+    return b;
+}
 }
 namespace managed {
 Api api{};uintptr_t gameBase=0;
@@ -78,7 +88,11 @@ Obj Api::Invoke(Method m,Obj o,std::initializer_list<void*> a)const{
         std::vector<void*> args(a);fake::Check(!o&&args.size()==2,"Static UI manipulator ABI");
         if(name=="RemoveManipulator"&&fake::failRemoveTooltip)throw std::runtime_error("Temporary tooltip cleanup failure");
         auto& tip=fake::Get(args[1]);tip.fields["target"]=name=="AddManipulator"?args[0]:nullptr;
-        if(name=="AddManipulator")++fake::tooltipAdds;else ++fake::tooltipRemoves;
+        if(name=="AddManipulator"){
+            ++fake::tooltipAdds;
+            if(fake::failAddCountdown==0){fake::failAddCountdown=-1;throw std::runtime_error("Partial tooltip install failure");}
+            if(fake::failAddCountdown>0)--fake::failAddCountdown;
+        }else ++fake::tooltipRemoves;
         return nullptr;
     }
     return fake::Call(o,name,a);
@@ -89,6 +103,14 @@ Obj Api::New(Klass k,std::initializer_list<void*> args)const{
     if(fake::Get(o).type=="Length"){fake::Check(args.size()==2,"Native Length arguments");fake::Get(o).floatValue=*static_cast<float*>(*args.begin());}return o;
 }
 Obj Api::Field(Obj o,const char* n)const{return fake::Get(o).fields[n];}
+}
+namespace toolsUi {
+std::vector<Shortcut> Shortcuts(){return {{"treasure","Chasse au trésor · DofusDB",317},{"notebook","Carnet personnel",225}};}
+bool Visible(const char* key){return std::string(key)=="notebook"?fake::notebook:fake::treasure;}
+bool Toggle(const char* key){
+    if(std::string(key)=="notebook"&&fake::refuseNotebook)return false;
+    auto& flag=std::string(key)=="notebook"?fake::notebook:fake::treasure;flag=!flag;++fake::toolToggles;return true;
+}
 }
 Module* module=nullptr;
 bool HandleSpousePartyWidgetToggle(managed::Obj) { return false; }
@@ -103,20 +125,33 @@ int main(){using namespace fake;try{Init();InstallSoulWidget();{
     Check(Get(b).ints["set_mainStyle"]==2&&Get(b).ints["set_toggleSize"]==Get(menuToggle).ints["set_toggleSize"]&&Get(b).ints["isOn"]==int(owner.settings.soulReminder),"Native module size, style and persisted setting");
     Check(Get(b).dimensions["width"]==36&&Get(b).dimensions["height"]==36,"Match Menu actual36px face, not only its enum size");
     Check(Get(b).floatValue==0,"Full toolbar cannot shrink soul button into a tiny square");
-    Check(tooltipAdds==1&&Get(lastTooltip).fields["target"]==b&&Get(lastTooltip).text.find("Capture d’âme")!=std::string::npos&&Get(lastTooltip).text.find("Afficher ou masquer")!=std::string::npos,"Native hover tooltip attached once with meaningful caption");
+    Check(tooltipAdds==3&&Get(TooltipFor(b)).text.find("Capture d’âme")!=std::string::npos&&Get(TooltipFor(b)).text.find("Afficher ou masquer")!=std::string::npos,"Native hover tooltip attached once with meaningful caption");
     Check(!Get(b).fields.contains("set_tooltip"),"Do not rely on unused Unity tooltip property");
+    auto treasureButton=Get(root).children[2],noteButton=Get(root).children[3];
+    for(auto c:{treasureButton,noteButton})Check(Get(c).dimensions["width"]==36&&Get(c).floatValue==0,"Tool buttons match native size without shrinking");
+    Check(Get(treasureButton).ints["set_iconValue"]==317&&Get(noteButton).ints["set_iconValue"]==225&&
+        Get(TooltipFor(noteButton)).text.find("Carnet personnel")!=std::string::npos,"Registered native tool icons and tooltip captions");
+    toggle(noteButton,nullptr);Check(notebook&&!treasure&&Get(noteButton).ints["isOn"]&&changes==0,"Notebook toggles without changing soul preference");
+    refuseNotebook=true;toggle(noteButton,nullptr);Check(notebook&&Get(noteButton).ints["isOn"]&&toolToggles==1,"Dirty notebook close refusal preserves selected button");
+    refuseNotebook=false;toggle(noteButton,nullptr);Check(!notebook&&!Get(noteButton).ints["isOn"],"Second accepted click hides notebook");
+    toggle(treasureButton,nullptr);Check(treasure&&Get(treasureButton).ints["isOn"],"Treasure shortcut opens the panel");
+    treasure=false;TickSoulWidget();Check(!Get(treasureButton).ints["isOn"],"Header/menu closure synchronizes the toolbar");
+    const int toggles=toolToggles;Get(noteButton).ints["disabled"]=1;toggle(noteButton,nullptr);Check(toolToggles==toggles,"Disabled shortcut inert");
     toggle(nativeToggle,nullptr);Check(foreign==1&&changes==0,"Native controls pass through");
     const bool previous=owner.settings.soulReminder;toggle(b,nullptr);Check(changes==1&&owner.settings.soulReminder!=previous&&Get(b).ints["isOn"]==int(owner.settings.soulReminder),"Only explicit owned toggle persists setting");
     owner.settings.soulReminder=previous;TickSoulWidget();Check(Get(b).ints["isOn"]==int(previous)&&changes==1,"Mod settings synchronize without event loop");
     Get(b).ints["disabled"]=1;toggle(b,nullptr);Check(changes==1,"Disabled control inert");
-    auto oldRoot=root,oldTooltip=lastTooltip;Setup();Get(menuToggle).ints["set_toggleSize"]=3;Get(menuToggle).dimensions={{"width",44.f},{"height",44.f}};
+    auto oldRoot=root,oldTooltip=TooltipFor(b);Setup();Get(menuToggle).ints["set_toggleSize"]=3;Get(menuToggle).dimensions={{"width",44.f},{"height",44.f}};
     Get(bindingBox).bindingValue[9]=nullptr; // The map toggle is optional/hidden independently.
+    toggle(treasureButton,nullptr);Check(toolToggles==toggles,"Stale tool button cannot open a panel");
     toggle(b,nullptr);Check(changes==1,"Stale manager cannot toggle preference");TickSoulWidget();auto newer=Owned();
     Check(Get(oldRoot).children.size()==3&&newer!=b&&Get(newer).ints["set_toggleSize"]==3&&Get(newer).dimensions["width"]==44,"Replacement survives absent Map toggle, adopts actual Menu size and preserves foreign controls");
-    Check(Get(oldTooltip).ints["hidden"]&&!Get(oldTooltip).fields["target"]&&tooltipRemoves==1,"Old tooltip hidden and callbacks detached");
+    Check(Get(oldTooltip).ints["hidden"]&&!Get(oldTooltip).fields["target"]&&tooltipRemoves==3,"Old tooltip hidden and callbacks detached");
     failRemoveTooltip=true;RestoreSoulWidget();Check(SoulWidgetCleanupPending(),"Retain owned references on tooltip cleanup failure");
     toggle(newer,nullptr);Check(changes==1,"Partially removed widget remains inert");
     failRemoveTooltip=false;RestoreSoulWidget();Check(!SoulWidgetCleanupPending()&&Get(root).children.size()==3,"Cleanup retries remove only owned widget");
-    TickSoulWidget();Owned();owner.stopped=true;TickSoulWidget();Check(Get(root).children.size()==3,"Stop removes mod entry only");RestoreSoulWidget();module=nullptr;
+    failAddCountdown=1;TickSoulWidget();
+    Check(!SoulWidgetCleanupPending()&&Get(root).children.size()==3,"Partial second tooltip installation cleans the entire owned group");
+    RestoreSoulWidget();TickSoulWidget();Owned();owner.stopped=true;TickSoulWidget();Check(Get(root).children.size()==3,"Stop removes mod entry only");RestoreSoulWidget();module=nullptr;
     }Check(handles.empty(),"Widget GC refs leaked");std::cout<<"PASS: native display toggle, settings sync, callback isolation, replaced UI and cleanup\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

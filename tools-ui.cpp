@@ -34,7 +34,7 @@ bool Populate(Obj owner,Obj event){
     try{
         if(!Current(e)||!event)return true;Ref menu(api.Call(event,"get_menu"));if(!menu.get()||menu.get()==e.menu.get())return true;
         Close(e);e.menu.reset(menu.get());Ref title(api.string_new(e.title.c_str())),text(api.string_new("Masquer le module")),empty(api.string_new(""));
-        Ref help(api.string_new("Réactiver ce panneau dans le menu d’affichage des modules, en haut à droite."));
+        Ref help(api.string_new("Réactiver ce panneau avec son bouton à côté de Capture d’âme, en haut à droite."));
         api.Invoke(appendTitle,e.menu.get(),{title.get()});api.Invoke(appendSeparator,e.menu.get());
         Ref rows(api.Call(e.menu.get(),"get_menuItems"));int index=api.Value<int>(api.Call(rows.get(),"get_Count"));if(index<0||index>128)throw std::runtime_error("Tool menu bounds");
         Ref asset(api.object_new(api.class_from_type(api.method_get_param(appendItem,7)))),color(api.object_new(api.class_from_type(api.method_get_param(appendItem,10))));
@@ -86,6 +86,13 @@ void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*
     if(std::any_of(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;}))return;
     Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;entries.push_back(std::move(e));
 }
+std::vector<Shortcut> Shortcuts(){
+    std::vector<Shortcut> result;
+    for(const auto& e:entries)result.push_back({e.key,e.title,e.icon});
+    return result;
+}
+bool Visible(const char* key){return Find(key).visible();}
+bool Toggle(const char* key){return Ready()&&Find(key).toggle();}
 void Install(){if(installed)return;
     auto scroll=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","ScrollView");
     api.FindVerified(scroll,".ctor",0,0x5742BD0);api.FindVerified(scroll,"get_contentContainer",0,0x5742BE0);

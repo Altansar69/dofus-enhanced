@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r86**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r87**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r86) → Général** :
+Dans **Options → Mod (r87) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -45,8 +45,9 @@ La révision réellement chargée apparaît dans le nom de l’onglet **Mod (rN)
 
 ## Chasse au trésor
 
-Dans le **menu d’affichage des modules, en haut à droite**, cocher **Chasse au trésor · DofusDB**.
-Décocher l’entrée ou choisir **⋯ → Masquer le module** pour fermer le panneau.
+Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, en haut à droite.
+Un second clic ou **⋯ → Masquer le module** ferme le panneau.
+L’entrée **Chasse au trésor · DofusDB** reste aussi accessible dans le menu des modules.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
 Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
@@ -56,8 +57,9 @@ Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 
 ## Carnet
 
-Dans le **menu d’affichage des modules, en haut à droite**, cocher **Carnet personnel**.
-Décocher l’entrée ou choisir **⋯ → Masquer le module** pour fermer le panneau.
+Cliquer sur le bouton **Carnet personnel**, dans la même barre, à côté de **Capture d’âme**.
+Un second clic ou **⋯ → Masquer le module** ferme le carnet.
+Son entrée reste aussi accessible dans le menu des modules.
 Un brouillon modifié demande une confirmation avant d’être abandonné.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
@@ -88,7 +90,7 @@ Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste v
 
 ## Surbrillance
 
-**Options → Mod (r86) → Général → Surbrillance** choisit le niveau : derrière
+**Options → Mod (r87) → Général → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
@@ -129,7 +131,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r86 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La r87 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -162,7 +164,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r86 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r87 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

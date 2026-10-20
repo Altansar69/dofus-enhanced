@@ -1,4 +1,14 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 86
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 87
+
+R87 — CARNET ET CHASSE À CÔTÉ DE CAPTURE D’ÂME
+- Deux boutons directs, Chasse au trésor et Carnet personnel, sont ajoutés
+  dans la barre en haut à droite, juste à côté de Capture d’âme et avant Menu.
+- Chaque bouton reprend la taille native, son icône et une infobulle au survol.
+  Un clic ouvre le panneau, un second le ferme ; son état suit aussi le menu ⋯.
+- La protection des notes non enregistrées reste active lors de la fermeture.
+- Les entrées du menu des modules restent disponibles.
+- Compilation et tests hors jeu ; rendu réel à confirmer. Aucun client ouvert
+  manipulé. La nouvelle version se charge au prochain lancement.
 
 R86 — BULLES DE RESSOURCES ET ALIGNEMENT XP
 - Mini-carte : bulles de 48 px et images de 40 px. Leur case à cocher est

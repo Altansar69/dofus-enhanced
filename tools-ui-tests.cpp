@@ -39,7 +39,7 @@ BuildFn build=nullptr;
 bool(*populate)(Obj,Obj)=nullptr;
 bool(*callback)(Obj,Obj)=nullptr;
 int installs=0,menuRegistrations=0,nativeBuilds=0,closed=0,closeFailures=0,removeFailures=0;
-bool notebook=false,treasure=false;
+bool notebook=false,treasure=false,refuseNotebook=false;
 int notebookToggles=0,treasureToggles=0;
 
 void Check(bool value,const char* message){if(!value)throw std::runtime_error(message);}
@@ -55,7 +55,7 @@ Obj Row(Obj menu,const std::string& kind,const std::string& title){
 void OriginalBuild(Obj,Obj menu,Method){++nativeBuilds;Row(menu,"NativeItem","Interface native");}
 bool NotebookVisible(){return notebook;}
 bool TreasureVisible(){return treasure;}
-bool ToggleNotebook(){++notebookToggles;notebook=!notebook;return true;}
+bool ToggleNotebook(){if(refuseNotebook)return false;++notebookToggles;notebook=!notebook;return true;}
 bool ToggleTreasure(){++treasureToggles;treasure=!treasure;return true;}
 
 void Initialize(){
@@ -202,6 +202,17 @@ struct Fixture {
         Check(populate(manipulator,event),"Owned header population handled");return menu;
     }
 };
+void ToolbarUsesRegisteredActions(){
+    Fixture f;auto shortcuts=toolsUi::Shortcuts();
+    Check(shortcuts.size()==2&&shortcuts[0].key=="notebook"&&shortcuts[0].title=="Carnet"&&shortcuts[0].icon==225,
+        "Toolbar descriptors share the registered menu identity and native icon");
+    Check(toolsUi::Toggle("notebook")&&toolsUi::Visible("notebook")&&notebookToggles==1,"Toolbar opens the registered panel");
+    refuseNotebook=true;Check(!toolsUi::Toggle("notebook")&&toolsUi::Visible("notebook"),"Toolbar honors dirty-note close refusal");refuseNotebook=false;
+    auto menu=f.ShowModules();Check(Get(f.Rows(menu)[2]).on,"Menu reflects opening from the toolbar");
+    Check(toolsUi::Toggle("notebook")&&!toolsUi::Visible("notebook"),"Toolbar closes the registered panel");
+    toolsUi::Tick();Check(!Get(f.Rows(menu)[2]).on,"Existing menu follows toolbar state");
+    f.state.stopRequested=true;Check(!toolsUi::Toggle("treasure")&&!treasure,"Stopped module rejects shortcut actions");
+}
 void ModulesPreserveNativeAndStayOpen(){
     Fixture f;auto menu=f.ShowModules();auto rows=f.Rows(menu);
     Check(nativeBuilds==1&&rows.size()==4&&Get(rows[0]).type->name=="NativeItem"&&Get(rows[1]).type->name=="Separator","Native module choices preserved before owned additions");
@@ -293,7 +304,7 @@ int main(){
         toolsUi::Register("notebook","Ignored duplicate",999,fake::NotebookVisible,fake::ToggleNotebook);
         toolsUi::Install();toolsUi::Install();
         fake::Check(fake::installs==1&&fake::menuRegistrations==1,"Install and registration are idempotent");
-        for(auto test:{fake::ModulesPreserveNativeAndStayOpen,fake::HeaderTitleAndHide,fake::StaleModuleCallbacks,
+        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ModulesPreserveNativeAndStayOpen,fake::HeaderTitleAndHide,fake::StaleModuleCallbacks,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
                 fake::MenuReplacementAndReentry,fake::StopAndWrongOwner})test();
         fake::Check(fake::handles.empty(),"All menu handles released");
