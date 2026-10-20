@@ -1,0 +1,10 @@
+/build/
+/dist/
+*.log
+*.status
+*.request
+settings.ini
+*-settings.ini
+__pycache__/
+*.pyc
+/.vs/

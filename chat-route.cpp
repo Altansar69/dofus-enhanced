@@ -1,0 +1,161 @@
+#include "chat-route.hpp"
+#include "module.hpp"
+#include <algorithm>
+#include <chrono>
+#include <queue>
+#include <tuple>
+#include <unordered_map>
+#include <unordered_set>
+
+namespace chat_route {
+namespace {
+using namespace managed;
+constexpr const char* Space="Core.PathFinding.WorldPathfinding";
+struct Node { int distance; size_t source; uint64_t uid; Ref vertex; };
+struct Later { bool operator()(const Node& a,const Node& b)const {
+    return std::tie(a.distance,a.source,a.uid)>std::tie(b.distance,b.source,b.uid);
+} };
+std::priority_queue<Node,std::vector<Node>,Later> queue;
+std::unordered_set<uint64_t> visited;
+std::unordered_map<uint64_t,std::pair<int,size_t>> best;
+std::vector<chat_travel::Destination> choices;
+Ref graph, vertices, outgoing, filter, loader, pathService, dependencies;
+Method getGraph{},init{},edgeAllowed{},areaAllowed{},initFilter{};
+Klass graphClass{},vertexClass{},edgeClass{},filterClass{},loaderClass{},serviceClass{};
+int64_t target=0,current=0;
+bool seeded=false,loading=false;
+size_t inspected=0;
+size_t slices=0;
+std::chrono::steady_clock::time_point searchStarted;
+// Keep a high-degree vertex resumable within the per-frame time budget. The
+// installed graph contains a legitimate 296-edge hub (map 81789954).
+Ref pendingEdges;
+int edgeIndex=0,edgeCount=0,pendingDistance=0;
+size_t pendingSource=0;
+int Count(Obj list,int limit,const char* context) {
+    if(!list)return 0;
+    const int n=api.Value<int>(api.Call(list,"get_Count"));
+    if(n<0||n>limit)throw std::runtime_error(std::string("Route ")+context+" count="+std::to_string(n)+" limit="+std::to_string(limit));
+    return n;
+}
+template<class Key> Obj Lookup(Obj dictionary,Key key) {
+    if(!dictionary)return nullptr;
+    Obj value=nullptr;
+    return api.Value<bool>(api.Call(dictionary,"TryGetValue",{&key,&value}))?value:nullptr;
+}
+bool Exact(Obj object,Klass type) {return object&&api.object_get_class(object)==type;}
+bool Session() {
+    return module&&module->servicesReady&&!module->stopped&&!module->stopRequested&&
+        module->FindService("fnf")==pathService.get()&&module->FindService("fkq")==dependencies.get();
+}
+bool Improves(uint64_t uid,int distance,size_t source) {
+    if(visited.contains(uid))return false;
+    const auto found=best.find(uid);
+    return found==best.end()||std::pair{distance,source}<found->second;
+}
+void Enqueue(Obj vertex,uint64_t uid,int distance,size_t source) {
+    best[uid]={distance,source};
+    queue.push({distance,source,uid,Ref(vertex)});
+}
+void Seed() {
+    vertices.reset(api.Field(graph.get(),"m_vertices"));outgoing.reset(api.Field(graph.get(),"m_outgoingEdges"));
+    if(!vertices.get()||!outgoing.get())throw std::runtime_error("World route graph incomplete");
+    filter.reset(api.New(filterClass));api.Invoke(initFilter,filter.get());
+    for(size_t i=0;i<choices.size();++i) {
+        const auto& choice=choices[i];
+        Ref zones(Lookup(vertices.get(),choice.map));
+        // A map split into disconnected zones does not identify a zaap arrival
+        // cell. Never rank it using an arbitrary side of an obstacle.
+        if(Count(zones.get(),64,"zones")!=1)continue;
+        Ref values(api.Call(zones.get(),"get_Values"));Ref iterator(api.Call(values.get(),"GetEnumerator"));
+        if(!api.Value<bool>(api.Call(iterator.get(),"MoveNext")))continue;
+        Ref vertex(api.Call(iterator.get(),"get_Current"));
+        if(!Exact(vertex.get(),vertexClass))throw std::runtime_error("World route vertex mismatch");
+        const auto uid=*static_cast<uint64_t*>(api.FieldAddress(vertex.get(),"m_uid"));
+        const int distance=choice.map==current?0:1;
+        if(Improves(uid,distance,i))Enqueue(vertex.get(),uid,distance,i);
+    }
+    seeded=true;
+    Log("CHAT_ROUTE_SEEDED target="+std::to_string(target)+" candidates="+std::to_string(choices.size())+" starts="+std::to_string(queue.size()));
+}
+}
+void Install() {
+    loaderClass=api.Class("Core.dll","","ezc");filterClass=api.Class("Core.dll","","ens");serviceClass=api.Class("Core.dll","","eza");
+    graphClass=api.Class("Core.dll",Space,"PathFindingData");vertexClass=api.Class("Core.dll",Space,"Vertex");edgeClass=api.Class("Core.dll",Space,"Edge");
+    getGraph=api.FindVerified(loaderClass,"bbno",0,0x19B7A00);
+    init=api.FindVerified(loaderClass,"bbnn",0,0x19B7970);
+    api.FindVerified(loaderClass,".ctor",0,0x19B7910);
+    api.FindVerified(filterClass,".ctor",0,0x17E38E0);
+    initFilter=api.FindVerified(filterClass,"wvo",0,0x17E5FB0);
+    edgeAllowed=api.FindVerified(filterClass,"wvs",1,0x17E6C60);
+    areaAllowed=api.FindVerified(filterClass,"wvt",1,0x17E6E70);
+}
+void Clear() {
+    queue={};visited.clear();best.clear();choices.clear();graph.reset();vertices.reset();outgoing.reset();filter.reset();loader.reset();
+    pathService.reset();dependencies.reset();target=current=0;seeded=loading=false;inspected=0;
+    pendingEdges.reset();edgeIndex=edgeCount=pendingDistance=0;pendingSource=0;slices=0;
+}
+void Begin(std::vector<chat_travel::Destination> candidates,int64_t destination,int64_t source) {
+    Clear();target=destination;current=source;searchStarted=std::chrono::steady_clock::now();
+    pathService.reset(module->FindService("fnf"));dependencies.reset(module->FindService("fkq"));
+    if(!Exact(pathService.get(),serviceClass)||!dependencies.get())throw std::runtime_error("Native route conditions unavailable");
+    for(auto value:candidates)if(value.map>0&&value.known&&value.type==0&&value.cost>=0)choices.push_back(value);
+    std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){return std::tie(a.cost,a.map)<std::tie(b.cost,b.map);});
+}
+Result Tick() {
+    if(!target||!Session())return {Status::Unreachable};
+    if(!graph.get()) {
+        graph.reset(api.Invoke(getGraph,nullptr));
+        if(!graph.get()) {
+            if(!loading) {loader.reset(api.New(loaderClass));api.Invoke(init,loader.get());loading=true;}
+            return {};
+        }
+        if(!Exact(graph.get(),graphClass))throw std::runtime_error("World route graph mismatch");
+    } else if(api.Invoke(getGraph,nullptr)!=graph.get())return {Status::Unreachable};
+    if(!seeded)Seed();
+    // GetTickCount64 has a coarse Windows tick and cannot enforce a 2ms slice.
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(2);
+    ++slices;
+    for(int budget=0;budget<256&&std::chrono::steady_clock::now()<deadline;++budget) {
+        if(!pendingEdges.get()) {
+            if(queue.empty())return {Status::Unreachable};
+            const auto& top=queue.top();
+            Node node{top.distance,top.source,top.uid,Ref(top.vertex.get())};queue.pop();
+            if(best.at(node.uid)!=std::pair{node.distance,node.source})continue;
+            if(!visited.insert(node.uid).second)continue;
+            if(visited.size()>65536||node.distance>4096)throw std::runtime_error("World route search bounds");
+            if(*static_cast<int64_t*>(api.FieldAddress(node.vertex.get(),"m_mapId"))==target) {
+                const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-searchStarted).count();
+                Log("CHAT_ROUTE_FOUND elapsedMs="+std::to_string(elapsed)+" slices="+std::to_string(slices)+
+                    " vertices="+std::to_string(visited.size())+" edges="+std::to_string(inspected));
+                return {Status::Found,choices[node.source],node.distance};
+            }
+            Ref wrapper(Lookup(outgoing.get(),node.uid));if(!wrapper.get())continue;
+            pendingEdges.reset(api.Field(wrapper.get(),"m_edgeList"));
+            edgeCount=Count(pendingEdges.get(),1024,"outgoing edges");edgeIndex=0;
+            pendingDistance=node.distance;pendingSource=node.source;
+        }
+        if(edgeIndex<edgeCount) {
+            if(++inspected>262144)throw std::runtime_error("World route edge bounds");
+            int index=edgeIndex++;
+            Ref edge(api.Call(pendingEdges.get(),"get_Item",{&index}));
+            if(!Exact(edge.get(),edgeClass))throw std::runtime_error("World route edge mismatch");
+            Ref to(api.Field(edge.get(),"m_to"));
+            if(!Exact(to.get(),vertexClass))throw std::runtime_error("World route destination mismatch");
+            const auto uid=*static_cast<uint64_t*>(api.FieldAddress(to.get(),"m_uid"));
+            // Only skip when an already accepted path is as good or better.
+            // A rejected edge never marks its destination reached.
+            if(!Improves(uid,pendingDistance+1,pendingSource))continue;
+            Ref transitions(api.Field(edge.get(),"m_transitions"));
+            if(Count(transitions.get(),128,"transitions")==0)continue;
+            // The exact filters used by ens.wvq: character criteria, then
+            // native areas excluded from automatic travel. No UI/network action.
+            if(!api.Value<bool>(api.Invoke(edgeAllowed,nullptr,{edge.get()}))||
+                !api.Value<bool>(api.Invoke(areaAllowed,filter.get(),{edge.get()})))continue;
+            Enqueue(to.get(),uid,pendingDistance+1,pendingSource);
+        }
+        if(edgeIndex>=edgeCount)pendingEdges.reset();
+    }
+    return queue.empty()&&!pendingEdges.get()?Result{Status::Unreachable}:Result{};
+}
+}

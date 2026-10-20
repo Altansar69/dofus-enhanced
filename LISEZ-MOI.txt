@@ -1,0 +1,1263 @@
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 75
+
+R75 — MISES À JOUR GITHUB AU LANCEMENT
+- Options > Mod (r75) > Général > Mises à jour GitHub, activé par défaut.
+  Le chargement automatique doit également être activé.
+- Dépôt public : https://github.com/Altansar69/dofus-miniatures
+  Aucun compte GitHub ni logiciel supplémentaire à installer pour télécharger.
+- À chaque nouveau lancement, recherche une version stable compatible avec les
+  deux empreintes exactes du jeu. Vérifie le téléchargement et les fichiers avant
+  de rendre le nouveau dossier disponible. Conserve les réglages et anciennes versions.
+- En cas de réseau indisponible, utilise la dernière version locale compatible.
+  Un jeu déjà ouvert conserve sa version. Aucun remplacement à chaud.
+- L'assistant n'est plus bloqué sur une seule version de Dofus : il choisit le
+  chargeur du correctif compatible. Le module conserve ses contrôles natifs stricts.
+- Une mise à jour interne de Dofus peut toujours demander une adaptation du mod.
+  Sans correctif compatible publié, le lanceur laisse le jeu intact.
+- 48 suites de tests hors jeu. L'affichage de la nouvelle case en jeu reste à vérifier.
+- Le nom historique des dossiers reste inchangé pour préserver les préférences.
+  La version du jeu ciblée est indiquée dans release.ini.
+- Diagnostics : UPDATE_CHECK, UPDATE_INSTALLED, UPDATE_ALREADY_INSTALLED,
+  UPDATE_UNAVAILABLE, NO_COMPATIBLE_RELEASE, puis LOAD_READY.
+
+R74 — COMPATIBILITÉ AVEC LA MISE À JOUR DU 20 OCTOBRE
+- Adaptation au client 3.7.12.12 installé. Les adresses natives, signatures,
+  points d’appel et empreintes sont vérifiés sur ses fichiers.
+- Au démarrage, le mod attend maintenant le chargement des options du compte.
+  Il ne se désactive plus simplement parce que la connexion est encore en cours.
+- L’assistant automatique doit être celui de cette révision : les anciens
+  assistants refusent cette mise à jour du jeu. La configuration locale a été
+  mise à niveau lors de la réparation, sans changer les réglages du mod.
+- Au prochain lancement choisi par l’utilisateur, vérifier Mod (r74).
+  Aucun chargement forcé dans le client déjà ouvert n’a été effectué.
+- Le nom historique du dossier et du fichier de réglages conserve 3.7.11.11
+  pour garder les préférences existantes ; le client ciblé est bien 3.7.12.12.
+- Compilation et 47 suites de tests hors jeu validées. L’initialisation et le
+  rendu en jeu restent à confirmer au prochain lancement.
+- La fenêtre DofusDB de r73 et les fonctions précédentes sont conservées.
+  Diagnostics : WAITING_ACCOUNT_OPTIONS, SERVICES_READY, RUNTIME_READY.
+
+R73 — CHASSE AU TRÉSOR DOFUSDB EN FENÊTRE
+- Options > Mod (r73) > Général > Chasse au trésor > Ouvrir DofusDB.
+  Vous pouvez aussi lancer TreasureOverlay.exe depuis ce dossier.
+- Affiche l’outil officiel https://dofusdb.fr/fr/tools/treasure-hunt.
+  Saisir manuellement les coordonnées, la direction et l’indice ; DofusDB
+  fournit le résultat. Aucun déplacement ni validation automatique ajouté.
+- Fenêtre déplaçable et redimensionnable ; un réglage permet de la garder
+  au-dessus du jeu. Sa position et sa taille sont mémorisées. Un second clic
+  retrouve la fenêtre déjà ouverte, avec les données saisies dans le site.
+- Fermer la fenêtre avec sa croix. Le fonctionnement au-dessus du jeu est
+  prévu pour le mode fenêtré ou plein écran sans bordure de Dofus.
+- Le moteur Microsoft Edge WebView2 Runtime est nécessaire. Il est déjà
+  installé sur cette machine. En cas d’absence, installer manuellement le
+  runtime officiel : https://developer.microsoft.com/microsoft-edge/webview2/.
+  Aucune installation automatique n’est effectuée par le mod.
+- Profil web séparé du navigateur personnel, dans
+  %LOCALAPPDATA%\DofusMiniatures\TreasureOverlay. Les requêtes sont celles du
+  site ouvert. Aucun identifiant Dofus, état de chasse ou cookie du navigateur
+  personnel n’est transmis par le mod.
+- Extraire toute l’archive : TreasureOverlay.exe doit rester à côté de la DLL.
+  Ce composant s’ouvre uniquement à votre clic ; le mod ne le lance pas au démarrage.
+- La nouvelle révision se charge au prochain lancement choisi par l’utilisateur.
+  Un client déjà ouvert conserve la révision qu’il a chargée.
+- Tests hors jeu et moteur WebView2 sur une page locale vide. Le formulaire
+  DofusDB en conditions réelles et le bouton dans le jeu restent à confirmer.
+  Aucun client ouvert n’a été manipulé pour préparer cette version.
+  Diagnostics : TREASURE_OVERLAY_OPEN et TREASURE_OVERLAY_ERROR.
+
+R72 — RESSOURCES SUR LA CARTE ET LA MINI-CARTE
+- Options > Mod (r72) > Général > Ressources sur les cartes active ou masque
+  les repères. Ouvrir la carte avec M, puis les filtres : Ressources.
+- Six catégories repliables : Base, Bûcheron, Mineur, Alchimiste, Paysan,
+  Pêcheur. Cocher plusieurs ressources ; la sélection est conservée entre
+  les lancements et partagée avec la mini-carte. Aucun choix initial.
+- Un repère distingue chaque ressource sélectionnée et son nombre de points
+  de récolte recensés. Ce nombre ne dit pas si quelqu’un vient de récolter.
+  Les emplacements intérieurs inclus portent un astérisque.
+  Le libellé court devant chaque nombre est aussi indiqué dans les filtres.
+  81 ressources sont proposées ; la couverture géographique reste partielle,
+  notamment pour certaines mines et les autres mondes.
+- Les filtres Dofus restent disponibles dans le même panneau défilant.
+  Les repères ne prennent pas les clics : navigation et voyage restent natifs.
+- À faible zoom ou avec beaucoup de ressources, certains repères sont masqués
+  pour éviter leur superposition. Une indication demande de zoomer.
+- Données principales : relevés publics de https://dofus-map.com/ ; date
+  de mise à jour inconnue. Compléments vérifiés dans les fichiers installés.
+  Voir RESSOURCES-SOURCES.txt pour la couverture et les limites précises.
+  Les données de Dofus pour les Noobs n’ont pas été importées : leur ancien
+  GPS du récolteur est annoncé comme abandonné et incomplet.
+- Le catalogue est embarqué : aucune requête web et aucun envoi de données
+  de compte par cette fonction. Une future mise à jour du catalogue passera
+  par une nouvelle révision du mod.
+- Compilation et tests hors jeu ; apparence et liaison réelles des cartes
+  restent à confirmer. Aucun client ouvert n’a été touché. Au lancement
+  choisi par l’utilisateur, vérifier Mod (r72).
+  Diagnostics : RESOURCE_MAP_UI_READY, RESOURCE_MAP_UI_ERROR,
+  RESOURCE_MAP_RENDER_ERROR.
+
+R71 — TROIS NIVEAUX DE SURBRILLANCE
+- Options > Mod (r71) > Général > Surbrillance des monstres :
+  Désactivée ; Derrière l’interface ; Derrière l’interface et les murs ;
+  Tout le temps. Également accessible par clic droit > Surbrillance.
+- Le choix est enregistré. L’ancienne case activée conserve le niveau
+  Derrière l’interface ; une ancienne désactivation reste désactivée.
+- Interface = les modules d’affichage, comme la mini-carte et le chat.
+  Les grandes fenêtres (carte du monde, inventaire, sorts, etc.) restent
+  devant le contour, quel que soit le niveau choisi.
+- Murs : masque construit avec les formes et transparences des décors
+  actifs vérifiés devant le monstre. Un décor derrière lui ne suffit pas.
+  Un ordre ambigu ou une carte non prête conserve le comportement UI.
+- Tout le temps : contour des monstres admissibles même à découvert.
+  Les entités cachées par les règles du jeu restent exclues. Les PNJ et
+  joueurs ne sont pas ajoutés aux cibles par cette nouvelle option.
+- Le budget existant est conservé : au maximum huit cibles simultanées,
+  captures privées de 256 pixels maximum, rafraîchies au plus à 30 Hz.
+  Le niveau avec les murs demande plus de travail graphique que le niveau UI.
+- Tests et compilation vérifiés hors jeu. Le rendu et les nouveaux menus
+  dans le client restent à confirmer ; aucun client ouvert n’a été touché.
+  Vérifier Mod (r71) au prochain lancement choisi par l’utilisateur.
+  Diagnostics : GLOW_ENABLED mode=1/2/3, [DEBUG:glow] world=... walls=...
+
+R70 — POSITION DU PANNEAU CAPTURE ENTRE LES COMBATS
+- Corrige le retour du panneau à sa position par défaut à chaque nouveau
+  combat lorsqu'une disposition de combat est appliquée automatiquement.
+  Le déplacement du panneau enregistre aussi sa position dans cette
+  disposition : le combat suivant retrouve le même emplacement.
+- Seule la position du panneau Capture d'âme est mise à jour. Les autres
+  modules, les autres dispositions et leurs options sont préservés.
+  La réinitialisation native retire aussi cette position mémorisée.
+- Pas de réglage supplémentaire. Utilise les dispositions de Dofus et
+  leur sauvegarde native, avec des coordonnées adaptées à la résolution.
+- Au prochain lancement choisi par l'utilisateur, vérifier « Mod (r70) ».
+  Dans un nouveau combat, déplacer une fois le panneau à l'endroit voulu.
+  Il doit conserver cet emplacement lors du combat suivant.
+- Chargement en cours de combat : sans origine de disposition connue,
+  le mod conserve la sauvegarde courante mais ne devine pas quelle autre
+  disposition modifier. Déplacer le panneau dans le combat suivant.
+- Compilation et 40 suites de tests hors jeu vérifiées. La persistance
+  réelle dans le client reste à confirmer. Aucun client ouvert n'a été
+  touché pendant la préparation de cette version.
+  Diagnostics : SOUL_LAYOUT_SAVED et SOUL_LAYOUT_FIGHT_SAVED.
+
+R69 — TRAJET DU BOUTON TP DEPUIS LA MINI-CARTE
+- Le double-clic et « Voyager jusqu’à » de la mini-carte utilisent désormais
+  le calcul du bouton TP du chat. Les mêmes actions de la grande carte
+  partagent ce comportement, y compris depuis le Havre-Sac.
+- Compare le départ à pied depuis votre position aux départs par vos zaaps
+  connus, selon les passages de carte accessibles et les conditions du jeu.
+  Choisit un zaap si son trajet est meilleur, puis lance l’autopilote natif
+  après confirmation de l’arrivée, sans confirmation supplémentaire.
+- Le calcul minimise les passages de cartes avec une pénalité de départ par
+  zaap ; il ne mesure pas un temps de trajet réel. Les règles et prix natifs
+  des zaaps s’appliquent. Bateaux et diligences ne sont pas ajoutés ici.
+- Cliquer plusieurs fois vers la même destination conserve la demande en
+  cours. Aucun trajet n’est lancé par le simple affichage du menu.
+- Les marqueurs, le partage de position et le choix explicite d’un zaap
+  restent distincts. Aucun réglage supplémentaire ; préférences conservées.
+- 40 suites de tests hors jeu réussies. Double-clic réel, menu et trajet
+  restent à confirmer dans le jeu. Aucun client ouvert n’a été touché.
+  Au prochain lancement choisi par l’utilisateur, vérifier « Mod (r69) ».
+  Diagnostics : MAP_TRAVEL_ROUTE, puis CHAT_TRAVEL.
+
+R68 — OPTION TÉLÉPORTATION AU CONJOINT
+- Options > Mod (r68) > Général > Téléportation au conjoint.
+  Cette case est visible même si votre conjoint est hors ligne ou absent
+  du groupe. Elle est activée par défaut et son choix est enregistré.
+- Activée : conserve le bouton TP, le cœur, la bordure et la distance sur
+  la vignette du conjoint dans le groupe, ainsi que l’entrée au clic droit.
+  Le conjoint hors ligne conserve une indication indisponible dans le groupe.
+- Désactivée : retire ces ajouts et empêche les actions depuis un ancien
+  bouton ou menu encore affiché. La réactivation les rétablit lorsque les
+  données du conjoint et sa présence dans le groupe sont disponibles.
+- La téléportation reste déclenchée uniquement au clic et soumise aux
+  conditions natives. L’onglet Conjoint du jeu n’est pas modifié.
+- « Réinitialiser » réactive cette option. La mise à jour conserve les
+  autres choix déjà enregistrés. Aucun client ouvert n’a été touché.
+- 40 suites de tests hors jeu réussies ; affichage et téléportation réels
+  avec le conjoint restent à confirmer. Vérifier « Mod (r68) » au prochain
+  lancement choisi par l’utilisateur.
+
+R67 — CARTE UTILISABLE DEPUIS LE HAVRE-SAC
+- Dans le menu de la carte sur un zaap connu, l’entrée « Se téléporter à ce
+  zaap (Havre-Sac) », avec l’icône de téléportation, utilise ce zaap précis.
+  Elle ouvre l’interaction du zaap présent dans le Havre-Sac, attend une liste
+  serveur fraîche, vérifie destination et kamas, puis demande la téléportation.
+  Aucun autre zaap n’est choisi à la place et aucun trajet à pied ne suit.
+- Le double-clic de déplacement sur une destination de la carte utilise le
+  calcul de trajet du mod : départ par un zaap autorisé du Havre-Sac, puis
+  autopilote natif après confirmation de l’arrivée. Le chemin reste soumis
+  aux conditions natives de voyage automatique. Pas de confirmation ajoutée.
+- Ouvrir le menu ne lance rien. Hors du Havre-Sac, les actions de carte
+  restent natives. Quitter le Havre-Sac ou changer de personnage pendant
+  la préparation annule la demande. Une ancienne ligne de menu est inerte.
+- Les coûts et destinations proviennent de la liste du zaap du Havre-Sac ;
+  la demande directe de prix de la carte n’est pas utilisée dans ce contexte.
+- 40 suites de tests hors jeu réussies. Le rendu du menu et la téléportation
+  réelle restent à confirmer dans le jeu ; aucun client ouvert n’a été touché.
+  Au prochain lancement choisi par l’utilisateur, vérifier « Mod (r67) ».
+  Diagnostics : MAP_HAVENBAG_ZAAP, MAP_HAVENBAG_ROUTE, puis CHAT_TRAVEL.
+
+R66 — VALEURS PAR DÉFAUT
+- En combat : Miniatures. Hors combat : Normal. Animations : Raccourcies.
+- Activés par défaut : chargement automatique, alerte pierre d’âme,
+  équipement automatique de la pierre, monstres derrière l’interface,
+  transitions rapides entre cartes et préchargement de la prochaine carte.
+- « Réinitialiser » dans Mod applique ces mêmes valeurs. Les préférences
+  déjà enregistrées restent prioritaires ; la mise à jour ne les remplace pas.
+- Sur une nouvelle configuration sans préférence de chargement automatique,
+  l’assistant est activé après la première initialisation réussie du module.
+  Une désactivation déjà enregistrée, ou faite avec le script dédié, reste
+  respectée. Une erreur d’activation laisse la case désactivée et est journalisée.
+- Le préchargement et les fondus ne changent pas dans cette révision : les
+  30 derniers préchargements terminés examinés étaient prêts avant le fondu
+  de sortie, avec une avance médiane de 2,1 s. Aucun décor manquant et aucun
+  plafond atteint dans cet échantillon (114 à 281 ressources par carte).
+  Ce constat ne mesure ni les cache hits natifs ni le gain de chargement total.
+- Les fondus sont déjà à 10 ms. D’autres gains restent à identifier et mesurer
+  dans le chargement natif ; aucun nouveau gain de vitesse n’est annoncé ici.
+- 40 suites de tests hors jeu réussies ; fonctionnement de la nouvelle
+  initialisation automatique à confirmer en jeu. Aucun accès au client ouvert.
+  Au prochain lancement choisi par l’utilisateur, vérifier « Mod (r66) ».
+
+R65 — OUVRIR L’OCRE DEPUIS LE CHAT
+- Cliquer sur l’état Ocre ouvre le journal via le lien natif vers la quête
+  439, L’éternelle moisson. L’infobulle indique cette action.
+- Le journal sélectionne la quête si elle y figure (en cours, terminée ou
+  masquée). Une quête non commencée ne peut pas être sélectionnée tant
+  qu’elle ne figure pas dans le journal ; le clic n’accepte pas la quête.
+- Le statut du sac reste informatif ; TP conserve seul l’action de déplacement.
+  Survol et rafraîchissement n’ouvrent pas le journal.
+- Les clics sur une ancienne ligne ou un autre personnage sont ignorés.
+  Aucun nouvel automatisme ni nouvelle option ; erreurs dans CHAT_TP_CLICK_ERROR.
+- Ouverture réelle à confirmer en jeu. Vérifier « Mod (r65) » au prochain
+  lancement ; chargement automatique conservé, sinon Lancer.cmd de R65.
+
+R64 — INFOBULLES SÉPARÉES DANS LE CHAT
+- Présentation : [coordonnées] · TP · Âme en sac · Ocre…
+- TP explique le trajet ; le statut du sac explique la possession de l’âme ;
+  le statut Ocre explique la validation de l’objectif. Chaque zone a son survol.
+- Seul TP lance le déplacement. Les informations du sac et de l’Ocre n’ont
+  pas d’action au clic. Les couleurs et les coordonnées natives sont conservées.
+- Les états et leurs infobulles se mettent à jour avec les données déjà lues.
+  Les anciens liens combinés sont remplacés sans dupliquer les séparateurs.
+- Rendu réel à confirmer en jeu. Au prochain lancement, vérifier « Mod (r64) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R64.
+
+R63 — COULEURS DE L’AVANCEMENT OCRE
+- « Ocre validé » est en vert clair ; « Ocre à faire » et « Ocre non commencée »
+  sont en rouge clair. « Ocre : ? » et « Hors Ocre » restent neutres.
+- Les couleurs du sac restent indépendantes : posséder une âme ne signifie
+  pas avoir validé son objectif Ocre. TP conserve son cyan.
+- Mise à jour des couleurs avec les états déjà lus ; aucune nouvelle option.
+  Infobulles en texte normal et action TP conservées.
+- Rendu réel à confirmer en jeu. Au prochain lancement, vérifier « Mod (r63) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R63.
+
+R62 — COULEUR SELON LA POSSESSION DE L’ÂME
+- « Âme en sac » est en vert clair ; « Pas en sac » est en rouge clair.
+- « Sac : ? » reste neutre quand les données sont inconnues. L’état Ocre
+  reste beige et indépendant de la possession ; TP conserve son cyan.
+- La couleur se met à jour avec le sac, sans nouvelle option. Les infobulles
+  restent en texte normal. Action TP et lecture des données inchangées.
+- Rendu réel à confirmer en jeu. Au prochain lancement, vérifier « Mod (r62) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R62.
+
+R61 — COULEUR DISTINCTE DES ÉTATS D’ÂME ET OCRE
+- TP conserve son cyan et sa couleur de survol. Les indications à côté
+  (« Pas en sac », « Âme en sac », états Ocre) sont en beige clair.
+- La couleur reste limitée à ces indications ; les messages d’origine et
+  les infobulles conservent leur présentation. Action TP inchangée.
+- 40 suites de tests hors jeu passent ; rendu réel à confirmer en jeu.
+  Au prochain lancement, vérifier « Mod (r61) ». Chargement automatique
+  conservé ; sinon utiliser Lancer.cmd de R61. Client ouvert non touché.
+
+R60 — OCRE NON COMMENCÉE
+- Les liens de monstres affichent « Ocre non commencée » lorsque la quête
+  est absente des quêtes en cours et terminées après réception de leur liste.
+  « Ocre : ? » reste affiché tant que les données ne permettent pas de conclure.
+- La possession de l’âme reste indépendante : « Pas en sac » peut accompagner
+  « Ocre non commencée », ou « Âme en sac » si l’âme a déjà été obtenue.
+- Le statut change automatiquement après acceptation de la quête. Un journal
+  incomplet ou un changement de personnage invalide les anciennes données.
+- Journal CHAT_SOUL_QUEST : raison du statut, enregistrée à chaque changement.
+  Aucun nouvel appel réseau ni nouvelle option.
+- 40 suites de tests hors jeu passent. Au prochain lancement choisi par vous,
+  vérifier « Mod (r60) » ; chargement automatique conservé, sinon Lancer.cmd
+  de R60. Le client ouvert n’a pas été touché ; résultat réel à confirmer.
+
+R59 — ÂMES POSSÉDÉES ET OBJECTIFS OCRE DANS LE CHAT
+- À côté de TP, les liens natifs de partage d’un groupe de monstres indiquent
+  séparément « Âme en sac » / « Pas en sac » et « Ocre validé » / « Ocre à faire ».
+  Exemple : TP · Âme en sac · Ocre à faire.
+- L’identification utilise le monstre exact du lien partagé. Les coordonnées
+  écrites seules conservent TP sans statut ; les noms libres ne sont pas devinés.
+- Le sac du personnage connecté est consulté, pas la banque, le coffre ou les
+  autres personnages. Âmes de boss/archimonstres et anciennes pierres pleines
+  sont reconnues. Les deux états sont indépendants : rendre une âme à Otomaï
+  peut valider l’objectif tout en retirant l’âme du sac.
+- « Sac : ? » / « Ocre : ? » signifient que les données ne sont pas disponibles.
+  Ouvrir le journal de quêtes peut rendre l’avancement accessible au client.
+  « Hors Ocre » désigne un monstre absent des objectifs de cette quête.
+- Mise à jour automatique des messages affichés après lecture des données.
+  Le scan du sac est réparti sur plusieurs passages ; aucun voyage n’est lancé
+  par cette lecture. Le lien TP conserve sa destination et son action au clic.
+- 40 suites de tests hors jeu passent ; affichage et états réels à confirmer
+  en jeu. Aucun accès au client ouvert pendant le développement de cette révision.
+  Au prochain lancement choisi par vous, vérifier « Mod (r59) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R59.
+
+R58 — ÉQUIPEMENT AUTOMATIQUE DE LA PIERRE D’ÂME
+- Options > Mod (r58) > Général > Équiper automatiquement la pierre d’âme.
+  Activé par défaut, désactivable ; nécessite Alerte pierre d’âme activée.
+- Pendant le placement d’un combat capturable, tente d’équiper la pierre
+  standard de la tranche exacte requise, si elle est disponible et utilisable.
+  Aucun équipement en combat commencé, en PvP, hors combat ou sans capture
+  admissible. La pierre déjà correcte est conservée.
+- Une tentative automatique par combat et tranche requise. Si la composition
+  du groupe change de tranche, une tentative est permise pour la nouvelle.
+  Un refus, un délai dépassé, masquer le panneau ou décocher/recocher l’option
+  ne provoquent pas de nouvelles demandes. Le bouton manuel reste disponible.
+  Un changement manuel après une pierre déjà correcte est respecté.
+- Le nom, l’icône et la confirmation viennent toujours de l’inventaire réel.
+  Journal SOUL_AUTO_EQUIP : tranche demandée et résultat d’envoi/refus.
+- 39 suites de tests hors jeu ; réussite réelle de l’équipement à confirmer.
+  Aucun accès au client ouvert pendant le développement.
+  Au prochain lancement choisi par vous, vérifier « Mod (r58) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R58.
+
+R57 — MINIATURES SIMPLIFIÉES, CHARGEMENTS ET REPRISE APRÈS TP
+- Le choix Réduire/Uniformiser est supprimé, y compris dans la recherche des
+  options. Miniatures réduit toujours à 60 % de la taille d’origine.
+- Minimum des monstres et invocations relevé de 40 à 50 % de la hauteur
+  mesurée d’un joueur standard non monté. Un petit monstre peut être agrandi.
+  Les joueurs restent réduits proportionnellement. Sans mesure disponible,
+  la réduction s’applique immédiatement et le minimum attend la mesure.
+  L’ancien réglage Uniformiser est ignoré ; les autres préférences restent.
+- Préchargement : parcours jusqu’à 256 étapes par passage au lieu de 64,
+  toujours sous le même budget coopératif de 2 ms. Cela aide surtout les
+  marches courtes sur les cartes ayant beaucoup de décors répétés. Plafond
+  de 512 sprites et huit opérations simultanées inchangés.
+- Glow suspendu pendant le fondu de changement de carte : pas de parcours
+  des entités/HUD ni de rendu supplémentaire pendant cette fenêtre. Reprise
+  à l’arrivée, préférence conservée, délai de secours de cinq secondes.
+  MAP_TRANSITION_READY mesure cette fenêtre jusqu’au début du fondu d’arrivée,
+  pas une durée réseau exacte ni le gain attribuable au mod.
+- Après un TP : attendre la carte chargée correspondante, la fin du fondu et
+  deux observations consécutives disponibles avant d’envoyer l’autopilote.
+  Vérifier ensuite l’activation native ; ne plus annoncer une réussite sur
+  le seul envoi. Une seule nouvelle tentative si aucune prise en compte
+  n’a été observée. Ne pas relancer une route acceptée puis annulée par le jeu.
+  Diagnostic CHAT_TRAVEL_ONWARD_REQUEST / ACTIVE ; refus ou délai dépassé
+  expliqués dans le chat local. Aucun clic ou trajet déclenché pendant le développement.
+- Compilation et 39 suites de tests hors jeu. Gain de chargement et correction
+  après TP à confirmer en jeu. Serveur et construction de scène restent natifs.
+  Au prochain lancement choisi par vous, vérifier « Mod (r57) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R57.
+
+R56 — CAPTURE D’ÂME ET PRÉCHARGEMENT ÉLARGI
+- Menu « … » du panneau : titre natif « Pierre d’âme », séparateur natif,
+  puis « Masquer le module ». Le masquage conserve le réglage enregistré.
+- Bouton Capture d’âme à gauche de Menu : taille et dimensions réelles
+  reprises sur Menu, infobulle native conservée. Sa création ne dépend plus
+  de la présence du bouton Carte. Un bouton natif détaché reste ignoré.
+  Diagnostic SOUL_WIDGET_STATE : création réussie ou raison de l’absence.
+- Préchargement : plafond de 64 à 512 sprites statiques distincts par carte.
+  Huit opérations asynchrones et huit départs maximum par passage, cadence
+  de 16 ms minimum. Le parcours et les lancements gardent chacun une limite
+  coopérative de 2 ms ; un appel natif isolé n’est pas préemptible.
+- MAP_PRELOAD_SCAN/READY précisent le nombre de sprites et l’arrêt : complet,
+  plafond atteint ou intention de déplacement terminée. Une seule carte,
+  références conservées 30 secondes maximum, option et réglage conservés.
+  Plus de ressources peuvent consommer plus de mémoire ; le gain réel de
+  temps reste à mesurer en jeu. Les délais serveur et la création de la scène
+  restent natifs.
+- 39 suites de tests hors jeu réussies. Aucun accès au client ouvert.
+  Au prochain lancement choisi par vous, vérifier « Mod (r56) ».
+  Chargement automatique conservé ; sinon utiliser Lancer.cmd de R56.
+
+R55 — PRÉCHARGEMENT RÉEL DE LA PROCHAINE CARTE (EXPÉRIMENTAL)
+- Mod > Général > Précharger la prochaine carte (expérimental), désactivé
+  par défaut. Réglage indépendant des fondus rapides de R54.
+- Anticipe les données de la destination connue pendant la marche vers une
+  sortie, puis jusqu’à 64 sprites des décors statiques dans le pack courant.
+  Utilise les opérations asynchrones et le cache partagé du moteur.
+- Une seule carte, deux ressources en cours maximum, travail découpé,
+  conservation de 30 secondes maximum. Stoppe les nouveaux chargements si
+  le trajet est annulé/envoyé et libère ses propres références à la désactivation.
+- Les acteurs, particules, transports à destination tardive, la construction
+  de la scène et les délais serveur restent natifs. Gain réel non mesuré.
+  Le surcoût mémoire dépend des ressources chargées ; ce n’est pas un plafond
+  en Mo. Les catalogues absents/ambigus sont ignorés, sans chargement forcé.
+- Diagnostic : MAP_PRELOAD_BEGIN, DATA, READY (loaded/missedSprites), SKIP,
+  ERROR. Une erreur suspend la fonction jusqu’à désactivation/réactivation.
+- Compilation et tests hors jeu uniquement, aucun accès au client ouvert.
+  Au prochain lancement choisi par vous, vérifier « Mod (r55) » et activer
+  la nouvelle case. Chargement auto conservé ; sinon utiliser Lancer.cmd.
+
+R54 — TRANSITIONS RAPIDES ENTRE CARTES
+- Nouvelle case désactivée par défaut : Mod > Général > Transitions rapides
+  entre cartes. Le choix est enregistré et réversible à tout moment.
+- Hors combat, raccourcit les deux fondus natifs identifiés à 10 ms maximum.
+  Les transitions spéciales, le chargement des ressources et les attentes
+  réseau restent gérés par le jeu. Cela ne supprime PAS tout chargement.
+- Le journal MAP_TRANSITION_FADE indique chaque fondu réellement raccourci.
+  Aucun gain global de temps de changement de carte n’a encore été mesuré.
+- Le préchargement anticipé des cartes voisines n’est pas implémenté : le
+  préchargement natif trouvé modifie aussi l’état de la carte en cours.
+- Compilation et contrôles hors jeu ; résultat en jeu à confirmer.
+  Au prochain lancement, vérifier « Mod (r54) ». Le chargement automatique
+  sélectionne R54 s’il est activé ; sinon utiliser Lancer.cmd.
+
+R53 — CURSEUR DU SORT CAPTURE D’ÂME
+- Le survol du sort Capture d’âme dans le panneau affiche la main native Dofus.
+  Elle reste visible lorsque le sort est temporairement indisponible ; le clic
+  conserve les vérifications de disponibilité avant de lancer le sort.
+- Le curseur est retiré quand la souris quitte l’icône ou que le panneau ferme.
+- Compilation et contrôles hors jeu ; rendu à confirmer par l’utilisateur.
+  Au prochain lancement, vérifier « Mod (r53) ». Le chargement automatique
+  sélectionne R53 s’il est activé ; sinon utiliser Lancer.cmd.
+
+R52 — MENU DU PANNEAU PIERRE D’ÂME
+- Les trois points de l’en-tête ouvrent un menu natif avec « Masquer le module ».
+- Ce choix masque immédiatement le panneau et enregistre sa désactivation,
+  y compris pour les combats suivants. Pour le retrouver, réactiver Capture
+  d’âme dans la barre des modules ou dans les options du mod.
+- La position du panneau et les autres réglages sont conservés.
+- Compilation et vérifications hors jeu ; interaction à confirmer en jeu.
+  Au prochain lancement, vérifier « Mod (r52) ». Le chargement automatique
+  sélectionne R52 s’il est activé ; sinon utiliser Lancer.cmd.
+
+R51 — ICÔNE DU PANNEAU PIERRE D’ÂME
+- Ajout d’une icône native à gauche du titre Pierre d’âme, identique à celle
+  du bouton Capture d’âme dans la barre des modules. La taille, la couleur et
+  le placement sont gérés par l’en-tête Dofus, avec son survol et sa poignée.
+- Inclut les optimisations TP et les diagnostics conjoint de R50.
+  L’absence du bouton conjoint reste à diagnostiquer avec le nouveau journal.
+- Compilation et vérifications hors jeu ; rendu à confirmer par l’utilisateur.
+  Au prochain lancement, vérifier « Mod (r51) ». Le chargement automatique
+  sélectionne R51 s’il est activé ; sinon utiliser Lancer.cmd.
+
+HISTORIQUE
+
+R50 — TEMPS DE CALCUL DU TP ET DIAGNOSTIC DU CONJOINT
+- La recherche du trajet avance maintenant sur les images du jeu, avec un
+  budget de 2 ms par tranche, au lieu d'attendre 200 ms entre les tranches.
+- Les chemins déjà atteints avec un meilleur coût ne sont plus réévalués.
+  Les critères natifs, les obstacles et le départ le moins coûteux à égalité
+  de distance restent pris en compte. Aucun voyage n'est lancé sans clic.
+- Le journal indique le temps de recherche, les tranches et les cartes visitées.
+- L'absence du bouton conjoint n'est PAS déclarée corrigée : cette révision
+  ajoute les raisons précises de détection dans module.log, sans noms ni ID
+  de personnage. Ouvrir le groupe puis le menu du conjoint permet le diagnostic.
+- L'infobulle du bouton conjoint utilise désormais l'infobulle native Dofus
+  pour afficher sa distance lorsque le bouton est présent.
+- Inclut R49 : bouton Capture d'âme à la taille des voisins, à gauche du Menu,
+  et infobulle native au survol.
+- Compilation et tests hors jeu ; délai et affichage réels à confirmer.
+  Au prochain lancement par l'utilisateur, vérifier « Mod (r50) ».
+  Le chargement automatique sélectionne R50 s'il est activé.
+
+HISTORIQUE
+
+R49 — BOUTON CAPTURE D’ÂME DANS LA BARRE DES MODULES
+- Même taille que le bouton de carte voisin, au lieu du plus petit format.
+  Le bouton ne peut plus être rétréci par une barre pleine.
+- Placé immédiatement à gauche du bouton Menu, sans déplacer les autres
+  boutons entre eux. Cette position est maintenue lors des rafraîchissements.
+- Infobulle native de Dofus au survol : « Capture d’âme — Afficher ou masquer
+  le panneau dans les combats capturables. » Même comportement de survol
+  et même placement que les autres boutons de cette barre.
+- L’état reste synchronisé avec l’option Capture d’âme du mod.
+- Compilation et tests hors jeu. Rendu final à confirmer en jeu.
+  Au prochain lancement par l’utilisateur, le chargement automatique choisit
+  R49 s’il est activé ; sinon utiliser Lancer.cmd. Vérifier « Mod (r49) ».
+
+HISTORIQUE
+
+R48 — BOUTON DU CONJOINT DANS LE GROUPE
+- Bouton de téléportation directement visible sur la case du conjoint,
+  dans le coin inférieur gauche. Composant natif, même style secondaire
+  et mêmes dimensions que les boutons du groupe (formats petit et grand).
+- Un cœur et un contour rose identifient le conjoint. Les trois boutons,
+  la couronne et la barre de vie de Dofus restent à leur place.
+- Au survol : « Se téléporter au conjoint — N cases ». Distance rafraîchie
+  d'après la dernière position connue, hors détours. Le clic droit reste
+  également disponible avec sa distance.
+- Bouton grisé en combat et hors ligne. Un clic utilise l'action native
+  de Dofus : ses restrictions de portée et d'accès restent appliquées.
+- Reconnaissance par identifiant, uniquement pour un membre effectif du
+  groupe normal. Retrait lors d'un changement de groupe/personnage.
+- R48 compilée et vérifiée hors jeu. Le rendu Unity et la téléportation
+  effective restent à confirmer en jeu par l'utilisateur.
+- Au prochain lancement de Dofus par l'utilisateur, le chargement auto
+  sélectionne R48 s'il est activé. Sinon utiliser Lancer.cmd et vérifier
+  « Mod (r48) ». Les préférences existantes sont conservées.
+
+HISTORIQUE
+
+R47 — DISTANCE DU CONJOINT
+- Clic droit sur votre conjoint dans le groupe : l'entrée indique désormais
+  « Se téléporter au conjoint — 12 cases », par exemple.
+- Distance sur la grille de la carte du monde : somme des écarts horizontaux
+  et verticaux, d'après la dernière position connue du conjoint. Elle est
+  recalculée à chaque ouverture du menu ; les détours ne sont pas comptés.
+- « Hors ligne », « distance inconnue » ou « autre carte du monde » remplace
+  le nombre lorsque nécessaire. Les coordonnées de mondes différents ne
+  sont jamais comparées comme si elles appartenaient à la même carte.
+- Cette indication ne détermine pas si la téléportation est autorisée.
+  Le clic utilise toujours l'action native de Dofus et ses restrictions.
+- R47 compilée et contrôlée hors jeu ; affichage réel à confirmer en jeu.
+  Au prochain redémarrage de Dofus effectué par l'utilisateur, le chargement
+  automatique sélectionne la dernière révision compatible s'il est activé.
+  Sinon utiliser Lancer.cmd. Vérifier « Mod (r47) ».
+
+HISTORIQUE
+
+R46 — TÉLÉPORTATION AU CONJOINT DEPUIS LE GROUPE
+- Clic droit sur votre conjoint dans la liste du groupe :
+  « Se téléporter au conjoint », avec l'icône native de téléportation.
+- Reconnaissance par identifiant de personnage, sans nom codé en dur.
+  L'entrée concerne uniquement le conjoint effectivement membre du groupe.
+  Elle est grisée hors ligne et n'est pas ajoutée pendant les combats.
+- Utilise l'action native de Dofus « rejoindre son conjoint ». Le jeu
+  conserve ses règles de portée et d'accès ; aucune destination forcée.
+- Le clic vérifie de nouveau le conjoint, le groupe et la session. Une
+  déconnexion ou un menu périmé ne provoque aucune téléportation.
+- Aucun trajet n'est lancé à l'ouverture du menu ou automatiquement.
+- R46 compilée et testée hors jeu. Le rendu et la téléportation réelle
+  restent à vérifier en jeu par l'utilisateur.
+- Au prochain redémarrage de Dofus effectué par l'utilisateur, le chargement
+  automatique sélectionne r46 s'il est activé. Sinon utiliser Lancer.cmd.
+  Vérifier « Mod (r46) ». Les préférences existantes sont conservées.
+
+HISTORIQUE
+
+CORRECTION R45 — LIENS TP
+- Corrige l'abandon du calcul sur les cartes avec beaucoup de sorties :
+  le graphe installé contient un carrefour de 296 sorties, supérieur à
+  l'ancienne limite de 128. Le calcul se répartit sur plusieurs mises à jour.
+- Compare les zaaps connus et la position actuelle même entre plusieurs
+  cartes du monde, uniquement via les passages et conditions du graphe natif.
+  Les coordonnées gardent leur monde d'origine : [7,8] à Srambad ne devient
+  jamais [7,8] en Amakna. Les accès de dimension ne sont pas inventés.
+- Un deuxième clic sur le même TP laisse le trajet en cours. Un autre lien
+  remplace la destination. Le chat local affiche la préparation et les échecs
+  au lieu de rester silencieux. Ces messages ne sont envoyés à aucun joueur.
+- Les erreurs de parcours donnent la collection et son nombre d'éléments
+  dans module.log, ainsi que les cartes de départ et d'arrivée résolues.
+- Le journal r44 confirme READY et un fonctionnement en jeu. R45 compilée
+  et contrôlée hors jeu ; son comportement réel reste à confirmer.
+- Pour charger r45 : fermer puis relancer soi-même Dofus. Si le chargement
+  automatique est activé, la dernière révision locale compatible est choisie.
+  Sinon utiliser Lancer.cmd ci-joint. Vérifier « Mod (r45) ».
+  Les préférences et le chargement automatique existants sont conservés.
+- Les transporteurs, bateaux et diligences qui exigent un dialogue de PNJ
+  restent à compléter ; seuls les passages gérés par le graphe sont comparés.
+
+HISTORIQUE (les consignes de dépannage ci-dessous concernent ces anciennes révisions)
+
+CORRECTION R44
+- Corrige une lecture mémoire incorrecte dans le nouveau bouton Capture d’âme
+  des modules d’affichage. Son binding est une structure de 152 octets ; r43
+  la lisait dans un emplacement de 8 octets, provoquant l’arrêt du jeu.
+- La lecture générale des champs utilise désormais l’API native qui renvoie
+  correctement les références et les structures. Le getter du bouton reçoit
+  ensuite les données de la structure, après vérification de son type.
+- Un contrôle de champs structurés Unity est exécuté avant les hooks, sur des
+  valeurs mathématiques privées. Le journal détaille la première mise à jour.
+- Les régressions reproduisent les deux erreurs de lecture/appel sur r43.
+  Les 36 suites hors jeu passent. Chargement réel et rendu r44 à confirmer.
+- Le chargement automatique reste désactivé. R42 et r43 sont retirées de la
+  sélection locale ; leurs DLL et les anciennes révisions sont conservées.
+- Relancer manuellement Dofus, puis Lancer.cmd, et vérifier READY / Mod (r44).
+  Aucun contrôle, chargement ou redémarrage du jeu par l’assistant.
+
+CORRECTION R43
+- Corrige l’arrêt de l’initialisation r42 : « Field unavailable: value ».
+  Les couleurs des liens TP sont transmises comme des valeurs natives, sans
+  l’allocation nullable que ce moteur transforme en simple Color.
+- Une couleur impossible à préparer revient à celle du thème, sans faire
+  échouer le chargement du mod. Le diagnostic apparaît dans module.log.
+- Le test reproduit la même erreur sur r42 et passe avec la correction.
+  Compilation propre et 36 tests hors jeu réussis ; chargement réel à confirmer.
+- Le chargement automatique a été désactivé pendant le dépannage, et la r42
+  locale retirée de la sélection par son manifeste renommé. Les fichiers du
+  jeu sont inchangés et correspondent toujours au client pris en charge.
+- Si la r42 a déjà été chargée, fermer et rouvrir manuellement Dofus, puis
+  utiliser Lancer.cmd et vérifier Mod (r43). Ne pas charger deux versions dans
+  le même processus. Réactiver le chargement automatique dans Mod après essai.
+- Les nouveautés r42 ci-dessous sont conservées. Les transports par dialogue
+  de PNJ restent à compléter ; cette correction ne modifie pas leurs règles.
+
+NOUVEAUTÉS R42
+- TP : lien cyan avec survol plus clair. Après l’arrivée confirmée au zaap,
+  le trajet automatique natif démarre sans la confirmation intermédiaire.
+- Le zaap est choisi selon les passages du graphe du jeu et ses conditions,
+  plus selon la distance entre coordonnées. Le départ à pied est aussi comparé.
+  Le score compte les changements de carte avec une pénalité de 1 pour le TP ;
+  il n’est pas une durée exacte. Les passages interactifs du graphe sont inclus.
+  Une destination inaccessible ou une donnée manquante annule le trajet.
+- Transporteurs frigostiens, bateaux et diligences à dialogue : prise en charge
+  complète encore à établir. Aucun dialogue de PNJ n’est choisi automatiquement.
+  Les raccourcis natifs présents dans le graphe sont seuls pris en compte.
+- En combat, l’avertissement de pierre absente ou de mauvais niveau devient
+  prioritaire sur l’état du sort Capture d’âme. L’équipement est revérifié sans
+  réafficher l’inventaire ni proposer un changement d’équipement en combat.
+- Un bouton Capture d’âme rejoint les modules d’affichage en haut à droite.
+  Son état est synchronisé avec l’option du menu Mod et sauvegardé.
+- Le panneau se place dans la couche native des modules, sous les fenêtres et
+  les infobulles. La description du sort se place de préférence au-dessus.
+  Sa case reprend la taille observée d’une case de sort de la barre d’actions.
+- Le panneau pierre d’âme reste masqué contre les monstres ordinaires, dont
+  les Pious classiques, pendant le placement et une fois le combat commencé.
+- La règle utilise maintenant la catégorie boss/archimonstre et la présence
+  d’une âme définie dans les données du jeu, en plus de l’interdiction native
+  et de l’autorisation de capture de la carte. Les âmes de quête automatiques
+  des monstres ordinaires n’activent pas l’aide à la capture.
+- Le clic droit sur un groupe ordinaire ne propose plus d’équiper une pierre.
+  L’éligibilité est revérifiée au clic pour les groupes capturables.
+- L’aide reste présente après la mort d’un boss/archimonstre éligible dans le
+  même combat. Les seuils des pierres et les autres fonctions sont conservés.
+- Compilation et 35 suites de tests hors client validées. Résultat en jeu à confirmer après
+  redémarrage manuel : vérifier Mod (r42), avec chargement automatique si activé,
+  sinon Lancer.cmd. Aucun chargement dans le client ouvert pendant la correction.
+- Les restrictions conditionnelles propres au serveur ne sont pas toutes
+  établies : ce filtre ne constitue pas une garantie de succès de capture.
+
+NOUVEAUTÉS R41
+- Glow limité aux modules d’affichage : mini-carte, chat, barres d’actions et
+  autres widgets déplaçables de l’écran de jeu. Les fenêtres de grande carte,
+  inventaire, sorts, menus et infobulles restent devant le contour.
+- Le contour est attaché à la couche native des widgets, sans modifier l’ordre
+  des fenêtres. Une fenêtre ouverte ensuite le recouvre immédiatement.
+- Même intensité et même case dans le menu clic droit ; elle reste ouverte
+  lorsqu’on active ou désactive le glow. Aucun réglage supplémentaire.
+- Compilation et tests hors client validés ; résultat visuel à confirmer en jeu.
+  Redémarrer manuellement pour charger Mod (r41), avec chargement automatique
+  si activé, sinon Lancer.cmd. Le client ouvert conserve sa version actuelle.
+
+NOUVEAUTÉS R40
+- La case « Glow derrière l’interface » laisse maintenant le menu clic droit
+  ouvert, comme les cases natives de Dofus. On peut la cocher et la décocher
+  plusieurs fois sans rouvrir le menu, en combat comme hors combat.
+- Le choix reste enregistré et synchronisé avec Mod. Le rendu du glow est conservé.
+- Tests hors client validés ; comportement réel à confirmer après chargement.
+  Redémarrer manuellement pour charger Mod (r40), avec chargement automatique
+  si activé, sinon Lancer.cmd. Aucun changement du client ouvert.
+
+NOUVEAUTÉS R39
+- Clic droit sur la carte : case « Glow derrière l’interface », juste sous
+  Animations, avec l’icône native en forme d’œil. Cocher pour activer, décocher
+  pour désactiver, en combat comme hors combat.
+- Même option enregistrée que « Monstres derrière l’interface » dans Mod.
+  Le changement prend effet au prochain rafraîchissement du mod, sans redémarrage.
+  Si l’option change ailleurs, un menu déjà ouvert se ferme pour éviter une case
+  périmée ; sa réouverture reprend le réglage actuel.
+- Intensité du glow r38 conservée. Compilation et tests hors client validés ;
+  présence et apparence du nouvel élément restent à confirmer dans Dofus.
+- Un redémarrage manuel est nécessaire pour charger cette nouvelle version.
+  Vérifier Mod (r39), avec chargement automatique si activé, sinon Lancer.cmd.
+
+NOUVEAUTÉS R38
+- Glow encore renforcé à la demande : halo élargi et bord doré opaque plus épais.
+  L'intérieur reste transparent et la même option active l'effet.
+- Largeur de flou augmentée de 50%, gain de contraste passé de 6 à 10.
+  La marge de capture passe de 10 à 14 pixels pour accueillir le halo.
+- Même nombre de textures et de passes de traitement qu'en r37. Tests hors jeu ;
+  l'intensité finale de r38 reste à confirmer dans le client.
+- Au prochain redémarrage, vérifier Mod (r38). Chargement automatique si activé,
+  sinon Lancer.cmd. Le module déjà chargé n'est pas remplacé dans le client ouvert.
+
+NOUVEAUTÉS R37
+- Glow renforcé : bord doré plus opaque et halo plus large pour mieux distinguer
+  le monstre derrière une interface opaque. L'intérieur reste transparent.
+- Largeur du halo adaptée à la taille affichée, avec une marge de capture accrue.
+  Aucun réglage supplémentaire ; la même option Glow active ce rendu.
+- Les relevés de r36 confirment un contour présent, mais très fin et peu opaque.
+  R37 ajoute un passage de contraste sur une texture de présentation privée.
+- Rendu limité à 8 captures et 256 pixels par axe, avec 4 textures et 5 étapes
+  de traitement GPU par capture. Les diagnostics restent limités à 3 relevés.
+- Les tests hors client vérifient le contour renforcé et l'intérieur transparent.
+  L'apparence finale de r37 dans le jeu reste à confirmer.
+- Redémarrer manuellement pour charger Mod (r37), automatiquement si l'option de
+  chargement est activée, sinon avec Lancer.cmd. La r36 déjà chargée est intacte.
+
+NOUVEAUTÉS R36
+- Le glow utilise désormais la transparence réellement capturée du monstre pour
+  créer son masque, via le shader natif d'interface ColorEffect. L'ancien masque
+  de contour du monde produisait un rectangle plein, puis un résultat vide.
+- Paramètres explicites par dessin pour le masque, le flou et le contour creux.
+  Pas de modification des matériaux du monstre ni de la caméra du jeu.
+- Le rendu reste limité à 8 captures, 256 pixels maximum par axe et les mêmes
+  4 étapes GPU. Les diagnostics restent limités à 3 échantillons par session.
+- L'option reste dans Mod, désactivée par défaut. Activer le glow et recouvrir un
+  monstre visible par une interface opaque. La fenêtre du jeu garde ses clics.
+- Les tests GPU hors client produisent un contour avec intérieur transparent dans
+  les deux variantes de couleur, avec une source opaque ou à 70% d'opacité.
+  L'intégration visuelle réelle dans le client doit encore être confirmée.
+- Redémarrer manuellement pour charger Mod (r36). La r35 déjà chargée reste intacte.
+  Le sélecteur sombre r35 et les corrections des TP r34 sont inclus.
+
+NOUVEAUTÉS R35
+- Le sélecteur Normal / Créatures / Miniatures lit maintenant la couleur sombre
+  à la racine du thème Dofus. Avant, la recherche locale échouait et conservait
+  le fond clair natif, même avec la r33 chargée.
+- Fond sombre standard tant que le thème n'est pas résolu ; suivi du thème
+  actuel et réapplication si Dofus réinitialise le style du bouton.
+- La flèche, le texte, les choix et les autres boutons gardent leur comportement.
+- Le journal indique la portée du thème et la couleur appliquée pour le vérifier.
+- Corrections r34 des TP incluses. Il faut une nouvelle session du client pour
+  charger r35 ; aucun remplacement du module déjà chargé n'a été effectué.
+- Tests hors jeu validés. L'apparence réelle sous Unity reste à confirmer.
+
+NOUVEAUTÉS R34 — LIENS TP DU CHAT
+Les coordonnées partagées depuis un groupe de monstres reçoivent aussi
+un lien TP, avec leurs coordonnées et leur monde d'origine. Le lien
+Dofus d'origine et son infobulle sont conservés. Les coordonnées ordinaires
+restent prises en charge, y compris plusieurs positions dans un message.
+Le survol du lien ajouté indique « TP vers le zaap le plus proche, puis
+trajet vers [x,y] », ou son indisponibilité pendant un combat.
+Le clic lit maintenant la vraie liste des zaaps connus. L'ancienne lecture
+portait sur une autre liste de cartes, ce qui pouvait annuler le clic avec
+« no known direct zaap in destination world » dans module.log.
+Les coûts et conditions natifs restent vérifiés. Le trajet est demandé
+après l'arrivée confirmée au zaap, une seule fois, avec la confirmation
+normale du jeu. Aucun déplacement n'est déclenché au simple survol.
+Les protections contre les TP répétés et les anciennes destinations sont
+conservées. Le journal indique la destination de chaque clic explicite.
+Compilation et tests hors jeu ; trajet réel et infobulle à confirmer en jeu.
+Au prochain redémarrage manuel, vérifier « Mod (r34) » : chargement automatique
+si activé, sinon Lancer.cmd. Le client déjà ouvert n'a pas été modifié.
+
+CORRECTIONS CONSERVÉES DE R33 — GLOW ET FOND DU SÉLECTEUR
+Le journal r32 confirme une capture de monstre non vide, mais un masque
+entièrement blanc, puis un résultat final transparent. R33 utilise pour
+les modes des shaders les propriétés numériques historiques du jeu
+(SetFloat / SetInt), au lieu du stockage SetInteger distinct.
+Le banc de rendu reproduit un masque plein sans contour avec un mode
+inadapté, et un contour extérieur visible avec le mode attendu.
+Le sélecteur Normal / Créatures / Miniatures reprend la couleur sombre
+native de l'état ouvert même lorsqu'il est fermé ; l'ombre intérieure
+claire est désactivée sur sa face. Le texte et la flèche restent opaques.
+La couleur suit le thème ; les menus et les boutons voisins sont conservés.
+Les corrections précédentes, dont les matrices URP de r32, sont conservées.
+Compilation et tests hors jeu ; résultat visuel dans Unity encore à confirmer.
+La DLL r32 déjà chargée reste en mémoire. Au prochain redémarrage manuel,
+le chargement automatique activé choisira r33 ; sinon lancer Lancer.cmd.
+Vérifier « Mod (r33) », puis couvrir un monstre avec la mini-carte environ
+25 secondes si le glow ne paraît pas : module.log contient trois relevés
+limités des textures privées pour localiser un éventuel problème restant.
+Aucun redémarrage ou chargement dans le client ouvert n'a été exécuté.
+
+FONCTIONS CONSERVÉES DE R31 — CASE DU SORT CAPTURE D’ÂME
+Le panneau de combat utilise une vraie case native de sort en taille moyenne
+(80 × 80 unités UI), avec son image adaptée, sans réduction par le texte voisin.
+Le texte rouge/vert se répartit dans la place restante du panneau compact.
+L’icône d’un sort présent dans la liste du personnage peut s’afficher avant
+son premier lancement, même si son objet natif utilise encore le lanceur par
+défaut. Un sort appartenant explicitement à un autre personnage reste exclu.
+L’affichage est séparé de l’autorisation de lancer : hors tour, en relance ou
+pendant une indisponibilité de l’action, l’icône reste visible mais désactivée.
+Le clic vérifie à nouveau le personnage contrôlé, le combat, le sort affiché
+et les conditions natives. Aucun sort n’est lancé automatiquement.
+Compilation et 33 suites de tests hors jeu réussies ; affichage et lancement
+réels à confirmer après votre redémarrage manuel, avec « Mod (r31) ».
+Le client ouvert n’a pas été manipulé. Le correctif des pierres de r30 est conservé.
+
+FONCTIONS CONSERVÉES DE R30 — PIERRES EN SAC BLOQUÉES À L’ÉQUIPEMENT
+Correction du faux verrou qui rendait indisponibles des pierres présentes
+(exemple : requise 50, monstre niveau 50, en sac 58). L’indicateur natif utilisé
+servait à une notification d’équipement et pouvait rester actif après un
+mouvement de consommable. Le mod ne le traite plus comme une demande en cours.
+Le bouton et le menu du groupe suivent désormais uniquement la demande
+explicite du mod : attente de confirmation dans le vrai emplacement de
+consommable, avec prise en charge d’un nouvel identifiant après séparation
+d’une pile. Sans confirmation, un nouveau clic est possible après trois
+secondes ; aucun nouvel essai automatique. Les conditions natives de la
+pierre, la capacité exacte, les contrôles de combat et d’inventaire restent
+vérifiés. Les refus de conditions sont distingués d’une demande en cours.
+Scénario reproduit dans le banc d’essai hors jeu ; confirmation réelle en jeu
+encore nécessaire. Au prochain redémarrage manuel, vérifier « Mod (r30) ».
+Le client ouvert n’a pas été manipulé. Les autres fonctions de r29 sont conservées.
+
+FONCTIONS CONSERVÉES DE R29 — PRÉSENTATION DU SÉLECTEUR D'AFFICHAGE
+Flèche native agrandie de 10 à 16 unités UI, sans rétrécissement flex.
+La marge intérieure droite est désormais placée sur le parent commun
+du texte et de la flèche : 10 unités à droite, 8 à gauche.
+L'opacité du bouton fermé passe à 85 % pour atténuer son aspect trop clair.
+La liste déroulante garde son contraste natif. Les choix et leur comportement
+sont identiques ; la cellule garde sa largeur de 128 unités UI.
+Compilation et contrôles hors jeu uniquement ; aspect final à confirmer
+avec votre thème et votre échelle d'interface. Client ouvert non manipulé.
+Au prochain redémarrage manuel, vérifier « Mod (r29) ».
+Le diagnostic du glow de r28 est conservé : le glow reste à diagnostiquer.
+
+FONCTIONS CONSERVÉES DE R28 — DIAGNOSTIC DU GLOW INVISIBLE
+Cette révision ne prétend pas corriger le glow : les anciens compteurs
+confirmaient uniquement l'ajout de textures et d'éléments UI, pas leurs pixels.
+Lors des trois premières captures de monstre recouvert, à dix secondes
+minimum d'intervalle, le module mesure uniquement ses propres textures :
+source, masque, flou et sortie. Le journal reçoit des nombres de pixels et
+leurs maxima de rouge/alpha ; aucune image ni capture d'écran n'est sauvée.
+Un échec de lecture diagnostique est isolé du rendu normal. Ces lectures
+ponctuelles peuvent causer une brève pause GPU ; elles s'arrêtent après
+les trois tentatives, même après un changement de carte ou un on/off.
+Le journal indique aussi la présence, l'ordre, l'opacité, la taille résolue
+et le découpage des images de glow. Les paramètres restent identiques.
+Compilation et tests hors jeu uniquement. Aucun chargement du client ouvert.
+Pour le prochain essai manuel : vérifier « Mod (r28) », activer le glow,
+puis laisser un monstre sous une fenêtre pendant environ 25 secondes.
+Les lignes [DEBUG:glow-pixels] et [DEBUG:glow] de module.log permettront
+de savoir où le contour disparaît. Le correctif chat TP de r27 est conservé.
+
+FONCTIONS CONSERVÉES DE R27 — CORRECTION DES TP RÉPÉTÉS DANS LE CHAT
+Les rafraîchissements du chat conservent les liens TP existants au lieu de
+les redécorer. Les liens reconstruits par Dofus sont reconnus grâce au
+marqueur du module, même si leurs objets en mémoire ont changé. Un ancien
+texte contenant de nombreux liens TP du module est nettoyé lors de son
+redécodage, puis reçoit un seul TP par lien de coordonnées éligible.
+Le mot TP écrit normalement et les liens natifs restent conservés.
+Le recyclage des lignes change correctement la destination ; les anciens
+liens retirés restent inactifs. Aucun déplacement n'est déclenché par le rendu.
+Le TP direct aux zaaps et le trajet de r26 sont conservés.
+Le défaut a été reproduit dans le banc d'essai corrigé, puis testé sur 100
+rafraîchissements inchangés, 100 reconstructions et une ligne avec 50 anciens
+liens TP. Cela ne constitue pas une validation du rendu dans le client ouvert.
+Après votre redémarrage manuel, vérifiez « Mod (r28) ».
+
+FONCTIONS CONSERVÉES DE R26 — TP DIRECT AUX ZAAPS
+Hors Havre-Sac, le bouton TP du chat utilise désormais la téléportation
+directe des zaaps de la carte. Il choisit le zaap connu le plus proche des
+coordonnées dans le même monde, demande un tarif frais au jeu, puis utilise
+l'action native de téléportation avec ce tarif. Il attend l'arrivée effective
+avant de demander le trajet automatique vers les coordonnées, avec la
+confirmation habituelle du jeu. Aucun passage imposé par le Havre-Sac.
+Si vous êtes déjà dans le Havre-Sac, son zaap reste utilisé normalement.
+Si vous êtes déjà sur la carte du zaap choisi, seul le trajet est demandé.
+Tarif absent/non positif, fonds insuffisants, changement de carte/contexte,
+combat ou attente dépassée : arrêt de la séquence, sans départ de secours.
+Les restrictions du jeu restent applicables ; les diagnostics sont dans
+module.log (CHAT_TRAVEL). Le zaap le plus proche est choisi géométriquement,
+ce qui ne garantit pas le chemin le plus court sur le réseau des cartes.
+Tests et compilation hors du jeu uniquement. Après un redémarrage manuel,
+vérifiez « Mod (r28) ». Le fonctionnement réseau reste à confirmer en jeu.
+
+FONCTIONS CONSERVÉES DE R25 — PIERRE LISIBLE ET CONTRASTE DU PANNEAU
+La pierre équipée utilise une case native de 80 × 80 pixels d'interface,
+avec son image adaptée à la case, au lieu du cadre de 32 pixels. La taille interne
+du composant Dofus est réglée elle aussi. Le nom de l'objet revient à la ligne
+dans l'espace disponible et ne peut plus comprimer l'icône. La largeur du
+panneau reste de 244 pixels ; le survol conserve l'infobulle native.
+Les textes Requise/En sac et les autres labels d'information ont maintenant
+une couleur gris clair explicite et une police de 14 pixels. Les statuts
+conservent leur rouge/vert. Le déplacement natif, l'aimantation, les dispositions
+et le filtre des combats capturables de r24 sont conservés.
+Compilation et tests isolés uniquement. Le rendu dans votre thème reste à
+confirmer en jeu après un redémarrage manuel : vérifiez « Mod (r28) ».
+
+FONCTIONS CONSERVÉES DE R24 — MASQUER LE PANNEAU SI LA CAPTURE EST INTERDITE
+Le panneau vérifie maintenant l'autorisation de capture de la carte courante
+et les données des monstres ennemis ordinaires. Il reste entièrement masqué
+si la carte l'interdit, si aucun ennemi n'est capturable ou si les données
+nécessaires à cette vérification sont inconnues. Invocations, compagnons et
+alliés ne rendent pas un combat capturable. Le PvP reste masqué.
+Ce filtre s'applique au placement et au combat lancé, même en chargeant le mod
+en cours de combat. Si un ennemi capturable meurt, le rappel de son combat est
+conservé ; cette information est effacée au changement de combat, de carte ou
+de participant. Un ancien bouton Équiper ne passe pas outre le nouveau filtre.
+Le mod utilise les indicateurs du client, sans envoyer de sort pour tester.
+Cela ne prouve pas que toutes les exceptions décidées par le serveur soient
+connues : un échec critique pour une autre règle reste possible. Le vert
+indique la présence de l'effet de capture, pas une garantie de réussite.
+Compilation et tests hors jeu uniquement ; validation réelle à faire vous-même.
+Redémarrez Dofus pour charger r28 et vérifiez « Mod (r28) ».
+
+FONCTIONS CONSERVÉES DE R23 — COORDONNÉES, PIERRES ET CAPTURE
+Un lien TP est ajouté après les coordonnées des messages du chat nouvellement
+liés à l'affichage (nouveau message ou réaffichage naturel d'une ligne).
+Le clic normal sur les coordonnées conserve son action Dofus. Le clic TP :
+1. vérifie que le trajet automatique natif et la destination sont disponibles ;
+2. utilise le TP direct hors Havre-Sac, ou son zaap si vous y êtes déjà ;
+3. attend le tarif direct ou la liste du zaap et retient une destination connue du même monde,
+   payable avec vos kamas, le plus proche géométriquement des coordonnées ;
+4. demande la téléportation normale et attend la carte d'arrivée ;
+5. demande le trajet automatique Dofus jusqu'aux coordonnées finales.
+Les confirmations, restrictions, frais en kamas et commande d'arrêt de Dofus
+s'appliquent normalement. Le classement utilise la distance des coordonnées,
+pas la longueur complète du chemin : obstacles et accès spéciaux peuvent
+faire différer le trajet le plus court. Les coordonnées textuelles brutes
+utilisent le monde 1 comme le parseur natif ; un lien natif conserve son monde.
+Un deuxième clic TP annule une séquence encore en attente. Entrer en combat,
+changer de session ou dépasser 30 secondes dans une étape annule la suite.
+Une requête déjà envoyée au jeu n'est pas annulée rétroactivement. Après le
+démarrage de la marche, utilisez l'arrêt de trajet habituel de Dofus.
+Si une étape est refusée ou expire, aucune requête n'est répétée en boucle ;
+le détail figure dans module.log sous CHAT_TRAVEL. Aucun trajet n'est demandé
+à la réception, à l'affichage ou au survol d'un message.
+
+Hors combat, le clic droit sur un groupe de monstres ajoute la pierre d'âme
+adaptée, avec une icône native. La ligne indique déjà équipée, manquante,
+conditions non remplies ou permet d'équiper. Niveau réel, variantes liées à
+la taille du groupe et inventaire sont relus au clic. Les groupes spéciaux
+sans données compatibles restent indisponibles ; aucune pierre arbitraire
+n'est choisie. Le type exact requis est conservé (50 / 100 / 150 / 190 / 1000).
+
+En combat PvM, le panneau de capture affiche l'icône native du sort appris
+Capture d'âme, avec son infobulle. Un clic lance le sort sur le personnage
+local si les conditions natives le permettent (tour, PA, relance, états).
+Il est désactivé si indisponible ou si un autre combattant est contrôlé.
+Le texte rouge/vert continue de refléter l'effet réellement présent : envoyer
+le sort ne force pas l'affichage du statut actif. L'équipement est affiché
+seulement pendant le placement, comme avant.
+
+Validation r28 : compilation complète et tests isolés, sans accès au client
+ouvert. Le parcours réel, les nouveaux menus/icônes et leurs infobulles
+restent à confirmer en jeu. Les limites de rendu/animations ci-dessous restent
+applicables. Redémarrez vous-même pour charger r28 ; ne superposez pas les DLL.
+
+
+PANNEAU PIERRE D'ÂME COMPACT ET NATIF
+Le panneau emploie maintenant une MagneticDragWindow de Dofus : fond natif,
+bandeau de titre de 24 pixels, éclaircissement au survol, curseur et déplacement
+natifs, aimantation aux widgets voisins et respect du verrouillage d'interface.
+Sa largeur est de 244 pixels d'interface pendant le placement, puis 220 quand
+seul l'état de capture est affiché. La hauteur s'adapte au contenu. L'icône
+de pierre utilise le format natif 80 pixels et conserve son infobulle native.
+Les textes sont raccourcis, les confirmations en double retirées et le bouton
+Équiper est masqué quand la bonne pierre est déjà équipée. La position finale
+après aimantation est enregistrée dans la disposition active, y compris lors
+du déplacement avec un groupe de widgets. Le panneau reste absent en PvP.
+
+GLOW : DEUX ERREURS DE DÉCOUPE CORRIGÉES
+Le journal r21 confirme que les monstres atteignent le rendu, mais signale
+aussi une erreur de rectangle. Les grandes surfaces de panneau passent
+désormais avant les petites décorations pour éviter d'épuiser la limite de
+découpes. Les rectangles devenus trop fins après conversion sont ignorés sans
+effacer tous les autres contours. Ces deux défauts sont reproduits hors jeu.
+Les véritables programmes de shader ont aussi passé un test graphique isolé
+avec leurs états de rendu et textures RGBA8 : le contour obtenu est creux et
+visible. Ce test ne prouve pas le rendu final dans Unity ; la capture du monstre,
+la composition et l'affichage réel restent à confirmer par votre essai.
+Le client ouvert n'a été ni consulté ni manipulé pendant ces corrections.
+
+COMBOBOX PRÉSENTE DÈS LE CHARGEMENT DU MOD
+La r21 retrouve la barre de carte déjà ouverte dès que les services et
+son panneau sont prêts. Normal / Créatures / Miniatures apparaît directement
+sous forme de combobox, sans clic préalable sur la case native.
+La recherche est réessayée si la barre arrive plus tard, et reprend si elle
+est recréée. Elle ne change pas le mode choisi et n’ouvre pas la liste seule.
+Le journal indique DISPLAY_SHORTCUT_DISCOVERED, puis DISPLAY_SHORTCUT_READY.
+Le journal r21 de votre essai confirme la découverte et l'installation.
+
+CORRECTION R20 DU FILTRE DE TRANSPARENCE CONSERVÉE
+Le journal r19 détectait trois monstres, mais aucun n’atteignait le rendu.
+Le dernier rejet enregistré était part-alpha. Le mod exigeait au moins 99 %
+d’opacité, alors que le jeu
+peut afficher un monstre à 70 %. Ce filtre est corrigé pour accepter les
+monstres visibles partiellement transparents, au-dessus du seuil de 2 %
+déjà utilisé par le masque du contour. Les règles natives d’invisibilité,
+les morts, objets désactivés et opacités invalides restent exclus.
+Les valeurs d’opacité ne sont jamais modifiées sur les objets du jeu.
+Le blocage du filtre est reproduit et corrigé hors jeu. Le rendu final après
+ce filtre est traité par les corrections r22 ci-dessus, sans validation visuelle
+dans votre client pendant le développement.
+
+CORRECTIONS R19 CONSERVÉES
+- Icônes natives à gauche des menus clic droit : œil pour Affichage,
+  lecture pour Animations. Les choix et commandes restent identiques.
+- Sélecteur du haut : libellé complet dans une case de 128 pixels d’interface,
+  avec retour à la ligne des groupes de boutons voisins si nécessaire.
+- Pierre d’âme : lecture de l’emplacement consommable, avec son icône,
+  son nom et son infobulle après confirmation de l’équipement par le jeu.
+- Combat lancé : seul l’état de capture reste affiché dans le panneau.
+- Cavalier : correction des deux règles du mode créature qui le masquaient
+  encore malgré sa bonne apparence en Miniatures.
+- Glow : diagnostic conservé et enrichi avec la valeur rejetée (rejectedAlpha).
+
+Le client ouvert n’a pas été consulté ni manipulé. Redémarrez-le vous-même
+pour charger cette révision, puis vérifiez que le menu indique Mod (r28).
+
+CONTOUR DES MONSTRES DERRIÈRE L’INTERFACE
+Options > Mod (r28) > Général > Monstres derrière l’interface.
+L’option est désactivée par défaut.
+Cette fonction expérimentale vise à afficher un contour doré des monstres
+derrière les panneaux du jeu. L’intérieur du contour reste transparent et
+les clics continuent d’agir sur l’interface normale.
+Le contour suit l’apparence actuellement affichée : Normal, Créatures ou
+Miniatures, en combat et hors combat pour les monstres déjà rendus par le jeu.
+Il n’affiche pas les joueurs, les monstres invisibles, les combattants morts,
+les objets presque entièrement transparents ou les données non reconnues.
+Les invocations reconnues comme monstres sont admissibles avec les mêmes
+vérifications de visibilité.
+
+Le rendu est limité à huit monstres masqués simultanément, avec des textures
+réutilisées de 256 pixels maximum par côté et environ 30 mises à jour/seconde.
+Le repérage des panneaux est rafraîchi toutes les 100 ms. Les zones peintes
+de l’interface sont prises en compte, sans considérer les conteneurs vides
+comme des panneaux. Les bords arrondis et trous transparents d’une image de
+fond sont approximés par ses limites rectangulaires : un peu de contour peut
+donc apparaître dans ces marges. Les interfaces dans un autre panneau Unity
+ne sont pas prises en charge. Aucun gain de FPS n’est revendiqué pour ce glow.
+
+Décocher la case enlève les contours et libère les ressources du mod. Si le
+moteur refuse une étape, le glow est masqué ; les autres fonctions continuent.
+Le détail est dans module.log (GLOW_UNAVAILABLE ou GLOW_DISABLED_ERROR).
+Le journal conserve les lignes [DEBUG:glow] : étapes entités/interface/projection/
+capture, nombres de monstres, textures et contours soumis. Une texture créée
+ou un contour soumis ne prouve pas qu’il est effectivement visible à l’écran.
+Ces lignes sont limitées à une toutes les dix secondes, seulement si l’état
+change. Elles n’enregistrent pas les noms, identifiants ou positions du monde.
+Pour diagnostiquer l’absence de glow : activez l’option, gardez un monstre
+derrière un panneau au moins dix secondes, puis transmettez module.log.
+Après une erreur de rendu, décocher puis recocher permet une nouvelle tentative.
+La compilation et les tests hors jeu ne valident pas l’alignement, les couleurs
+ou la performance dans une vraie scène : ces points restent à tester par vous.
+
+
+CORRECTIONS D’AFFICHAGE
+Les changements Normal / Créatures / Miniatures renouvellent l’apparence
+mise en cache pour éviter de conserver une boule créature en Miniatures.
+Le cavalier d’une monture utilise son propre sous-modèle en Miniatures.
+La r19 retire uniquement les règles créature qui le masquaient : les règles
+d’invisibilité normales restent appliquées. Sa taille attachée reste celle
+du modèle ; une réduction identique entre monture et cavalier n’est pas garantie.
+Le sélecteur du haut affiche le nom complet du mode. La case ne rétrécit plus
+en carré ; les groupes voisins peuvent revenir à la ligne. La liste déroulante
+reste adaptée à la largeur disponible dans l’interface.
+Les modes en combat et hors combat restent indépendants. Les corrections
+sont vérifiées hors jeu ; le rendu réel reste à confirmer par l’utilisateur.
+
+PIERRE D’ÂME ET DISPOSITIONS D’INTERFACE
+La position du panneau utilise désormais les dispositions natives de Dofus.
+Déplacez-le par son titre, puis utilisez les commandes habituelles du jeu pour
+enregistrer ou appliquer votre disposition. L’entrée est conservée même quand
+le panneau est masqué. Si vous avez une disposition de combat distincte,
+la position appartient à celle-ci : enregistrez-la pendant qu’elle est active.
+Enregistrer la disposition normale hors combat ne copie pas les positions de
+la disposition de combat distincte, conformément au fonctionnement du jeu.
+Réinitialiser les positions natives remet sa position
+par défaut. Une disposition sans position enregistrée utilise aussi ce défaut.
+La position globale des anciennes versions du mod n’est plus utilisée.
+Un changement de disposition pendant un déplacement annule ce déplacement,
+pour ne pas écraser la position de la disposition que vous venez d’appliquer.
+Le panneau reste entièrement masqué en PvP ; les invocations ne suffisent pas
+à faire identifier un combat comme PvM.
+
+PIERRE ÉQUIPÉE : LECTURE ACTUALISÉE ET INFOBULLE
+Le panneau relit l’objet dans l’emplacement consommable de l’inventaire principal.
+Après un changement d'équipement confirmé par le jeu, il actualise son nom,
+son icône et l'indication de tranche, y compris dans le même combat.
+Le survol de l'icône utilise l'infobulle d'objet native de Dofus.
+L’arme équipée dans l’autre emplacement n’est plus utilisée par ce panneau.
+L’icône sert au survol ; le bouton Équiper reste disponible en complément
+de la tentative automatique optionnelle pendant le placement (R58).
+Une fois le combat lancé, l’objet, le stock et le bouton Équiper disparaissent.
+Seul l’état de capture reste affiché ; les lectures d’inventaire sont arrêtées.
+L’indication de capture rouge/verte reste indépendante de la présence d’une pierre.
+Si la lecture est indisponible, le panneau affiche une attente et retire
+l'ancienne icône au lieu d'affirmer qu'aucune pierre n'est équipée.
+Le rendu et le survol sont à confirmer dans le jeu par l'utilisateur.
+
+CAPTURE D’ÂME : INDICATEUR PENDANT LE COMBAT
+Le panneau « Pierre d’âme » reste visible après le placement en PvM.
+Il reste masqué en PvP, pendant le placement comme pendant le combat.
+Un type de combat inconnu ne déclenche pas le panneau.
+- Rouge : « Capture d’âme absente ».
+- Vert : « Capture d’âme active ».
+- Gris : état indisponible, sans présumer que l’effet est présent ou absent.
+
+Le jeu applique l’état Chercheur d’âmes au personnage, pas au monstre.
+Le panneau vérifie cet état sur votre personnage. Cela inclut son application
+par la capture collective d’un archimonstre à un allié éligible. Le simple fait
+qu’un autre joueur possède cet état ne suffit pas à afficher du vert chez vous.
+L’indication suit l’effet actuel ; elle n’est pas mémorisée après un lancer.
+La disparition de l’effet, notamment par expiration ou retrait, repasse en rouge.
+Le vert confirme l’effet, sans garantir à lui seul une capture réussie.
+
+Pendant le placement, le panneau conserve le choix de pierre, le stock et le
+bouton Équiper. En combat, ce bouton disparaît et aucun équipement n’est envoyé.
+Le panneau reste déplaçable, conserve sa position et disparaît à la sortie du
+combat. La même option « Alerte pierre d’âme » active les deux affichages.
+
+ALERTE PIERRE D’ÂME PENDANT LE PLACEMENT
+Options > Mod (r28) > Général > Alerte pierre d’âme (activée par défaut).
+Le panneau « Pierre d’âme » apparaît pendant le placement lorsque vous participez
+à un combat PvM autorisé par les indicateurs de capture connus. Déplacez-le par son titre ; sa position suit la disposition
+native et est replacée dans l’écran si nécessaire sans écraser l’enregistrement.
+Après le placement, il suit l’effet de capture.
+Il disparaît à la sortie du combat.
+
+Il affiche la tranche minimale du monstre ennemi de plus haut niveau, le nombre
+de pierres de cette tranche dans le sac et la pierre actuellement équipée.
+Rouge : aucune pierre standard équipée ou tranche différente. Vert : bonne tranche.
+Le nom et l’icône correspondent à l’objet réellement porté.
+« Équiper » demande le changement par l’action normale d’équipement du jeu.
+Depuis R58, une option activée par défaut tente aussi cet équipement pendant
+le placement capturable. La confirmation vient de l’inventaire,
+pas du simple envoi de la demande. Le mod ne restaure pas le consommable précédent ensuite.
+
+Tranches : Petite 50 / Moyenne 100 / Grande 150 / Énorme 190 / Gigantesque 1000.
+Exemple : niveau maximal 51 → Moyenne 100, même si une Grande 150 est disponible.
+Le calcul utilise le maximum, pas la somme des niveaux. Invocations, compagnons
+et alliés sont exclus. Les pierres pleines et les pierres de quête sont exclues.
+Ce choix exact convient notamment à la capture collective d’archimonstres, où
+les participants autres que le lanceur doivent avoir la bonne tranche. Le lanceur
+du sort peut employer une pierre plus puissante, mais ce panneau reste strict.
+
+L’indication de capacité ne garantit pas la capture : les restrictions de carte,
+le sort, les états du combat et les règles particulières restent ceux du jeu.
+Les groupes inconnus, les données incomplètes, les captures spéciales ou
+les monstres au-delà des tranches standards ne proposent pas d’équipement.
+Le PvP masque entièrement le panneau, même si un effet de capture est présent.
+Une demande refusée ou non confirmée ne sera jamais répétée automatiquement.
+
+La r20 conserve les trois modes d’affichage et les quatre modes d’animation,
+les sélecteurs du menu clic droit et le chargement automatique existant.
+
+OPTIONS > MOD (r72) > GÉNÉRAL
+Une seule section avec onze lignes :
+- En combat : Normal / Créatures / Miniatures (Miniatures par défaut).
+- Hors combat : Normal / Créatures / Miniatures (Normal par défaut), indépendant du combat.
+- Animations : Normal / Raccourcies / Sans animations des combattants
+  (expérimental) / Instantané (expérimental). Raccourcies par défaut.
+- Chargement automatique : optionnel, activé par défaut.
+- Alerte pierre d’âme : panneau pendant le placement et le combat, activé par défaut.
+- Équiper automatiquement la pierre d’âme : activé par défaut, pendant le placement
+  capturable uniquement, avec l’alerte activée. Une tentative par combat et tranche.
+- Surbrillance des monstres : Désactivée / Derrière l’interface (défaut) /
+  Derrière l’interface et les murs / Tout le temps. Même choix dans le menu
+  clic droit > Surbrillance ; la sélection laisse ce menu ouvert.
+- Transitions rapides entre cartes : fondus raccourcis, activé par défaut.
+- Précharger la prochaine carte (expérimental) : activé par défaut.
+- Téléportation au conjoint : bouton, cœur et entrée du clic droit dans le
+  groupe, activée par défaut. Disponible dans les options même hors ligne.
+- Ressources sur les cartes : choix par métier dans M, partagé avec la mini-carte.
+  Masquer les repères conserve les ressources sélectionnées.
+
+TAILLES AUTOMATIQUES
+Miniatures conserve 60 % de la taille d’origine des entités admissibles.
+Le minimum des monstres et invocations est fixé à 50 % de la hauteur mesurée
+d’un joueur standard non monté. Il peut agrandir les petits monstres et ne
+s’applique pas aux joueurs. Même réglage en combat et hors combat.
+Les proportions sont conservées. Aucun choix de méthode ou pourcentage.
+L’ancien réglage Uniformiser est ignoré ; les autres préférences persistent.
+Réinitialiser Mod remet Miniatures en combat, Normal hors combat, Animations
+Raccourcies, la surbrillance derrière l’interface et les sept cases activées. Les positions des modules sont conservées.
+
+RACCOURCIS D'AFFICHAGE
+L'emplacement de l'ancien bouton créature propose les trois choix :
+Normal / Créatures / Miniatures. Le choix s'applique au contexte courant.
+Le menu Mod et ce raccourci utilisent les mêmes préférences ; changer de
+contexte reprend le mode enregistré pour ce contexte.
+Après un chargement sur une interface déjà ouverte, le sélecteur est installé
+directement dès que les services et la barre sont disponibles, sans premier clic.
+Le sélecteur affiche le choix courant, abrégé N / C / M quand sa case est
+étroite. Son infobulle et sa liste conservent les trois noms complets.
+Un clic droit sur la carte propose Affichage > Normal / Créatures / Miniatures.
+Le mode courant est coché et sélectionner une ligne ferme le menu normalement.
+Juste en dessous, Animations propose Normal / Raccourcies / Sans animations des
+combattants (expérimental) / Instantané (expérimental). Le mode actuel est coché.
+Cette sélection ne change ni l'apparence ni la taille des personnages.
+Les autres entrées du menu natif sont conservées. Si le contexte ou la session
+change pendant que ce menu est ouvert, ses anciens choix ne sont plus appliqués.
+Le rendu exact des deux raccourcis reste à confirmer en jeu.
+Les autres raccourcis natifs qui restent des interrupteurs utilisent le dernier
+choix Créatures/Miniatures du contexte quand on les réactive.
+
+CE QUE FAIT LE MODE INSTANTANÉ
+Les trajets et poussées/glissades pris en charge parcourent immédiatement leurs
+étapes natives de cellule et de fin. Les sauts utilisent leurs mises à jour natives
+de position, de rotation et d'échelle avec une progression terminale locale.
+Les lancers conservent le détachement du porteur, puis terminent l'arc et suppriment
+le rebond visuel par la branche native sans rebond. La position, les zones de
+sélection et les notifications de fin passent toujours par les fonctions du jeu.
+Les téléportations et échanges de positions sont déjà instantanés dans le client ;
+leurs chemins natifs sont conservés, avec les réductions d'effets du mode Instantané.
+Les atterrissages particuliers pas encore engagés peuvent emprunter le chemin
+natif ordinaire. Un atterrissage dont l'animation a déjà démarré reste natif.
+Les fins accélérées attendent la fin des notifications natives de début et des
+suiveurs, dans le même appel, sans attente ajoutée entre les deux.
+Le mod évite également l'attente de certaines animations avant un déplacement,
+les attentes liées aux étapes d'animation sautées et un délai d'effets entre entités.
+Un état remplacé ou inconnu, une animation ou un trajet déjà engagé peut poursuivre
+son déroulement natif. Les anciens modes restent disponibles avec leur comportement.
+Les animations de mort dont dépend le retrait du personnage restent natives en
+Instantané : leur événement de fin assure le nettoyage, que l'audit r8 a montré
+absent si l'étape est simplement sautée. Cela peut encore laisser une animation
+ou un blanc dans ces situations. Les anciens modes conservent leur comportement.
+Les attentes de chargement et les délais serveur ne sont pas supprimés.
+L'option ne garantit donc pas la disparition de toutes les animations ni de tous
+les blancs. Des effets/projectiles dans des séquences imbriquées restent natifs.
+Les modes d’animation ne modifient ni l’horloge globale, ni la vitesse globale,
+ni les messages réseau. Normal et les deux anciens modes restent inchangés.
+
+PASSER À R67
+1. Gardez le dossier r72 complet à côté des versions précédentes, hors de l'installation du jeu.
+   Le fichier commun DofusMiniatures-3.7.11.11-settings.ini reste prioritaire ;
+   ne le remplacez pas. R67 ignore ses anciennes clés de taille.
+2. Fermez puis relancez Dofus vous-même quand vous voulez appliquer r72.
+   Une DLL déjà chargée demeure en mémoire jusqu'à la fermeture du jeu.
+3. Si le chargement automatique r8 ou ultérieur est activé, son assistant
+   sélectionnera r72 au prochain lancement. Conservez le dossier de cet assistant.
+   Sinon, lancez Lancer.cmd dans r72 et entrez le PID vous-même.
+4. Vérifiez Options > Mod (r72) > Général. Ne chargez pas une seconde version du module
+   dans un client qui en a déjà chargé une.
+
+CHARGEMENT AUTOMATIQUE ET ARRÊT
+La case active un assistant sans fenêtre et une entrée DofusMiniatures au
+lancement de votre session Windows. Il traite les futurs clients du chemin
+choisi, sans PID, et ignore ceux déjà ouverts à son démarrage. Une seule
+tentative par instance, après attente du moteur et vérification des empreintes.
+L'assistant sélectionne la révision compatible la plus récente parmi les dossiers
+voisins DofusMiniatures-3.7.11.11-rN, après vérification de release.ini et des trois
+binaires. Une copie incomplète est ignorée. Aucun téléchargement automatique.
+Les versions complètes doivent être extraites à côté du dossier de l'assistant.
+Les préférences sont partagées dans DofusMiniatures-3.7.11.11-settings.ini, au
+même niveau que les versions. Si ce dossier n'est pas accessible en écriture,
+le fichier settings.ini de la version est utilisé. Les clients déjà ouverts ne
+relisent pas les changements d'un autre client.
+Décocher Chargement automatique ou lancer Desactiver-chargement-auto.cmd
+arrête l'assistant et retire son démarrage automatique.
+Arreter.cmd demande l'arrêt des modules locaux vérifiés et restaure leur
+interface native. Il ne change pas le démarrage automatique.
+
+RENDU ET LIMITES
+La référence de hauteur utilise le modèle au repos du premier joueur standard
+non monté disponible, hors invocations. Ce n'est pas une égalité exacte de tous
+les pixels et accessoires. Si modèle/référence manque, la réduction fonctionne
+immédiatement, avec le minimum différé.
+Un petit monstre peut alors temporairement être sous le minimum prévu.
+Le calcul des tailles ne force aucun chargement de ressource graphique.
+Le minimum d'échelle natif du client peut limiter la réduction de grands modèles.
+Les entités non classifiées et les exclusions natives conservent leur rendu.
+La zone de clic au pixel suit le sprite redimensionné ; une égalité exacte avec
+la boule créature n'est pas garantie. Les cellules et identifiants sont conservés.
+
+VALIDATION ET DIAGNOSTIC
+Compilation propre, tests sur objets simulés et vérifications statiques de la
+copie du client : voir validation.json. Aucun essai r72 dans le jeu n'a été fait.
+Le rendu du sélecteur, les gains de temps/FPS et les situations particulières
+restent à confirmer en jeu. Aucun client ouvert n'a été contrôlé, modifié ou
+inspecté pendant le développement de cette révision.
+module.log indique START version=3.7.11.11 mod=r72 prototype=72, puis les
+étapes de chargement ; SIZE_REFERENCE_READY confirme la mesure du joueur.
+SIZE_MEASUREMENTS_PENDING indique l'attente de mesures pour le minimum.
+autoload.log indique l'activité de l'assistant, si vous l'activez.
+
+Aucun fichier de l'installation n'est remplacé. Les préférences créature natives
+peuvent être enregistrées par Dofus : sans mod, désactivez Créatures si nécessaire.
+Le module ne simule ni clic ni touche. Les actions d’équipement, de sort et de
+voyage correspondent aux boutons que vous actionnez, sauf la tentative
+d’équipement automatique optionnelle pendant le placement. Une mise à jour du client
+bloque le chargement jusqu’à nouvelle vérification.
+
+SOURCES
+sources/ contient le C++ et MinHook avec sa licence. Recompiler avec Visual Studio
+C++ x64, CMake et Ninja : sources/build.ps1, puis ctest --test-dir sources/build
+--output-on-failure. Les binaires propriétaires de Dofus ne sont pas fournis.
+
+Version ciblée : 3.7.11.11
+GameAssembly.dll SHA256 :
+e08da74cfcac126a4d0929bf76d79b7c4f45b902ece082041b55d2715db9bf13
+global-metadata.dat SHA256 :
+b04b4cee266b0a9f0aa6023b15e389e3c0dec6f054947288d8511416dbcf8a36
