@@ -1,4 +1,12 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 88
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 89
+
+R89 — SYNCHRONISATION DES CASES DE SURBRILLANCE
+- Les cases PNJ et éléments interactifs déjà affichées sont resynchronisées
+  séparément avec leur préférence sauvegardée après les clics natifs.
+- Corrige les coches visuelles désynchronisées sans modifier l’autre réglage
+  ni le niveau de surbrillance. Les autres lignes du menu restent intactes.
+- Tests hors jeu avec états visuels distincts des réglages, dans les quatre
+  combinaisons de cases. Rendu en jeu à confirmer au prochain lancement.
 
 R88 — CASES PNJ ET INTERACTIFS DANS LE MENU SURBRILLANCE
 - Clic droit > Surbrillance : les cases Inclure les PNJ et Inclure les éléments

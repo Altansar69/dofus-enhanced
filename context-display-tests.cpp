@@ -230,6 +230,9 @@ struct Fixture {
             Get(glowCategoryViews[i]).refs["itemData"] = GlowCategory(i);
             Get(glowCategoryViews[i]).refs["panel"] = panel;
             Get(glowCategoryViews[i]).refs["parent"] = glowRoot;
+            Get(glowCategoryViews[i]).flags["isOn"] = Get(GlowCategory(i)).flags["isOn"];
+            Get(glowCategoryViews[i]).flags["visualIsOn"] = Get(GlowCategory(i)).flags["isOn"];
+            Get(glowRoot).items.push_back(glowCategoryViews[i]);
         }
         TickContextDisplayMenu();
     }
@@ -240,7 +243,11 @@ struct Fixture {
         // Both saved native input paths call SimulateClicked, which updates the
         // toggle/radio group, dispatches InvokeCallback, then honors closeOnSelect.
         auto submenu = Get(choice).refs.at("root");
-        if (Get(choice).numbers["state"] == 1) Get(choice).flags["isOn"] = !Get(choice).flags["isOn"];
+        if (Get(choice).numbers["state"] == 1) {
+            Get(view).flags["isOn"] = !Get(view).flags["isOn"];
+            Get(view).flags["visualIsOn"] = Get(view).flags["isOn"];
+            Get(choice).flags["isOn"] = Get(view).flags["isOn"];
+        }
         else for (auto item : Items(submenu)) if (Get(item).numbers["state"] == 2) Get(item).flags["isOn"] = item == choice;
         auto parent = Get(view).refs.at("parent");
         callbackHook(Get(choice).refs.at("m_callback"), view, nullptr);
@@ -313,6 +320,9 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
         return result;
     };
     if (name == "get_menuItems") return done(value.refs.at("menuItems"));
+    if (name == "GetChildItemsInMenu") {
+        auto list = Make("List"); Get(list).items = value.items; return done(list);
+    }
     if (name == "get_Count") return done(Box(static_cast<int>(value.items.size())));
     if (name == "get_Item") return done(value.items.at(*static_cast<int*>(arguments[0])));
     if (name == "get_arg1") {
@@ -334,7 +344,11 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
     if (name == "get_itemData") return done(value.refs.at("itemData"));
     if (name == "get_menuData") return done(value.refs.at("menuData"));
     if (name == "get_panel") return done(value.refs["panel"]);
-    if (name == "set_isOn") { value.flags["isOn"] = *static_cast<bool*>(arguments[0]); return done(); }
+    if (name == "set_isOn") {
+        value.flags["isOn"] = *static_cast<bool*>(arguments[0]);
+        if (value.klass->name == "ContextMenuItemView") value.flags["visualIsOn"] = value.flags["isOn"];
+        return done();
+    }
     if (name == "RemoveItemAt") {
         auto& items = Items(self);
         const int index = *static_cast<int*>(arguments[0]);
@@ -793,6 +807,47 @@ void SelectionFailureKeepsNativeDispatchParents() {
     Check(std::any_of(logs.begin(), logs.end(), [](const auto& log) { return log.starts_with("CONTEXT_DISPLAY_DISABLED "); }),
         "Selection exception must be reported");
 }
+void GlowCheckboxViewsFollowIndependentPreferences() {
+    for (bool inCombat : {false, true}) for (int initial = 0; initial < 4; ++initial) {
+        Fixture f(inCombat);
+        f.state.settings.glowNpcs = (initial & 1) != 0;
+        f.state.settings.glowInteractives = (initial & 2) != 0;
+        f.Create(); f.Open();
+        const auto unrelated = Make("ContextMenuItemView");
+        Get(unrelated).refs["itemData"] = NativeItem(nullptr, "Unowned checkbox");
+        Get(unrelated).refs["panel"] = f.panel;
+        Get(unrelated).flags["isOn"] = true;
+        Get(unrelated).flags["visualIsOn"] = true;
+        Get(f.glowRoot).items.push_back(unrelated);
+        for (int clicked : {0, 1, 0, 1}) {
+            f.ClickGlowCategory(clicked);
+            const bool expected[] = {f.state.settings.glowNpcs, f.state.settings.glowInteractives};
+            for (int i = 0; i < 2; ++i)
+                Check(Get(f.glowCategoryViews[i]).flags["visualIsOn"] == expected[i],
+                    "Selection must synchronize rendered checkboxes, not only model values");
+            // Views and their nested Figma checkbox are separate native objects.
+            // Model updates alone cannot repair post-dispatch visual changes.
+            Get(f.glowCategoryViews[0]).flags["isOn"] = !expected[0];
+            Get(f.glowCategoryViews[0]).flags["visualIsOn"] = !expected[0];
+            Get(f.glowCategoryViews[1]).flags["visualIsOn"] = !expected[1];
+            const auto beforeChanges = changes;
+            const auto preferences = f.state.settings;
+            TickContextDisplayMenu();
+            for (int i = 0; i < 2; ++i)
+                Check(Get(f.glowCategoryViews[i]).flags["isOn"] == expected[i] &&
+                    Get(f.glowCategoryViews[i]).flags["visualIsOn"] == expected[i],
+                    "Both independent checkbox views must recover after native dispatch");
+            Check(changes == beforeChanges && f.state.settings == preferences,
+                "Visual reconciliation must not toggle or save preferences");
+            Check(Get(unrelated).flags["isOn"] && Get(unrelated).flags["visualIsOn"],
+                "Do not change an unowned native row");
+        }
+        Get(f.glowRoot).refs["panel"] = nullptr;
+        Get(f.glowCategoryViews[0]).flags["visualIsOn"] = false;
+        TickContextDisplayMenu();
+        Check(!Get(f.glowCategoryViews[0]).flags["visualIsOn"], "Detached submenus must be left alone");
+    }
+}
 void RestoreFailureStillClosesOtherRootAndReleasesReferences() {
     for (int failingRoot = 1; failingRoot <= 4; ++failingRoot) {
         Fixture f;
@@ -824,6 +879,7 @@ int main() {
         run(fake::GlowChoicesAndReopens);
         run(fake::GlowRepeatedChoicesKeepMenuOpen);
         run(fake::GlowCategoriesIndependentAndPersistent);
+        run(fake::GlowCheckboxViewsFollowIndependentPreferences);
         run(fake::GlowCategoryCallbackGuards);
         run(fake::CallbackIdentityAndDisabledRows);
         run(fake::NativeDisabledStateIsPreserved);

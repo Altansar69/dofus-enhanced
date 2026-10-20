@@ -143,6 +143,25 @@ void Fail(const char* reason) {
     Log(std::string("CONTEXT_DISPLAY_DISABLED ") + reason);
     RestoreOwned(true);
 }
+void SyncGlowCheckboxViews(OwnedMenu& owned) {
+    Ref root(Root(owned.glowSubmenu.get()));
+    if (!root.get() || !api.Call(root.get(), "get_panel")) return;
+    Ref views(api.Call(root.get(), "GetChildItemsInMenu"));
+    for (int index = 0, count = Count(views.get()); index < count; ++index) {
+        Ref view(api.Call(views.get(), "get_Item", {&index}));
+        if (!Is(view.get(), state.viewClass) || !api.Call(view.get(), "get_panel")) continue;
+        Ref item(api.Call(view.get(), "get_itemData"));
+        for (size_t category = 0; category < owned.glowCategories.size(); ++category) {
+            if (item.get() != owned.glowCategories[category].item.get()) continue;
+            if (api.Call(item.get(), "get_root") != owned.glowSubmenu.get()) continue;
+            // The model setter only writes ContextMenuItem.isOn. Native views
+            // and their embedded CheckboxCustom have separate state, including
+            // a native click handler that can run after our callback. Reconcile
+            // both owned checkboxes after dispatch as well as during selection.
+            api.Call(view.get(), "set_isOn", {&owned.glowIncludes[category]});
+        }
+    }
+}
 void Sync(OwnedMenu& owned) {
     const int mode = ActiveDisplayMode(module->settings, owned.combat);
     if (mode < 0 || mode > 2) throw std::runtime_error("Invalid context display selection");
@@ -168,6 +187,7 @@ void Sync(OwnedMenu& owned) {
     owned.glowIncludes = {module->settings.glowNpcs, module->settings.glowInteractives};
     for (size_t i = 0; i < owned.glowCategories.size(); ++i)
         api.Call(owned.glowCategories[i].item.get(), "set_isOn", {&owned.glowIncludes[i]});
+    SyncGlowCheckboxViews(owned);
 }
 void BuildSubmenu(Ref& submenu, Ref& replacement, Choice* choices, int count,
     const char* const* labels, const char* caption, int selectedMode, bool disabled, int icon, bool close = true) {
@@ -350,7 +370,9 @@ void InstallContextDisplayMenu() {
     api.Native(api.Find(state.itemClass, "get_disabled", 0), 0x16CF020);
     api.Native(api.Find(state.itemClass, "set_isOn", 1), 0x11ECD70);
     api.Native(api.Find(state.viewClass, "get_itemData", 0), 0x157EFD0);
+    api.Native(api.Find(state.viewClass, "set_isOn", 1), 0x16CE970);
     api.Native(api.Find(root, "get_menuData", 0), 0x157EFE0);
+    api.Native(api.Find(root, "GetChildItemsInMenu", 0), 0x16D18C0);
     api.Native(api.Find(root, "RemoveMenu", 1), 0x16D2AB0);
     api.Native(api.Find(cached, "get_creatureMode", 0), 0x18B7E20);
     AddHook(api.Find(api.Class("Core.dll", MakerNamespace, "WorldMenuMaker"), "CreateMenu", 0), 0x1700070,
@@ -382,6 +404,7 @@ void TickContextDisplayMenu() {
             module->settings.glowNpcs != state.owned->glowIncludes[0] ||
             module->settings.glowInteractives != state.owned->glowIncludes[1])
             RestoreOwned(true);
+        else SyncGlowCheckboxViews(*state.owned);
     } catch (const std::exception& e) { Fail(e.what()); }
     catch (...) { Fail("Unknown context menu lifecycle error"); }
 }
