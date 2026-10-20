@@ -22,22 +22,22 @@ struct Rect {float x,y,width,height;};
 struct Color {float r,g,b,a;};
 using LifeFn=void(*)(Obj,Method);
 LifeFn originalEnable{},originalDisable{};
-Klass checkboxClass{},headerClass{},scrollClass{},labelClass{},elementClass{};
+Klass cursorClass{},checkboxClass{},headerClass{},scrollClass{},labelClass{},elementClass{};
 Method checkboxCtor{},checkboxValue{},checkboxSet{},checkboxText{},checkboxSize{},checkboxLevel{},checkboxIcon{};
 Method headerCtor{},headerTitle{},headerOpen{},headerCanOpen{},headerAdd{},scrollCtor{},scrollContent{};
 Method scrollHorizontal{},scrollVertical{};
-Method labelCtor{},labelText{},labelSingleLine{},tooltip{},bringToFront{};
+Method labelCtor{},labelText{},labelSingleLine{},tooltip{},bringToFront{},enableCursor{},removeCursor{};
 bool installed=false;
 Ref pending;
 struct Row {int id=0; Ref checkbox;};
 struct State {
-    Ref owner,root,panel,scroll,content,resources,master,compositor,character,cartography;
+    Ref owner,root,mapRoot,panel,scroll,content,resources,master,compositor,character,cartography;
     std::vector<Row> rows;
     std::vector<int> selection;
     Ref toolbar;
-    std::vector<Ref> tabs,groups;
+    std::vector<Ref> tabs,groups,cursorTargets;
     int activeJob=-1;
-    bool enabled=true,attached=false,mini=false;
+    bool enabled=true,attached=false,mini=false,cleaning=false;
     float height=-1,width=-1,left=-1,top=-1;
 };
 std::unique_ptr<State> owned,miniOwned;
@@ -70,7 +70,23 @@ Obj Parent(Obj element){return api.Call(element,"get_parent");}
 bool Detach(std::unique_ptr<State>& target){
     if(!target)return true;
     auto& state=*target;
+    state.cleaning=true;
     try {
+        while(!state.cursorTargets.empty()){
+            const auto control=state.cursorTargets.back().get();
+            api.Invoke(removeCursor,nullptr,{control});
+            // Native RemoveCursorHandler unregisters events but retains strong
+            // keys in these caches. Release only this owned control's entries.
+            for(const auto* name:{"s_mouseEnterCursorMap","s_mouseLeaveCursorMap"}){
+                Ref map(api.StaticField(cursorClass,name));
+                if(!map.get())throw std::runtime_error("Resource cursor cache unavailable");
+                auto type=api.object_get_class(map.get());
+                if(std::string(api.class_get_name(type))!="Dictionary`2")throw std::runtime_error("Resource cursor cache type mismatch");
+                auto remove=api.FindVerified(type,"Remove",1,0x36F0D60);
+                api.Invoke(remove,map.get(),{control});
+            }
+            state.cursorTargets.pop_back();
+        }
         if(state.resources.get()&&Parent(state.resources.get()))api.Call(state.resources.get(),"RemoveFromHierarchy");
         target.reset();return true;
     }catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_RESTORE_ERROR ")+error.what());return false;}
@@ -136,9 +152,10 @@ bool Layout(State& state,const MiniMapSurface* mini=nullptr){
     return true;
 }
 bool Fresh(const State& state,const MiniMapSurface* mini=nullptr){
-    const bool ownerCurrent=mini?mini->root.get()==state.root.get():
+    const bool ownerCurrent=mini?(mini->root.get()==state.root.get()&&mini->mapRoot.get()==state.mapRoot.get()&&
+        mini->mapRoot.get()&&Parent(mini->mapRoot.get())==state.root.get()):
         CurrentOwner(state.owner.get())&&api.Field(state.owner.get(),"dzyj")==state.root.get();
-    return ownerCurrent&&Session()&&state.compositor.get()==module->compositor.get()&&
+    return !state.cleaning&&ownerCurrent&&Session()&&state.compositor.get()==module->compositor.get()&&
         state.character.get()==module->FindService("fng")&&state.cartography.get()==module->FindService("fkc")&&
         api.Call(state.root.get(),"get_panel")==state.panel.get()&&
         (!state.attached||Parent(state.resources.get())==state.root.get());
@@ -159,6 +176,7 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         throw std::runtime_error("Resource catalog entry invalid");
     auto next=std::make_unique<State>();
     next->owner.reset(owner);next->root.reset(root.get());next->panel.reset(panel.get());
+    if(mini)next->mapRoot.reset(mini->mapRoot.get());
     next->compositor.reset(module->compositor.get());next->character.reset(module->FindService("fng"));next->cartography.reset(module->FindService("fkc"));
     next->mini=mini!=nullptr;
     next->selection=module->settings.resourceMapItems;
@@ -244,6 +262,14 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     // The transport filters and their original parent/order are never modified.
     target=std::move(next);
     api.Call(root.get(),"Add",{target->resources.get()});target->attached=true;
+    // Native handlers manage enter/leave. These owned category controls stay
+    // enabled; avoid AddCursorHandler, which overwrites the native enabled-state callback.
+    // Register only after retaining the tree so partial failure is retryable.
+    for(const auto& tab:target->tabs){
+        target->cursorTargets.emplace_back(tab.get());
+        int64_t hand=2097152;int normal=0;
+        api.Invoke(enableCursor,nullptr,{tab.get(),&hand,&normal});
+    }
     Log("RESOURCE_MAP_UI_READY view="+std::string(mini?"mini":"full")+" rows="+std::to_string(target->rows.size()));
 }
 void Sync(State& state){
@@ -294,6 +320,14 @@ void InstallUi(){
     api.FindVerified(elementClass,".ctor",0,0x55F50B0);
     api.FindVerified(elementClass,"set_pickingMode",1,0x55F97B0);
     InstallIcons();
+    cursorClass=api.Class("Core.dll","Core.UILogic","DofusCursor");
+    enableCursor=api.FindVerified(cursorClass,"EnableCursorHandler",3,0x2808CD0);
+    removeCursor=api.FindVerified(cursorClass,"RemoveCursorHandler",1,0x2809CD0);
+    for(const auto& [name,offset]:std::array<std::pair<const char*,size_t>,2>{{
+        {"s_mouseEnterCursorMap",0x40},{"s_mouseLeaveCursorMap",0x48}}}){
+        auto field=api.class_get_field_from_name(cursorClass,name);
+        if(!field||api.field_get_offset(field)!=offset)throw std::runtime_error("Resource cursor cache layout mismatch");
+    }
     checkboxCtor=api.FindVerified(checkboxClass,".ctor",0,0x1704CD0);
     checkboxValue=api.FindVerified(checkboxClass,"get_value",0,0x1705050);
     checkboxSet=api.FindVerified(checkboxClass,"SetValueWithoutNotify",1,0x17044F0);

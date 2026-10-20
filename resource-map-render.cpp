@@ -365,8 +365,8 @@ void InstallRender() {
     methods.toLocal=api.FindVerified(extensions,"WorldToLocal",2,0x56776A0);
     api.FindVerified(methods.label,".ctor",0,0x5729760);
     struct Guard {const char* name;int argc;uintptr_t rva;};
-    for(const auto& g:std::array<Guard,12>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},
-        {"get_panel",0,0x55F7170},{"get_parent",0,0x55F7180},{"get_worldBound",0,0x55F7CC0},{"get_worldClip",0,0x55F7EE0},
+    for(const auto& g:std::array<Guard,13>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},
+        {"get_contentContainer",0,0x3153690},{"get_panel",0,0x55F7170},{"get_parent",0,0x55F7180},{"get_worldBound",0,0x55F7CC0},{"get_worldClip",0,0x55F7EE0},
         {"get_visible",0,0x55F7BC0},{"get_resolvedStyle",0,0x55F72E0},{"set_name",1,0x55F9670},
         {"set_pickingMode",1,0x55F97B0},{"get_style",0,0x55F74A0}}}) api.FindVerified(methods.element,g.name,g.argc,g.rva);
     installed=true;
@@ -381,11 +381,21 @@ MiniMapSurface ReadMiniMapSurface() {
     if(!Session())return surface;
     auto f=ReadFrame(0);
     if(!f.valid)return surface;
-    Vec2 corner{f.viewport.x,f.viewport.y};
-    const auto local=api.Value<Vec2>(api.Invoke(methods.toLocal,nullptr,{f.root.get(),&corner}));
-    if(!std::isfinite(local.x)||!std::isfinite(local.y)||!Current(f))return surface;
-    surface.root.reset(f.root.get());
-    surface.width=f.viewport.width/f.scale.x;surface.height=f.viewport.height/f.scale.y;
+    // dugq is the zoomed/panned cartography content. Controls belong beside
+    // it, outside its transform and mouse/wheel callback propagation path.
+    Ref host(api.Call(f.root.get(),"get_parent"));
+    if(!host.get()||!Visible(host.get())||api.Call(host.get(),"get_panel")!=f.panel.get()||
+        api.Call(host.get(),"get_contentContainer")!=host.get())return surface;
+    const auto viewport=Intersect(api.Value<Rect>(api.Call(host.get(),"get_worldBound")),
+        api.Value<Rect>(api.Call(host.get(),"get_worldClip")));
+    if(!Finite(viewport))return surface;
+    Vec2 corner{viewport.x,viewport.y},end{viewport.x+viewport.width,viewport.y+viewport.height};
+    const auto local=api.Value<Vec2>(api.Invoke(methods.toLocal,nullptr,{host.get(),&corner}));
+    const auto last=api.Value<Vec2>(api.Invoke(methods.toLocal,nullptr,{host.get(),&end}));
+    for(float value:{local.x,local.y,last.x,last.y})if(!std::isfinite(value))return surface;
+    if(last.x<=local.x||last.y<=local.y||!Current(f)||api.Call(f.root.get(),"get_parent")!=host.get())return surface;
+    surface.root.reset(host.get());surface.mapRoot.reset(f.root.get());
+    surface.width=last.x-local.x;surface.height=last.y-local.y;
     surface.left=local.x;surface.top=local.y;
     return surface;
 }

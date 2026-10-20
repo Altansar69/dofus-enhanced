@@ -215,7 +215,7 @@ void RestoreChatSoulStatus() {
 }
 std::string ChatSoulCaption(int monster, ChatSoulPart part, bool colorStatus) {
     using namespace chat_souls;
-    if (monster <= 0) return {};
+    if (monster <= 0 || !FindGoal(monster)) return {};
     if (part == ChatSoulPart::Inventory) switch (Inventory(monster)) {
     case Progress::Done:
         return colorStatus ? "<color=#8DDB91>Âme en sac</color>" : "Âme en sac";
@@ -223,7 +223,6 @@ std::string ChatSoulCaption(int monster, ChatSoulPart part, bool colorStatus) {
         return colorStatus ? "<color=#F18C8C>Pas en sac</color>" : "Pas en sac";
     default: return "Sac : ?";
     }
-    if (!FindGoal(monster)) return "Hors Ocre";
     switch (Quest(monster)) {
     case Progress::Done:
         return colorStatus ? "<color=#8DDB91>Ocre validé</color>" : "Ocre validé";
@@ -236,7 +235,7 @@ std::string ChatSoulCaption(int monster, ChatSoulPart part, bool colorStatus) {
 }
 std::string ChatSoulDetail(int monster, ChatSoulPart part) {
     using namespace chat_souls;
-    if (monster <= 0) return {};
+    if (monster <= 0 || !FindGoal(monster)) return {};
     const auto title = ChatSoulCaption(monster, part) + ".\n";
     if (part == ChatSoulPart::Inventory) {
         std::string detail;
@@ -247,7 +246,6 @@ std::string ChatSoulDetail(int monster, ChatSoulPart part) {
         }
         return title + detail + "La banque, le coffre et les autres personnages ne sont pas consultés.";
     }
-    if (!FindGoal(monster)) return title + "Ce monstre ne figure pas parmi les objectifs de L’éternelle moisson.";
     switch (Quest(monster)) {
     case Progress::Done: return title + "L’objectif de ce monstre a déjà été validé dans L’éternelle moisson.";
     case Progress::Missing: return title + "L’objectif de ce monstre reste à valider dans L’éternelle moisson.";

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <thread>
 #include <cmath>
+#include <limits>
 
 namespace {
 using namespace managed;
@@ -19,17 +20,26 @@ struct Request {
     jobsxp::Page page;
     std::string error;
 };
+struct ItemView {
+    Ref tile,line,label,visual;
+    int id=0;
+    int64_t quantity=0;
+    bool bound=false;
+};
 struct State {
     Ref owner,handler,root,tabs,content,tab,pane,cached,compositor;
-    Ref recipes,resources,recipeTab,resourceTab,tabGroup,recipesDisplay,resourcesDisplay;
-    Ref title,status,target,coefficient,epic,refresh,previous,next,details;
-    std::array<Ref,jobsxp::PageSize> rows;
+    Ref recipes,resources,recipeTab,resourceTab,tabGroup,recipesDisplay,resourcesDisplay,nativeRecipes;
+    Ref title,status,target,coefficient,epic,refresh,previous,next,details,ingredientList;
+    std::array<Ref,jobsxp::PageSize> rows,recipeLines;
+    std::array<ItemView,jobsxp::PageSize> recipeItems;
+    std::vector<ItemView> ingredients;
     jobsxp::Page page;
     jobsxp::Query query;
     std::shared_ptr<Request> request;
     int64_t xp=0;
     int selected=-1,lastTarget=0,lastCoefficient=0;
-    float tabHeight=0;
+    std::array<float,8> tabMetrics{};
+    bool haveTabMetrics=false;
     bool lastEpic=false,active=false,cleanup=false,havePage=false,requested=false,recipeWasOn=false,resourceWasOn=false;
     ULONGLONG nextPoll=0,nextRequest=0;
     uint64_t generation=0;
@@ -38,6 +48,7 @@ Ref pending;
 std::shared_ptr<Request> worker;
 uint64_t generation=0;
 bool installed=false;
+Method createItem=nullptr,bindTile=nullptr,clearTileImage=nullptr,clearTileEvents=nullptr;
 void(*originalEnable)(Obj,Method)=nullptr;
 void(*originalDisable)(Obj,Method)=nullptr;
 void(*originalSwitch)(Obj,int,Method)=nullptr;
@@ -102,18 +113,95 @@ Obj Section(Obj parent,const char* title) {
     Color(heading.get(),"color",.78f,.88f,.44f);Pixels(heading.get(),"marginBottom",10);
     return card.get();
 }
-void MatchTabHeight() {
-    // Use the sibling's resolved theme geometry after layout; never a guessed pixel offset.
+void MatchTabLayout() {
+    // Read resolved geometry: UXML/USS values are not necessarily inline styles.
     Ref resolved(api.Call(state.resourceTab.get(),"get_resolvedStyle"));
-    const float height=api.Value<float>(api.Call(resolved.get(),"get_height"));
-    if(!std::isfinite(height)||height<16||height>128||std::abs(height-state.tabHeight)<.01f)return;
-    state.tabHeight=height;
-    for(const char* property:{"height","minHeight","maxHeight"})Pixels(state.tab.get(),property,height);
+    Ref preceding(api.Call(state.recipeTab.get(),"get_resolvedStyle"));
+    const std::array<const char*,7> properties={"height","bottom","marginTop","marginBottom","paddingTop","paddingBottom","marginLeft"};
+    std::array<float,8> values{};
+    for(size_t i=0;i<properties.size();++i)
+        values[i]=api.Value<float>(api.Call(resolved.get(),(std::string("get_")+properties[i]).c_str()));
+    // Include either sibling's margins so the two inter-tab spaces are identical.
+    values[6]+=api.Value<float>(api.Call(preceding.get(),"get_marginRight"))-
+        api.Value<float>(api.Call(resolved.get(),"get_marginRight"));
+    values[7]=static_cast<float>(api.Value<int>(api.Call(resolved.get(),"get_alignSelf")));
+    if(!std::isfinite(values[0])||values[0]<16||values[0]>128)return;
+    for(size_t i=0;i<values.size();++i) {
+        if(!std::isfinite(values[i]))continue; // Unresolved auto offsets retain the sibling's inline value.
+        if(state.haveTabMetrics&&std::abs(values[i]-state.tabMetrics[i])<.01f)continue;
+        if(i==7)Enum(state.tab.get(),"alignSelf",static_cast<int>(values[i]));
+        else Pixels(state.tab.get(),properties[i],values[i]);
+        if(i==0)for(const char* property:{"minHeight","maxHeight"})Pixels(state.tab.get(),property,values[i]);
+    }
+    state.tabMetrics=values;state.haveTabMetrics=true;
+}
+void ClearItem(ItemView& view) {
+    if(view.tile.get()) {
+        // Native recipe recycling removes only this tile's registered manipulators.
+        // Keep ownership until every step succeeds so partial cleanup is retryable.
+        api.gc_wbarrier_set_field(view.tile.get(),static_cast<void**>(api.FieldAddress(view.tile.get(),"onRightClickCallback")),nullptr);
+        api.Invoke(clearTileEvents,nullptr,{view.tile.get()});
+        api.Invoke(clearTileImage,nullptr,{view.tile.get()});
+        api.Call(view.tile.get(),"RemoveFromHierarchy");
+        view.tile.reset();
+    }
+    view.id=0;view.quantity=0;view.bound=false;
+}
+void ClearIngredients() {
+    for(auto& view:state.ingredients) {
+        ClearItem(view);
+        if(view.line.get())api.Call(view.line.get(),"RemoveFromHierarchy");
+    }
+    state.ingredients.clear();
+}
+void ClearItems() {
+    for(auto& view:state.recipeItems)ClearItem(view);
+    ClearIngredients();
+}
+bool BindItem(ItemView& view,Obj parent,int id,int64_t quantity) {
+    if(view.bound&&view.id==id&&view.quantity==quantity)return true;
+    ClearItem(view);
+    int16_t position=63;uint32_t uid=0,one=1;
+    Ref item(api.Invoke(createItem,nullptr,{&id,&position,&uid,&one,nullptr}));
+    // Native factory substitutes its placeholder for an unknown DofusDB id.
+    Ref data(item.get()?api.Call(item.get(),"myx"):nullptr);
+    if(!data.get()||api.Value<int>(api.Field(data.get(),"id"))!=id)return false;
+    view.tile.reset(api.New(api.Class("Core.dll","Core.UILogic.Components.Slots","Tile")));
+    int medium=2;api.Call(view.tile.get(),"set_tileSize",{&medium});
+    Pixels(view.tile.get(),"marginRight",10);Float(view.tile.get(),"flexShrink",0);
+    Add(parent,view.tile.get());
+    // Native recipe binding provides the image, hover tooltip and usual item actions.
+    // Its quantity is Int32; retain the full planner total in both visible counters.
+    int nativeQuantity=static_cast<int>(std::min<int64_t>(quantity,std::numeric_limits<int>::max()));
+    api.Invoke(bindTile,state.nativeRecipes.get(),{item.get(),view.tile.get(),&nativeQuantity});
+    Text(view.tile.get(),std::to_string(quantity),"set_counterValue");
+    view.id=id;view.quantity=quantity;view.bound=true;
+    return true;
+}
+void RenderIngredients(const jobsxp::Recipe& recipe,int count) {
+    if(count<=0){ClearIngredients();return;}
+    if(state.ingredients.size()!=recipe.ingredients.size()) {
+        ClearIngredients();state.ingredients.resize(recipe.ingredients.size());
+    }
+    for(size_t i=0;i<recipe.ingredients.size();++i) {
+        auto& view=state.ingredients[i];const auto& ingredient=recipe.ingredients[i];
+        if(!view.line.get()) {
+            view.line.reset(Row(state.ingredientList.get()));Enum(view.line.get(),"flexWrap",0);
+            view.visual.reset(api.New(api.Class(Ui,UiSpace,"VisualElement")));Add(view.line.get(),view.visual.get());
+            view.label.reset(Label(view.line.get(),""));Float(view.label.get(),"flexGrow",1);Pixels(view.label.get(),"minWidth",0);
+        }
+        // Keep native item first and the total/name alongside it.
+        const int64_t total=static_cast<int64_t>(ingredient.quantity)*count;
+        const bool available=BindItem(view,view.visual.get(),ingredient.id,total);
+        Text(view.label.get(),std::to_string(total)+" × "+ingredient.name+(available?"":" · objet indisponible dans cette version"));
+    }
 }
 bool Current() {
     return Session()&&state.pane.get()&&!state.cleanup&&state.cached.get()==module->cached.get()&&
         state.compositor.get()==module->compositor.get()&&
         api.Field(state.owner.get(),"m_jobCraftAndSkillsHandler")==state.handler.get()&&
+        api.Field(state.handler.get(),"m_jobWindowRecipesUI")==state.nativeRecipes.get()&&
+        api.Field(state.nativeRecipes.get(),"m_currentRecipesFilter")&&
         api.Call(state.pane.get(),"get_parent")==state.content.get()&&api.Call(state.tab.get(),"get_parent")==state.tabs.get()&&
         api.Call(state.root.get(),"get_panel");
 }
@@ -123,6 +211,8 @@ void Cancel() {
 }
 void Leave(bool restoreSelection=true) {
     if(!state.active)return;
+    Enum(state.pane.get(),"display",1); // Hide interactive items before any retryable native cleanup.
+    ClearItems();
     // Restore exact original inline display styles before native tab switching.
     if(state.recipesDisplay.get())WriteStyle(state.recipes.get(),"display",state.recipesDisplay.get());
     if(state.resourcesDisplay.get())WriteStyle(state.resources.get(),"display",state.resourcesDisplay.get());
@@ -134,6 +224,8 @@ void Leave(bool restoreSelection=true) {
     Enum(state.pane.get(),"display",1);TabValue(state.tab.get(),false);
     state.recipesDisplay.reset();state.resourcesDisplay.reset();state.active=false;Cancel();
 }
+void Render();
+void UpdateCharacter();
 void Enter() {
     if(state.active){TabValue(state.tab.get(),true);return;}
     state.recipesDisplay.reset(Style(state.recipes.get(),"display"));
@@ -145,7 +237,8 @@ void Enter() {
     // Native API temporarily allows an empty group and restores its policy afterwards.
     // SetValueWithoutNotify(false) alone refuses to clear its final selected item.
     api.Call(state.tabGroup.get(),"ForceAllSelectionsOff");TabValue(state.tab.get(),true);
-    Enum(state.pane.get(),"display",0);state.nextPoll=0;
+    Enum(state.pane.get(),"display",0);
+    UpdateCharacter();Render();state.nextPoll=GetTickCount64()+500;
 }
 bool Parameters(int& target,int& coefficient,bool& epic) {
     epic=api.Value<bool>(api.Call(state.epic.get(),"get_value"));
@@ -157,35 +250,36 @@ void Render() {
     const bool valid=Parameters(target,coefficient,epic);
     for(size_t i=0;i<state.rows.size();++i) {
         const bool show=state.havePage&&i<state.page.recipes.size();
-        Enum(state.rows[i].get(),"display",show?0:1);
-        if(!show)continue;
+        Enum(state.recipeLines[i].get(),"display",show?0:1);
+        if(!show){ClearItem(state.recipeItems[i]);continue;}
         const auto& r=state.page.recipes[i];
-        std::string caption=r.name+" · Niv. "+std::to_string(r.level);
+        const bool available=BindItem(state.recipeItems[i],state.recipeItems[i].visual.get(),r.id,1);
+        std::string caption=r.name+" · Niv. "+std::to_string(r.level)+(available?"":" · objet indisponible dans cette version");
         if(valid) {
             const auto plan=jobsxp::Simulate(r,state.xp,target,coefficient,epic);
             caption+="\n"+std::to_string(jobsxp::CraftXp(r,state.query.level,coefficient,epic))+" XP / fabrication";
             caption+=plan.reached?" · "+std::to_string(plan.count)+" fabrications pour le niveau "+std::to_string(target):" · cible non atteignable";
         }
-        Text(state.rows[i].get(),caption);Text(state.rows[i].get(),jobsxp::Ingredients(r,1),"set_tooltip");
+        Text(state.rows[i].get(),caption);
         Float(state.rows[i].get(),"borderLeftWidth",state.selected==static_cast<int>(i)?4.f:0.f);
         Color(state.rows[i].get(),"borderLeftColor",.64f,.79f,.26f);
     }
     Enabled(state.previous.get(),state.query.skip>0&&!state.request);
     Enabled(state.next.get(),state.havePage&&state.query.skip+jobsxp::PageSize<state.page.total&&!state.request);
-    if(!valid)Text(state.details.get(),"Niveau cible : 1 à 200. Coefficient d'XP : 1 à 600 %.");
-    else if(state.selected>=0&&state.selected<static_cast<int>(state.page.recipes.size())) {
+    if(!valid){ClearIngredients();Text(state.details.get(),"Niveau cible : 1 à 200. Coefficient d'XP : 1 à 600 %.");}
+    else if(state.havePage&&state.selected>=0&&state.selected<static_cast<int>(state.page.recipes.size())) {
         const auto& r=state.page.recipes[state.selected];
         const auto plan=jobsxp::Simulate(r,state.xp,target,coefficient,epic);
         std::string text=r.name+"\n";
+        RenderIngredients(r,plan.count);
         if(plan.count==0&&plan.reached)text+="Niveau cible déjà atteint.";
         else {
             text+=(plan.reached?"Pour atteindre la cible : ":"Simulation limitée : ")+std::to_string(plan.count)+
                 " fabrication(s), +"+std::to_string(plan.xp-state.xp)+" XP, niveau "+std::to_string(jobsxp::Level(plan.xp))+".";
-            if(plan.count)text+="\n"+jobsxp::Ingredients(r,plan.count);
             if(!plan.reached)text+="\nChoisis une autre recette pour continuer.";
         }
         Text(state.details.get(),text);
-    } else Text(state.details.get(),"Sélectionne une recette dans la liste ci-dessus : les ingrédients et leurs quantités totales apparaîtront ici.");
+    } else {ClearIngredients();Text(state.details.get(),"Sélectionne une recette dans la liste ci-dessus : les ingrédients et leurs quantités totales apparaîtront ici.");}
     state.lastTarget=target;state.lastCoefficient=coefficient;state.lastEpic=epic;
 }
 void Search() {
@@ -234,10 +328,16 @@ void Create(Obj owner) {
     if(!state.tabGroup.get()||state.tabGroup.get()!=api.Call(state.resourceTab.get(),"get_group"))
         throw std::runtime_error("Jobs native tab group unavailable");
     state.recipes.reset(api.Call(binding.get(),"get_recipesUI"));state.resources.reset(api.Call(binding.get(),"get_jobSkillsUI"));
+    state.nativeRecipes.reset(api.Field(state.handler.get(),"m_jobWindowRecipesUI"));
+    if(!state.nativeRecipes.get()){state=State{};return;}
+    if(api.object_get_class(state.nativeRecipes.get())!=api.Class("Core.dll","Core.UILogic.Crafting.Recipes","JobWindowRecipesUI"))
+        throw std::runtime_error("Unsupported native recipe item binding");
+    // OnEnable may precede the native recipe filter's initialization.
+    if(!api.Field(state.nativeRecipes.get(),"m_currentRecipesFilter")){state=State{};return;}
     state.cached.reset(module->cached.get());state.compositor.reset(module->compositor.get());state.generation=++generation;
-    state.tab.reset(api.New(api.Class("Core.dll",Figma,"DofusTab")));Text(state.tab.get(),"XP · DofusDB");
+    state.tab.reset(api.New(api.Class("Core.dll",Figma,"DofusTab")));Text(state.tab.get(),"XP");
     int size=api.Value<int>(api.Call(state.recipeTab.get(),"get_size"));api.Call(state.tab.get(),"set_size",{&size});
-    int fontCase=api.Value<int>(api.Call(state.recipeTab.get(),"get_fontCase"));api.Call(state.tab.get(),"set_fontCase",{&fontCase});Text(state.tab.get(),"XP · DofusDB");
+    int fontCase=api.Value<int>(api.Call(state.recipeTab.get(),"get_fontCase"));api.Call(state.tab.get(),"set_fontCase",{&fontCase});Text(state.tab.get(),"XP");
     for(const char* property:{"bottom","top","marginTop","marginBottom","marginLeft","alignSelf"}) {
         Ref value(Style(state.resourceTab.get(),property));WriteStyle(state.tab.get(),property,value.get());
     }
@@ -266,15 +366,18 @@ void Create(Obj owner) {
     state.status.reset(Label(list.get(),"Recettes disponibles pour ton niveau, classées par niveau décroissant."));
     state.refresh.reset(Button(list.get(),"Actualiser la liste"));Pixels(state.refresh.get(),"marginBottom",8);
     bool no=false;
-    for(auto& row:state.rows){
-        row.reset(Button(list.get(),""));Pixels(row.get(),"minHeight",58);Pixels(row.get(),"marginBottom",5);
+    for(size_t i=0;i<state.rows.size();++i){
+        auto& row=state.rows[i];state.recipeLines[i].reset(Row(list.get()));Enum(state.recipeLines[i].get(),"flexWrap",0);
+        state.recipeItems[i].visual.reset(api.New(api.Class(Ui,UiSpace,"VisualElement")));Add(state.recipeLines[i].get(),state.recipeItems[i].visual.get());
+        row.reset(Button(state.recipeLines[i].get(),""));Pixels(row.get(),"minHeight",80);Float(row.get(),"flexGrow",1);
         Ref label(api.Field(row.get(),"m_textLabel"));api.Call(label.get(),"set_isSingleLine",{&no});
-        Enum(label.get(),"whiteSpace",0);Enum(row.get(),"display",1);
+        Enum(label.get(),"whiteSpace",0);Enum(state.recipeLines[i].get(),"display",1);
     }
     Ref pages(Row(list.get()));state.previous.reset(Button(pages.get(),"← Précédentes"));state.next.reset(Button(pages.get(),"Suivantes →"));
     Float(state.previous.get(),"flexGrow",1);Float(state.next.get(),"flexGrow",1);Pixels(state.previous.get(),"marginRight",8);
     Ref result(Section(body.get(),"3. Ingrédients à préparer"));
     state.details.reset(Label(result.get(),"Sélectionne une recette pour afficher les quantités nécessaires à ton objectif."));
+    state.ingredientList.reset(api.New(api.Class(Ui,UiSpace,"VisualElement")));Add(result.get(),state.ingredientList.get());
     Add(state.tabs.get(),state.tab.get());Add(state.content.get(),state.pane.get());
     Log("JOBS_XP_PANEL_READY nativeTab=true provider=DofusDB");
 }
@@ -331,6 +434,21 @@ void InstallJobsXp(){
     const auto handler=api.Class("Core.dll","Core.UILogic.Job","JobCraftAndSkillsHandler");
     FieldContract(ui,"m_jobCraftAndSkillsHandler",0x150);
     FieldContract(handler,"m_binding",0x68);FieldContract(handler,"m_jobId",0x60);
+    FieldContract(handler,"m_jobWindowRecipesUI",0x50);
+    const auto recipes=api.Class("Core.dll","Core.UILogic.Crafting.Recipes","RecipesUI");
+    FieldContract(recipes,"m_currentRecipesFilter",0x208);
+    bindTile=api.FindVerified(recipes,"BindTileData",3,0x2D5AA40);
+    const auto item=api.Class("Core.dll","","mc");
+    createItem=api.FindVerified(item,"ohc",5,0x2AAEE80);
+    api.FindVerified(item,"myx",0,0x2AAC6B0);
+    FieldContract(api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.Item","ItemData"),"id",0x14);
+    const auto tile=api.Class("Core.dll","Core.UILogic.Components.Slots","Tile");
+    FieldContract(tile,"onRightClickCallback",0x3F8);
+    api.FindVerified(tile,".ctor",0,0x1664C10);api.FindVerified(tile,"set_tileSize",1,0x1665D60);
+    api.FindVerified(tile,"set_counterValue",1,0x16650C0);
+    const auto cleanup=api.Class("Core.dll","","pq");
+    clearTileImage=api.FindVerified(cleanup,"paq",1,0x2E90AD0);
+    clearTileEvents=api.FindVerified(cleanup,"pbo",1,0x2E93180);
     const auto binding=api.Class("Core.dll","Core.UILogic.Bindings","JobRecipesAndSkillsBinding");
     for(const auto& [name,rva]:std::array<std::pair<const char*,uintptr_t>,7>{{
         {"GetRootElement",0x68D2F0},{"get_ctr_tabs",0x2F56D50},{"get_content",0x2F56A90},
@@ -344,6 +462,12 @@ void InstallJobsXp(){
     api.FindVerified(tab,"get_group",0,0x155DB30);
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","SelectableGroup"),"ForceAllSelectionsOff",0,0x15C1FC0);
     api.FindVerified(api.Class(Ui,UiSpace,"VisualElement"),"get_resolvedStyle",0,0x55F72E0);
+    const auto resolved=api.Class(Ui,UiSpace,"ResolvedStyleAccess");
+    for(const auto& [name,rva]:std::array<std::pair<const char*,uintptr_t>,9>{{
+        {"get_height",0x55D9A40},{"get_bottom",0x55D9820},{"get_marginTop",0x55D9BA0},
+        {"get_marginBottom",0x55D9B10},{"get_marginLeft",0x55D9B40},{"get_marginRight",0x55D9B70},
+        {"get_paddingTop",0x55D9D90},{"get_paddingBottom",0x55D9D00},{"get_alignSelf",0x55D9350}}})
+        api.FindVerified(resolved,name,0,rva);
     api.FindVerified(api.Class("Core.dll","","fag"),"bbxi",1,0x19DEA10);
     const auto job=api.Class("Core.dll","","ll");
     api.FindVerified(job,"obv",0,0x7EF1B0);api.FindVerified(job,"obx",0,0x73DC70);api.FindVerified(job,"obt",0,0x68D2D0);
@@ -368,7 +492,7 @@ void RestoreJobsXp(){
     if(!state.pane.get()&&!state.tab.get()){state=State{};return;}
     state.cleanup=true;
     try{
-        Leave();
+        Leave();ClearItems();
         if(state.tab.get())api.Call(state.tab.get(),"RemoveFromHierarchy");
         if(state.pane.get())api.Call(state.pane.get(),"RemoveFromHierarchy");
         state=State{};
@@ -384,7 +508,7 @@ void TickJobsXp(){
             Create(pending.get());if(state.pane.get())pending.reset();
         }
         if(!state.pane.get())return;
-        MatchTabHeight();
+        MatchTabLayout();
         if(api.Value<bool>(api.Call(state.tab.get(),"get_isOn")))Enter();
         if(!state.active)return;
         TabValue(state.tab.get(),true);

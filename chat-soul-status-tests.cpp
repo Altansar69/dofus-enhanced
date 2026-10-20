@@ -105,8 +105,15 @@ int main() {
             "Absent soul must be red independently of green validated Ocre objective");
         Check(Has(2477,"Âme en sac")&&Has(2477,"Ocre à faire"),"Future archmonster objective must use exact ID and separate possession");
         Check(Has(2468,"Pas en sac"),"One archmonster must not count as a different archmonster");
-        Check(Has(999999,"Hors Ocre"),"Unrelated monsters must not inherit Ocre progress");
-        Check(CombinedCaption(999999,true).ends_with("</color> · Hors Ocre"),"Monsters outside Ocre must keep a neutral quest label");
+        for (const auto part : {ChatSoulPart::Inventory, ChatSoulPart::Ocre}) {
+            Check(ChatSoulCaption(999999,part).empty() && ChatSoulCaption(999999,part,true).empty(),
+                "Monsters outside Ocre must have neither bag nor quest badges");
+            Check(ChatSoulDetail(999999,part).empty(),"Hidden outside-Ocre badges must have no tooltip");
+        }
+        Items({FullStone(999999)});PumpFresh();FinishScan();
+        Check(chat_souls::state.owned.contains(999999) && CombinedCaption(999999,true).empty(),
+            "Owning an unrelated monster soul must not restore either hidden badge");
+        Items({Item(33684),Item(33914,328),Item(33682,327,0),Item(147,1)});PumpFresh();FinishScan();
         Check(ChatSoulDetail(147,ChatSoulPart::Inventory).find("banque")!=std::string::npos,"Tooltip must explain bag-only scope");
         Check(ChatSoulDetail(147,ChatSoulPart::Inventory).find("<color=")==std::string::npos,"Item status tooltip stays plain text");
         Check(ChatSoulDetail(147,ChatSoulPart::Inventory).find("Ocre")==std::string::npos&&

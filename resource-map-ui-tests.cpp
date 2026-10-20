@@ -10,6 +10,7 @@
 #include <cstring>
 #include <iostream>
 #include <map>
+#include <set>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -38,7 +39,11 @@ std::unordered_map<GCHandle,Obj> handles;
 std::map<std::string,uintptr_t> guards;
 std::vector<std::string> logs;
 GCHandle nextHandle=0xABCD00000000ULL;
-Obj character{},cartography{},miniRoot{};
+Obj character{},cartography{},miniRoot{},miniMapRoot{};
+std::set<Obj> cursorTargets;int cursorRemoveFailures=0,cursorMapRemoveFailures=0;
+int cursorEnableFailureCountdown=-1;
+Obj cursorEnterMap{},cursorLeaveMap{};
+std::map<Obj,std::set<Obj>> cursorCacheKeys;
 int nativeEnable=0,nativeDisable=0,changes=0,nativeStyleWrites=0,moveFailureCountdown=-1,removeFailures=0;
 bool rejectChange=false;
 using LifeFn=void(*)(Obj,Method);
@@ -63,9 +68,11 @@ Obj Panel(Obj value){while(value){if(Get(value).fields["panel"])return Get(value
 void OriginalEnable(Obj owner,Method){++nativeEnable;Get(owner).enabled=true;}
 void OriginalDisable(Obj owner,Method){++nativeDisable;Get(owner).enabled=false;}
 void Init(){
-    api.class_get_field_from_name=[](Klass,const char* name)->void*{static std::map<std::string,size_t> offsets{{"m_rightLabel",0x318},{"m_farRightLabel",0x320},{"deuc",0x60},{"devy",0x660},{"m_checkbox",0x360},{"iconContainer",0x310}};return &offsets.at(name);};
+    api.class_get_field_from_name=[](Klass,const char* name)->void*{static std::map<std::string,size_t> offsets{{"m_rightLabel",0x318},{"m_farRightLabel",0x320},{"deuc",0x60},{"devy",0x660},{"m_checkbox",0x360},{"iconContainer",0x310},{"s_mouseEnterCursorMap",0x40},{"s_mouseLeaveCursorMap",0x48}};return &offsets.at(name);};
     api.field_get_offset=[](void* field)->size_t{return *static_cast<size_t*>(field);};
     api.field_get_value_object=[](void* field,Obj self)->Obj{Check(!self,"Static catalog type");return Box(int(*static_cast<size_t*>(field)),"AddressableEntryType");};
+    api.class_get_name=[](Klass type)->const char*{return static_cast<Type*>(type)->name.c_str();};
+    cursorEnterMap=Make("Dictionary`2");cursorLeaveMap=Make("Dictionary`2");
     api.object_get_class=[](Obj value)->Klass{return Get(value).type;};
     api.class_is_valuetype=[](Klass type){const auto& name=static_cast<Type*>(type)->name;return name=="Box"||name=="Length"||name=="StyleValue"||name=="Hierarchy";};
     api.object_unbox=[](Obj value)->void*{return Get(value).data.data();};
@@ -88,6 +95,27 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         Check(!args[2]&&!args[3]&&!args[4]&&!(*static_cast<bool*>(args[5]))&&*static_cast<bool*>(args[6]),"Same cache/lifetime flags as native CheckboxCustom");
         Get(args[0]).size=*static_cast<int*>(args[1]);Get(args[0]).fields["catalog"]=Box(static_cast<int*>(args[1])[1]);return nullptr;
     }
+    Check(m.name!="AddCursorHandler","Do not overwrite CheckboxCustom's native enabled-state callback");
+    if(m.name=="EnableCursorHandler"){
+        Check(!self&&*static_cast<int64_t*>(args[1])==2097152&&*static_cast<int*>(args[2])==0,"Native hand cursor ABI");
+        Check(Get(args[0]).owned&&Panel(args[0]),"Cursor belongs to attached owned control");
+        Check(Get(args[0]).fields["enabledCallback"],"Keep the constructor's native enabled-state callback");
+        Check(cursorTargets.insert(args[0]).second,"Duplicate cursor handler");
+        cursorCacheKeys[cursorEnterMap].insert(args[0]);
+        if(cursorEnableFailureCountdown==0){cursorEnableFailureCountdown=-1;throw std::runtime_error("injected partial cursor registration failure");}
+        if(cursorEnableFailureCountdown>0)--cursorEnableFailureCountdown;
+        cursorCacheKeys[cursorLeaveMap].insert(args[0]);return nullptr;
+    }
+    if(m.name=="RemoveCursorHandler"){
+        Check(!self,"Static cursor cleanup");
+        if(cursorRemoveFailures>0){--cursorRemoveFailures;throw std::runtime_error("injected cursor remove failure");}
+        cursorTargets.erase(args[0]);return nullptr;
+    }
+    if(m.name=="Remove"&&m.type->name=="Dictionary`2"){
+        if(self==cursorLeaveMap&&cursorMapRemoveFailures>0){--cursorMapRemoveFailures;throw std::runtime_error("injected cache remove failure");}
+        Check(Get(args[0]).owned,"Never remove foreign cursor cache keys");
+        return Box(cursorCacheKeys[self].erase(args[0])!=0);
+    }
     auto& object=Get(self);
     if(m.name=="get_ctr_filters")return object.fields["filters"];
     if(m.name==".ctor"){
@@ -95,6 +123,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
             Check(args.empty(),"Checkbox/label constructor ABI");
             if(m.type->name=="CheckboxCustom"){
                 auto square=Make("VisualElement",true);Add(self,square);object.fields["m_checkbox"]=square;
+                object.fields["enabledCallback"]=Make("NativeEnabledCallback");
                 // Native UpdateContent creates optional labels only for
                 // nonempty text. Icon-only checkboxes have no right label.
             }
@@ -176,6 +205,11 @@ Method Api::Find(Klass type,const char* name,int argc)const{auto method=std::mak
 Method Api::FindVerified(Klass type,const char* name,int argc,uintptr_t rva)const{fake::guards[static_cast<fake::Type*>(type)->name+"."+name]=rva;return Find(type,name,argc);}
 Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{return fake::Invoke(method,self,args);}
 Obj Api::Call(Obj self,const char* name,std::initializer_list<void*> args)const{return Invoke(Find(object_get_class(self),name,static_cast<int>(args.size())),self,args);}
+Obj Api::StaticField(Klass,const char* name)const{
+    if(std::string(name)=="s_mouseEnterCursorMap")return fake::cursorEnterMap;
+    if(std::string(name)=="s_mouseLeaveCursorMap")return fake::cursorLeaveMap;
+    throw std::runtime_error("Unexpected static field");
+}
 Obj Api::Field(Obj self,const char* name)const{return fake::Get(self).fields[name];}
 void* Api::FieldAddress(Obj self,const char* name)const{if(std::string(name)=="dtzx")return &fake::Get(self).enabled;if(std::string(name)=="dzyi")return fake::Get(self).fields.at(name);throw std::runtime_error("Unexpected field address");}
 Obj Api::New(Klass type,std::initializer_list<void*> args)const{
@@ -185,13 +219,13 @@ Obj Api::New(Klass type,std::initializer_list<void*> args)const{
 }
 }
 namespace resourceMap {
-constexpr Resource TestCatalog[]{{311,1,1,1,"Eau"},{303,2,1,2,"Frêne"},{441,24,1,3,"Fer"},
+constexpr Resource TestCatalog[]{{311,1,1,1,"Eau"},{303,2,1,2,"Frêne"},{312,24,1,3,"Fer"},
     {421,26,1,4,"Ortie"},{289,28,1,5,"Blé"},{1782,36,1,6,"Goujon"}};
 std::span<const Resource> Catalog(){return TestCatalog;}
 MiniMapSurface ReadMiniMapSurface(){
     MiniMapSurface result;
     if(fake::miniRoot&&fake::Panel(fake::miniRoot)){
-        result.root.reset(fake::miniRoot);
+        result.root.reset(fake::miniRoot);result.mapRoot.reset(fake::miniMapRoot);
         const auto& bounds=fake::Get(fake::miniRoot).bound;
         result.width=bounds.width;result.height=bounds.height;
     }
@@ -215,17 +249,18 @@ struct Fixture {
     Obj owner{},root{},panel{},filters{};
     std::vector<Obj> originals;
     Fixture(){
-        miniRoot=nullptr;module=&state;state.ready=true;state.servicesReady=true;state.compositor.reset(Make("Compositor"));
+        miniRoot=miniMapRoot=nullptr;module=&state;state.ready=true;state.servicesReady=true;state.compositor.reset(Make("Compositor"));
         character=Make("Character");cartography=Make("Cartography");
         owner=Make("fhi");root=Make("VisualElement");panel=Make("Panel");filters=Make("VisualElement");
         Get(root).fields["panel"]=panel;Get(filters).bound={0,272,140,468};Add(root,filters);
         Get(owner).fields["dtzy"]=character;Get(owner).fields["dtzz"]=cartography;Get(owner).fields["dzyj"]=root;
         const auto binding=Make("Binding");Get(binding).fields["filters"]=filters;Get(owner).fields["dzyi"]=binding;
         for(int i=0;i<14;++i){auto child=Make("NativeRow");Get(child).notifications=i+10;originals.push_back(child);Add(filters,child);}
-        nativeEnable=nativeDisable=changes=nativeStyleWrites=removeFailures=0;moveFailureCountdown=-1;rejectChange=false;logs.clear();
+        nativeEnable=nativeDisable=changes=nativeStyleWrites=removeFailures=0;moveFailureCountdown=cursorEnableFailureCountdown=-1;rejectChange=false;logs.clear();
         resourceMap::InstallUi();
     }
-    ~Fixture(){moveFailureCountdown=-1;removeFailures=0;resourceMap::RestoreUi();miniRoot=nullptr;module=nullptr;}
+    ~Fixture(){moveFailureCountdown=cursorEnableFailureCountdown=-1;removeFailures=cursorRemoveFailures=cursorMapRemoveFailures=0;resourceMap::RestoreUi();Check(cursorTargets.empty(),"Native cursor handlers leaked");
+        for(auto& [_,keys]:cursorCacheKeys)for(auto key:keys)Check(!Get(key).owned,"Owned native cursor cache key leaked");miniRoot=miniMapRoot=nullptr;module=nullptr;}
     void Open(){enableHook(owner,nullptr);resourceMap::TickUi();}
     Obj Resources(){for(auto child:Get(root).children)if(Get(child).type->name=="SectionHeader")return child;return nullptr;}
     Obj Scroll(){auto r=Resources();return r?Get(Get(r).fields.at("content")).children.front():nullptr;}
@@ -248,7 +283,8 @@ void NativeTreeAndDuplicateOpen(){
     Check(Get(Get(f.Row("Fer")).fields["m_rightLabel"]).styles["color"]>.9f,"Names need readable light color");
     for(int i=2;i<8;++i){auto container=Get(categories[i]).fields["iconContainer"];Check(container&&!Get(container).children.empty(),"Job header icon container");auto icon=Get(container).children.back();Check(Get(icon).size>0,"Every category includes its native icon");
         Check(Get(container).styles["display"]==0&&Get(Get(container).fields["parent"]).styles["display"]==0,"Native empty-icon ancestors must be visible for owned profession images");
-        const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());Check(catalog==(i==2?0x60:0x660),"Profession icons use the job catalog, Base uses water");}
+        const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());Check(catalog==0x60,"Category images must use actual resources from item catalog");
+        Check(Get(icon).size==resourceMap::TestCatalog[i-2].iconId,"Category image identifies first resource for the profession");}
     Check(Get(f.Row("Eau")).size==2,"Rows match large native checkbox size");
     f.Open();Check(f.Scroll()==scroll&&nativeEnable==2,"Duplicate native OnEnable must not duplicate controls");
     Check(guards.at("SectionHeader..ctor")==0x1745F00&&guards.at("ScrollView..ctor")==0x5741C70&&guards.at("CheckboxCustom.SetValueWithoutNotify")==0x17044F0,"Verified exact constructor/value contracts");
@@ -257,7 +293,7 @@ void NativeTreeAndDuplicateOpen(){
 void SelectionAndExternalChanges(){
     Fixture f;f.state.settings.resourceMapItems={303};f.Open();Check(Get(f.Row("Frêne")).value,"Persisted selection restored");
     Get(f.Row("Eau")).value=true;Get(f.Row("Fer")).value=true;resourceMap::TickUi();
-    Check(changes==1&&f.state.settings.resourceMapItems==std::vector<int>({303,311,441}),"Multiple checked resources saved once sorted");
+    Check(changes==1&&f.state.settings.resourceMapItems==std::vector<int>({303,311,312}),"Multiple checked resources saved once sorted");
     Get(f.Master()).value=false;resourceMap::TickUi();Check(changes==2&&!f.state.settings.resourceMapEnabled&&f.state.settings.resourceMapItems.size()==3,"Disable preserves selection");
     f.state.settings.resourceMapItems={289};f.state.settings.resourceMapEnabled=true;resourceMap::TickUi();
     Check(changes==2&&Get(f.Row("Blé")).value&&!Get(f.Row("Eau")).value&&Get(f.Master()).value,"External reset wins without feedback save");
@@ -304,7 +340,8 @@ Obj FindUnder(Obj root,const char* type,const char* text=nullptr){
 Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).fields["tooltip"])return child;return nullptr;}
 void MiniMapSelectionAndLifetime(){
     Fixture f;
-    miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    miniMapRoot=Make("MiniMapContent");Add(miniRoot,miniMapRoot);
     f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=false;f.state.settings.resourceMapItems.clear();
     resourceMap::TickUi();
     auto drawer=MiniDrawer();
@@ -313,7 +350,23 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(scroll).styles["display"]!=0,"Mini-map list starts hidden, leaving only profession icons");
     auto tabs=Get(Get(drawer).children.front()).children;
     Check(tabs.size()==6,"Six compact profession buttons");
-    for(auto tab:tabs){Check(Get(tab).styles["width"]==40&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");Check(!Get(tab).fields["m_rightLabel"],"Native icon-only tabs do not instantiate a caption");}
+    // Native map wheel/move callbacks are on MiniMapContent. A UI event on
+    // our controls bubbles to MiniHost without entering that map subtree.
+    for(auto control:{tabs[0],scroll}){
+        bool reachesMap=false,reachesHost=false;
+        for(auto node=control;node;node=Get(node).fields["parent"]){reachesMap|=node==miniMapRoot;reachesHost|=node==miniRoot;}
+        Check(reachesHost&&!reachesMap,"Picker wheel and hover events must bypass native cartography handlers");
+    }
+    for(size_t i=0;i<tabs.size();++i){
+        auto tab=tabs[i];
+        Check(Get(tab).styles["width"]==40&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");
+        Check(cursorTargets.contains(tab),"Category buttons must use the native hand cursor");
+        Check(!Get(tab).fields["m_rightLabel"],"Native icon-only tabs do not instantiate a caption");
+        auto icon=Get(tab).children.back();
+        Check(Get(icon).size==resourceMap::TestCatalog[i].iconId,"Each mini-map shortcut must display its representative resource image");
+        const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());
+        Check(catalog==0x60&&Get(icon).notifications==1,"Mini-map resource images use the native item catalog without intercepting clicks");
+    }
     Check(logs.size()==1&&logs.front().find("RESOURCE_MAP_UI_READY")!=std::string::npos,"Optional native labels must not abort mini-map construction");
     Get(tabs[2]).value=true;resourceMap::TickUi();
     Check(changes==0&&Get(scroll).styles["display"]==0,"Opening Mineur only opens the list without altering preferences");
@@ -327,7 +380,7 @@ void MiniMapSelectionAndLifetime(){
     auto master=FindUnder(drawer,"CheckboxCustom","Afficher sur la mini-carte");
     Get(master).value=true;Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
     resourceMap::TickUi();
-    Check(changes==1&&!f.state.settings.resourceMapEnabled&&f.state.settings.resourceMiniMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{441},"Mini visibility is independent and resource selection shared");
+    Check(changes==1&&!f.state.settings.resourceMapEnabled&&f.state.settings.resourceMiniMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{312},"Mini visibility is independent and resource selection shared");
     f.Open();Check(Get(f.Row("Fer")).value&&!Get(f.Master()).value,"Full map restores shared selection while retaining its own visibility");
     Get(f.Row("Blé")).value=true;resourceMap::TickUi();
     Check(Get(FindUnder(drawer,"CheckboxCustom","Blé")).value,"Full map changes sync to mini-map");
@@ -345,7 +398,7 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==52,"Small mini-map stays usable after resize");
     const auto previous=miniRoot;
     miniRoot=nullptr;resourceMap::TickUi();
-    Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{foreign},"Hidden mini-map detaches only owned resources");
+    Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{miniMapRoot,foreign},"Hidden mini-map detaches only owned resources");
     miniRoot=previous;resourceMap::TickUi();
     auto replacement=MiniDrawer();Check(replacement&&replacement!=drawer,"Mini-map reopening recreates picker");
     Get(FindUnder(replacement,"CheckboxCustom","Frêne")).value=true;
@@ -354,11 +407,65 @@ void MiniMapSelectionAndLifetime(){
     f.Restored();
 }
 void MiniMapCleanupRetries(){
-    Fixture f;miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    Fixture f;miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    miniMapRoot=Make("MiniMapContent");Add(miniRoot,miniMapRoot);
     resourceMap::TickUi();auto drawer=MiniDrawer();
+    cursorRemoveFailures=1;resourceMap::RestoreUi();
+    Check(resourceMap::UiCleanupPending()&&!cursorTargets.empty(),"Failed native cursor cleanup must retain ownership");
+    auto foreign=Make("NativeCursorControl");cursorCacheKeys[cursorEnterMap].insert(foreign);cursorCacheKeys[cursorLeaveMap].insert(foreign);
+    cursorMapRemoveFailures=1;resourceMap::RestoreUi();
+    Check(resourceMap::UiCleanupPending(),"Partial cursor cache cleanup must retain retry state");
     removeFailures=1;resourceMap::RestoreUi();
     Check(resourceMap::UiCleanupPending(),"Failed mini-map cleanup retains references");
     resourceMap::RestoreUi();Check(!resourceMap::UiCleanupPending()&&!Get(drawer).fields["parent"],"Mini-map cleanup can retry");
+    Check(cursorCacheKeys[cursorEnterMap].contains(foreign)&&cursorCacheKeys[cursorLeaveMap].contains(foreign),"Foreign native cursor handlers and cache keys remain intact");
+}
+void MiniMapPartialCursorRegistration(){
+    Fixture f;miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    miniMapRoot=Make("MiniMapContent");Add(miniRoot,miniMapRoot);
+    cursorEnableFailureCountdown=2;cursorRemoveFailures=2;
+    resourceMap::TickUi();auto incomplete=MiniDrawer();
+    Check(incomplete&&resourceMap::UiCleanupPending(),"Partial cursor attachment must retain the tree until cleanup succeeds");
+    auto oldTabs=Get(Get(incomplete).children.front()).children;
+    Check(cursorTargets.size()==3&&cursorCacheKeys[cursorEnterMap].contains(oldTabs[2])&&
+        !cursorCacheKeys[cursorLeaveMap].contains(oldTabs[2]),"Failure must occur after a real partial native registration");
+    Get(FindUnder(incomplete,"CheckboxCustom","Fer")).value=true;
+    resourceMap::TickUi();
+    Check(changes==0&&MiniDrawer()==incomplete&&cursorRemoveFailures==0,
+        "An incomplete attachment must retry cleanup before polling or saving stale controls");
+    resourceMap::TickUi();auto replacement=MiniDrawer();
+    Check(replacement&&replacement!=incomplete&&!Get(incomplete).fields["parent"],
+        "Successful cleanup must replace the incomplete picker on the next tick");
+    for(auto tab:oldTabs)Check(!cursorTargets.contains(tab)&&!cursorCacheKeys[cursorEnterMap].contains(tab)&&
+        !cursorCacheKeys[cursorLeaveMap].contains(tab),"Partial attachment must release every old cursor handler and cache key");
+    auto tabs=Get(Get(replacement).children.front()).children;
+    for(auto tab:tabs)Check(cursorTargets.contains(tab)&&cursorCacheKeys[cursorEnterMap].contains(tab)&&
+        cursorCacheKeys[cursorLeaveMap].contains(tab),"Replacement picker must register all six complete cursor handlers");
+    Check(changes==0&&f.state.settings.resourceMapItems.empty(),"Retrying attachment must discard pending values from the failed picker");
+}
+void MiniMapIdentityChanges(){
+    Fixture f;miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    miniMapRoot=Make("MiniMapContent");Add(miniRoot,miniMapRoot);
+    resourceMap::TickUi();auto drawer=MiniDrawer(),oldMap=miniMapRoot;
+    auto oldTabs=Get(Get(drawer).children.front()).children;
+    Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
+    miniMapRoot=Make("ReplacementMapContent");Add(miniRoot,miniMapRoot);
+    resourceMap::TickUi();auto replacement=MiniDrawer();
+    Check(replacement&&replacement!=drawer&&!Get(drawer).fields["parent"]&&changes==0,
+        "Replacing the map under the same host must retire stale controls before polling them");
+    Check(Get(oldMap).fields["parent"]==miniRoot&&Get(miniMapRoot).fields["parent"]==miniRoot,
+        "Map replacement cleanup must preserve native children of the host");
+    for(auto tab:oldTabs)Check(!cursorTargets.contains(tab)&&!cursorCacheKeys[cursorEnterMap].contains(tab)&&
+        !cursorCacheKeys[cursorLeaveMap].contains(tab),"Map identity replacement must release stale cursor callbacks and keys");
+    const auto previousHost=miniRoot;
+    auto newHost=Make("ReplacementHost");Get(newHost).fields["panel"]=Panel(previousHost);Get(newHost).bound={0,0,300,300};
+    Add(newHost,miniMapRoot);miniRoot=newHost;
+    Get(FindUnder(replacement,"CheckboxCustom","Eau")).value=true;
+    resourceMap::TickUi();auto reparented=MiniDrawer();
+    Check(reparented&&reparented!=replacement&&!Get(replacement).fields["parent"]&&changes==0,
+        "Reparenting a map in the same panel must rebuild its sibling picker without saving stale values");
+    Check(Get(previousHost).children==std::vector<Obj>{oldMap}&&Get(miniMapRoot).fields["parent"]==newHost,
+        "Reparent cleanup must leave both native host hierarchies intact");
 }
 }
 int main(){
@@ -377,6 +484,8 @@ int main(){
         fake::DeferredLayoutAndResize();std::cout<<"deferred layout passed\n";
         fake::MiniMapSelectionAndLifetime();std::cout<<"mini-map selection and lifetime passed\n";
         fake::MiniMapCleanupRetries();std::cout<<"mini-map cleanup retry passed\n";
+        fake::MiniMapPartialCursorRegistration();std::cout<<"mini-map partial cursor attachment recovery passed\n";
+        fake::MiniMapIdentityChanges();std::cout<<"mini-map identity replacement and reparenting passed\n";
         fake::Check(fake::handles.empty(),"Managed references leaked after fixture destruction");
         std::cout<<"Resource map UI production orchestration tests passed\n";return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

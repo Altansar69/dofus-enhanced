@@ -1,4 +1,21 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 84
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 85
+
+R85 — RESSOURCES, CHAT ET OBJETS NATIFS DANS XP
+- Métiers : onglet nommé uniquement XP, aligné sur les onglets natifs et séparé
+  de Ressources par le même espace qu’entre Recettes et Ressources.
+- XP : les recettes proposées et les ingrédients à préparer affichent leur
+  objet natif avec image, infobulle au survol et actions habituelles.
+- Grande carte et mini-carte : les catégories montrent leur première ressource,
+  avec eau, frêne, fer, ortie, blé et goujon, via les images d’objets du jeu.
+- Mini-carte : la barre de sélection garde sa taille quand la carte est zoomée
+  ou dézoomée. La molette au-dessus des ressources fait défiler la liste sans
+  changer le zoom de la carte. Les boutons affichent la main au survol sans
+  déclencher la surbrillance d’une case située derrière.
+- Chat : les monstres connus comme absents de L’éternelle moisson gardent
+  seulement le bouton TP. Les mentions de possession et « Hors Ocre » disparaissent.
+  Les monstres concernés par l’Ocre conservent leurs indicateurs et infobulles.
+- Compilation et tests hors jeu ; rendu réel à confirmer. Aucun client ouvert
+  manipulé. La nouvelle version se charge au prochain lancement.
 
 R84 — PANNEAUX ET REPÈRES PLUS LISIBLES
 - Métiers : XP · DofusDB reprend la typographie, l’espacement et la hauteur

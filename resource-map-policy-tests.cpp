@@ -1,4 +1,5 @@
 #include "resource-map-policy.hpp"
+#include "resource-map-icons.hpp"
 #include <array>
 #include <iostream>
 #include <stdexcept>
@@ -34,6 +35,13 @@ int main(){try{
     Check(Query(catalog,data,selected,1,{2,0,1,1}).cells.empty(),"Inverted bounds rejected");
     Check(Query(catalog,data,selected,1,{-100001,0,1,1}).cells.empty(),"Oversized coordinates rejected");
     const auto actual=Catalog();const auto placements=Placements();
+    for (const auto [job, icon] : std::array<std::pair<int,int>,6>{{
+        {1,15026},{2,38017},{24,39024},{26,36642},{28,34009},{36,41294}}})
+        Check(RepresentativeResourceIcon(actual,job)==icon,"Job shortcuts show water, ash, iron, nettle, wheat and gudgeon");
+    const Resource shuffledIcons[]{{900,24,100,990,"High"},{312,24,1,39024,"Iron"},
+        {400,24,1,991,"Tie"},{1,24,0,0,"Missing"},{1,36,0,997,"Other job"}};
+    Check(RepresentativeResourceIcon(shuffledIcons,24)==39024,"Representative resource uses level then item ID, independent of catalog order");
+    Check(RepresentativeResourceIcon(shuffledIcons,999)==0&&RepresentativeResourceIcon({},24)==0,"Unknown or empty categories have no invented icon");
     Check(actual.size()==86,"Complete DofusDB standard harvest catalog");
     Check(std::count_if(actual.begin(),actual.end(),[](const Resource& r){return r.jobId==24;})==16,"All sixteen ores selectable");
     std::set<int> covered;std::set<std::pair<int64_t,int>> unique;

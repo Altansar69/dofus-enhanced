@@ -10,9 +10,10 @@ void PumpRender(uint64_t now);
 void RestoreRender();
 bool RenderCleanupPending();
 // Validated native mini-map surface, also available with no resources selected.
-// Dimensions are local UI units, independent of the panel's display scale.
+// The picker is a sibling of the transformed map, so native map input and zoom
+// never include its controls. Dimensions are in the stable parent's UI units.
 struct MiniMapSurface {
-    managed::Ref root;
+    managed::Ref root, mapRoot;
     float width=0, height=0, left=0, top=0;
 };
 MiniMapSurface ReadMiniMapSurface();

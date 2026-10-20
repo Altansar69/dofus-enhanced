@@ -94,6 +94,7 @@ Obj Api::Call(Obj self,const char* n,std::initializer_list<void*> args)const{
     if(name=="Remove"){return Box(o.strings.erase(Get(a[0]).text)>0);}
     if(name=="Contains")return Box(o.strings.contains(Get(a[0]).text));
     if(name=="get_panel")return Panel(self);if(name=="get_parent")return o.parent;
+    if(name=="get_contentContainer")return o.refs.contains("content")?o.refs["content"]:self;
     if(name=="get_visible")return Box(o.visible);if(name=="get_worldBound")return Box(o.bound);if(name=="get_worldClip")return Box(o.clip);
     if(name=="get_resolvedStyle"){auto p=Make("ResolvedStyle");Get(p).styleOwner=self;return p;}
     if(name=="get_display" || name=="get_visibility")return Box(int(Get(o.styleOwner).numbers[name]));
@@ -164,7 +165,7 @@ struct Fixture {
         banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=0;onConvert={};
         fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,3,2,1,5,true},{20,2,1,1,1,99,false}};
     }
-    Obj View(int key){auto owner=Make(key?"fhw":"CartographyBannerView");auto root=Make("NativeRoot");Get(root).panel=Make("Panel");
+    Obj View(int key){auto owner=Make(key?"fhw":"CartographyBannerView");auto root=Make("NativeRoot"),host=Make("NativeHost");Get(host).panel=Make("Panel");Attach(host,root);
         auto world=Make("WorldMapData"),manager=Make("fga");Get(manager).refs["dttw"]=Make("StringDict");Get(manager).refs["dttx"]=Make("StringDict");
         Get(owner).refs={{"dugq",root},{"<dugi>k__BackingField",world},{"<dugk>k__BackingField",manager},{"dugv",service},{"dugy",services["fng"]}};
         Get(dictionary).indexed[key]=owner;return owner;}
@@ -217,14 +218,29 @@ void LimitsAndInvalidGeometry(){Fixture f;fakePlacements.clear();for(int x=0;x<6
 void MiniSurfaceIndependentOfSelection(){Fixture f;
     f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
     {
-        auto surface=ReadMiniMapSurface();Check(surface.root.get()==f.Root(f.banner),"Picker must access mini-map when markers disabled and selection empty");
+        auto surface=ReadMiniMapSurface();Check(surface.root.get()==Get(f.Root(f.banner)).parent,"Picker must access mini-map when markers disabled and selection empty");
     }
-    Get(f.Root(f.banner)).scale={2,2};Get(f.Root(f.banner)).origin={10,20};
+    auto host=Get(f.Root(f.banner)).parent;
+    Get(host).scale={2,2};Get(host).origin={10,20};
+    Get(host).bound={10,20,600,600};Get(host).clip={30,60,400,400};
+    Get(f.Root(f.banner)).scale={.04f,.04f};Get(f.Root(f.banner)).origin={10,20};
     Get(f.Root(f.banner)).bound={10,20,600,600};Get(f.Root(f.banner)).clip={30,60,400,400};
     {
         auto surface=ReadMiniMapSurface();
         Check(surface.width==200&&surface.height==200&&surface.left==10&&surface.top==20,"Picker dimensions must account for panel scale and clipping");
     }
+    for(float zoomScale:{.01f,.1f,1.0f,10.0f}){
+        Get(f.Root(f.banner)).scale={zoomScale,zoomScale};
+        Get(f.Root(f.banner)).bound={30,60,zoomScale*4000,zoomScale*4000};
+        auto surface=ReadMiniMapSurface();
+        Check(surface.mapRoot.get()==f.Root(f.banner)&&surface.root.get()==host,"Picker must be sibling of native map content");
+        Check(surface.width==200&&surface.height==200&&surface.left==10&&surface.top==20,"Map zoom must not change picker geometry");
+    }
+    Get(host).refs["content"]=f.Root(f.banner);
+    Check(!ReadMiniMapSurface().root.get(),"A parent that redirects Add into the map must never host controls");
+    Get(host).refs.erase("content");
+    Get(host).scale.x=std::numeric_limits<float>::quiet_NaN();
+    Check(!ReadMiniMapSurface().root.get(),"Invalid host transform must fail closed");Get(host).scale.x=2;
     Get(f.Root(f.banner)).visible=false;Check(!ReadMiniMapSurface().root.get(),"Hidden mini-map must not expose picker surface");
     Get(f.Root(f.banner)).visible=true;Get(f.dictionary).indexed.erase(0);
     Check(!ReadMiniMapSurface().root.get(),"Full map is never mistaken for mini-map");
@@ -233,7 +249,7 @@ void IndependentMapVisibility(){Fixture f;f.Tick();
     const auto full=LiveMarkers(f.full);
     f.state.settings.resourceMiniMapEnabled=false;f.Tick();
     Check(LiveMarkers(f.banner).empty()&&LiveMarkers(f.full)==full,"Mini-map opt-out removes only mini-map markers");
-    Check(ReadMiniMapSurface().root.get()==f.Root(f.banner),"Disabled mini-map keeps its picker accessible");
+    Check(ReadMiniMapSurface().root.get()==Get(f.Root(f.banner)).parent,"Disabled mini-map keeps its picker accessible");
     f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=true;f.Tick();
     Check(LiveMarkers(f.full).empty()&&LiveMarkers(f.banner).size()==2,"Mini-map markers can display independently of the full map");
     f.state.settings.resourceMapEnabled=true;f.Tick();

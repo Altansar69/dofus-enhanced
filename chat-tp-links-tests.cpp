@@ -417,6 +417,28 @@ void SoulStatusLinks() {
     RestoreChatTpLinks();soulCaptions.clear();richSoulCaptions.clear();
 }
 
+void OutsideOcreTravelOnly() {
+    SetSoul(999999,"","","","");
+    auto source=Result(),group=MonsterGroup(7,8,1,"outside-ocre",999999);
+    Link(source,group);
+    auto input=Build(source),label=MakeLabel(input),sub=MakeLabel(Str("")),view=Make("ChatView"),binding=Make("ChatItemBinding");
+    Get(binding).fields={{"content",label},{"subContent",sub}};Get(view).fields["binding"]=binding;
+    bindHook(view,Make("Row"),0,nullptr);
+    auto tp=TpManagers(label);
+    Check(tp.size()==1 && InfoManagers(label).empty(),"Outside-Ocre group must retain only TP, with no bag or quest zone");
+    const auto rendered=Get(Get(label).fields["text"]).text;
+    Check(SeparatorCount(rendered)==1 && rendered.find("Hors Ocre")==std::string::npos && rendered.find("sac")==std::string::npos,
+        "Outside-Ocre group must have exactly one separator before TP and no status text");
+    const auto before=clicks;
+    clickHook(tp[0],{},nullptr);
+    Check(clicks==before+1 && clicked==ChatTpTarget{7,8,1},"Outside-Ocre TP must still travel to the original coordinates");
+    for (int i=0;i<10;++i)TickChatTpLinks();
+    Check(TpManagers(label)==tp && InfoManagers(label).empty(),"Refreshes must keep an outside-Ocre group free of status zones");
+    RestoreChatTpLinks();
+    Check(Get(Get(label).fields["text"]).text==Get(input).text,"Cleanup must restore the original outside-Ocre group link");
+    soulCaptions.clear();richSoulCaptions.clear();
+}
+
 void OcreJournalClick() {
     const auto travelBefore=clicks,nativeBefore=originalClicks;
     auto source=Result();Link(source,MonsterGroup(7,8,1,"journal",147));
@@ -493,7 +515,7 @@ int main(int argc,char** argv){
         InstallChatTpLinks(fake::OnClick);
         if(fallback)fake::Check(!fake::logs.empty()&&fake::logs.back().starts_with("CHAT_TP_COLOR_FALLBACK "),
             "Unavailable cosmetic layout must preserve chat TP with a diagnostic instead of aborting module startup");
-        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OcreJournalClick();fake::clicks=0;fake::Run();
+        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::clicks=0;fake::Run();
         fake::Check(fake::nullableAllocations==0,"Nullable<Color> must never be allocated or boxed");
         module=nullptr;
         std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover and cleanup retries\n";return 0;
