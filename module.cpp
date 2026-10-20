@@ -21,6 +21,9 @@
 #include "spouse-party-widget.hpp"
 #include "startup-options.hpp"
 #include "treasure-launch.hpp"
+#include "notebook-panel.hpp"
+#include "jobs-xp-panel.hpp"
+#include "breeding-crossing-panel.hpp"
 #include <MinHook.h>
 #include <fstream>
 #include <mutex>
@@ -209,6 +212,9 @@ void Module::Pump(Obj source) {
     startupStage("soul-helper", [] { TickSoulHelper(); });
     startupStage("soul-widget", [] { TickSoulWidget(); });
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
+    startupStage("notebook-panel", [] { TickNotebookPanel(); });
+    startupStage("jobs-xp", [] { TickJobsXp(); });
+    startupStage("breeding-crossing", [] { TickBreedingCrossing(); });
     startupStage("soul-group-menu", [] { TickSoulGroupMenu(); });
     startupStage("spouse-party-menu", [] { TickSpousePartyMenu(); });
     startupStage("spouse-party-widget", [] { TickSpousePartyWidget(); });
@@ -254,6 +260,9 @@ void Module::Stop() {
     resourceMap::RestoreUi();
     RestoreMonsterGlow();
     RestoreTreasurePanel();
+    RestoreNotebookPanel();
+    RestoreJobsXp();
+    RestoreBreedingCrossing();
     RestoreSoulHelper();
     RestoreSoulWidget();
     RestoreDisplayShortcut();
@@ -274,7 +283,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !JobsXpCleanupPending() && !BreedingCrossingCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -296,11 +305,14 @@ static void UpdateHook(Obj self, Method method) {
             if (resourceMap::UiCleanupPending()) resourceMap::RestoreUi();
             if (MapPreloadCleanupPending()) RestoreMapPreload();
             if (TreasurePanelCleanupPending()) RestoreTreasurePanel();
+            if (NotebookPanelCleanupPending()) RestoreNotebookPanel();
+            if (JobsXpCleanupPending()) RestoreJobsXp();
+            if (BreedingCrossingCleanupPending()) RestoreBreedingCrossing();
             if (SoulHelperCleanupPending()) RestoreSoulHelper();
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !JobsXpCleanupPending() && !BreedingCrossingCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -348,6 +360,9 @@ static DWORD WINAPI Worker(void*) {
         InstallContextDisplayMenu();
         InstallSoulHelper();
         InstallTreasurePanel();
+        InstallNotebookPanel();
+        InstallJobsXp();
+        InstallBreedingCrossing();
         InstallSoulWidget();
         InstallMonsterGlow();
         InstallSoulGroupMenu();

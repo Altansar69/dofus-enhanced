@@ -22,7 +22,8 @@ struct PanelView {
 managed::Obj GetUiRoot();
 bool PanelCleanupPending();
 bool HandlePanelMenuCallback(managed::Obj callback, managed::Obj view);
-// Shared native ListElement action hook; no second hook on the same address.
+// Shared native ListElement action hook. Adds each handler once at install;
+// handlers return false for foreign controls. Null does not clear other panels.
 void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj));
 class Panel {
 public:

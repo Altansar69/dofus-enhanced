@@ -41,7 +41,7 @@ DragFn originalDown = nullptr, originalUp = nullptr;
 DragFn originalPopulate = nullptr;
 DragFlagFn setDragging = nullptr;
 thread_local bool enteringOwnedDrag = false;
-bool (*auxiliaryAction)(Obj) = nullptr;
+std::vector<bool (*)(Obj)> auxiliaryActions;
 
 bool MenuAvailable() {
     return state.installed && !state.hiding && !state.cleanupPending && state.hideModule &&
@@ -458,7 +458,11 @@ bool CanClick() {
     return true;
 }
 void ActionHook(Obj owner, Method method) {
-    if (auxiliaryAction && auxiliaryAction(owner)) return;
+    // Registrations are made during installation, before hooks are enabled.
+    for (const auto handler : auxiliaryActions) {
+        try { if (handler(owner)) return; }
+        catch (...) { Log("AUXILIARY_PANEL_ACTION_ERROR"); return; }
+    }
     if (owner != state.action.get()) { originalAction(owner, method); return; }
     try {
         if (!CanClick()) return;
@@ -488,7 +492,10 @@ void UpHook(Obj owner, Obj event, Method method) {
 }
 
 namespace soul {
-void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj)) { detail::auxiliaryAction = handler; }
+void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj)) {
+    if (handler && std::find(detail::auxiliaryActions.begin(), detail::auxiliaryActions.end(), handler) == detail::auxiliaryActions.end())
+        detail::auxiliaryActions.push_back(handler);
+}
 managed::Obj GetUiRoot() {
     using namespace managed;
     const auto klass = managed::api.Class("Core.dll", "", "pq");

@@ -297,6 +297,25 @@ void CompactNativeLockAndCaptureLayout() {
 }
 }
 namespace fake {
+Obj auxiliaryOne = nullptr, auxiliaryTwo = nullptr;
+int auxiliaryVisits = 0, auxiliaryHits = 0;
+bool FirstAuxiliary(Obj owner) { ++auxiliaryVisits; if(owner != auxiliaryOne) return false; ++auxiliaryHits; return true; }
+bool SecondAuxiliary(Obj owner) { if(owner != auxiliaryTwo) return false; ++auxiliaryHits; return true; }
+void ComposedAuxiliaryActions() {
+    Fixture f;
+    auxiliaryOne=Make("NotebookAction"); auxiliaryTwo=Make("TreasureAction");
+    soul::SetAuxiliaryPanelAction(FirstAuxiliary);
+    soul::SetAuxiliaryPanelAction(SecondAuxiliary);
+    soul::SetAuxiliaryPanelAction(FirstAuxiliary);
+    soul::SetAuxiliaryPanelAction(nullptr);
+    auxiliaryVisits=auxiliaryHits=0;
+    const int before=nativeActions;
+    actionHook(auxiliaryOne,nullptr); actionHook(auxiliaryTwo,nullptr);
+    actionHook(Make("ForeignAction"),nullptr);
+    Check(auxiliaryHits==2 && auxiliaryVisits==3 && nativeActions==before+1,
+        "Auxiliary registration must compose once and preserve foreign native actions");
+    auxiliaryOne=auxiliaryTwo=nullptr;
+}
 void SpellMatchesActionBarAndHudLayer() {
     Fixture f;
     auto grid=Element("SlotGrid"),slot=Element("Slot");Add(f.root,grid);Add(grid,slot);
@@ -315,6 +334,7 @@ int main() {
         fake::Initialize();
         soul::Panel preinstall;preinstall.Hide();
         fake::SpellMatchesActionBarAndHudLayer();
+        fake::ComposedAuxiliaryActions();
         for(auto test:{fake::HeaderMenuSelectionAndReopen,fake::HeaderMenuRejectsStaleAndCleanupFailure,fake::CreationAndClicks,fake::EquippedItemRow,fake::CaptureStatusAndActionVisibility,fake::DragCompletionAndClamping,fake::LayoutApplicationAndDragRevision,fake::HideDuringDragAndForeignCapture,fake::LostCaptureStillClearsOnlyOwnedFlag,fake::DetachedAndFailureCleanup,fake::NativeSubscriptionsAndPartialInit,fake::ImmediateSnapAndNativeGroupMove,fake::CompactNativeLockAndCaptureLayout}) {
             test();fake::Check(fake::handles.empty(),"Leaked 64-bit GC refs");
         }

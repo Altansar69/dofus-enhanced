@@ -1,4 +1,28 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 78
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 79
+
+R79 — CARNET, XP MÉTIERS ET CROISEMENTS
+- Options > Mod (r79) > Général > Carnet > Ouvrir le carnet :
+  positions nommées, notes multiligne et messages enregistrés.
+  Créer, modifier, enregistrer et supprimer depuis les contrôles du jeu.
+  Les positions permettent un trajet explicite. Les messages préparent le
+  brouillon du chat sans l'envoyer. Copier reste une action volontaire.
+- Le carnet est local et partagé entre les révisions. Une entrée modifiée par
+  un autre client doit être rechargée avant de pouvoir l'écraser.
+- Métiers : nouvel onglet XP, à côté de Recettes et Ressources.
+  Métier, niveau et XP total sont repris du personnage sélectionné.
+  Recettes DofusDB par niveau, calcul jusqu'au niveau cible et quantités
+  d'ingrédients. Le gain est recalculé à chaque niveau franchi.
+  Coefficient d'XP et bonus de serveur Épique réglables manuellement.
+  Aucun craft automatique et aucune promesse de recette la moins chère.
+- Élevage : bouton Croisements pour suivre les 66 combinaisons de Dragodindes,
+  filtrer par génération et cocher celles obtenues. Suivi manuel sauvegardé
+  entre les mises à jour, sans déduire une possession ou un succès.
+- Panneaux intégrés au jeu ; aucune application externe. Les recettes sont
+  demandées en HTTPS anonyme à DofusDB en arrière-plan. Le carnet et les
+  croisements ne sont pas envoyés à DofusDB ni à GitHub.
+- Vérifications hors jeu : compilation, tests et contrats du client exact.
+  L'initialisation et le rendu dans le jeu restent à confirmer. Aucun client
+  déjà ouvert n'a été manipulé. La révision se charge au prochain lancement.
 
 R78 — SURBRILLANCE DES PNJ ET OBJETS INTERACTIFS
 - Options > Mod (r78) > Général > Surbrillance : deux nouvelles cases,

@@ -41,7 +41,7 @@ GCHandle nextHandle = 0x123456780000ULL;
 bool newSourcesLoaded = true;
 bool rejectAutoLoad = false;
 bool rejectRebuild = false;
-unsigned treasureOpens = 0, foreignButtonClicks = 0;
+unsigned treasureOpens = 0, notebookOpens = 0, foreignButtonClicks = 0;
 unsigned changes = 0, serial = 0, enableCalls = 0;
 unsigned sourceModels = 0, optionModels = 0, uiHooks = 0;
 std::vector<std::string> logs;
@@ -192,7 +192,7 @@ struct Fixture {
         newSourcesLoaded = true;
         rejectAutoLoad = false;
         rejectRebuild = false;
-        treasureOpens = foreignButtonClicks = 0;
+        treasureOpens = notebookOpens = foreignButtonClicks = 0;
         changes = 0;
         sourceModels = optionModels = uiHooks = 0;
         state.servicesReady = true;
@@ -378,6 +378,7 @@ void OpenTreasureOverlay(const std::filesystem::path& folder) {
     fake::Check(folder == L"offline-test", "Overlay launch used another module folder");
     ++fake::treasureOpens;
 }
+void OpenNotebookPanel() { ++fake::notebookOpens; }
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
     ++fake::uiHooks;
     if (rva == 0x2D80470) {
@@ -399,7 +400,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
 }
 std::vector<Obj> AllOptions(OptionsUi& ui) {
     return {ui.modeOption.get(), ui.roleplayModeOption.get(),
-        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.treasureOption.get()};
+        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.treasureOption.get(), ui.notebookOption.get()};
 }
 const std::vector<Obj>& Rows(Obj category) { return Get(Get(category).refs.at("options")).items; }
 std::string Label(Obj option) { return Get(Get(option).refs.at("text")).text; }
@@ -415,12 +416,12 @@ void CheckLayout(Fixture& f) {
         Get(section).integers.at("categoryId") == GeneralId &&
         Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
     Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
-    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly fifteen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur les cartes", "Chasse au trésor"};
+    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly sixteen rows in the requested order");
+    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur les cartes", "Chasse au trésor", "Carnet"};
     for (size_t i = 0; i != Rows(section).size(); ++i) {
         const auto option = Rows(section)[i];
         Check(Label(option) == labels[i], "Simple option label or ordering changed");
-        Check(Get(option).klass->name == (i == 14 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
+        Check(Get(option).klass->name == (i >= 14 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
             "Simple settings must use native controls");
         if (i < 3 || i == 7) {
             const auto& choices = Get(Get(option).refs.at("choices")).items;
@@ -431,8 +432,8 @@ void CheckLayout(Fixture& f) {
                     "A percentage or minimum choice remains in native search models");
         }
     }
-    Check(sourceModels == 14 && optionModels == 15,
-        "The UI must create twelve private sources plus one action with no source");
+    Check(sourceModels == 14 && optionModels == 16,
+        "The UI must create fourteen private sources and two actions with no source");
     Check(uiHooks == 3, "Only native page and text button callbacks must be hooked");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
     if (!displayed.empty()) {
@@ -831,6 +832,23 @@ void TreasureActionAndCleanup() {
     Check(treasureOpens == 1 && foreignButtonClicks == 1,
         "Async native rebuild may still deliver a stale click after Restore returns");
 }
+void NotebookActionAndCleanup() {
+    Fixture f;
+    Check(f.Ui().Attach(f.page), "Notebook fixture must attach");
+    const auto clone = Make("TextButtonOption");
+    Get(clone) = Get(f.Ui().notebookOption.get());
+    const auto element = Make("TextButtonOptionElement");
+    Get(element).refs["option"] = clone;
+    Check(notebookOpens == 0, "Notebook opens only on explicit click");
+    textButtonHook(element, nullptr, nullptr);
+    Check(notebookOpens == 1 && treasureOpens == 0 && foreignButtonClicks == 0,
+        "Notebook clone must route to notebook only");
+    f.state.stopped.store(true);
+    f.Ui().Restore();
+    textButtonHook(element, nullptr, nullptr);
+    Check(notebookOpens == 1 && foreignButtonClicks == 0 && f.Ui().notebookMarker.get(),
+        "Removed notebook action must retain stale-click protection");
+}
 }
 
 int main() {
@@ -852,6 +870,7 @@ int main() {
         run(fake::DeferredAndAccountGate);
         run(fake::CollisionAndSessionMismatch);
         run(fake::TreasureActionAndCleanup);
+        run(fake::NotebookActionAndCleanup);
         std::cout << "PASS: eleven settings plus native treasure action; clone-safe click routing, reset, stop and retryable restoration\n";
         return 0;
     } catch (const std::exception& error) {

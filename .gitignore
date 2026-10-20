@@ -5,6 +5,8 @@
 *.request
 settings.ini
 *-settings.ini
+DofusMiniatures-notebook.json*
+*.ini.crossings*
 __pycache__/
 *.pyc
 /.vs/

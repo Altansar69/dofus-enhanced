@@ -4,6 +4,7 @@
 #include "animation-mode-labels.hpp"
 #include "glow-mode-labels.hpp"
 #include "treasure-launch.hpp"
+#include "notebook-panel.hpp"
 #include <algorithm>
 #include <exception>
 
@@ -197,6 +198,15 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     if (!prepared.treasureMarker.get()) throw std::runtime_error("Treasure option identity unavailable");
     ui.treasureOption = std::move(prepared.treasureOption);
     ui.treasureMarker = std::move(prepared.treasureMarker);
+    prepared.notebookOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"),
+        {nullptr, tooltip.get()}));
+    Describe(prepared.notebookOption.get(), "Carnet",
+        "Positions enregistrées, notes et messages réutilisables dans un panneau du jeu. Les messages préparent un brouillon dans le chat : vous choisissez quand l’envoyer. Les données sont conservées entre les mises à jour.");
+    SetTextField(prepared.notebookOption.get(), "buttonText", "Ouvrir le carnet");
+    prepared.notebookMarker.reset(api.Call(prepared.notebookOption.get(), "get_description"));
+    if (!prepared.notebookMarker.get()) throw std::runtime_error("Notebook option identity unavailable");
+    ui.notebookOption = std::move(prepared.notebookOption);
+    ui.notebookMarker = std::move(prepared.notebookMarker);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -275,6 +285,11 @@ void TextButtonHook(Obj self, Obj element, Method method) {
             if (Active()) OpenTreasureOverlay(module->folder);
             return;
         }
+        if (module && module->ui && module->ui->notebookMarker.get() && option.get() &&
+            api.Call(option.get(), "get_description") == module->ui->notebookMarker.get()) {
+            if (Active()) OpenNotebookPanel();
+            return;
+        }
     } catch (const std::exception& error) {
         // Never fall through to a possibly owned action with a null delegate.
         Log(std::string("TREASURE_OVERLAY_ERROR ") + error.what());
@@ -346,6 +361,7 @@ bool OptionsUi::Attach(Obj page) {
     api.Call(options, "Add", {spouseOption.get()});
     api.Call(options, "Add", {resourcesOption.get()});
     api.Call(options, "Add", {treasureOption.get()});
+    api.Call(options, "Add", {notebookOption.get()});
     api.Call(api.Field(category.get(), "subcategories"), "Add", {general.get()});
     Page owned;
     owned.owner.reset(page);
@@ -441,6 +457,7 @@ void OptionsUi::Restore() {
     }
     if (failure) std::rethrow_exception(failure);
     treasureOption.reset();
+    notebookOption.reset();
     // Init schedules asynchronous UI rebuilding. Keep this small tombstone and
     // its click guard until process exit, even after category removal returns.
     modeOption.reset();
@@ -472,5 +489,5 @@ void OptionsUi::Restore() {
     container.reset();
 }
 bool OptionsUi::KeepResidentHook(void* target) const {
-    return treasureMarker.handle && target == reinterpret_cast<void*>(gameBase + 0x2D88800);
+    return (treasureMarker.handle || notebookMarker.handle) && target == reinterpret_cast<void*>(gameBase + 0x2D88800);
 }

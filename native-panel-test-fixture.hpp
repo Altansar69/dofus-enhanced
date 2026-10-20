@@ -17,6 +17,7 @@
 // Offline native-contract fixture. No client binary is loaded or process opened.
 namespace fake {
 bool treasureFixture = false;
+bool notebookFixture = false;
 using namespace managed;
 struct Class { std::string name; };
 struct MethodInfo { Class* type; std::string name; int count; };
@@ -257,7 +258,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(obj.type->name=="StyleLength"&&m.name=="get_value") {
         auto length=Make("Length");std::memcpy(Get(length).value.data(),obj.value.data(),8);return length;
     }
-    if(m.name=="set_isSingleLine") {obj.enums[m.name]=*static_cast<bool*>(args[0]);return nullptr;}
+    if(m.name=="set_isSingleLine"||m.name=="set_isMultiline"||m.name=="set_enableRichText") {obj.enums[m.name]=*static_cast<bool*>(args[0]);return nullptr;}
     if(m.name=="get_text") return String(obj.text);
     if(m.name=="set_tooltip"||m.name=="set_placeholderText") {obj.fields[m.name]=args[0];return nullptr;}
     if(m.name=="set_maxLength") {obj.enums[m.name]=*static_cast<int*>(args[0]);return nullptr;}
@@ -265,7 +266,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="set_text") { obj.text=Get(args.at(0)).text;return nullptr; }
     if(m.name=="set_name") { obj.name=Get(args.at(0)).text;return nullptr; }
     if(m.name=="set_headerTitle") { obj.text=Get(args.at(0)).text;return nullptr; }
-    if(m.name=="set_headerIcon") { Check(*static_cast<int*>(args.at(0))==(treasureFixture?317:128),"Use the native Capture toolbar icon in the window title");obj.enums[m.name]=128;return nullptr; }
+    if(m.name=="set_headerIcon") { const int icon=*static_cast<int*>(args.at(0));Check(icon==(notebookFixture?225:treasureFixture?317:128),"Use the native panel icon in the window title");obj.enums[m.name]=icon;return nullptr; }
     if(m.name=="set_headerShowCloseButton"||m.name=="set_verticalResizable"||m.name=="set_horizontalResizable"||m.name=="set_cornerResizable") {
         Check(!*static_cast<bool*>(args[0]),"Native compact widget must not expose resize/close controls");obj.enums[m.name]=0;return nullptr;
     }
@@ -342,6 +343,7 @@ void* Api::Native(Method method,uintptr_t rva) const {
     if(rva==0x11E7EC0&&m.name=="get_menu"&&m.count==0)return reinterpret_cast<void*>(rva);
     const std::map<uintptr_t,std::pair<std::string,int>> expected={
         {0x55E08E0,{"BringToFront",0}},{0x1593FB0,{"set_isSingleLine",1}},
+        {0x178E150,{"set_isMultiline",1}},{0x564B1E0,{"set_enableRichText",1}},
         {0x178DC90,{".ctor",0}},{0x178DDA0,{"get_text",0}},{0x178EC50,{"set_text",1}},{0x178EAA0,{"set_placeholderText",1}},{0x178E9B0,{"set_maxLength",1}},
         {0x15BFAD0,{"set_headerIconRight",1}},{0x172DB70,{"set_showRightButton",1}},
         {0x16D0BB0,{".ctor",4}},{0x16D04D0,{"OnContextualMenuEvent",1}},
