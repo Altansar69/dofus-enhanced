@@ -1,10 +1,10 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r82**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r83**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
-Carnet personnel, planification de l’XP des métiers et suivi des croisements de dragodindes.
+Carnet personnel et planification de l’XP des métiers.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](LISEZ-MOI.txt).
 
 ## Mises à jour
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r82) → Général** :
+Dans **Options → Mod (r83) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -45,7 +45,7 @@ La révision réellement chargée apparaît dans le nom de l’onglet **Mod (rN)
 
 ## Chasse au trésor
 
-**Options → Mod (r82) → Général → Chasse au trésor → Ouvrir le panneau**.
+**Options → Mod (r83) → Général → Chasse au trésor → Ouvrir le panneau**.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
 Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
@@ -55,7 +55,7 @@ Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 
 ## Carnet
 
-**Options → Mod (r82) → Général → Carnet → Ouvrir le carnet**.
+**Options → Mod (r83) → Général → Carnet → Ouvrir le carnet**.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
 coordonnées saisies. Le trajet se lance au clic. Un message enregistré est ajouté
@@ -76,18 +76,9 @@ Le coefficient d’XP et le bonus de serveur Épique se règlent manuellement.
 Ce calcul ne choisit pas automatiquement la recette la moins chère et ne fabrique rien.
 Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste visible.
 
-## Croisements de dragodindes
-
-Le bouton **Croisements** dans l’interface d’élevage ouvre le suivi des 66
-combinaisons de l’outil
-[DofusDB](https://dofusdb.fr/fr/tools/breeding/crossing/dragodinde).
-Cocher les variétés obtenues permet de suivre la progression par génération.
-Ce suivi est manuel, sauvegardé localement entre les mises à jour ; il ne suppose
-ni la possession d’une monture ni la validation d’un succès.
-
 ## Surbrillance
 
-**Options → Mod (r82) → Général → Surbrillance** choisit le niveau : derrière
+**Options → Mod (r83) → Général → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
@@ -119,7 +110,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r82 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La r83 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 ## Compilation et publication
 
@@ -149,7 +140,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r82 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r83 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 
