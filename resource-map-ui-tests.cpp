@@ -67,6 +67,9 @@ void Add(Obj parent,Obj child){Detach(child);Insert(parent,static_cast<int>(Get(
 Obj Panel(Obj value){while(value){if(Get(value).fields["panel"])return Get(value).fields["panel"];value=Get(value).fields["parent"];}return nullptr;}
 void OriginalEnable(Obj owner,Method){++nativeEnable;Get(owner).enabled=true;}
 void OriginalDisable(Obj owner,Method){++nativeDisable;Get(owner).enabled=false;}
+void NativeToggle(Obj tab,bool value){
+    Get(tab).value=value;Get(Get(tab).fields.at("m_checkbox")).styles["display"]=0;
+}
 void Init(){
     api.class_get_field_from_name=[](Klass,const char* name)->void*{static std::map<std::string,size_t> offsets{{"m_rightLabel",0x318},{"m_farRightLabel",0x320},{"deuc",0x60},{"devy",0x660},{"m_checkbox",0x360},{"iconContainer",0x310},{"s_mouseEnterCursorMap",0x40},{"s_mouseLeaveCursorMap",0x48}};return &offsets.at(name);};
     api.field_get_offset=[](void* field)->size_t{return *static_cast<size_t*>(field);};
@@ -132,13 +135,10 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         if(m.type->name=="SectionHeader"){
             Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1]),"Native header must have content and folder button");
             for(int i:{2,4})Check(!*static_cast<bool*>(args[i]),"No data/action buttons");
-            if(*static_cast<bool*>(args[3])){
-                auto parent=Make("VisualElement",true),icon=Make("VisualElement",true);
-                Add(self,parent);Add(parent,icon);object.fields["iconContainer"]=icon;
-                // SectionHeader.UpdateIcon hides both until a native enum or
-                // sprite is supplied; our image child must restore visibility.
-                Get(parent).styles["display"]=Get(icon).styles["display"]=1;
-            }
+            auto row=Make("VisualElement",true),frame=Make("VisualElement",true),icon=Make("VisualElement",true),title=Make("DofusLabel",true);
+            Add(self,row);Add(row,frame);Add(frame,icon);Add(row,title);
+            object.fields["iconContainer"]=icon;object.fields["iconFrame"]=frame;object.fields["titleLabel"]=title;
+            Get(frame).styles["display"]=Get(icon).styles["display"]=1;
             auto content=Make("VisualElement",true);Add(self,content);object.fields["content"]=content;return nullptr;
         }
         if(m.type->name=="ScrollView"){
@@ -148,12 +148,13 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         throw std::runtime_error("Unexpected native constructor");
     }
     if(m.name=="set_pickingMode"){object.notifications=*static_cast<int*>(args[0]);return nullptr;}
+    if(m.name=="get_titleLabel")return object.fields.at("titleLabel");
     if(m.name=="get_contentContainer")return object.fields["content"];
     if(m.name=="get_panel")return Panel(self);
     if(m.name=="get_parent")return object.fields["parent"];
     if(m.name=="get_worldBound")return Box(object.bound);
     if(m.name=="get_value")return Box(object.value);
-    if(m.name=="SetValueWithoutNotify"){object.value=*static_cast<bool*>(args[0]);return nullptr;}
+    if(m.name=="SetValueWithoutNotify"){NativeToggle(self,*static_cast<bool*>(args[0]));return nullptr;}
     if(m.name=="set_rightText"){
         object.text=Get(args[0]).text;
         auto& label=object.fields["m_rightLabel"];
@@ -173,7 +174,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     }
     if(m.name=="set_leftIconAddress"){Check(*static_cast<int*>(args[0])>0,"Native item icon address");return nullptr;}
     if(m.name=="set_size"){object.size=*static_cast<int*>(args[0]);return nullptr;}
-    if(m.name=="set_canBeOpened"){object.enabled=*static_cast<bool*>(args[0]);return nullptr;}
+    if(m.name=="set_canBeOpened"){object.enabled=*static_cast<bool*>(args[0]);Get(object.fields.at("iconFrame")).styles["display"]=1;return nullptr;}
     if(m.name=="set_isOpen"){object.open=*static_cast<bool*>(args[0]);return nullptr;}
     if(m.name=="set_horizontalScrollerVisibility"){Check(*static_cast<int*>(args[0])==2,"Horizontal scroller hidden");return nullptr;}
     if(m.name=="set_verticalScrollerVisibility"){Check(*static_cast<int*>(args[0])==0,"Vertical scroller automatic");return nullptr;}
@@ -281,8 +282,11 @@ void NativeTreeAndDuplicateOpen(){
     for(int i=2;i<8;++i)Check(!Get(categories[i]).open&&Get(categories[i]).enabled,"Native accordion initially collapsed");
     Check(Get(Get(f.Row("Fer")).fields["m_farRightLabel"]).styles["color"]>.9f,"Levels need explicit readable light color");
     Check(Get(Get(f.Row("Fer")).fields["m_rightLabel"]).styles["color"]>.9f,"Names need readable light color");
-    for(int i=2;i<8;++i){auto container=Get(categories[i]).fields["iconContainer"];Check(container&&!Get(container).children.empty(),"Job header icon container");auto icon=Get(container).children.back();Check(Get(icon).size>0,"Every category includes its native icon");
-        Check(Get(container).styles["display"]==0&&Get(Get(container).fields["parent"]).styles["display"]==0,"Native empty-icon ancestors must be visible for owned profession images");
+    for(int i=2;i<8;++i){
+        auto title=Get(categories[i]).fields.at("titleLabel"),row=Get(title).fields.at("parent");
+        auto icon=Get(row).children.front();
+        Check(Get(icon).size>0&&Get(icon).notifications==1,"Category resource icon stays beside title, outside the native hidden icon frame");
+        Check(Get(Get(categories[i]).fields.at("iconFrame")).styles["display"]!=0,"Native empty icon frame remains hidden after canBeOpened refresh");
         const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());Check(catalog==0x60,"Category images must use actual resources from item catalog");
         Check(Get(icon).size==resourceMap::TestCatalog[i-2].iconId,"Category image identifies first resource for the profession");}
     Check(Get(f.Row("Eau")).size==2,"Rows match large native checkbox size");
@@ -359,7 +363,7 @@ void MiniMapSelectionAndLifetime(){
     }
     for(size_t i=0;i<tabs.size();++i){
         auto tab=tabs[i];
-        Check(Get(tab).styles["width"]==40&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");
+        Check(Get(tab).styles["width"]==48&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");
         Check(cursorTargets.contains(tab),"Category buttons must use the native hand cursor");
         Check(!Get(tab).fields["m_rightLabel"],"Native icon-only tabs do not instantiate a caption");
         auto icon=Get(tab).children.back();
@@ -367,16 +371,23 @@ void MiniMapSelectionAndLifetime(){
         const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());
         Check(catalog==0x60&&Get(icon).notifications==1,"Mini-map resource images use the native item catalog without intercepting clicks");
     }
+    auto checkSquares=[&]{for(auto tab:tabs){
+        auto square=Get(tab).fields.at("m_checkbox");
+        Check(Get(square).styles["visibility"]!=0&&Get(square).styles["position"]!=0,
+            "Native checkbox refresh cannot restore a visible square or reserve its layout space");
+    }};
+    checkSquares();
     Check(logs.size()==1&&logs.front().find("RESOURCE_MAP_UI_READY")!=std::string::npos,"Optional native labels must not abort mini-map construction");
-    Get(tabs[2]).value=true;resourceMap::TickUi();
+    NativeToggle(tabs[2],true);checkSquares();resourceMap::TickUi();checkSquares();
+    Check(Get(tabs[2]).styles["backgroundColor"]>Get(tabs[0]).styles["backgroundColor"],"Open profession bubble is highlighted");
     Check(changes==0&&Get(scroll).styles["display"]==0,"Opening Mineur only opens the list without altering preferences");
     Check(Get(FindUnder(drawer,"SectionHeader","Mineur")).styles["display"]==0&&Get(FindUnder(drawer,"SectionHeader","Paysan")).styles["display"]!=0,"Only selected profession resources appear");
-    Get(tabs[4]).value=true;resourceMap::TickUi();
+    NativeToggle(tabs[4],true);resourceMap::TickUi();
     Check(!Get(tabs[2]).value&&Get(tabs[4]).value,"Profession tabs are mutually exclusive");
-    Get(tabs[4]).value=false;resourceMap::TickUi();
+    NativeToggle(tabs[4],false);resourceMap::TickUi();
     Check(Get(scroll).styles["display"]!=0,"Second click closes the resource list");
     Check(Get(drawer).styles["width"]==284&&Get(drawer).styles["left"]==8&&Get(drawer).styles["top"]==40,"Mini picker leaves space for native controls");
-    Check(Get(scroll).styles["height"]==196,"Mini picker stays within its viewport");
+    Check(Get(scroll).styles["height"]==148,"Mini picker stays within its viewport");
     auto master=FindUnder(drawer,"CheckboxCustom","Afficher sur la mini-carte");
     Get(master).value=true;Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
     resourceMap::TickUi();
@@ -395,7 +406,7 @@ void MiniMapSelectionAndLifetime(){
     auto foreign=Make("NativeCommand");Add(miniRoot,foreign);
     resourceMap::TickUi();Check(Get(miniRoot).children.back()==drawer&&Get(foreign).fields["parent"]==miniRoot,"Drawer stays above marker layers without modifying native children");
     Get(miniRoot).bound={0,0,200,200};resourceMap::TickUi();
-    Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==52,"Small mini-map stays usable after resize");
+    Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==48,"Small mini-map stays usable after resize");
     const auto previous=miniRoot;
     miniRoot=nullptr;resourceMap::TickUi();
     Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{miniMapRoot,foreign},"Hidden mini-map detaches only owned resources");

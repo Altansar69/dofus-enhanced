@@ -1,4 +1,15 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 85
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 86
+
+R86 — BULLES DE RESSOURCES ET ALIGNEMENT XP
+- Mini-carte : bulles de 48 px et images de 40 px. Leur case à cocher est
+  masquée même après un clic ; la bulle devient jaune et déplie les ressources.
+  Un second clic referme la liste. La barre s'adapte à la largeur de la carte.
+- Carte M : les images d'eau, frêne, fer, ortie, blé et goujon restent visibles
+  à côté des catégories, indépendamment des rafraîchissements du contrôle natif.
+- XP : ajustement vertical d'après la position calculée de l'onglet Ressources,
+  renouvelé après les changements de disposition, sans déplacer les onglets natifs.
+- Compilation et tests hors jeu ; rendu réel à confirmer. Aucun client ouvert
+  manipulé. La nouvelle version se charge au prochain lancement.
 
 R85 — RESSOURCES, CHAT ET OBJETS NATIFS DANS XP
 - Métiers : onglet nommé uniquement XP, aligné sur les onglets natifs et séparé

@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r85**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r86**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r85) → Général** :
+Dans **Options → Mod (r86) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -88,7 +88,7 @@ Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste v
 
 ## Surbrillance
 
-**Options → Mod (r85) → Général → Surbrillance** choisit le niveau : derrière
+**Options → Mod (r86) → Général → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
@@ -100,7 +100,8 @@ Le budget existant de huit contours simultanés est partagé entre les catégori
 
 Sur la **mini-carte**, une barre de six icônes rondes donne accès aux métiers.
 Un clic ouvre uniquement les ressources du métier choisi ; cliquer à nouveau
-sur son icône referme la liste. Les noms sont disponibles au survol.
+sur son icône referme la liste. La bulle ouverte devient jaune, sans case à cocher.
+Les bulles mesurent 48 px, avec une image de 40 px ; les noms sont disponibles au survol.
 La barre conserve sa taille au zoom et au dézoom de la carte. Une main signale
 les boutons cliquables ; leur survol ne sélectionne pas la case de carte située
 derrière. La molette dans le sélecteur fait défiler les ressources sans zoomer
@@ -128,7 +129,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r85 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La r86 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -161,7 +162,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r85 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r86 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

@@ -135,11 +135,11 @@ void PollTabs(State& state){
 }
 bool Layout(State& state,const MiniMapSurface* mini=nullptr){
     const auto root=api.Value<Rect>(api.Call(state.root.get(),"get_worldBound"));
-    const float width=mini?(std::min)(300.0f,mini->width-16.0f):(std::min)(320.0f,root.width-112.0f);
+    const float width=mini?(std::min)(320.0f,mini->width-16.0f):(std::min)(320.0f,root.width-112.0f);
     if(!std::isfinite(width)||width<(mini?128:200))return false;
-    const int columns=(std::max)(1,int(width/44));
-    const float toolbarHeight=44.0f*float((std::size(Jobs)+columns-1)/columns);
-    const float height=mini?mini->height-60.0f-toolbarHeight:root.height-192.0f;
+    const int columns=(std::max)(1,int(width/52));
+    const float toolbarHeight=52.0f*float((std::size(Jobs)+columns-1)/columns);
+    const float height=mini?mini->height-48.0f-toolbarHeight:root.height-192.0f;
     if(!std::isfinite(height)||height<(mini?48:96))return false;
     const float bounded=(std::min)(height,520.0f);
     if(state.height!=bounded){Pixels(state.scroll.get(),"height",bounded);state.height=bounded;}
@@ -211,35 +211,38 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     Pixels(note.get(),"fontSize",12.0f);Pixels(note.get(),"marginBottom",6.0f);
     Style(note.get(),"color",Color{.75f,.79f,.81f,1});add(note.get());
     for(const auto& job:Jobs){
-        Ref header(Header(job.name,mini!=nullptr,true));bool hasRows=false;
-        Ref icon(api.Field(header.get(),"iconContainer"));
-        if(!icon.get())throw std::runtime_error("Resource job header icon unavailable");
-        Pixels(icon.get(),"width",28);Pixels(icon.get(),"height",28);
-        Ref jobImage(Element());Ignore(jobImage.get());Style(jobImage.get(),"position",1);
-        Pixels(jobImage.get(),"left",0);Pixels(jobImage.get(),"top",0);
+        Ref header(Header(job.name,mini!=nullptr));bool hasRows=false;
+        Ref title(api.Call(header.get(),"get_titleLabel"));
+        Ref titleRow(Parent(title.get()));
+        if(!titleRow.get())throw std::runtime_error("Resource job title parent unavailable");
+        // Native SectionHeader refreshes hide its empty icon frame. Keep the
+        // resource image beside the title, outside that native-owned frame.
+        Ref jobImage(Element());Ignore(jobImage.get());
         Pixels(jobImage.get(),"width",28);Pixels(jobImage.get(),"height",28);
-        LoadJobIcon(jobImage.get(),job.id);api.Call(icon.get(),"Add",{jobImage.get()});
-        // SectionHeader.UpdateIcon hides both ancestors when its own enum is
-        // None. Our owned sprite is independent from that enum.
-        Style(icon.get(),"display",0);
-        Ref iconParent(Parent(icon.get()));
-        if(!iconParent.get())throw std::runtime_error("Resource job icon parent unavailable");
-        Style(iconParent.get(),"display",0);
+        Pixels(jobImage.get(),"minWidth",28);Pixels(jobImage.get(),"marginRight",8);
+        Style(jobImage.get(),"flexShrink",0.0f);Style(jobImage.get(),"alignSelf",2);
+        LoadJobIcon(jobImage.get(),job.id);
+        int first=0;api.Call(titleRow.get(),"Insert",{&first,jobImage.get()});
         if(mini){
             Ref tab(Checkbox("",false));
             // Preserve CheckboxCustom's own root clickable/keyboard behavior.
             // Only the checkbox square and empty caption of our button are hidden.
-            Style(api.Field(tab.get(),"m_checkbox"),"display",1);
+            Ref square(api.Field(tab.get(),"m_checkbox"));
+            // UpdateContent restores display on every native selection change.
+            // Visibility and absolute positioning survive that refresh, keeping
+            // the square invisible and out of layout even during the click.
+            Style(square.get(),"visibility",1);Style(square.get(),"position",1);
+            Style(square.get(),"display",1);Ignore(square.get());
             if(auto label=api.Field(tab.get(),"m_rightLabel"))Style(label,"display",1);
-            Pixels(tab.get(),"width",40);Pixels(tab.get(),"height",40);
-            Pixels(tab.get(),"minWidth",40);Style(tab.get(),"flexShrink",0.0f);
+            Pixels(tab.get(),"width",48);Pixels(tab.get(),"height",48);
+            Pixels(tab.get(),"minWidth",48);Style(tab.get(),"flexShrink",0.0f);
             Pixels(tab.get(),"marginRight",4);Pixels(tab.get(),"marginBottom",4);
             for(auto side:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(tab.get(),side,0);
             for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})Style(tab.get(),side,1.0f);
-            Rounded(tab.get(),20);
+            Rounded(tab.get(),24);
             Text(tab.get(),tooltip,(std::string(job.name)+" · choisir les ressources").c_str());
             Ref image(Element());Ignore(image.get());Style(image.get(),"position",1);
-            Pixels(image.get(),"left",3);Pixels(image.get(),"top",3);Pixels(image.get(),"width",32);Pixels(image.get(),"height",32);
+            Pixels(image.get(),"left",3);Pixels(image.get(),"top",3);Pixels(image.get(),"width",40);Pixels(image.get(),"height",40);
             LoadJobIcon(image.get(),job.id);api.Call(tab.get(),"Add",{image.get()});
             api.Call(next->toolbar.get(),"Add",{tab.get()});next->tabs.push_back(std::move(tab));
             next->groups.emplace_back(header.get());
@@ -318,6 +321,7 @@ void InstallUi(){
     labelClass=api.Class("Core.dll","Core.UILogic.Components","DofusLabel");
     elementClass=api.Class(UiAssembly,UiNamespace,"VisualElement");
     api.FindVerified(elementClass,".ctor",0,0x55F50B0);
+    api.FindVerified(elementClass,"Insert",2,0x55E5710);
     api.FindVerified(elementClass,"set_pickingMode",1,0x55F97B0);
     InstallIcons();
     cursorClass=api.Class("Core.dll","Core.UILogic","DofusCursor");
@@ -340,9 +344,8 @@ void InstallUi(){
         if(!field||api.field_get_offset(field)!=offset)throw std::runtime_error("Resource checkbox label layout mismatch");
     }
     auto square=api.class_get_field_from_name(checkboxClass,"m_checkbox");
-    auto headerIcon=api.class_get_field_from_name(headerClass,"iconContainer");
-    if(!square||api.field_get_offset(square)!=0x360||!headerIcon||api.field_get_offset(headerIcon)!=0x310)
-        throw std::runtime_error("Resource job controls layout mismatch");
+    if(!square||api.field_get_offset(square)!=0x360)throw std::runtime_error("Resource checkbox square layout mismatch");
+    api.FindVerified(headerClass,"get_titleLabel",0,0x15E8650);
     headerCtor=api.FindVerified(headerClass,".ctor",5,0x1745F00);
     headerTitle=api.FindVerified(headerClass,"set_title",1,0x17467B0);
     headerOpen=api.FindVerified(headerClass,"set_isOpen",1,0x17462F0);

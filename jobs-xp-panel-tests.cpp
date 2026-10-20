@@ -16,6 +16,8 @@ namespace fixture {
 using namespace managed;
 struct Class {std::string name;};
 struct MethodData {std::string type,name;int argc=0;};
+struct Rect {float x,y,width,height;};
+struct Vector3 {float x,y,z;};
 struct Object {
     Class* klass=nullptr;
     std::map<std::string,Obj> fields;
@@ -24,6 +26,9 @@ struct Object {
     std::array<char,16> bytes{};
     std::string text,property;
     bool on=false,enabled=true,activeClass=false,allowSwitchOff=false,ownedTile=false;
+    Rect layout{0,9,100,43};
+    Vector3 translation{};
+    int translationWrites=0;
     float resolvedHeight=0;
     std::map<std::string,float> resolvedMetrics;
     int itemId=0;
@@ -177,6 +182,12 @@ Obj Api::Call(Obj self,const char* name,std::initializer_list<void*> arguments)c
         if(bindFailureCountdown>0)--bindFailureCountdown;
         contextTargets.insert(args[1]);return nullptr;
     }
+    if(method=="get_layout")return Box(o.layout);
+    if(method=="get_transform")return self;
+    if(method=="UnityEngine.UIElements.ITransform.set_position"){
+        Check(self!=recipeTab&&self!=resourceTab,"Native tabs must never be moved");
+        o.translation=*static_cast<Vector3*>(args[0]);++o.translationWrites;return nullptr;
+    }
     if(method=="get_style"){auto style=Make("Style");Get(style).fields["owner"]=self;return style;}
     if(o.klass->name=="Style"){
         const auto property=method.substr(method.find_last_of('_')+1);auto& target=Get(o.fields["owner"]);
@@ -273,6 +284,7 @@ int main(){
         Get(binding).fields["tab_recipe"]=recipeTab;Get(binding).fields["tab_ressources"]=resourceTab;
         tabGroup=Make("SelectableGroup");Get(tabGroup).children={recipeTab,resourceTab};
         Get(recipeTab).fields["group"]=tabGroup;Get(resourceTab).fields["group"]=tabGroup;
+        Get(resourceTab).layout={100,3,100,43};
         Get(recipeTab).fontCase=Get(resourceTab).fontCase=1;Get(resourceTab).resolvedHeight=43;
         Get(resourceTab).resolvedMetrics={{"top",0.f},{"bottom",-1.f},{"marginTop",2.f},{"marginBottom",3.f},
             {"paddingTop",4.f},{"paddingBottom",5.f},{"marginLeft",7.f},{"marginRight",1.f},{"alignSelf",2.f}};
@@ -300,6 +312,16 @@ int main(){
         Check(Metric(state.tab.get(),"marginLeft")+Get(resourceTab).resolvedMetrics.at("marginRight")==
             Get(resourceTab).resolvedMetrics.at("marginLeft")+Get(recipeTab).resolvedMetrics.at("marginRight"),
             "The Resources-to-XP gap must equal the native Recipes-to-Resources gap");
+        auto& xp=Get(state.tab.get());
+        Check(xp.layout.y+xp.translation.y==Get(resourceTab).layout.y,"XP actual border rectangle aligns even when copied style metrics do not");
+        const int writes=xp.translationWrites;TickJobsXp();TickJobsXp();
+        Check(xp.translationWrites==writes,"Position correction is stable across unchanged layout ticks");
+        Get(resourceTab).layout.y=12;TickJobsXp();
+        Check(xp.layout.y+xp.translation.y==12,"XP follows relayout in either vertical direction without accumulating correction");
+        xp.layout.height=0;Get(resourceTab).layout.y=30;TickJobsXp();
+        Check(xp.translationWrites==writes+1,"Unresolved layout must not move the tab");
+        xp.layout.height=43;TickJobsXp();
+        Check(xp.layout.y+xp.translation.y==30,"Deferred layout correction retries after geometry becomes available");
         Get(resourceTab).resolvedHeight=51;TickJobsXp();Check(Metric(state.tab.get(),"height")==51,"Changed native theme geometry follows on next pump");
         Check(customTabTopWrites==1&&Metric(state.tab.get(),"bottom")==-1,"Theme relayout must preserve automatic top and native bottom alignment");
         Select(state.tab.get(),true);TickJobsXp();Wait();

@@ -40,6 +40,7 @@ struct State {
     int selected=-1,lastTarget=0,lastCoefficient=0;
     std::array<float,8> tabMetrics{};
     bool haveTabMetrics=false;
+    float tabTranslation=std::numeric_limits<float>::quiet_NaN();
     bool lastEpic=false,active=false,cleanup=false,havePage=false,requested=false,recipeWasOn=false,resourceWasOn=false;
     ULONGLONG nextPoll=0,nextRequest=0;
     uint64_t generation=0;
@@ -134,6 +135,20 @@ void MatchTabLayout() {
         if(i==0)for(const char* property:{"minHeight","maxHeight"})Pixels(state.tab.get(),property,values[i]);
     }
     state.tabMetrics=values;state.haveTabMetrics=true;
+    // Inline/style metrics alone do not guarantee the final sibling positions.
+    // Layout rectangles share ctr_tabs coordinates and exclude transforms, so
+    // this correction cannot accumulate or feed back into the flex layout.
+    struct Rect {float x,y,width,height;};
+    const auto reference=api.Value<Rect>(api.Call(state.resourceTab.get(),"get_layout"));
+    const auto actual=api.Value<Rect>(api.Call(state.tab.get(),"get_layout"));
+    const float offset=reference.y-actual.y;
+    if(!std::isfinite(offset)||!std::isfinite(reference.height)||!std::isfinite(actual.height)||
+        reference.height<16||actual.height<16||reference.width<=0||actual.width<=0)return;
+    if(std::isfinite(state.tabTranslation)&&std::abs(offset-state.tabTranslation)<.01f)return;
+    struct Vector3 {float x,y,z;} translation{0,offset,0};
+    Ref transform(api.Call(state.tab.get(),"get_transform"));
+    api.Call(transform.get(),"UnityEngine.UIElements.ITransform.set_position",{&translation});
+    state.tabTranslation=offset;
 }
 void ClearItem(ItemView& view) {
     if(view.tile.get()) {
@@ -462,6 +477,10 @@ void InstallJobsXp(){
     api.FindVerified(tab,"get_group",0,0x155DB30);
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","SelectableGroup"),"ForceAllSelectionsOff",0,0x15C1FC0);
     api.FindVerified(api.Class(Ui,UiSpace,"VisualElement"),"get_resolvedStyle",0,0x55F72E0);
+    const auto element=api.Class(Ui,UiSpace,"VisualElement");
+    api.FindVerified(element,"get_layout",0,0x55F6930);
+    api.FindVerified(element,"get_transform",0,0x3153690);
+    api.FindVerified(element,"UnityEngine.UIElements.ITransform.set_position",1,0x55F12D0);
     const auto resolved=api.Class(Ui,UiSpace,"ResolvedStyleAccess");
     for(const auto& [name,rva]:std::array<std::pair<const char*,uintptr_t>,9>{{
         {"get_height",0x55D9A40},{"get_bottom",0x55D9820},{"get_marginTop",0x55D9BA0},
