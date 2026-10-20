@@ -41,6 +41,7 @@ DragFn originalDown = nullptr, originalUp = nullptr;
 DragFn originalPopulate = nullptr;
 DragFlagFn setDragging = nullptr;
 thread_local bool enteringOwnedDrag = false;
+bool (*auxiliaryAction)(Obj) = nullptr;
 
 bool MenuAvailable() {
     return state.installed && !state.hiding && !state.cleanupPending && state.hideModule &&
@@ -457,6 +458,7 @@ bool CanClick() {
     return true;
 }
 void ActionHook(Obj owner, Method method) {
+    if (auxiliaryAction && auxiliaryAction(owner)) return;
     if (owner != state.action.get()) { originalAction(owner, method); return; }
     try {
         if (!CanClick()) return;
@@ -486,6 +488,7 @@ void UpHook(Obj owner, Obj event, Method method) {
 }
 
 namespace soul {
+void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj)) { detail::auxiliaryAction = handler; }
 managed::Obj GetUiRoot() {
     using namespace managed;
     const auto klass = managed::api.Class("Core.dll", "", "pq");

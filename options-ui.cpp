@@ -183,8 +183,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.treasureOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"),
         {nullptr, tooltip.get()}));
     Describe(prepared.treasureOption.get(), "Chasse au trésor",
-        "Ouvre l’outil officiel DofusDB dans une fenêtre déplaçable et redimensionnable. Saisissez les coordonnées, la direction et l’indice pour trouver le suivant. La fenêtre peut rester au-dessus du jeu.");
-    SetTextField(prepared.treasureOption.get(), "buttonText", "Ouvrir DofusDB");
+        "Ouvre un panneau intégré à Dofus. Saisissez le départ et la direction, puis recherchez un indice : les données DofusDB donnent sa position la plus proche. Déplaçable par son titre.");
+    SetTextField(prepared.treasureOption.get(), "buttonText", "Ouvrir le panneau");
     prepared.treasureMarker.reset(api.Call(prepared.treasureOption.get(), "get_description"));
     if (!prepared.treasureMarker.get()) throw std::runtime_error("Treasure option identity unavailable");
     ui.treasureOption = std::move(prepared.treasureOption);

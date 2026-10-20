@@ -1,4 +1,5 @@
 #include "options-ui.hpp"
+#include "version.hpp"
 #include "module.hpp"
 #include "features.hpp"
 #include "glow-mode-labels.hpp"
@@ -406,7 +407,7 @@ std::string Description(Obj option) { return Get(Get(Get(option).refs.at("descri
 Obj General(Obj parent) { return Get(Get(parent).refs.at("subcategories")).items.at(0); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
-    Check(Get(Get(parent).refs.at("name")).text == "Mod (r75)", "Loaded revision missing from category");
+    Check(Get(Get(parent).refs.at("name")).text == ModCategoryTitle, "Loaded revision missing from category");
     Check(!Get(parent).booleans["isSubCategory"] &&
         Get(Get(parent).refs.at("subcategories")).items.size() == 1, "Mod must retain one native section");
     const auto section = General(parent);
@@ -773,7 +774,7 @@ void TreasureActionAndCleanup() {
     Fixture f;
     Check(f.Ui().Attach(f.page), "Treasure fixture must attach");
     const auto option = f.Ui().treasureOption.get();
-    Check(Get(Get(option).refs.at("buttonText")).text == "Ouvrir DofusDB",
+    Check(Get(Get(option).refs.at("buttonText")).text == "Ouvrir le panneau",
         "Treasure button needs an explicit action label");
     Check(f.Ui().treasureMarker.get() == Get(option).refs.at("description"), "Owned marker missing");
     const auto clone = Make("TextButtonOption");
