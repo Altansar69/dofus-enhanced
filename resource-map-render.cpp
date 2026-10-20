@@ -14,7 +14,7 @@ using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr size_t CellBudget = 384, BadgeBudget = 384;
-constexpr float BadgeWidth=36, BadgeHeight=36;
+constexpr float FullBadgeSize=36, MiniBadgeSize=28;
 struct Vec2 { float x, y; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
@@ -56,7 +56,7 @@ bool installed = false, reported = false;
 uint64_t nextPump = 0, serial = 0;
 bool Session() {
     return installed && module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested &&
-        module->settings.resourceMapEnabled && !module->settings.resourceMapItems.empty() && module->compositor.get();
+        module->compositor.get();
 }
 void Report(const std::exception& error) {
     if (!reported) Log(std::string("RESOURCE_MAP_RENDER_ERROR ") + error.what());
@@ -253,13 +253,14 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
         }
     }
     const int columns=cell.counts.size()>1?2:1, rows=int((cell.counts.size()+columns-1)/columns);
+    const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
     for(size_t i=0;i<cell.counts.size();++i) {
         const auto& count=cell.counts[i]; auto& badge=marker.badges[i];
         const auto* resource=LookupResource(Catalog(),count.itemId);
         if (!resource) throw std::runtime_error("Unknown selected map resource");
-        Place(badge.root.get(),{(float(i%columns)*BadgeWidth-columns*BadgeWidth/2)/f.scale.x,(float(i/columns)*BadgeHeight-rows*BadgeHeight/2)/f.scale.y,BadgeWidth/f.scale.x,BadgeHeight/f.scale.y});
-        Place(badge.icon.get(),{0,0,32/f.scale.x,32/f.scale.y});
-        Place(badge.label.get(),{12/f.scale.x,20/f.scale.y,24/f.scale.x,16/f.scale.y});
+        Place(badge.root.get(),{(float(i%columns)*size-columns*size/2)/f.scale.x,(float(i/columns)*size-rows*size/2)/f.scale.y,size/f.scale.x,size/f.scale.y});
+        Place(badge.icon.get(),{0,0,(size-4)/f.scale.x,(size-4)/f.scale.y});
+        Place(badge.label.get(),{(size-24)/f.scale.x,(size-16)/f.scale.y,24/f.scale.x,16/f.scale.y});
         Pixels(badge.label.get(),"fontSize",11/f.scale.y); Style(badge.label.get(),"color",Color{1,1,.95f,1});
         Style(badge.label.get(),"backgroundColor",Color{.07f,.08f,.09f,.94f});
         for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
@@ -305,7 +306,8 @@ void Render(View& v,const Frame& f) {
         auto local=api.Value<Vec2>(api.Invoke(methods.mapToPixel,nullptr,{&x,&y,f.world.get(),const_cast<double*>(&f.zoom)}));
         auto screen=api.Value<Vec2>(api.Invoke(methods.toWorld,nullptr,{f.root.get(),&local}));
         const int columns=cell.counts.size()>1?2:1,rows=int((cell.counts.size()+columns-1)/columns);
-        const Rect bounds{screen.x-columns*BadgeWidth/2,screen.y-rows*BadgeHeight/2,columns*BadgeWidth,rows*BadgeHeight};
+        const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
+        const Rect bounds{screen.x-columns*size/2,screen.y-rows*size/2,columns*size,rows*size};
         if(!Finite(bounds) || !Overlaps(bounds,f.viewport))continue;
         if(bounds.width>f.viewport.width || bounds.height>f.viewport.height ||
             std::any_of(occupied.begin(),occupied.end(),[&](Rect other){return Overlaps(bounds,other);})) {result.limited=true;continue;}
@@ -366,8 +368,21 @@ bool RenderCleanupPending() {
     return false;
 }
 void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; }
+MiniMapSurface ReadMiniMapSurface() {
+    MiniMapSurface surface;
+    if(!Session())return surface;
+    auto f=ReadFrame(0);
+    if(!f.valid)return surface;
+    Vec2 corner{f.viewport.x,f.viewport.y};
+    const auto local=api.Value<Vec2>(api.Invoke(methods.toLocal,nullptr,{f.root.get(),&corner}));
+    if(!std::isfinite(local.x)||!std::isfinite(local.y)||!Current(f))return surface;
+    surface.root.reset(f.root.get());
+    surface.width=f.viewport.width/f.scale.x;surface.height=f.viewport.height/f.scale.y;
+    surface.left=local.x;surface.top=local.y;
+    return surface;
+}
 void PumpRender(uint64_t now) {
-    if(!Session()) {RestoreRender();return;}
+    if(!Session()||!module->settings.resourceMapEnabled||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
     if(now<nextPump)return;
     nextPump=now+200;
     for(int key=0;key<2;++key) {

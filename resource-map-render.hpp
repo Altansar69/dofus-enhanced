@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "runtime.hpp"
 
 namespace resourceMap {
 // Rendering only: queries the current native cartography views and owns a
@@ -8,4 +9,11 @@ void InstallRender();
 void PumpRender(uint64_t now);
 void RestoreRender();
 bool RenderCleanupPending();
+// Validated native mini-map surface, also available with no resources selected.
+// Dimensions are local UI units, independent of the panel's display scale.
+struct MiniMapSurface {
+    managed::Ref root;
+    float width=0, height=0, left=0, top=0;
+};
+MiniMapSurface ReadMiniMapSurface();
 }

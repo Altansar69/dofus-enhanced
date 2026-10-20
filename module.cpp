@@ -221,8 +221,8 @@ void Module::Pump(Obj source) {
     startupStage("chat-links", [] { TickChatTpLinks(); });
     startupStage("chat-travel", [] { TickChatTravel(); });
     startupStage("map-travel", [] { TickMapTravel(); });
-    startupStage("resource-map-ui", [] { resourceMap::TickUi(); });
     startupStage("resource-map-render", [] { resourceMap::PumpRender(GetTickCount64()); });
+    startupStage("resource-map-ui", [] { resourceMap::TickUi(); });
     if (!startupConfirmed) {
         WriteStartupStatus(folder, GetCurrentProcessId(), "READY");
         startupConfirmed = true;

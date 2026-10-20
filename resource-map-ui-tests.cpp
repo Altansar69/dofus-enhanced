@@ -1,5 +1,6 @@
 #include "resource-map-ui.hpp"
 #include "resource-map-icons.hpp"
+#include "resource-map-render.hpp"
 #include "resource-map-data.hpp"
 #include "module.hpp"
 #include "features.hpp"
@@ -37,7 +38,7 @@ std::unordered_map<GCHandle,Obj> handles;
 std::map<std::string,uintptr_t> guards;
 std::vector<std::string> logs;
 GCHandle nextHandle=0xABCD00000000ULL;
-Obj character{},cartography{};
+Obj character{},cartography{},miniRoot{};
 int nativeEnable=0,nativeDisable=0,changes=0,nativeStyleWrites=0,moveFailureCountdown=-1,removeFailures=0;
 bool rejectChange=false;
 using LifeFn=void(*)(Obj,Method);
@@ -124,6 +125,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name=="set_verticalScrollerVisibility"){Check(*static_cast<int*>(args[0])==0,"Vertical scroller automatic");return nullptr;}
     if(m.name=="AddSubContent"){Add(object.fields["content"],args[0]);return nullptr;}
     if(m.name=="Add"){Add(self,args[0]);return nullptr;}
+    if(m.name=="BringToFront"){Check(object.owned,"Only owned drawer reordered");Add(object.fields["parent"],self);return nullptr;}
     if(m.name=="Insert"){Insert(self,*static_cast<int*>(args[0]),args[1]);return nullptr;}
     if(m.name=="RemoveFromHierarchy"){
         Check(object.owned,"Only wrapper removed");if(removeFailures>0){--removeFailures;throw std::runtime_error("injected remove failure");}Detach(self);return nullptr;
@@ -160,6 +162,15 @@ namespace resourceMap {
 constexpr Resource TestCatalog[]{{311,1,1,1,"Eau"},{303,2,1,2,"Frêne"},{441,24,1,3,"Fer"},
     {421,26,1,4,"Ortie"},{289,28,1,5,"Blé"},{1782,36,1,6,"Goujon"}};
 std::span<const Resource> Catalog(){return TestCatalog;}
+MiniMapSurface ReadMiniMapSurface(){
+    MiniMapSurface result;
+    if(fake::miniRoot&&fake::Panel(fake::miniRoot)){
+        result.root.reset(fake::miniRoot);
+        const auto& bounds=fake::Get(fake::miniRoot).bound;
+        result.width=bounds.width;result.height=bounds.height;
+    }
+    return result;
+}
 }
 Module* module=nullptr;
 Module::Module(std::filesystem::path):features(nullptr),ui(nullptr){}
@@ -178,7 +189,7 @@ struct Fixture {
     Obj owner{},root{},panel{},filters{};
     std::vector<Obj> originals;
     Fixture(){
-        module=&state;state.ready=true;state.servicesReady=true;state.compositor.reset(Make("Compositor"));
+        miniRoot=nullptr;module=&state;state.ready=true;state.servicesReady=true;state.compositor.reset(Make("Compositor"));
         character=Make("Character");cartography=Make("Cartography");
         owner=Make("fhi");root=Make("VisualElement");panel=Make("Panel");filters=Make("VisualElement");
         Get(root).fields["panel"]=panel;Get(filters).bound={0,272,140,468};Add(root,filters);
@@ -188,7 +199,7 @@ struct Fixture {
         nativeEnable=nativeDisable=changes=nativeStyleWrites=removeFailures=0;moveFailureCountdown=-1;rejectChange=false;logs.clear();
         resourceMap::InstallUi();
     }
-    ~Fixture(){moveFailureCountdown=-1;removeFailures=0;resourceMap::RestoreUi();module=nullptr;}
+    ~Fixture(){moveFailureCountdown=-1;removeFailures=0;resourceMap::RestoreUi();miniRoot=nullptr;module=nullptr;}
     void Open(){enableHook(owner,nullptr);resourceMap::TickUi();}
     Obj Resources(){for(auto child:Get(root).children)if(Get(child).type->name=="SectionHeader")return child;return nullptr;}
     Obj Scroll(){auto r=Resources();return r?Get(Get(r).fields.at("content")).children.front():nullptr;}
@@ -256,6 +267,52 @@ void DeferredLayoutAndResize(){
     Get(f.root).bound.height=700;resourceMap::TickUi();Check(Get(f.Scroll()).styles["height"]==508,"Resize respects actual remaining map height");
     Get(f.owner).fields["dtzz"]=Make("StaleService");resourceMap::TickUi();f.Restored();
 }
+Obj FindUnder(Obj root,const char* type,const char* text=nullptr){
+    if(Get(root).type->name==type&&(!text||Get(root).text==text))return root;
+    for(auto child:Get(root).children)if(auto found=FindUnder(child,type,text))return found;
+    return nullptr;
+}
+void MiniMapSelectionAndLifetime(){
+    Fixture f;
+    miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
+    resourceMap::TickUi();
+    auto drawer=FindUnder(miniRoot,"SectionHeader","Ressources");
+    Check(drawer&&!Get(drawer).open&&!f.Resources(),"Mini-map picker discovered without opening full map or selecting resources");
+    auto scroll=FindUnder(drawer,"ScrollView");
+    Check(Get(drawer).styles["width"]==260&&Get(drawer).styles["left"]==32&&Get(drawer).styles["top"]==40,"Mini picker leaves space for native controls");
+    Check(Get(scroll).styles["height"]==188,"Mini picker stays within its viewport");
+    auto master=FindUnder(drawer,"CheckboxCustom","Afficher les ressources");
+    Get(master).value=true;Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
+    resourceMap::TickUi();
+    Check(changes==1&&f.state.settings.resourceMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{441},"Mini selection saved with shared preferences");
+    f.Open();Check(Get(f.Row("Fer")).value,"Full map restores mini-map selection");
+    Get(f.Row("Blé")).value=true;resourceMap::TickUi();
+    Check(Get(FindUnder(drawer,"CheckboxCustom","Blé")).value,"Full map changes sync to mini-map");
+    Get(FindUnder(drawer,"CheckboxCustom","Eau")).value=true;resourceMap::TickUi();resourceMap::TickUi();
+    Check(Get(f.Row("Eau")).value,"Mini-map changes sync back to open full map");
+    disableHook(f.owner,nullptr);Check(Get(drawer).fields["parent"]==miniRoot,"Closing full map retains mini-map picker");
+    auto foreign=Make("NativeCommand");Add(miniRoot,foreign);
+    resourceMap::TickUi();Check(Get(miniRoot).children.back()==drawer&&Get(foreign).fields["parent"]==miniRoot,"Drawer stays above marker layers without modifying native children");
+    Get(miniRoot).bound={0,0,200,200};resourceMap::TickUi();
+    Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==88,"Small mini-map stays usable after resize");
+    const auto previous=miniRoot;
+    miniRoot=nullptr;resourceMap::TickUi();
+    Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{foreign},"Hidden mini-map detaches only owned resources");
+    miniRoot=previous;resourceMap::TickUi();
+    auto replacement=FindUnder(miniRoot,"SectionHeader","Ressources");Check(replacement&&replacement!=drawer,"Mini-map reopening recreates picker");
+    Get(FindUnder(replacement,"CheckboxCustom","Frêne")).value=true;
+    const auto count=changes;f.state.stopRequested=true;resourceMap::TickUi();
+    Check(changes==count&&!resourceMap::UiCleanupPending(),"Stopping discards pending mini-map changes and removes controls");
+    f.Restored();
+}
+void MiniMapCleanupRetries(){
+    Fixture f;miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    resourceMap::TickUi();auto drawer=FindUnder(miniRoot,"SectionHeader","Ressources");
+    removeFailures=1;resourceMap::RestoreUi();
+    Check(resourceMap::UiCleanupPending(),"Failed mini-map cleanup retains references");
+    resourceMap::RestoreUi();Check(!resourceMap::UiCleanupPending()&&!Get(drawer).fields["parent"],"Mini-map cleanup can retry");
+}
 }
 int main(){
     try{
@@ -271,6 +328,8 @@ int main(){
         fake::PartialMoveAndRetryableCleanup();std::cout<<"partial mutation recovery passed\n";
         fake::ForeignChildrenAndNativeReparent();std::cout<<"foreign ownership passed\n";
         fake::DeferredLayoutAndResize();std::cout<<"deferred layout passed\n";
+        fake::MiniMapSelectionAndLifetime();std::cout<<"mini-map selection and lifetime passed\n";
+        fake::MiniMapCleanupRetries();std::cout<<"mini-map cleanup retry passed\n";
         fake::Check(fake::handles.empty(),"Managed references leaked after fixture destruction");
         std::cout<<"Resource map UI production orchestration tests passed\n";return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

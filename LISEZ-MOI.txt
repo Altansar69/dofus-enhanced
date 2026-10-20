@@ -1,7 +1,20 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 79
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 80
+
+R80 — RESSOURCES SUR LA MINI-CARTE
+- Volet Ressources directement dans la mini-carte, replié par défaut :
+  ouvrir un métier puis cocher les ressources à afficher.
+- Sélection partagée avec la grande carte et conservée entre les lancements.
+  Le volet reste disponible quand les repères sont désactivés.
+- Icônes des ressources et quantités par case, plus compactes sur la mini-carte.
+  Les repères laissent passer les clics de navigation.
+- Volet adapté au redimensionnement, avec défilement. Visible dès que la
+  mini-carte dispose de 144 x 160 unités UI ; agrandir si nécessaire.
+- Données DofusDB recensées, sans connaissance de la disponibilité après récolte.
+- Compilation et tests hors jeu ; rendu réel à confirmer. Aucun client ouvert
+  n'a été manipulé. Chargement de la révision au prochain lancement.
 
 R79 — CARNET, XP MÉTIERS ET CROISEMENTS
-- Options > Mod (r79) > Général > Carnet > Ouvrir le carnet :
+- Options > Mod (r80) > Général > Carnet > Ouvrir le carnet :
   positions nommées, notes multiligne et messages enregistrés.
   Créer, modifier, enregistrer et supprimer depuis les contrôles du jeu.
   Les positions permettent un trajet explicite. Les messages préparent le

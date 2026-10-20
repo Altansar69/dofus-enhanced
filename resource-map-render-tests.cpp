@@ -206,5 +206,20 @@ void LimitsAndInvalidGeometry(){Fixture f;fakePlacements.clear();for(int x=0;x<6
     Check(LiveMarkers(f.full).size()<=384,"Visible resource budget exceeded");bool hint=false;for(auto l:AllOwned("Label"))hint|=Get(l).text.find("zoomez")!=std::string::npos;Check(hint,"Limited/colliding view needs zoom hint");
     Get(f.Root(f.full)).scale.x=std::numeric_limits<float>::quiet_NaN();f.Tick();Check(LiveMarkers(f.full).empty(),"Invalid transform must fail closed");
 }
+void MiniSurfaceIndependentOfSelection(){Fixture f;
+    f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
+    {
+        auto surface=ReadMiniMapSurface();Check(surface.root.get()==f.Root(f.banner),"Picker must access mini-map when markers disabled and selection empty");
+    }
+    Get(f.Root(f.banner)).scale={2,2};Get(f.Root(f.banner)).origin={10,20};
+    Get(f.Root(f.banner)).bound={10,20,600,600};Get(f.Root(f.banner)).clip={30,60,400,400};
+    {
+        auto surface=ReadMiniMapSurface();
+        Check(surface.width==200&&surface.height==200&&surface.left==10&&surface.top==20,"Picker dimensions must account for panel scale and clipping");
+    }
+    Get(f.Root(f.banner)).visible=false;Check(!ReadMiniMapSurface().root.get(),"Hidden mini-map must not expose picker surface");
+    Get(f.Root(f.banner)).visible=true;Get(f.dictionary).indexed.erase(0);
+    Check(!ReadMiniMapSurface().root.get(),"Full map is never mistaken for mini-map");
 }
-int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry})test();std::cout<<"ResourceMapRenderTests: 6 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+}
+int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection})test();std::cout<<"ResourceMapRenderTests: 7 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
