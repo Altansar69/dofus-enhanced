@@ -42,6 +42,7 @@ DragFn originalPopulate = nullptr;
 DragFlagFn setDragging = nullptr;
 thread_local bool enteringOwnedDrag = false;
 std::vector<bool (*)(Obj)> auxiliaryActions;
+std::vector<std::pair<bool (*)(Obj, Obj), bool (*)(Obj, Obj)>> auxiliaryMenus;
 
 bool MenuAvailable() {
     return state.installed && !state.hiding && !state.cleanupPending && state.hideModule &&
@@ -69,6 +70,7 @@ void ClosePanelMenu() {
     state.menuCallback.reset(); state.menuItem.reset(); state.menu.reset();
 }
 void PopulateMenuHook(Obj owner, Obj event, Method method) {
+    for (const auto& handlers : auxiliaryMenus) { try { if (handlers.first(owner, event)) return; } catch (...) { Log("AUXILIARY_MENU_POPULATE_ERROR"); return; } }
     if (!owner || owner != state.menuManipulator.get()) { originalPopulate(owner, event, method); return; }
     try {
         if (!MenuAvailable() || !event) return;
@@ -496,6 +498,11 @@ void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj)) {
     if (handler && std::find(detail::auxiliaryActions.begin(), detail::auxiliaryActions.end(), handler) == detail::auxiliaryActions.end())
         detail::auxiliaryActions.push_back(handler);
 }
+void SetAuxiliaryPanelMenus(bool (*populate)(managed::Obj, managed::Obj), bool (*callback)(managed::Obj, managed::Obj)) {
+    const auto pair = std::make_pair(populate, callback);
+    if (populate && callback && std::find(detail::auxiliaryMenus.begin(), detail::auxiliaryMenus.end(), pair) == detail::auxiliaryMenus.end())
+        detail::auxiliaryMenus.push_back(pair);
+}
 managed::Obj GetUiRoot() {
     using namespace managed;
     const auto klass = managed::api.Class("Core.dll", "", "pq");
@@ -716,6 +723,7 @@ void Panel::Hide() {
 bool PanelCleanupPending() { return detail::state.cleanupPending; }
 bool HandlePanelMenuCallback(managed::Obj callback, managed::Obj view) {
     using namespace detail;
+    for (const auto& handlers : auxiliaryMenus) { try { if (handlers.second(callback, view)) return true; } catch (...) { Log("AUXILIARY_MENU_CALLBACK_ERROR"); return true; } }
     if (!callback || callback != state.menuCallback.get()) return false;
     try {
         if (!state.menuArmed || !MenuAvailable() || !view || !api.Call(view, "get_panel") ||

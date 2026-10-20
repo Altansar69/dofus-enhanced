@@ -1,4 +1,4 @@
 #pragma once
-inline constexpr unsigned ModRevision = 83;
-inline constexpr char ModVersion[] = "r83";
-inline constexpr char ModCategoryTitle[] = "Mod (r83)";
+inline constexpr unsigned ModRevision = 84;
+inline constexpr char ModVersion[] = "r84";
+inline constexpr char ModCategoryTitle[] = "Mod (r84)";

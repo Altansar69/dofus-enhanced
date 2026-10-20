@@ -50,7 +50,14 @@ int main() {
             { std::ofstream invalid(path,std::ios::app); invalid << "glowNpcs=2\nglowInteractives=-1\n"; }
             Require(Settings::Read(path)==categories,"Malformed flags must preserve saved choices");
         }
-        Require(defaults.resourceMapEnabled && defaults.resourceMapItems.empty(), "No resource annotations before a selection");
+        Require(defaults.resourceMapEnabled && defaults.resourceMiniMapEnabled && defaults.resourceMapItems.empty(), "No resource annotations before a selection");
+        for(bool full:{false,true})for(bool mini:{false,true}){
+            auto maps=defaults;maps.resourceMapEnabled=full;maps.resourceMiniMapEnabled=mini;maps.resourceMapItems={303,421};
+            maps.Save(path);
+            Require(Settings::Read(path)==maps,"Map visibility flags persist independently without losing the shared selection");
+            {std::ofstream file(path,std::ios::app);file<<"resourceMiniMapEnabled=7\n";}
+            Require(Settings::Read(path)==maps,"Invalid mini-map preference preserves the saved value");
+        }
         {
             Settings many;
             many.resourceMapEnabled = false;
@@ -69,7 +76,7 @@ int main() {
             Require(rejected && Settings::Read(path) == many, "Oversized resource selection must be rejected before writing");
             { std::ofstream file(path); file << "resourceMapEnabled=0\nresourceMapEnabled=7\nresourceMapItem=421\nresourceMapItem=303\nresourceMapItem=421\nresourceMapItem=-1\nresourceMapItem=1000001\nresourceMapItem=no\n"; }
             auto normalized = Settings::Read(path);
-            Require(!normalized.resourceMapEnabled && normalized.resourceMapItems == std::vector<int>({303,421}),
+            Require(!normalized.resourceMapEnabled && !normalized.resourceMiniMapEnabled && normalized.resourceMapItems == std::vector<int>({303,421}),
                 "Resource IDs must normalize and malformed entries must not undo opt-out");
             { std::ofstream file(path); for (int i=1;i<=200;++i) file << "resourceMapItem=" << i << '\n'; }
             Require(Settings::Read(path).resourceMapItems.size() == 128, "Resource selection read must be bounded");

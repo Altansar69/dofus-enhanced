@@ -20,6 +20,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     std::ifstream file(path);
     std::string line;
     bool preferredRead = false, preferredRoleplayRead = false, animationModeRead = false, monsterGlowModeRead = false;
+    bool resourceMiniMapRead = false;
     while (std::getline(file, line)) {
         if (line.size() > 256) throw std::runtime_error("Settings line too long");
         if (line == "mode=0") settings.mode = 0;
@@ -50,6 +51,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "preloadNextMap" && (value == 0 || value == 1)) settings.preloadNextMap = value != 0;
             else if (key == "spouseTeleport" && (value == 0 || value == 1)) settings.spouseTeleport = value != 0;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
+            else if (key == "resourceMiniMapEnabled" && (value == 0 || value == 1)) { settings.resourceMiniMapEnabled = value != 0; resourceMiniMapRead = true; }
             else if (key == "resourceMapItem" && value > 0 && value <= 1000000) {
                 auto& items = settings.resourceMapItems;
                 const auto where = std::lower_bound(items.begin(), items.end(), value);
@@ -65,6 +67,9 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     }
     if (!preferredRead && settings.mode > 0) settings.preferredMode = settings.mode;
     if (!preferredRoleplayRead && settings.roleplayMode > 0) settings.preferredRoleplayMode = settings.roleplayMode;
+    // Earlier revisions used one switch for both maps. Preserve that choice
+    // until the new mini-map preference has been explicitly saved.
+    if (!resourceMiniMapRead) settings.resourceMiniMapEnabled = settings.resourceMapEnabled;
     return settings;
 }
 void Settings::Save(const std::filesystem::path& path) const {
@@ -104,6 +109,7 @@ void Settings::Save(const std::filesystem::path& path) const {
              << "\npreloadNextMap=" << (preloadNextMap ? 1 : 0)
              << "\nspouseTeleport=" << (spouseTeleport ? 1 : 0)
              << "\nresourceMapEnabled=" << (resourceMapEnabled ? 1 : 0)
+             << "\nresourceMiniMapEnabled=" << (resourceMiniMapEnabled ? 1 : 0)
              << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';
         file.flush();

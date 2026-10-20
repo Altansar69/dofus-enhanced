@@ -1,3 +1,4 @@
+#include "tools-ui.hpp"
 #include "native-panel-test-fixture.hpp"
 #include "treasure-launch.hpp"
 #include "treasure-data.hpp"
@@ -42,7 +43,7 @@ int main() {
         Initialize();treasureFixture=true;
         Module owner{std::filesystem::path{}};module=&owner;
         owner.ready=owner.servicesReady=true;owner.cached.reset(Make("Cache"));owner.compositor.reset(Make("Compositor"));
-        dependencies=Make("goc");input=Make("eqo");Get(dependencies).fields["cached"]=owner.cached.get();
+        contextService=Make("ContextService");dependencies=Make("goc");input=Make("eqo");Get(dependencies).fields["cached"]=owner.cached.get();
         for(const auto* key:{"ydf","ydh","ydj","ydl"}) {
             auto event=Make("InputCustomEvent"),list=Make("List"),foreign=Make("Action");
             Get(foreign).fields["target"]=Make("ForeignDragger");Get(list).children={foreign};
@@ -54,7 +55,7 @@ int main() {
         Add(nativeRoot,layers);Add(layers,hud);Add(layers,middle);
         Get(nativeRoot).fields["layersService"]=service;Get(service).fields["dzrv"]=layers;
         soul::Panel{}.Install(Equip,Save,HideModule);
-        InstallTreasurePanel();TickTreasurePanel();
+        toolsUi::Install();InstallTreasurePanel();TickTreasurePanel();
         Check(Get(middle).children.empty()&&fetches==0,"Opening settings must not start a panel or query");
         OpenTreasureOverlay({});TickTreasurePanel();
         auto window=latestWindow;Check(Get(window).fields["parent"]==middle,"Panel must use native normal-window layer");
@@ -91,7 +92,7 @@ int main() {
         initFailures=1;OpenTreasureOverlay({});
         bool rejected=false;try{TickTreasurePanel();}catch(...){rejected=true;}
         Check(rejected&&!TreasurePanelCleanupPending(),"Partial native Init safely rolled back");
-        owner.cached.reset();owner.compositor.reset();module=nullptr;
+        toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;
         Check(handles.empty(),"Panel leaked GC handles");
         std::cout<<"PASS: native panel, manual actions, result filtering, stale requests, session replacement and retryable cleanup\n";
         return 0;

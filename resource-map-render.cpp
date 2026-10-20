@@ -14,7 +14,7 @@ using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr size_t CellBudget = 384, BadgeBudget = 384;
-constexpr float FullBadgeSize=42, MiniBadgeSize=34;
+constexpr float FullBadgeSize=50, MiniBadgeSize=44;
 struct Vec2 { float x, y; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
@@ -260,7 +260,9 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
         if (!resource) throw std::runtime_error("Unknown selected map resource");
         Place(badge.root.get(),{(float(i%columns)*size-columns*size/2)/f.scale.x,(float(i/columns)*size-rows*size/2)/f.scale.y,size/f.scale.x,size/f.scale.y});
         Place(badge.icon.get(),{0,0,(size-4)/f.scale.x,(size-4)/f.scale.y});
-        Place(badge.label.get(),{(size-32)/f.scale.x,(size-20)/f.scale.y,32/f.scale.x,20/f.scale.y});
+        const auto quantity=std::to_string(count.count)+(count.interiorCount?"*":"");
+        const float countWidth=(std::max)(18.0f,8.0f*float(quantity.size())+6.0f);
+        Place(badge.label.get(),{(size-countWidth)/f.scale.x,(size-18)/f.scale.y,countWidth/f.scale.x,18/f.scale.y});
         Pixels(badge.label.get(),"fontSize",14/f.scale.y);
         Style(badge.label.get(),"unityFontStyleAndWeight",1);
         Style(badge.label.get(),"color",Color{.09f,.10f,.08f,1});
@@ -273,14 +275,14 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
             Pixels(badge.label.get(),corner,5/f.scale.y);
         for(auto edge:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(badge.label.get(),edge,0);
         Style(badge.label.get(),"unityTextAlign",4);
-        SetText(badge.label.get(),std::to_string(count.count)+(count.interiorCount?"*":""));
+        SetText(badge.label.get(),quantity);
     }
     marker.content=content;marker.scale=f.scale;
 }
-void UpdateHint(View& v,const Frame& f,bool limited,bool interiors) {
-    const std::string text=limited?"Ressources : zoomez pour afficher tous les repères" : interiors?"* Ressources en intérieur incluses" : "";
+void UpdateHint(View& v,const Frame& f,bool interiors) {
+    const std::string text=interiors?"* Ressources en intérieur incluses" : "";
     if(text.empty()) { if(v.hint.get()) { api.Call(v.hint.get(),"RemoveFromHierarchy"); v.hint.reset(); } return; }
-    if(!v.hint.get()) { v.hint.reset(Element(true)); Name(v.hint.get(),"resource_map_zoom_hint"); api.Call(v.root.get(),"Add",{v.hint.get()}); }
+    if(!v.hint.get()) { v.hint.reset(Element(true)); Name(v.hint.get(),"resource_map_interior_hint"); api.Call(v.root.get(),"Add",{v.hint.get()}); }
     Vec2 corner{f.viewport.x+5,f.viewport.y+f.viewport.height-22};
     auto local=api.Value<Vec2>(api.Invoke(methods.toLocal,nullptr,{f.root.get(),&corner}));
     Place(v.hint.get(),{local.x,local.y,std::max(1.0f,f.viewport.width-10)/f.scale.x,18/f.scale.y});
@@ -328,7 +330,7 @@ void Render(View& v,const Frame& f) {
     for(auto& marker:v.markers)if(!marker.used)RemoveMarker(v,marker);
     std::erase_if(v.markers,[](const Marker& m){return !m.native.get();});
     if(!Current(f))throw std::runtime_error("Cartography changed before resource render commit");
-    UpdateHint(v,f,result.limited,interior);
+    UpdateHint(v,f,interior);
     // Re-enable only our group if a native filter refresh cleared its active list.
     if(!v.markers.empty())api.Invoke(methods.enableGroup,v.manager.get(),{v.group.get()});
     v.cached=true;v.viewport=f.viewport;v.scale=f.scale;v.origin=f.origin;v.zoom=f.zoom;v.selection=module->settings.resourceMapItems;
@@ -388,13 +390,15 @@ MiniMapSurface ReadMiniMapSurface() {
     return surface;
 }
 void PumpRender(uint64_t now) {
-    if(!Session()||!module->settings.resourceMapEnabled||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
+    if(!Session()||(!module->settings.resourceMapEnabled&&!module->settings.resourceMiniMapEnabled)||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
     if(now<nextPump)return;
     nextPump=now+200;
     for(int key=0;key<2;++key) {
         auto& v=views[key];
         try {
             if(v.cleaning && !Cleanup(v))continue;
+            const bool enabled=key==0?module->settings.resourceMiniMapEnabled:module->settings.resourceMapEnabled;
+            if(!enabled){Cleanup(v);continue;}
             auto f=ReadFrame(key);
             if(!f.valid) {Cleanup(v);continue;}
             if(!SameView(v,f)) {if(!Cleanup(v))continue;CreateView(v,f);}

@@ -56,6 +56,7 @@ using FlagFn = void(*)(bool, Method);
 ActionFn actionHook = nullptr;
 ActionFn notifyHook = nullptr;
 DragFn downHook = nullptr, upHook = nullptr, populateHook = nullptr;
+DragFn modulesHook = nullptr;
 FlagFn flagHook = nullptr;
 std::vector<std::string> logs;
 void Check(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
@@ -172,14 +173,14 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="get_disabled") return Box(!obj.enabled);
     if(m.name=="AppendTitle"||m.name=="AppendSeparator") {
         auto row=Make(m.name=="AppendTitle"?"MenuTitle":"MenuSeparator");
-        if(m.name=="AppendTitle") {Check(args.size()==1&&Get(args[0]).text=="Pierre d'âme","Native module title before hide action");Get(row).text=Get(args[0]).text;}
+        if(m.name=="AppendTitle") {Check(args.size()==1&&!Get(args[0]).text.empty(),"Native module title before hide action");Get(row).text=Get(args[0]).text;}
         else Check(args.empty(),"Native separator has no arguments");
         Get(obj.fields.at("menuItems")).children.push_back(row);return nullptr;
     }
     if(m.name=="AppendDefaultItem") {
         Check(args.size()==13&&Get(args[0]).text=="Masquer le module"&&!args[1],"Hide menu must use null native fallback and localized title");
         Check(!*static_cast<bool*>(args[2])&&*static_cast<bool*>(args[3])&&*static_cast<int*>(args[9])==137,"Enabled native closing row with eye-slash icon");
-        Check(Get(args[4]).text.find("barre des modules")!=std::string::npos,"Explain how to show the module again");
+        Check(!Get(args[4]).text.empty(),"Explain how to show the module again");
         auto item=Make("MenuItem"),callback=Make("MenuCallback");Get(item).fields["m_callback"]=callback;
         Get(obj.fields.at("menuItems")).children.push_back(item);return nullptr;
     }
@@ -310,6 +311,7 @@ Obj Api::New(Klass klass,std::initializer_list<void*> arguments) const {
     const std::vector<void*> args(arguments);
     if(name=="Length") { Check(args.size()==2,"Length argc");auto box=Make(name);std::memcpy(Get(box).value.data(),args[0],4);std::memcpy(Get(box).value.data()+4,args[1],4);return box; }
     if(name=="Color") { Check(args.size()==4,"Color argc");auto box=Make(name);for(size_t i=0;i<4;++i)std::memcpy(Get(box).value.data()+i*4,args[i],4);return box; }
+    if(name=="ScrollView") {auto scroll=Element(name),content=Element("ScrollContent");Add(scroll,content);Get(scroll).fields["content"]=content;return scroll;}
     if(name=="Label"||name=="ListElementBasic"||name=="VisualElement"||name=="TextInput") {Check(args.empty(),"Native element ctor argc");auto obj=Element(name);if(name=="ListElementBasic"){latestAction=obj;auto label=Element("DofusLabel");Get(obj).fields["m_textLabel"]=label;Add(obj,label);}return obj;}
     if(name=="DofusContextualMenuManipulator") {
         Check(args.size()==4&&args[0]==contextService&&!args[1]&&*static_cast<int*>(args[2])==0&&!*static_cast<bool*>(args[3]),"Native left-click menu constructor with null fallback");
@@ -342,6 +344,8 @@ void* Api::Native(Method method,uintptr_t rva) const {
     const auto& m=*static_cast<const fake::MethodInfo*>(method);
     if(rva==0x11E7EC0&&m.name=="get_menu"&&m.count==0)return reinterpret_cast<void*>(rva);
     const std::map<uintptr_t,std::pair<std::string,int>> expected={
+        {0x17D83F0,{"AddPresetContextualMenuItems",1}},{0x16D63D0,{"AppendCheckboxItem",9}},
+        {0x5742BD0,{".ctor",0}},{0x5742BE0,{"get_contentContainer",0}},
         {0x55E08E0,{"BringToFront",0}},{0x1593FB0,{"set_isSingleLine",1}},
         {0x178E150,{"set_isMultiline",1}},{0x564B1E0,{"set_enableRichText",1}},
         {0x178DC90,{".ctor",0}},{0x178DDA0,{"get_text",0}},{0x178EC50,{"set_text",1}},{0x178EAA0,{"set_placeholderText",1}},{0x178E9B0,{"set_maxLength",1}},
@@ -376,6 +380,7 @@ managed::Obj Module::FindService(const char* name) const {
 void Log(const std::string& message) {fake::logs.push_back(message);}
 void AddHook(managed::Method m,uintptr_t rva,void* replacement,void** original) {
     const auto& method=*static_cast<const fake::MethodInfo*>(m);
+    if(rva==0x17D83F0) {fake::modulesHook=reinterpret_cast<fake::DragFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalPopulate);return;}
     if(rva==0x16D04D0) {
         fake::Check(method.name=="OnContextualMenuEvent"&&method.count==1,"Native menu population ABI");
         fake::populateHook=reinterpret_cast<fake::DragFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalPopulate);return;

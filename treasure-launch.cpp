@@ -1,17 +1,17 @@
 #include "treasure-launch.hpp"
 #include "treasure-data.hpp"
 #include "soul-panel.hpp"
+#include "tools-ui.hpp"
 #include "module.hpp"
 #include <algorithm>
 #include <array>
 #include <thread>
-
 namespace {
 using namespace managed;
 constexpr const char* Ui = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr const char* Figma = "Core.UILogic.Components.Figma";
-constexpr size_t Rows = 6;
+constexpr size_t Rows = 4;
 struct Job {
     treasure::Query query;
     std::atomic_bool cancelled{false}, done{false};
@@ -38,7 +38,6 @@ Method unsubscribe = nullptr;
 // Retain a cancelled job until it finishes, even if its panel was closed.
 // Reopening cannot accumulate background HTTP workers.
 std::shared_ptr<Job> activeJob;
-
 bool Session() {
     return module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested;
 }
@@ -83,7 +82,7 @@ Obj Row(Obj parent) {
 Obj Button(Obj parent, const std::string& text) {
     Ref button(api.New(api.Class("Core.dll",Figma,"ListElementBasic")));
     int style=1; api.Call(button.get(),"set_listElementStyle",{&style});
-    Pixels(button.get(),"minHeight",30); Pixels(button.get(),"minWidth",0);
+    Pixels(button.get(),"minHeight",34); Pixels(button.get(),"marginRight",4); Pixels(button.get(),"minWidth",0);
     Text(button.get(),text); Add(parent,button.get()); return button.get();
 }
 Obj Input(Obj parent, const char* hint, const char* value, int maxLength) {
@@ -92,6 +91,22 @@ Obj Input(Obj parent, const char* hint, const char* value, int maxLength) {
     api.Call(input.get(),"set_maxLength",{&maxLength}); Text(input.get(),value);
     Pixels(input.get(),"minWidth",0); Pixels(input.get(),"minHeight",32); Float(input.get(),"flexGrow",1);
     Add(parent,input.get()); return input.get();
+}
+void Color(Obj element,const char* property,float r,float g,float b) {
+    float a=1;Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
+    Ref box(Style(element,property));api.Call(box.get(),"set_value",{api.object_unbox(color.get())});WriteStyle(element,property,box.get());
+}
+Obj Section(Obj parent,const char* title) {
+    Ref card(api.New(api.Class(Ui,UiSpace,"VisualElement")));Add(parent,card.get());
+    for(auto p:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(card.get(),p,12);
+    Pixels(card.get(),"marginBottom",10);Color(card.get(),"backgroundColor",.13f,.14f,.12f);
+    for(auto p:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(card.get(),p,6);
+    Ref heading(Label(card.get(),title));Color(heading.get(),"color",.77f,.87f,.35f);Enum(heading.get(),"unityFontStyleAndWeight",1);Pixels(heading.get(),"marginBottom",10);
+    return card.get();
+}
+void Select(Obj button,bool selected) {
+    Color(button,"backgroundColor",selected?.26f:.16f,selected?.33f:.17f,selected?.13f:.15f);
+    Ref label(api.Field(button,"m_textLabel"));Color(label.get(),"color",selected?.83f:.92f,selected?.95f:.92f,selected?.43f:.90f);
 }
 std::string Read(Obj input) { return api.String(api.Call(input,"get_text")); }
 Obj Root() {
@@ -216,36 +231,40 @@ void Create(Obj root) {
         api.Call(state.window.get(),setter,{&no});
     api.Call(state.window.get(),"set_hasBackground",{&yes});
     Enum(state.window.get(),"position",1); Float(state.window.get(),"flexGrow",0);
-    Pixels(state.window.get(),"width",390); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
+    Pixels(state.window.get(),"width",450); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
     state.header.reset(api.Call(state.window.get(),"get_headerWidget"));
+    toolsUi::AttachHeader("treasure",state.window.get());
     Ref draggers(api.Field(state.window.get(),"m_registeredElementDraggers"));
     state.dragger.reset(api.Call(draggers.get(),"get_Item",{state.header.get()}));
     Retain("m_elementDraggers"); Retain("m_resizerList");
     const char* getters[]={"ydf","ydh","ydj","ydl"};
     for(size_t i=0;i<4;++i) state.inputEvents[i].reset(api.Call(input.get(),getters[i]));
     api.Call(state.window.get(),"Init",{state.dependencies.get()});
-    Ref content(api.Call(state.window.get(),"get_contentContainer"));
+    Ref content(toolsUi::ScrollBody(state.window.get(),root));
     Float(content.get(),"flexGrow",0);
     for(const auto* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"}) Pixels(content.get(),property,8);
-    Label(content.get(),"Coordonnées de départ");
-    Ref coords(Row(content.get()));
+    Ref departure(Section(content.get(),"1 · Point de départ"));
+    Ref coords(Row(departure.get()));
     Label(coords.get(),"X "); state.x.reset(Input(coords.get(),"X","",5));
     Label(coords.get(),"  Y "); state.y.reset(Input(coords.get(),"Y","",5));
-    Ref directions(Row(content.get()));
+    Ref directions(Row(departure.get()));
     const char* names[]={"↑ Nord","← Ouest","↓ Sud","→ Est"};
     for(size_t i=0;i<4;++i) {state.direction[i].reset(Button(directions.get(),names[i])); Float(state.direction[i].get(),"flexGrow",1);}
-    state.filter.reset(Input(content.get(),"Nom de l'indice (facultatif)","",100));
-    state.search.reset(Button(content.get(),"Rechercher les indices"));
+    Ref clueSection(Section(content.get(),"2 · Indice à trouver"));
+    state.filter.reset(Input(clueSection.get(),"Nom de l’indice (ou laisse vide pour les lister)","",100));
+    Pixels(state.filter.get(),"marginBottom",8);
+    state.search.reset(Button(clueSection.get(),"Rechercher les indices"));Select(state.search.get(),true);
     state.status.reset(Label(content.get(),"Renseigne le départ et la direction, puis lance la recherche."));
+    Ref results(Section(content.get(),"3 · Résultats"));
     for(auto& row:state.rows) {
-        row.reset(Button(content.get(),"")); Enum(row.get(),"display",1);
-        Pixels(row.get(),"height",54);
+        row.reset(Button(results.get(),"")); Enum(row.get(),"display",1);
+        Pixels(row.get(),"height",48);
         Ref label(api.Field(row.get(),"m_textLabel"));
         api.Call(label.get(),"set_isSingleLine",{&no});
         Enum(label.get(),"whiteSpace",0);
         Pixels(label.get(),"fontSize",14);
     }
-    Ref pages(Row(content.get()));
+    Ref pages(Row(results.get()));
     state.previous.reset(Button(pages.get(),"Précédents")); state.next.reset(Button(pages.get(),"Suivants"));
     Float(state.previous.get(),"flexGrow",1); Float(state.next.get(),"flexGrow",1);
     Enabled(state.previous.get(),false); Enabled(state.next.get(),false);
@@ -254,7 +273,6 @@ void Create(Obj root) {
     Log("TREASURE_PANEL_OPEN native=true provider=DofusDB");
 }
 }
-
 void InstallTreasurePanel() {
     auto input=api.Class("Core.dll",Figma,"TextInput");
     api.FindVerified(input,".ctor",0,0x178DC90);
@@ -266,7 +284,8 @@ void InstallTreasurePanel() {
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","DofusLabel"),"set_isSingleLine",1,0x1593FB0);
     unsubscribe=api.FindVerified(api.Class("Core.dll","Core.Engine.Inputs.Events","InputCustomEvent"),"UnSubscribe",1,0x20FF620);
     // Shared window/control contracts are verified by InstallSoulHelper first.
-    soul::SetAuxiliaryPanelAction(Action); installed=true;
+    soul::SetAuxiliaryPanelAction(Action);
+    toolsUi::Register("treasure","Chasse au trésor · DofusDB",317,[]{return wanted;},[]{wanted=!wanted;if(!wanted&&state.job)state.job->cancelled.store(true);return true;});installed=true;
 }
 void OpenTreasureOverlay(const std::filesystem::path&) {
     if(!installed || !Session()) return;
@@ -280,6 +299,7 @@ void RestoreTreasurePanel() {
     state.cleanup=true;
     try {
         Enum(state.window.get(),"display",1);
+        toolsUi::DetachHeader("treasure");
         const auto mouse=api.Class(Ui,UiSpace,"MouseCaptureController");
         if(state.header.get() && api.Value<bool>(api.Invoke(api.Find(mouse,"HasMouseCapture",1),nullptr,{state.header.get()}))) {
             *static_cast<bool*>(api.FieldAddress(state.dragger.get(),"m_active"))=false;
@@ -344,5 +364,5 @@ void TickTreasurePanel() {
     }
     const int values[]={6,4,2,0};
     const char* names[]={"↑ Nord","← Ouest","↓ Sud","→ Est"};
-    for(size_t i=0;i<4;++i) Text(state.direction[i].get(),std::string(state.directionValue==values[i]?"• ":"")+names[i]);
+    for(size_t i=0;i<4;++i){Text(state.direction[i].get(),names[i]);Select(state.direction[i].get(),state.directionValue==values[i]);}
 }

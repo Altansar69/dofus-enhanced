@@ -396,11 +396,11 @@ void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original)
 namespace fake {
 std::vector<Obj> AllSources(OptionsUi& ui) {
     return {ui.modeSource.get(), ui.roleplayModeSource.get(),
-        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get()};
+        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get(), ui.resourcesMiniSource.get()};
 }
 std::vector<Obj> AllOptions(OptionsUi& ui) {
     return {ui.modeOption.get(), ui.roleplayModeOption.get(),
-        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.treasureOption.get(), ui.notebookOption.get()};
+        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.resourcesMiniOption.get()};
 }
 const std::vector<Obj>& Rows(Obj category) { return Get(Get(category).refs.at("options")).items; }
 std::string Label(Obj option) { return Get(Get(option).refs.at("text")).text; }
@@ -416,12 +416,12 @@ void CheckLayout(Fixture& f) {
         Get(section).integers.at("categoryId") == GeneralId &&
         Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
     Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
-    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly sixteen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur les cartes", "Chasse au trésor", "Carnet"};
+    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly fifteen rows in the requested order");
+    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte"};
     for (size_t i = 0; i != Rows(section).size(); ++i) {
         const auto option = Rows(section)[i];
         Check(Label(option) == labels[i], "Simple option label or ordering changed");
-        Check(Get(option).klass->name == (i >= 14 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
+        Check(Get(option).klass->name == (i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
             "Simple settings must use native controls");
         if (i < 3 || i == 7) {
             const auto& choices = Get(Get(option).refs.at("choices")).items;
@@ -432,9 +432,9 @@ void CheckLayout(Fixture& f) {
                     "A percentage or minimum choice remains in native search models");
         }
     }
-    Check(sourceModels == 14 && optionModels == 16,
-        "The UI must create fourteen private sources and two actions with no source");
-    Check(uiHooks == 3, "Only native page and text button callbacks must be hooked");
+    Check(sourceModels == 15 && optionModels == 15,
+        "The UI must create fifteen private sources, without misplaced panel actions");
+    Check(uiHooks == 2, "Only native page callbacks must be hooked");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
     if (!displayed.empty()) {
         const auto clone = displayed.back();
@@ -691,6 +691,14 @@ void ResourceMapMasterPreservesSelection() {
     Get(f.Ui().resourcesSource.get()).boolean = false;
     f.Ui().Tick();
     Check(f.state.settings == before, "Disabling annotations must not clear selections or unrelated settings");
+    Get(f.Ui().resourcesMiniSource.get()).boolean = false;
+    f.Ui().Tick();
+    Check(!f.state.settings.resourceMiniMapEnabled && !f.state.settings.resourceMapEnabled && f.state.settings.resourceMapItems == before.resourceMapItems,
+        "Mini-map visibility is independent and preserves selected resources");
+    Get(f.Ui().resourcesSource.get()).boolean = true;
+    f.Ui().Tick();
+    Check(f.state.settings.resourceMapEnabled && !f.state.settings.resourceMiniMapEnabled,
+        "Enabling full map must not enable mini-map");
     f.StopAndRestore();
 }
 
@@ -784,71 +792,7 @@ void CollisionAndSessionMismatch() {
     Get(f.container).refs["creatureModeFight"] = Make("BoolSource");
     Check(!f.Ui().Attach(f.page), "Changed account preference owner must block registration");
 }
-void TreasureActionAndCleanup() {
-    Fixture f;
-    Check(f.Ui().Attach(f.page), "Treasure fixture must attach");
-    const auto option = f.Ui().treasureOption.get();
-    Check(Get(Get(option).refs.at("buttonText")).text == "Ouvrir le panneau",
-        "Treasure button needs an explicit action label");
-    Check(f.Ui().treasureMarker.get() == Get(option).refs.at("description"), "Owned marker missing");
-    const auto clone = Make("TextButtonOption");
-    Get(clone) = Get(option); // Native ButtonOption.Clone is MemberwiseClone.
-    const auto element = Make("TextButtonOptionElement");
-    Get(element).refs["option"] = clone;
-    Check(treasureOpens == 0, "Attaching must not launch a window");
-    api.Call(f.Categories().back(), "Reset");
-    Check(treasureOpens == 0, "Native reset must not invoke an action");
-    textButtonHook(element, nullptr, nullptr);
-    Check(treasureOpens == 1 && foreignButtonClicks == 0, "Cloned action must launch exactly once");
-    const auto foreign = Make("TextButtonOption");
-    Get(foreign) = Get(option);
-    Get(foreign).refs["description"] = Make("DescriptionData");
-    Get(element).refs["option"] = foreign;
-    textButtonHook(element, nullptr, nullptr);
-    Check(treasureOpens == 1 && foreignButtonClicks == 1,
-        "Another native button with the same caption must retain its callback");
-    Get(element).refs["option"] = clone;
-    f.state.stopRequested.store(true);
-    textButtonHook(element, nullptr, nullptr);
-    Check(treasureOpens == 1 && foreignButtonClicks == 1, "Stopping must swallow owned clicks");
-    f.state.stopped.store(true);
-    rejectRebuild = true;
-    bool failed = false;
-    try { f.Ui().Restore(); } catch (const std::exception&) { failed = true; }
-    Check(failed && f.Ui().CleanupPending() && f.Ui().treasureMarker.get(),
-        "Failed rebuild must retain ownership until retry");
-    textButtonHook(element, nullptr, nullptr);
-    Check(treasureOpens == 1 && foreignButtonClicks == 1,
-        "A retained stale row must not call its null native delegate");
-    rejectRebuild = false;
-    f.Ui().Restore();
-    Check(!f.Ui().CleanupPending() && f.Ui().treasureMarker.get() &&
-        f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}),
-        "Successful retry must remove models but retain a stale-row tombstone");
-    Check(f.Ui().KeepResidentHook(reinterpret_cast<void*>(gameBase + 0x2D88800)) &&
-        !f.Ui().KeepResidentHook(reinterpret_cast<void*>(gameBase + 0x2D84EC0)),
-        "Only the passive stale-row guard may remain resident after shutdown");
-    textButtonHook(element, nullptr, nullptr);
-    Check(treasureOpens == 1 && foreignButtonClicks == 1,
-        "Async native rebuild may still deliver a stale click after Restore returns");
-}
-void NotebookActionAndCleanup() {
-    Fixture f;
-    Check(f.Ui().Attach(f.page), "Notebook fixture must attach");
-    const auto clone = Make("TextButtonOption");
-    Get(clone) = Get(f.Ui().notebookOption.get());
-    const auto element = Make("TextButtonOptionElement");
-    Get(element).refs["option"] = clone;
-    Check(notebookOpens == 0, "Notebook opens only on explicit click");
-    textButtonHook(element, nullptr, nullptr);
-    Check(notebookOpens == 1 && treasureOpens == 0 && foreignButtonClicks == 0,
-        "Notebook clone must route to notebook only");
-    f.state.stopped.store(true);
-    f.Ui().Restore();
-    textButtonHook(element, nullptr, nullptr);
-    Check(notebookOpens == 1 && foreignButtonClicks == 0 && f.Ui().notebookMarker.get(),
-        "Removed notebook action must retain stale-click protection");
-}
+
 }
 
 int main() {
@@ -869,9 +813,8 @@ int main() {
         run(fake::AutoLoadFailureIsRecoverable);
         run(fake::DeferredAndAccountGate);
         run(fake::CollisionAndSessionMismatch);
-        run(fake::TreasureActionAndCleanup);
-        run(fake::NotebookActionAndCleanup);
-        std::cout << "PASS: eleven settings plus native treasure action; clone-safe click routing, reset, stop and retryable restoration\n";
+
+        std::cout << "PASS: native settings, independent map visibility, reset, session gates and retryable restoration\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

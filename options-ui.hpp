@@ -17,8 +17,7 @@ struct OptionsUi {
     managed::Ref preloadSource, preloadOption;
     managed::Ref spouseSource, spouseOption;
     managed::Ref resourcesSource, resourcesOption;
-    managed::Ref treasureOption, treasureMarker;
-    managed::Ref notebookOption, notebookMarker;
+    managed::Ref resourcesMiniSource, resourcesMiniOption;
     std::string stableSelection;
     unsigned stableTicks = 0;
     void Install();

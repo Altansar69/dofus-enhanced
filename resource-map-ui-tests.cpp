@@ -93,13 +93,23 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name==".ctor"){
         if(m.type->name=="CheckboxCustom"||m.type->name=="DofusLabel"){
             Check(args.empty(),"Checkbox/label constructor ABI");
-            if(m.type->name=="CheckboxCustom")for(const char* name:{"m_rightLabel","m_farRightLabel","m_checkbox"}){auto label=Make("DofusLabel",true);Add(self,label);object.fields[name]=label;}
+            if(m.type->name=="CheckboxCustom"){
+                auto square=Make("VisualElement",true);Add(self,square);object.fields["m_checkbox"]=square;
+                // Native UpdateContent creates optional labels only for
+                // nonempty text. Icon-only checkboxes have no right label.
+            }
             return nullptr;
         }
         if(m.type->name=="SectionHeader"){
             Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1]),"Native header must have content and folder button");
             for(int i:{2,4})Check(!*static_cast<bool*>(args[i]),"No data/action buttons");
-            if(*static_cast<bool*>(args[3])){auto icon=Make("VisualElement",true);Add(self,icon);object.fields["iconContainer"]=icon;}
+            if(*static_cast<bool*>(args[3])){
+                auto parent=Make("VisualElement",true),icon=Make("VisualElement",true);
+                Add(self,parent);Add(parent,icon);object.fields["iconContainer"]=icon;
+                // SectionHeader.UpdateIcon hides both until a native enum or
+                // sprite is supplied; our image child must restore visibility.
+                Get(parent).styles["display"]=Get(icon).styles["display"]=1;
+            }
             auto content=Make("VisualElement",true);Add(self,content);object.fields["content"]=content;return nullptr;
         }
         if(m.type->name=="ScrollView"){
@@ -115,10 +125,23 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name=="get_worldBound")return Box(object.bound);
     if(m.name=="get_value")return Box(object.value);
     if(m.name=="SetValueWithoutNotify"){object.value=*static_cast<bool*>(args[0]);return nullptr;}
-    if(m.name=="set_rightText"||m.name=="set_title"||m.name=="set_text"){object.text=Get(args[0]).text;return nullptr;}
+    if(m.name=="set_rightText"){
+        object.text=Get(args[0]).text;
+        auto& label=object.fields["m_rightLabel"];
+        if(object.text.empty()){if(label)Detach(label);label=nullptr;}
+        else {if(!label){label=Make("DofusLabel",true);Add(self,label);}Get(label).text=object.text;}
+        return nullptr;
+    }
+    if(m.name=="set_title"||m.name=="set_text"){object.text=Get(args[0]).text;return nullptr;}
     if(m.name=="set_isSingleLine"){Check(!*static_cast<bool*>(args[0]),"Source note can wrap");return nullptr;}
     if(m.name=="set_tooltip"){object.fields["tooltip"]=args[0];return nullptr;}
-    if(m.name=="set_farRightText"){object.fields["level"]=args[0];return nullptr;}
+    if(m.name=="set_farRightText"){
+        object.fields["level"]=args[0];
+        auto& label=object.fields["m_farRightLabel"];
+        if(Get(args[0]).text.empty()){if(label)Detach(label);label=nullptr;}
+        else {if(!label){label=Make("DofusLabel",true);Add(self,label);}Get(label).text=Get(args[0]).text;}
+        return nullptr;
+    }
     if(m.name=="set_leftIconAddress"){Check(*static_cast<int*>(args[0])>0,"Native item icon address");return nullptr;}
     if(m.name=="set_size"){object.size=*static_cast<int*>(args[0]);return nullptr;}
     if(m.name=="set_canBeOpened"){object.enabled=*static_cast<bool*>(args[0]);return nullptr;}
@@ -224,6 +247,7 @@ void NativeTreeAndDuplicateOpen(){
     Check(Get(Get(f.Row("Fer")).fields["m_farRightLabel"]).styles["color"]>.9f,"Levels need explicit readable light color");
     Check(Get(Get(f.Row("Fer")).fields["m_rightLabel"]).styles["color"]>.9f,"Names need readable light color");
     for(int i=2;i<8;++i){auto container=Get(categories[i]).fields["iconContainer"];Check(container&&!Get(container).children.empty(),"Job header icon container");auto icon=Get(container).children.back();Check(Get(icon).size>0,"Every category includes its native icon");
+        Check(Get(container).styles["display"]==0&&Get(Get(container).fields["parent"]).styles["display"]==0,"Native empty-icon ancestors must be visible for owned profession images");
         const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());Check(catalog==(i==2?0x60:0x660),"Profession icons use the job catalog, Base uses water");}
     Check(Get(f.Row("Eau")).size==2,"Rows match large native checkbox size");
     f.Open();Check(f.Scroll()==scroll&&nativeEnable==2,"Duplicate native OnEnable must not duplicate controls");
@@ -281,7 +305,7 @@ Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(
 void MiniMapSelectionAndLifetime(){
     Fixture f;
     miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
-    f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
+    f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=false;f.state.settings.resourceMapItems.clear();
     resourceMap::TickUi();
     auto drawer=MiniDrawer();
     Check(drawer&&Get(drawer).type->name=="VisualElement"&&!f.Resources(),"Mini-map picker discovered without opening full map or selecting resources");
@@ -289,7 +313,8 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(scroll).styles["display"]!=0,"Mini-map list starts hidden, leaving only profession icons");
     auto tabs=Get(Get(drawer).children.front()).children;
     Check(tabs.size()==6,"Six compact profession buttons");
-    for(auto tab:tabs){Check(Get(tab).styles["width"]==40&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");}
+    for(auto tab:tabs){Check(Get(tab).styles["width"]==40&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");Check(!Get(tab).fields["m_rightLabel"],"Native icon-only tabs do not instantiate a caption");}
+    Check(logs.size()==1&&logs.front().find("RESOURCE_MAP_UI_READY")!=std::string::npos,"Optional native labels must not abort mini-map construction");
     Get(tabs[2]).value=true;resourceMap::TickUi();
     Check(changes==0&&Get(scroll).styles["display"]==0,"Opening Mineur only opens the list without altering preferences");
     Check(Get(FindUnder(drawer,"SectionHeader","Mineur")).styles["display"]==0&&Get(FindUnder(drawer,"SectionHeader","Paysan")).styles["display"]!=0,"Only selected profession resources appear");
@@ -299,15 +324,20 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(scroll).styles["display"]!=0,"Second click closes the resource list");
     Check(Get(drawer).styles["width"]==284&&Get(drawer).styles["left"]==8&&Get(drawer).styles["top"]==40,"Mini picker leaves space for native controls");
     Check(Get(scroll).styles["height"]==196,"Mini picker stays within its viewport");
-    auto master=FindUnder(drawer,"CheckboxCustom","Afficher les ressources");
+    auto master=FindUnder(drawer,"CheckboxCustom","Afficher sur la mini-carte");
     Get(master).value=true;Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
     resourceMap::TickUi();
-    Check(changes==1&&f.state.settings.resourceMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{441},"Mini selection saved with shared preferences");
-    f.Open();Check(Get(f.Row("Fer")).value,"Full map restores mini-map selection");
+    Check(changes==1&&!f.state.settings.resourceMapEnabled&&f.state.settings.resourceMiniMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{441},"Mini visibility is independent and resource selection shared");
+    f.Open();Check(Get(f.Row("Fer")).value&&!Get(f.Master()).value,"Full map restores shared selection while retaining its own visibility");
     Get(f.Row("Blé")).value=true;resourceMap::TickUi();
     Check(Get(FindUnder(drawer,"CheckboxCustom","Blé")).value,"Full map changes sync to mini-map");
     Get(FindUnder(drawer,"CheckboxCustom","Eau")).value=true;resourceMap::TickUi();resourceMap::TickUi();
     Check(Get(f.Row("Eau")).value,"Mini-map changes sync back to open full map");
+    Get(f.Master()).value=true;resourceMap::TickUi();
+    Get(master).value=false;resourceMap::TickUi();
+    Check(f.state.settings.resourceMapEnabled&&!f.state.settings.resourceMiniMapEnabled&&Get(f.Master()).value,"Disabling mini-map retains full-map display");
+    f.state.settings.resourceMiniMapEnabled=true;resourceMap::TickUi();
+    Check(Get(master).value,"External mini-map preference reload synchronizes without saving stale UI");
     disableHook(f.owner,nullptr);Check(Get(drawer).fields["parent"]==miniRoot,"Closing full map retains mini-map picker");
     auto foreign=Make("NativeCommand");Add(miniRoot,foreign);
     resourceMap::TickUi();Check(Get(miniRoot).children.back()==drawer&&Get(foreign).fields["parent"]==miniRoot,"Drawer stays above marker layers without modifying native children");

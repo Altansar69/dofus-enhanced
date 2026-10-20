@@ -1,4 +1,20 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 83
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 84
+
+R84 — PANNEAUX ET REPÈRES PLUS LISIBLES
+- Métiers : XP · DofusDB reprend la typographie, l’espacement et la hauteur
+  réelle des onglets natifs. Recettes ne reste plus sélectionné en même temps
+  que XP. Le panneau distingue objectif, recettes et ingrédients à préparer.
+- Carnet personnel et Chasse au trésor : activation dans le menu des modules
+  en haut à droite. Le menu ⋯ propose le titre du panneau puis Masquer le module.
+  Les entrées d’ouverture ont été retirées des options générales du mod.
+- Ressources : affichage indépendant sur la mini-carte et la grande carte,
+  avec une sélection de ressources partagée et sauvegardée.
+- Repères de 44 px sur la mini-carte et 50 px sur la grande carte ; images
+  de 40/46 px et compteurs compacts dans leur coin, pour mieux voir la ressource.
+  Suppression du message « zoomez pour afficher tous les repères ».
+- Correction du chargement des icônes des métiers.
+- Compilation et tests hors jeu ; rendu réel à confirmer. Aucun client ouvert
+  manipulé. La nouvelle version se charge au prochain lancement.
 
 R83 — RETRAIT DU SUIVI DES CROISEMENTS
 - Suppression du bouton Croisements et de son panneau dans l’interface

@@ -22,6 +22,7 @@ struct Settings {
     bool soulAutoEquip = true;
     bool spouseTeleport = true;
     bool resourceMapEnabled = true;
+    bool resourceMiniMapEnabled = true;
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
     static bool ValidResourceSelection(const std::vector<int>& items) {

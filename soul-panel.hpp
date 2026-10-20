@@ -25,6 +25,8 @@ bool HandlePanelMenuCallback(managed::Obj callback, managed::Obj view);
 // Shared native ListElement action hook. Adds each handler once at install;
 // handlers return false for foreign controls. Null does not clear other panels.
 void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj));
+void SetAuxiliaryPanelMenus(bool (*populate)(managed::Obj, managed::Obj),
+    bool (*callback)(managed::Obj, managed::Obj));
 class Panel {
 public:
     void Install(void (*equip)(), void (*positionChanged)(int, int, uint64_t), void (*hideModule)());

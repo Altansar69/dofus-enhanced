@@ -22,6 +22,7 @@
 #include "startup-options.hpp"
 #include "treasure-launch.hpp"
 #include "notebook-panel.hpp"
+#include "tools-ui.hpp"
 #include "jobs-xp-panel.hpp"
 #include <MinHook.h>
 #include <fstream>
@@ -210,6 +211,7 @@ void Module::Pump(Obj source) {
     startupStage("context-menu", [] { TickContextDisplayMenu(); });
     startupStage("soul-helper", [] { TickSoulHelper(); });
     startupStage("soul-widget", [] { TickSoulWidget(); });
+    startupStage("tool-module-menu", [] { toolsUi::Tick(); });
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
     startupStage("notebook-panel", [] { TickNotebookPanel(); });
     startupStage("jobs-xp", [] { TickJobsXp(); });
@@ -259,6 +261,7 @@ void Module::Stop() {
     RestoreMonsterGlow();
     RestoreTreasurePanel();
     RestoreNotebookPanel();
+    toolsUi::Restore();
     RestoreJobsXp();
     RestoreSoulHelper();
     RestoreSoulWidget();
@@ -280,7 +283,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !JobsXpCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -303,12 +306,13 @@ static void UpdateHook(Obj self, Method method) {
             if (MapPreloadCleanupPending()) RestoreMapPreload();
             if (TreasurePanelCleanupPending()) RestoreTreasurePanel();
             if (NotebookPanelCleanupPending()) RestoreNotebookPanel();
+            if (toolsUi::CleanupPending()) toolsUi::Restore();
             if (JobsXpCleanupPending()) RestoreJobsXp();
             if (SoulHelperCleanupPending()) RestoreSoulHelper();
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !JobsXpCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -355,6 +359,7 @@ static DWORD WINAPI Worker(void*) {
         InstallDisplayShortcut();
         InstallContextDisplayMenu();
         InstallSoulHelper();
+        toolsUi::Install();
         InstallTreasurePanel();
         InstallNotebookPanel();
         InstallJobsXp();

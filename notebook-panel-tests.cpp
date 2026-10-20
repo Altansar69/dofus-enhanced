@@ -1,3 +1,4 @@
+#include "tools-ui.hpp"
 #include "native-panel-test-fixture.hpp"
 #include "notebook-panel.hpp"
 #include "notebook-native.hpp"
@@ -34,7 +35,7 @@ int main(){
         std::filesystem::create_directory(directory);Initialize();treasureFixture=true;notebookFixture=true;
         Module owner{directory};module=&owner;owner.settingsPath=directory/"settings.ini";
         owner.ready=owner.servicesReady=true;owner.cached.reset(Make("Cache"));owner.compositor.reset(Make("Compositor"));
-        dependencies=Make("goc");input=Make("eqo");Get(dependencies).fields["cached"]=owner.cached.get();
+        contextService=Make("ContextService");dependencies=Make("goc");input=Make("eqo");Get(dependencies).fields["cached"]=owner.cached.get();
         for(const auto* key:{"ydf","ydh","ydj","ydl"}){
             auto event=Make("InputCustomEvent"),list=Make("List"),foreign=Make("Action");
             Get(foreign).fields["target"]=Make("ForeignDragger");Get(list).children={foreign};
@@ -44,7 +45,7 @@ int main(){
         auto layers=Element("gmy"),service=Make("gmo"),hud=Element("Root"),middle=Element("Root");
         Get(hud).name="RootLow";Get(middle).name="RootMedium";Add(nativeRoot,layers);Add(layers,hud);Add(layers,middle);
         Get(nativeRoot).fields["layersService"]=service;Get(service).fields["dzrv"]=layers;
-        soul::Panel{}.Install(Equip,Save,HideModule);InstallNotebookPanel();TickNotebookPanel();
+        soul::Panel{}.Install(Equip,Save,HideModule);toolsUi::Install();InstallNotebookPanel();TickNotebookPanel();
         Check(Get(middle).children.empty(),"No panel until explicit open");
         OpenNotebookPanel();TickNotebookPanel();auto window=latestWindow;auto inputs=Inputs(window);
         Check(inputs.size()==5&&Get(window).fields["parent"]==middle,"Native window with title, xyz and body");
@@ -82,7 +83,7 @@ int main(){
         Check(!Panel(window),"Session replacement retires notebook");
         owner.cached.reset(Get(dependencies).fields["cached"]);initFailures=1;OpenNotebookPanel();TickNotebookPanel();
         Check(!NotebookPanelCleanupPending(),"Partial creation failure doesn't stop module or leak native state");
-        owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
+        toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
         std::filesystem::remove_all(directory);
         std::cout<<"PASS: notebook native CRUD, draft protection, explicit travel/chat, literal text and cleanup\n";return 0;
     }catch(const std::exception& error){std::cerr<<"FAIL: "<<error.what()<<'\n';for(const auto& message:logs)std::cerr<<message<<'\n';return 1;}

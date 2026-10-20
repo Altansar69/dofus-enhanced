@@ -21,7 +21,9 @@ struct Object {
     std::vector<Obj> children;
     std::array<char,16> bytes{};
     std::string text,property;
-    bool on=false,enabled=true;
+    bool on=false,enabled=true,activeClass=false,allowSwitchOff=false;
+    float resolvedHeight=0;
+    int fontCase=0;
 };
 std::map<std::string,std::unique_ptr<Class>> classes;
 std::vector<std::unique_ptr<Object>> objects;
@@ -30,7 +32,8 @@ std::map<GCHandle,Obj> handles;
 std::map<std::string,size_t> fields{{"m_binding",0x68},{"m_jobId",0x60},{"m_jobCraftAndSkillsHandler",0x150}};
 GCHandle handleId=100;
 Obj service=nullptr,job=nullptr,owner=nullptr,handler=nullptr,binding=nullptr,failDetach=nullptr;
-Obj recipes=nullptr,resources=nullptr,recipeTab=nullptr,resourceTab=nullptr;
+Obj recipes=nullptr,resources=nullptr,recipeTab=nullptr,resourceTab=nullptr,tabGroup=nullptr;
+int forcedOff=0;
 bool(*action)(Obj)=nullptr;
 int nativeSwitches=0,nativeEnables=0,nativeDisables=0;
 std::atomic_int calls=0,completed=0;
@@ -48,15 +51,27 @@ Obj Panel(Obj o){if(Get(o).fields["panel"])return Get(o).fields["panel"];auto p=
 int Display(Obj o){int result=0;std::memcpy(&result,Get(o).styles["display"].data(),sizeof(result));return result;}
 void Display(Obj o,int d){std::memcpy(Get(o).styles["display"].data(),&d,sizeof(d));}
 size_t Size(const std::string& property){
-    if(property=="color")return 16;
-    if(property=="display"||property=="flexDirection"||property=="whiteSpace"||property=="flexGrow")return 4;
+    if(property=="color"||property.ends_with("Color"))return 16;
+    if(property=="display"||property=="flexDirection"||property=="whiteSpace"||property=="flexGrow"||property=="alignSelf"||property=="alignItems"||property=="flexWrap"||property=="unityFontStyleAndWeight")return 4;
     return 8;
+}
+float Metric(Obj object,const char* property){float value=0;std::memcpy(&value,Get(object).styles[property].data(),4);return value;}
+void Select(Obj object,bool value){
+    auto& item=Get(object);auto group=item.fields["group"];
+    if(item.on==value)return;
+    if(group&&!value&&!Get(group).allowSwitchOff){
+        const auto& peers=Get(group).children;
+        const auto count=std::count_if(peers.begin(),peers.end(),[](Obj peer){return Get(peer).on;});
+        if(count<=1)return; // Exact native last-selected rule, even without notification.
+    }
+    item.on=item.activeClass=value;
+    if(group&&value)for(auto peer:Get(group).children)if(peer!=object)Select(peer,false);
 }
 void NativeEnable(Obj,Method){++nativeEnables;}
 void NativeDisable(Obj,Method){++nativeDisables;}
 void NativeSwitch(Obj,int index,Method){
     Check(index==0||index==1,"Never forward custom tab index");++nativeSwitches;
-    Get(recipeTab).on=index==0;Get(resourceTab).on=index==1;
+    // Native SwitchTab changes content only; selection was performed by SelectableGroup before the callback.
     Display(recipes,index==0?0:1);Display(resources,index==1?0:1);
 }
 void Setup(){
@@ -107,7 +122,17 @@ Obj Api::Call(Obj self,const char* name,std::initializer_list<void*> arguments)c
     if(method=="set_text"||method=="set_rightText"){o.text=Get(args[0]).text;return nullptr;}
     if(method=="get_text")return fixture::String(o.text.c_str());
     if(method=="get_isOn"||method=="get_value")return Box(o.on);
-    if(method=="SetValueWithoutNotify"){o.on=*static_cast<bool*>(args[0]);return nullptr;}
+    if(method=="SetValueWithoutNotify"){Select(self,*static_cast<bool*>(args[0]));return nullptr;}
+    if(method=="ForceAllSelectionsOff"){
+        ++forcedOff;const bool original=o.allowSwitchOff;o.allowSwitchOff=true;
+        for(auto item:o.children)Select(item,false);
+        o.allowSwitchOff=original;return nullptr;
+    }
+    if(method=="get_group")return o.fields["group"];
+    if(method=="get_fontCase")return Box(o.fontCase);
+    if(method=="set_fontCase"){o.fontCase=*static_cast<int*>(args[0]);return nullptr;}
+    if(method=="get_resolvedStyle")return self;
+    if(method=="get_height")return Box(o.resolvedHeight);
     if(method=="get_size")return Box(1);
     if(method=="set_size"||method=="set_tooltip"||method=="set_maxLength"||method=="set_listElementStyle"||
         method=="set_isSingleLine"||method=="set_horizontalScrollerVisibility"||method=="set_verticalScrollerVisibility")return nullptr;
@@ -166,19 +191,29 @@ int main(){
         recipes=Make("Recipes");resources=Make("Resources");recipeTab=Make("DofusTab");resourceTab=Make("DofusTab");
         fixture::Add(content,recipes);fixture::Add(content,resources);fixture::Add(tabs,recipeTab);fixture::Add(tabs,resourceTab);
         Get(binding).fields["recipesUI"]=recipes;Get(binding).fields["jobSkillsUI"]=resources;
-        Get(binding).fields["tab_recipe"]=recipeTab;Get(binding).fields["tab_ressources"]=resourceTab;NativeSwitch(handler,0,nullptr);
+        Get(binding).fields["tab_recipe"]=recipeTab;Get(binding).fields["tab_ressources"]=resourceTab;
+        tabGroup=Make("SelectableGroup");Get(tabGroup).children={recipeTab,resourceTab};
+        Get(recipeTab).fields["group"]=tabGroup;Get(resourceTab).fields["group"]=tabGroup;
+        Get(recipeTab).fontCase=Get(resourceTab).fontCase=1;Get(resourceTab).resolvedHeight=43;
+        float baseline=-1;std::memcpy(Get(resourceTab).styles["bottom"].data(),&baseline,4);
+        Select(recipeTab,true);NativeSwitch(handler,0,nullptr);
+        Select(recipeTab,false);Check(Get(recipeTab).on&&Get(recipeTab).activeClass,"Fixture models native refusal to clear its final selected tab");
         InstallJobsXp();EnableHook(owner,nullptr);TickJobsXp();
         Check(state.pane.get()&&Get(tabs).children.size()==3,"Third real native tab attached");
         Check(Get(state.tab.get()).klass->name=="DofusTab","Native DofusTab class");
-        Get(state.tab.get()).on=true;TickJobsXp();Wait();
+        Check(Get(state.tab.get()).fontCase==1&&Metric(state.tab.get(),"bottom")==-1,"Native typography and baseline copied");
+        Check(Metric(state.tab.get(),"height")==43&&Metric(state.tab.get(),"minHeight")==43&&Metric(state.tab.get(),"maxHeight")==43,"XP inherits actual native theme tab height");
+        Get(resourceTab).resolvedHeight=51;TickJobsXp();Check(Metric(state.tab.get(),"height")==51,"Changed native theme geometry follows on next pump");
+        Select(state.tab.get(),true);TickJobsXp();Wait();
         Check(Display(recipes)==1&&Display(resources)==1&&Display(state.pane.get())==0,"XP pane owns content only while selected");
-        Check(!Get(recipeTab).on&&!Get(resourceTab).on,"Native group has no stale selected item");
+        Check(!Get(recipeTab).on&&!Get(resourceTab).on&&!Get(recipeTab).activeClass&&!Get(resourceTab).activeClass&&Get(state.tab.get()).activeClass,"Only XP is green; native group has no stale selection");
+        Check(forcedOff==1&&!Get(tabGroup).allowSwitchOff,"Native force-off restores original required-selection policy");
         Check(state.query.job==28&&state.xp==24500,"Native selected job and total XP");
         Check(action(state.rows[0].get()),"Owned recipe action");Check(Get(state.details.get()).text.find("Ingrédient")!=std::string::npos,"Native ingredient simulation details");
-        SwitchHook(handler,0,nullptr);Check(!state.active&&Display(recipes)==0&&Get(recipeTab).on,"Return to same original recipe index");
-        Get(state.tab.get()).on=true;TickJobsXp();SwitchHook(handler,1,nullptr);
-        Check(!state.active&&Display(resources)==0&&Get(resourceTab).on,"Return to resource tab");
-        Get(state.tab.get()).on=true;TickJobsXp();Check(state.active,"XP can reopen");
+        Select(recipeTab,true);SwitchHook(handler,0,nullptr);Check(!state.active&&Display(recipes)==0&&Get(recipeTab).on&&Get(recipeTab).activeClass&&!Get(state.tab.get()).activeClass,"Return to same original recipe index");
+        Select(state.tab.get(),true);TickJobsXp();Select(resourceTab,true);SwitchHook(handler,1,nullptr);
+        Check(!state.active&&Display(resources)==0&&Get(resourceTab).on&&Get(resourceTab).activeClass&&!Get(recipeTab).activeClass&&!Get(state.tab.get()).activeClass,"Return to resource tab does not restore former recipe selection");
+        Select(state.tab.get(),true);TickJobsXp();Check(state.active,"XP can reopen");
         const auto oldCalls=calls.load();hold=true;state.nextRequest=0;action(state.refresh.get());
         for(int i=0;i<100&&calls==oldCalls;++i)Sleep(1);
         Get(handler).fields["m_jobId"]=Box(26);state.nextPoll=0;TickJobsXp();
@@ -187,7 +222,7 @@ int main(){
         auto staleAction=state.rows[0].get();mod.cached.reset(Make("OtherCache"));
         Check(action(staleAction),"Stale owned action consumed without native fallback");
         TickJobsXp();Check(!state.pane.get(),"Character session replacement detaches");
-        EnableHook(owner,nullptr);TickJobsXp();Get(state.tab.get()).on=true;TickJobsXp();
+        EnableHook(owner,nullptr);TickJobsXp();Select(state.tab.get(),true);TickJobsXp();
         auto pane=state.pane.get();failDetach=pane;RestoreJobsXp();
         Check(JobsXpCleanupPending(),"Transient detach remains retryable");
         RestoreJobsXp();Check(!JobsXpCleanupPending()&&!Panel(pane),"Retry releases owned controls");

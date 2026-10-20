@@ -197,21 +197,21 @@ void PanZoomAndWorld(){Fixture f;f.Tick();auto old=LiveMarkers(f.full).front();
 }
 void HiddenReplacedStopped(){Fixture f;f.Tick();auto oldRoot=f.Root(f.banner);Get(oldRoot).visible=false;f.Tick();Check(LiveMarkers(f.banner).empty(),"Hidden map kept markers");
     f.banner=f.View(0);f.Tick();Check(LiveMarkers(f.banner).size()==2,"Recreated map not discovered");
-    f.state.settings.resourceMapEnabled=false;f.Tick();Check(!RenderCleanupPending(),"Disabled filter did not clean both views");
+    f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=false;f.Tick();Check(!RenderCleanupPending(),"Disabled filters did not clean both views");
 }
-void FailClosedAndRetry(){Fixture f;f.Tick();nativeRemoveFails=true;f.state.settings.resourceMapEnabled=false;f.Tick();Check(RenderCleanupPending(),"Failed cleanup must retain ownership");auto before=creates;
-    f.state.settings.resourceMapEnabled=true;f.Tick();Check(creates==before,"No replacements while cleanup is pending");
+void FailClosedAndRetry(){Fixture f;f.Tick();nativeRemoveFails=true;f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=false;f.Tick();Check(RenderCleanupPending(),"Failed cleanup must retain ownership");auto before=creates;
+    f.state.settings.resourceMapEnabled=true;f.state.settings.resourceMiniMapEnabled=true;f.Tick();Check(creates==before,"No replacements while cleanup is pending");
     nativeRemoveFails=false;f.Tick();Check(LiveMarkers(f.banner).size()==2,"Cleanup recovery did not restore rendering");
     onConvert=[&]{services["fkc"]=nullptr;};f.Tick();Check(!RenderCleanupPending(),"Stale service snapshot must clean rendered markers");
 }
 void NativeRefreshAndCollision(){Fixture f;f.Tick();auto m=LiveMarkers(f.banner).front();auto& marker=Get(m);auto group=Group(marker.refs["manager"],Get(marker.refs["group"]).text);
     auto replacement=Make("ForeignMarker");Get(group).strings[Get(marker.refs["id"]).text]=replacement;
     // Replacement key is foreign; renderer must never delete it by calling begd.
-    f.state.settings.resourceMapEnabled=false;f.Tick();Check(Get(group).strings[Get(marker.refs["id"]).text]==replacement,"Cleanup removed a foreign replacement");
+    f.state.settings.resourceMiniMapEnabled=false;f.Tick();Check(Get(group).strings[Get(marker.refs["id"]).text]==replacement,"Cleanup removed a foreign replacement");
 }
 void LimitsAndInvalidGeometry(){Fixture f;fakePlacements.clear();for(int x=0;x<60;++x)for(int y=0;y<60;++y)fakePlacements.push_back({x*100+y,1,x,y,1,1,false});
     Get(f.Root(f.full)).scale={.05f,.05f};Get(f.Root(f.full)).bound={0,0,300,300};Get(f.Root(f.full)).clip={0,0,300,300};f.Tick();
-    Check(LiveMarkers(f.full).size()<=384,"Visible resource budget exceeded");bool hint=false;for(auto l:AllOwned("Label"))hint|=Get(l).text.find("zoomez")!=std::string::npos;Check(hint,"Limited/colliding view needs zoom hint");
+    Check(LiveMarkers(f.full).size()<=384,"Visible resource budget exceeded");for(auto l:AllOwned("Label"))Check(Get(l).text.find("zoomez")==std::string::npos,"Dense maps must not display the removed zoom warning");
     Get(f.Root(f.full)).scale.x=std::numeric_limits<float>::quiet_NaN();f.Tick();Check(LiveMarkers(f.full).empty(),"Invalid transform must fail closed");
 }
 void MiniSurfaceIndependentOfSelection(){Fixture f;
@@ -229,5 +229,27 @@ void MiniSurfaceIndependentOfSelection(){Fixture f;
     Get(f.Root(f.banner)).visible=true;Get(f.dictionary).indexed.erase(0);
     Check(!ReadMiniMapSurface().root.get(),"Full map is never mistaken for mini-map");
 }
+void IndependentMapVisibility(){Fixture f;f.Tick();
+    const auto full=LiveMarkers(f.full);
+    f.state.settings.resourceMiniMapEnabled=false;f.Tick();
+    Check(LiveMarkers(f.banner).empty()&&LiveMarkers(f.full)==full,"Mini-map opt-out removes only mini-map markers");
+    Check(ReadMiniMapSurface().root.get()==f.Root(f.banner),"Disabled mini-map keeps its picker accessible");
+    f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=true;f.Tick();
+    Check(LiveMarkers(f.full).empty()&&LiveMarkers(f.banner).size()==2,"Mini-map markers can display independently of the full map");
+    f.state.settings.resourceMapEnabled=true;f.Tick();
+    Check(LiveMarkers(f.full).size()==2&&LiveMarkers(f.banner).size()==2,"Both switches can be restored without losing the selection");
 }
-int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection})test();std::cout<<"ResourceMapRenderTests: 7 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+void ResourceImageVisibility(){Fixture f;f.Tick();
+    auto style=[](Obj element,const char* name){float value=0;std::memcpy(&value,Get(element).styles.at(name).data(),4);return value;};
+    for(auto element:AllOwned("VisualElement"))if(Get(element).numbers.contains("icon")){
+        const auto parent=Get(element).parent;
+        const auto label=Get(parent).children.back();
+        const float imageWidth=style(element,"width"),imageHeight=style(element,"height");
+        const float overlapWidth=std::max(0.0f,std::min(imageWidth,style(label,"left")+style(label,"width"))-style(label,"left"));
+        const float overlapHeight=std::max(0.0f,std::min(imageHeight,style(label,"top")+style(label,"height"))-style(label,"top"));
+        Check(imageWidth>=40&&imageHeight>=40,"Both maps need recognisable resource images");
+        Check(overlapWidth*overlapHeight<imageWidth*imageHeight*.25f,"Quantity badge must leave at least three quarters of the image unobscured");
+    }
+}
+}
+int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,ResourceImageVisibility})test();std::cout<<"ResourceMapRenderTests: 9 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

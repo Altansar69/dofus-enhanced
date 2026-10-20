@@ -2,10 +2,10 @@
 #include "notebook-data.hpp"
 #include "notebook-native.hpp"
 #include "soul-panel.hpp"
+#include "tools-ui.hpp"
 #include "module.hpp"
 #include <algorithm>
 #include <array>
-
 namespace {
 using namespace managed;
 constexpr const char* Ui="UnityEngine.UIElementsModule.dll";
@@ -77,7 +77,7 @@ Obj Button(Obj parent, const std::string& text) {
     Ref label(api.Field(button.get(),"m_textLabel"));
     bool rich=false;api.Call(label.get(),"set_enableRichText",{&rich});
     int style=1; api.Call(button.get(),"set_listElementStyle",{&style});
-    Pixels(button.get(),"minHeight",30); Pixels(button.get(),"minWidth",0);
+    Pixels(button.get(),"minHeight",34); Pixels(button.get(),"marginRight",4); Pixels(button.get(),"minWidth",0);
     Text(button.get(),text); Add(parent,button.get()); return button.get();
 }
 Obj Input(Obj parent, const char* hint, const char* value, int maxLength) {
@@ -86,6 +86,22 @@ Obj Input(Obj parent, const char* hint, const char* value, int maxLength) {
     api.Call(input.get(),"set_maxLength",{&maxLength}); Text(input.get(),value);
     Pixels(input.get(),"minWidth",0); Pixels(input.get(),"minHeight",32); Float(input.get(),"flexGrow",1);
     Add(parent,input.get()); return input.get();
+}
+void Color(Obj element,const char* property,float r,float g,float b) {
+    float a=1;Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
+    Ref box(Style(element,property));api.Call(box.get(),"set_value",{api.object_unbox(color.get())});WriteStyle(element,property,box.get());
+}
+Obj Section(Obj parent,const char* title) {
+    Ref card(api.New(api.Class(Ui,UiSpace,"VisualElement")));Add(parent,card.get());
+    for(auto p:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(card.get(),p,12);
+    Pixels(card.get(),"marginBottom",10);Color(card.get(),"backgroundColor",.13f,.14f,.12f);
+    for(auto p:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(card.get(),p,6);
+    Ref heading(Label(card.get(),title));Color(heading.get(),"color",.77f,.87f,.35f);Enum(heading.get(),"unityFontStyleAndWeight",1);Pixels(heading.get(),"marginBottom",10);
+    return card.get();
+}
+void Select(Obj button,bool selected) {
+    Color(button,"backgroundColor",selected?.26f:.16f,selected?.33f:.17f,selected?.13f:.15f);
+    Ref label(api.Field(button,"m_textLabel"));Color(label.get(),"color",selected?.83f:.92f,selected?.95f:.92f,selected?.43f:.90f);
 }
 std::string Read(Obj input) { return api.String(api.Call(input,"get_text")); }
 Obj Root() {
@@ -110,7 +126,6 @@ bool Current() {
         state.compositor.get()==module->compositor.get() && state.dependencies.get()==module->FindService("fpt") &&
         api.Call(state.window.get(),"get_parent")==state.root.get() && api.Call(state.window.get(),"get_panel");
 }
-
 std::string Coordinates(const notebook::Entry& entry) {return "["+std::to_string(entry.x)+","+std::to_string(entry.y)+"]";}
 void Status(const std::string& text) {Text(state.status.get(),text);}
 void ShowRows() {
@@ -137,7 +152,7 @@ void Fill(notebook::Entry entry) {
     int max=multiline?8000:300;api.Call(state.body.get(),"set_maxLength",{&max});Pixels(state.body.get(),"height",multiline?140.f:36.f);
     Enabled(state.remove.get(),state.editing.id!=0&&state.readable);Enabled(state.save.get(),state.readable);
     const char* names[]={"Positions","Notes","Messages"};
-    for(size_t i=0;i<3;++i)Text(state.tabs[i].get(),std::string(static_cast<size_t>(state.kind)==i?"• ":"")+names[i]);
+    for(size_t i=0;i<3;++i){Text(state.tabs[i].get(),names[i]);Select(state.tabs[i].get(),static_cast<size_t>(state.kind)==i);}
 }
 bool Dirty() {
     return Read(state.title.get())!=state.editing.title || Read(state.body.get())!=state.editing.body ||
@@ -171,7 +186,7 @@ bool Action(Obj owner) {
         if(!wanted||!Current()||!api.Value<bool>(api.Call(owner,"get_enabledInHierarchy")))return true;
         if(owner!=state.remove.get()){state.confirmDelete=false;Text(state.remove.get(),"Supprimer");}
         if(owner==state.close.get()){if(CanDiscard())wanted=false;return true;}
-        if(tab>=0){if(!CanDiscard())return true;state.kind=static_cast<notebook::Kind>(tab);state.offset=0;Fill({});ShowRows();Status("Sélectionne une entrée ou crée-en une nouvelle.");}
+        if(tab>=0){if(!CanDiscard())return true;state.kind=static_cast<notebook::Kind>(tab);state.offset=0;Fill({});ShowRows();Status(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche.");}
         else if(row>=0&&state.offset+row<state.visible.size()){if(!CanDiscard())return true;Fill(state.visible[state.offset+row]);Status("Entrée sélectionnée. Clique sur Enregistrer après modification.");}
         else if(owner==state.add.get()){if(!CanDiscard())return true;Fill({});Status("Nouvelle entrée. Renseigne un titre puis enregistre.");}
         else if(owner==state.save.get()){auto saved=notebook::Save(state.path,Editor());Reload();Fill(saved);ShowRows();Status("Enregistré dans le carnet.");}
@@ -215,33 +230,39 @@ void Create(Obj root) {
         api.Call(state.window.get(),setter,{&no});
     api.Call(state.window.get(),"set_hasBackground",{&yes});
     Enum(state.window.get(),"position",1); Float(state.window.get(),"flexGrow",0);
-    Pixels(state.window.get(),"width",500); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
+    Pixels(state.window.get(),"width",680); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
     state.header.reset(api.Call(state.window.get(),"get_headerWidget"));
+    toolsUi::AttachHeader("notebook",state.window.get());
     Ref draggers(api.Field(state.window.get(),"m_registeredElementDraggers"));
     state.dragger.reset(api.Call(draggers.get(),"get_Item",{state.header.get()}));
     Retain("m_elementDraggers"); Retain("m_resizerList");
     const char* getters[]={"ydf","ydh","ydj","ydl"};
     for(size_t i=0;i<4;++i) state.inputEvents[i].reset(api.Call(input.get(),getters[i]));
     api.Call(state.window.get(),"Init",{state.dependencies.get()});
-    Ref content(api.Call(state.window.get(),"get_contentContainer"));
+    Ref content(toolsUi::ScrollBody(state.window.get(),root));
     Float(content.get(),"flexGrow",0);
     for(const auto* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"}) Pixels(content.get(),property,8);
-
     Ref tabs(Row(content.get()));
     const char* names[]={"Positions","Notes","Messages"};
     for(size_t i=0;i<3;++i){state.tabs[i].reset(Button(tabs.get(),names[i]));Float(state.tabs[i].get(),"flexGrow",1);}
-    for(auto& row:state.rows){row.reset(Button(content.get(),""));Enum(row.get(),"display",1);}
-    Ref paging(Row(content.get()));state.previous.reset(Button(paging.get(),"Précédentes"));state.next.reset(Button(paging.get(),"Suivantes"));state.add.reset(Button(paging.get(),"Nouveau"));state.reload.reset(Button(paging.get(),"Recharger"));
-    Label(content.get(),"Titre");state.title.reset(Input(content.get(),"Nom de l’entrée","",80));
-    state.coordinates.reset(Row(content.get()));
-    Label(state.coordinates.get(),"X");state.x.reset(Input(state.coordinates.get(),"X","0",5));
-    Label(state.coordinates.get(),"Y");state.y.reset(Input(state.coordinates.get(),"Y","0",5));
-    Label(state.coordinates.get(),"Monde");state.world.reset(Input(state.coordinates.get(),"Monde (1 : Amakna)","1",4));
-    state.current.reset(Button(content.get(),"Utiliser ma position actuelle"));
-    state.body.reset(Input(content.get(),"Texte de la note ou du message","",8000));
-    Ref edit(Row(content.get()));state.save.reset(Button(edit.get(),"Enregistrer"));state.remove.reset(Button(edit.get(),"Supprimer"));
-    Ref actions(Row(content.get()));state.travel.reset(Button(actions.get(),"Voyager"));state.prepare.reset(Button(actions.get(),"Préparer dans le chat"));state.copy.reset(Button(actions.get(),"Copier"));
-    state.status.reset(Label(content.get(),"Sélectionne une entrée ou crée-en une nouvelle."));
+    Ref columns(Row(content.get()));Enum(columns.get(),"flexWrap",1);
+    Ref library(Section(columns.get(),"Mes entrées"));Pixels(library.get(),"width",230);Float(library.get(),"flexShrink",0);Pixels(library.get(),"marginRight",12);
+    state.add.reset(Button(library.get(),"+ Nouvelle entrée"));Pixels(state.add.get(),"marginBottom",8);
+    for(auto& row:state.rows){row.reset(Button(library.get(),""));Enum(row.get(),"display",1);Pixels(row.get(),"height",40);}
+    Ref paging(Row(library.get()));state.previous.reset(Button(paging.get(),"←"));state.next.reset(Button(paging.get(),"→"));
+    state.reload.reset(Button(library.get(),"Actualiser la liste"));
+    Ref editor(Section(columns.get(),"Détail de l’entrée"));Float(editor.get(),"flexGrow",1);Pixels(editor.get(),"minWidth",280);
+    Label(editor.get(),"Titre");state.title.reset(Input(editor.get(),"Nom de l’entrée","",80));Pixels(state.title.get(),"marginBottom",10);
+    state.coordinates.reset(Row(editor.get()));
+    Label(state.coordinates.get(),"X");state.x.reset(Input(state.coordinates.get(),"X","0",5));Pixels(state.x.get(),"width",60);
+    Label(state.coordinates.get(),"Y");state.y.reset(Input(state.coordinates.get(),"Y","0",5));Pixels(state.y.get(),"width",60);
+    Label(state.coordinates.get(),"Monde");state.world.reset(Input(state.coordinates.get(),"Monde (1 : Amakna)","1",4));Pixels(state.world.get(),"width",60);
+    state.current.reset(Button(editor.get(),"Utiliser ma position actuelle"));
+    state.body.reset(Input(editor.get(),"Écris ta note ou ton message ici…","",8000));
+    Ref edit(Row(editor.get()));Pixels(edit.get(),"marginTop",12);state.save.reset(Button(edit.get(),"Enregistrer"));Select(state.save.get(),true);state.remove.reset(Button(edit.get(),"Supprimer"));
+    Label(editor.get(),"Utiliser cette entrée");
+    state.travel.reset(Button(editor.get(),"Voyager"));state.prepare.reset(Button(editor.get(),"Préparer dans le chat"));state.copy.reset(Button(editor.get(),"Copier"));
+    state.status.reset(Label(content.get(),"Le carnet est vide. Clique sur « Nouvelle entrée » pour commencer."));Pixels(state.status.get(),"maxWidth",640);
     state.close.reset(Button(content.get(),"Fermer"));
     state.path=notebook::DataPath(module->settingsPath);
     Fill({});
@@ -254,7 +275,8 @@ void InstallNotebookPanel(){
     api.FindVerified(inputClass,"set_isMultiline",1,0x178E150);
     api.FindVerified(api.Class(Ui,UiSpace,"TextElement"),"set_enableRichText",1,0x564B1E0);
     unsubscribe=api.FindVerified(api.Class("Core.dll","Core.Engine.Inputs.Events","InputCustomEvent"),"UnSubscribe",1,0x20FF620);
-    notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);installed=true;
+    notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);
+    toolsUi::Register("notebook","Carnet personnel",225,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;});installed=true;
 }
 void OpenNotebookPanel(){if(!installed||!Session())return;wanted=true;if(Current())api.Call(state.window.get(),"BringToFront");}
 void RestoreNotebookPanel() {
@@ -263,6 +285,7 @@ void RestoreNotebookPanel() {
     state.cleanup=true;
     try {
         Enum(state.window.get(),"display",1);
+        toolsUi::DetachHeader("notebook");
         const auto mouse=api.Class(Ui,UiSpace,"MouseCaptureController");
         if(state.header.get() && api.Value<bool>(api.Invoke(api.Find(mouse,"HasMouseCapture",1),nullptr,{state.header.get()}))) {
             *static_cast<bool*>(api.FieldAddress(state.dragger.get(),"m_active"))=false;
@@ -292,7 +315,6 @@ void RestoreNotebookPanel() {
     } catch(const std::exception& error) {Log(std::string("NOTEBOOK_PANEL_CLEANUP_ERROR ")+error.what());}
 }
 bool NotebookPanelCleanupPending() { return state.cleanup; }
-
 void TickNotebookPanel(){
     if(!installed)return;
     if(!wanted||!Session()||state.cleanup||(state.window.get()&&!Current())){RestoreNotebookPanel();return;}

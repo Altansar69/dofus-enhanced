@@ -37,7 +37,7 @@ struct State {
     Ref toolbar;
     std::vector<Ref> tabs,groups;
     int activeJob=-1;
-    bool enabled=true,attached=false;
+    bool enabled=true,attached=false,mini=false;
     float height=-1,width=-1,left=-1,top=-1;
 };
 std::unique_ptr<State> owned,miniOwned;
@@ -87,7 +87,9 @@ Obj Checkbox(const char* text,bool selected){
     Ref result(api.object_new(checkboxClass));api.Invoke(checkboxCtor,result.get());
     int size=2;api.Invoke(checkboxSize,result.get(),{&size});
     Text(result.get(),checkboxText,text);api.Invoke(checkboxSet,result.get(),{&selected});
-    Style(api.Field(result.get(),"m_rightLabel"),"color",Color{.94f,.94f,.90f,1});
+    // Native UpdateContent omits the label for an empty caption (icon tabs).
+    if(auto label=api.Field(result.get(),"m_rightLabel"))
+        Style(label,"color",Color{.94f,.94f,.90f,1});
     return result.get();
 }
 void AddSub(Obj parent,Obj child){api.Invoke(headerAdd,parent,{child});}
@@ -158,7 +160,9 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     auto next=std::make_unique<State>();
     next->owner.reset(owner);next->root.reset(root.get());next->panel.reset(panel.get());
     next->compositor.reset(module->compositor.get());next->character.reset(module->FindService("fng"));next->cartography.reset(module->FindService("fkc"));
-    next->selection=module->settings.resourceMapItems;next->enabled=module->settings.resourceMapEnabled;
+    next->mini=mini!=nullptr;
+    next->selection=module->settings.resourceMapItems;
+    next->enabled=next->mini?module->settings.resourceMiniMapEnabled:module->settings.resourceMapEnabled;
     next->scroll.reset(api.object_new(scrollClass));int mode=0;api.Invoke(scrollCtor,next->scroll.get(),{&mode});
     next->content.reset(api.Invoke(scrollContent,next->scroll.get()));
     if(!next->content.get())throw std::runtime_error("Resource filter scroll content unavailable");
@@ -180,7 +184,7 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         AddSub(next->resources.get(),next->scroll.get());
     }
     auto add=[&](Obj child){api.Call(next->content.get(),"Add",{child});};
-    next->master.reset(Checkbox("Afficher les ressources",next->enabled));
+    next->master.reset(Checkbox(mini?"Afficher sur la mini-carte":"Afficher sur la grande carte",next->enabled));
     add(next->master.get());
     Ref note(api.object_new(labelClass));api.Invoke(labelCtor,note.get());
     Text(note.get(),labelText,"DofusDB · Points de récolte recensés");
@@ -197,12 +201,18 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         Pixels(jobImage.get(),"left",0);Pixels(jobImage.get(),"top",0);
         Pixels(jobImage.get(),"width",28);Pixels(jobImage.get(),"height",28);
         LoadJobIcon(jobImage.get(),job.id);api.Call(icon.get(),"Add",{jobImage.get()});
+        // SectionHeader.UpdateIcon hides both ancestors when its own enum is
+        // None. Our owned sprite is independent from that enum.
+        Style(icon.get(),"display",0);
+        Ref iconParent(Parent(icon.get()));
+        if(!iconParent.get())throw std::runtime_error("Resource job icon parent unavailable");
+        Style(iconParent.get(),"display",0);
         if(mini){
             Ref tab(Checkbox("",false));
             // Preserve CheckboxCustom's own root clickable/keyboard behavior.
             // Only the checkbox square and empty caption of our button are hidden.
             Style(api.Field(tab.get(),"m_checkbox"),"display",1);
-            Style(api.Field(tab.get(),"m_rightLabel"),"display",1);
+            if(auto label=api.Field(tab.get(),"m_rightLabel"))Style(label,"display",1);
             Pixels(tab.get(),"width",40);Pixels(tab.get(),"height",40);
             Pixels(tab.get(),"minWidth",40);Style(tab.get(),"flexShrink",0.0f);
             Pixels(tab.get(),"marginRight",4);Pixels(tab.get(),"marginBottom",4);
@@ -239,13 +249,15 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
 void Sync(State& state){
     const auto& settings=module->settings;
     for(auto& row:state.rows){bool value=std::binary_search(settings.resourceMapItems.begin(),settings.resourceMapItems.end(),row.id);api.Invoke(checkboxSet,row.checkbox.get(),{&value});}
-    bool enabled=settings.resourceMapEnabled;api.Invoke(checkboxSet,state.master.get(),{&enabled});
+    bool enabled=state.mini?settings.resourceMiniMapEnabled:settings.resourceMapEnabled;
+    api.Invoke(checkboxSet,state.master.get(),{&enabled});
     state.selection=settings.resourceMapItems;state.enabled=enabled;
 }
 void Poll(State& state){
     // External reload/reset wins over stale visual values. Native CheckboxCustom
     // owns click/keyboard handling; no fabricated managed callback is installed.
-    if(state.selection!=module->settings.resourceMapItems||state.enabled!=module->settings.resourceMapEnabled){Sync(state);return;}
+    const bool currentEnabled=state.mini?module->settings.resourceMiniMapEnabled:module->settings.resourceMapEnabled;
+    if(state.selection!=module->settings.resourceMapItems||state.enabled!=currentEnabled){Sync(state);return;}
     std::vector<int> selected;
     // Keep IDs unknown to this catalog when opening an older local revision.
     const auto catalog=Catalog();
@@ -255,7 +267,9 @@ void Poll(State& state){
     const bool enabled=api.Value<bool>(api.Invoke(checkboxValue,state.master.get()));
     if(selected==state.selection&&enabled==state.enabled)return;
     if(!ValidSelection(selected))throw std::runtime_error("Resource selection invalid");
-    auto next=module->settings;next.resourceMapEnabled=enabled;next.resourceMapItems=std::move(selected);
+    auto next=module->settings;
+    if(state.mini)next.resourceMiniMapEnabled=enabled;else next.resourceMapEnabled=enabled;
+    next.resourceMapItems=std::move(selected);
     try{module->Change(std::move(next));}catch(...){Sync(state);throw;}
     Sync(state);
 }

@@ -3,8 +3,6 @@
 #include "version.hpp"
 #include "animation-mode-labels.hpp"
 #include "glow-mode-labels.hpp"
-#include "treasure-launch.hpp"
-#include "notebook-panel.hpp"
 #include <algorithm>
 #include <exception>
 
@@ -22,9 +20,6 @@ using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
 EnableFn originalEnable = nullptr;
 InitFn originalInit = nullptr;
-using TextButtonFn = void(*)(Obj, Obj, Method);
-TextButtonFn originalTextButton = nullptr;
-Method textButtonModelGetter = nullptr;
 
 template<class T> T& FieldValue(Obj owner, const char* name) {
     return *static_cast<T*>(api.FieldAddress(owner, name));
@@ -69,7 +64,7 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return source.get() && api.Value<bool>(api.Call(source.get(), "IsLoaded"));
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) &&
-        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.githubSource);
+        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.githubSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -90,6 +85,7 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.preloadSource.get(), settings.preloadNextMap, notify);
     SetSource(ui.spouseSource.get(), settings.spouseTeleport, notify);
     SetSource(ui.resourcesSource.get(), settings.resourceMapEnabled, notify);
+    SetSource(ui.resourcesMiniSource.get(), settings.resourceMiniMapEnabled, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -147,6 +143,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.preloadSource.reset(api.New(booleanType, {&defaults.preloadNextMap, &readOnly}));
     prepared.spouseSource.reset(api.New(booleanType, {&defaults.spouseTeleport, &readOnly}));
     prepared.resourcesSource.reset(api.New(booleanType, {&defaults.resourceMapEnabled, &readOnly}));
+    prepared.resourcesMiniSource.reset(api.New(booleanType, {&defaults.resourceMiniMapEnabled, &readOnly}));
     if (!ModelsLoaded(prepared)) return false;
     // Native reset uses constructor defaults, independently of persisted values.
     ApplySettings(prepared, module->settings, false);
@@ -187,26 +184,12 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Pendant le déplacement vers une sortie connue, prépare les données et une partie des décors de la prochaine carte dans le cache du jeu. Une seule carte conservée brièvement, ressources limitées. Peut réduire le chargement local, avec un surcoût de mémoire ; le serveur et la construction de la scène restent nécessaires. Activé par défaut."));
     prepared.spouseOption.reset(MakeBoolOption(prepared.spouseSource.get(), current.get(), tooltip.get(), "Téléportation au conjoint",
         "Ajoute un bouton de téléportation, un cœur et la distance sur la vignette de votre conjoint dans le groupe, ainsi qu’une entrée au clic droit. Le bouton est indisponible si votre conjoint est hors ligne ou pendant un combat. La téléportation respecte les conditions du jeu et se lance uniquement au clic. Activé par défaut."));
-    prepared.resourcesOption.reset(MakeBoolOption(prepared.resourcesSource.get(), current.get(), tooltip.get(), "Ressources sur les cartes",
+    prepared.resourcesOption.reset(MakeBoolOption(prepared.resourcesSource.get(), current.get(), tooltip.get(), "Ressources sur la grande carte",
         "Dans les filtres de la carte (M), ouvrez un métier puis cochez les ressources souhaitées. La carte et la mini-carte affichent leurs points de récolte recensés par case. Cela ne renseigne pas leur disponibilité en temps réel. Désactiver conserve votre sélection."));
-    prepared.treasureOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"),
-        {nullptr, tooltip.get()}));
-    Describe(prepared.treasureOption.get(), "Chasse au trésor",
-        "Ouvre un panneau intégré à Dofus. Saisissez le départ et la direction, puis recherchez un indice : les données DofusDB donnent sa position la plus proche. Déplaçable par son titre.");
-    SetTextField(prepared.treasureOption.get(), "buttonText", "Ouvrir le panneau");
-    prepared.treasureMarker.reset(api.Call(prepared.treasureOption.get(), "get_description"));
-    if (!prepared.treasureMarker.get()) throw std::runtime_error("Treasure option identity unavailable");
-    ui.treasureOption = std::move(prepared.treasureOption);
-    ui.treasureMarker = std::move(prepared.treasureMarker);
-    prepared.notebookOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"),
-        {nullptr, tooltip.get()}));
-    Describe(prepared.notebookOption.get(), "Carnet",
-        "Positions enregistrées, notes et messages réutilisables dans un panneau du jeu. Les messages préparent un brouillon dans le chat : vous choisissez quand l’envoyer. Les données sont conservées entre les mises à jour.");
-    SetTextField(prepared.notebookOption.get(), "buttonText", "Ouvrir le carnet");
-    prepared.notebookMarker.reset(api.Call(prepared.notebookOption.get(), "get_description"));
-    if (!prepared.notebookMarker.get()) throw std::runtime_error("Notebook option identity unavailable");
-    ui.notebookOption = std::move(prepared.notebookOption);
-    ui.notebookMarker = std::move(prepared.notebookMarker);
+    prepared.resourcesMiniOption.reset(MakeBoolOption(prepared.resourcesMiniSource.get(), current.get(), tooltip.get(), "Ressources sur la mini-carte",
+        "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
+    ui.resourcesMiniSource = std::move(prepared.resourcesMiniSource);
+    ui.resourcesMiniOption = std::move(prepared.resourcesMiniOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -275,28 +258,6 @@ void UiError(const std::exception& error) {
 bool Active() {
     return module && module->ready.load() && !module->stopped && !module->stopRequested.load();
 }
-void TextButtonHook(Obj self, Obj element, Method method) {
-    try {
-        Ref option(api.Invoke(textButtonModelGetter, self));
-        // Native search/display uses MemberwiseClone: the unique description
-        // reference identifies our action even when the model itself changes.
-        if (module && module->ui && module->ui->treasureMarker.get() && option.get() &&
-            api.Call(option.get(), "get_description") == module->ui->treasureMarker.get()) {
-            if (Active()) OpenTreasureOverlay(module->folder);
-            return;
-        }
-        if (module && module->ui && module->ui->notebookMarker.get() && option.get() &&
-            api.Call(option.get(), "get_description") == module->ui->notebookMarker.get()) {
-            if (Active()) OpenNotebookPanel();
-            return;
-        }
-    } catch (const std::exception& error) {
-        // Never fall through to a possibly owned action with a null delegate.
-        Log(std::string("TREASURE_OVERLAY_ERROR ") + error.what());
-        return;
-    }
-    originalTextButton(self, element, method);
-}
 void EnableHook(Obj self, Method method) {
     originalEnable(self, method);
     if (!Active()) return;
@@ -319,10 +280,7 @@ void OptionsUi::Install() {
             reinterpret_cast<void*>(EnableHook), reinterpret_cast<void**>(&originalEnable));
     AddHook(api.Find(tab, "Init", 3), 0x2D84EC0,
             reinterpret_cast<void*>(InitHook), reinterpret_cast<void**>(&originalInit));
-    auto textButton = api.Class("Core.dll", Config, "TextButtonOptionElement");
-    textButtonModelGetter = api.FindVerified(textButton, "get_m_textButtonOption", 0, 0x2D88930);
-    AddHook(api.Find(textButton, "<Init>b__3_0", 1), 0x2D88800,
-            reinterpret_cast<void*>(TextButtonHook), reinterpret_cast<void**>(&originalTextButton));
+
 }
 void OptionsUi::CapturePage(Obj page) {
     pendingPage.reset(page);
@@ -360,8 +318,7 @@ bool OptionsUi::Attach(Obj page) {
     api.Call(options, "Add", {preloadOption.get()});
     api.Call(options, "Add", {spouseOption.get()});
     api.Call(options, "Add", {resourcesOption.get()});
-    api.Call(options, "Add", {treasureOption.get()});
-    api.Call(options, "Add", {notebookOption.get()});
+    api.Call(options, "Add", {resourcesMiniOption.get()});
     api.Call(api.Field(category.get(), "subcategories"), "Add", {general.get()});
     Page owned;
     owned.owner.reset(page);
@@ -415,6 +372,7 @@ void OptionsUi::Tick() {
     next.preloadNextMap = api.Value<bool>(api.Call(preloadSource.get(), "get_property"));
     next.spouseTeleport = api.Value<bool>(api.Call(spouseSource.get(), "get_property"));
     next.resourceMapEnabled = api.Value<bool>(api.Call(resourcesSource.get(), "get_property"));
+    next.resourceMiniMapEnabled = api.Value<bool>(api.Call(resourcesMiniSource.get(), "get_property"));
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
         !Settings::ValidAnimationMode(next.animationMode) || !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
         Sync(); return;
@@ -456,10 +414,6 @@ void OptionsUi::Restore() {
         }
     }
     if (failure) std::rethrow_exception(failure);
-    treasureOption.reset();
-    notebookOption.reset();
-    // Init schedules asynchronous UI rebuilding. Keep this small tombstone and
-    // its click guard until process exit, even after category removal returns.
     modeOption.reset();
     animationOption.reset();
     modeSource.reset();
@@ -482,12 +436,11 @@ void OptionsUi::Restore() {
     preloadOption.reset();
     resourcesSource.reset();
     resourcesOption.reset();
+    resourcesMiniSource.reset(); resourcesMiniOption.reset();
     spouseSource.reset();
     spouseOption.reset();
     transitionsSource.reset();
     transitionsOption.reset();
     container.reset();
 }
-bool OptionsUi::KeepResidentHook(void* target) const {
-    return (treasureMarker.handle || notebookMarker.handle) && target == reinterpret_cast<void*>(gameBase + 0x2D88800);
-}
+bool OptionsUi::KeepResidentHook(void*) const { return false; }

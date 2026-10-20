@@ -5,6 +5,7 @@
 #include <array>
 #include <algorithm>
 #include <thread>
+#include <cmath>
 
 namespace {
 using namespace managed;
@@ -20,7 +21,7 @@ struct Request {
 };
 struct State {
     Ref owner,handler,root,tabs,content,tab,pane,cached,compositor;
-    Ref recipes,resources,recipeTab,resourceTab,recipesDisplay,resourcesDisplay;
+    Ref recipes,resources,recipeTab,resourceTab,tabGroup,recipesDisplay,resourcesDisplay;
     Ref title,status,target,coefficient,epic,refresh,previous,next,details;
     std::array<Ref,jobsxp::PageSize> rows;
     jobsxp::Page page;
@@ -28,6 +29,7 @@ struct State {
     std::shared_ptr<Request> request;
     int64_t xp=0;
     int selected=-1,lastTarget=0,lastCoefficient=0;
+    float tabHeight=0;
     bool lastEpic=false,active=false,cleanup=false,havePage=false,requested=false,recipeWasOn=false,resourceWasOn=false;
     ULONGLONG nextPoll=0,nextRequest=0;
     uint64_t generation=0;
@@ -59,6 +61,10 @@ void Pixels(Obj element,const char* property,float value) {
     int unit=0;Ref length(api.New(api.Class(Ui,UiSpace,"Length"),{&value,&unit}));
     Ref box(Style(element,property));api.Call(box.get(),"set_value",{api.object_unbox(length.get())});WriteStyle(element,property,box.get());
 }
+void Color(Obj element,const char* property,float r,float g,float b,float a=1) {
+    Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
+    Ref box(Style(element,property));api.Call(box.get(),"set_value",{api.object_unbox(color.get())});WriteStyle(element,property,box.get());
+}
 void Text(Obj element,const std::string& text,const char* setter="set_text") {
     Ref value(api.string_new(text.c_str()));api.Call(element,setter,{value.get()});
 }
@@ -67,14 +73,13 @@ void Enabled(Obj element,bool value){api.Call(element,"SetEnabled",{&value});}
 Obj Label(Obj parent,const std::string& text) {
     Ref label(api.New(api.Class(Ui,UiSpace,"Label")));Text(label.get(),text);
     Enum(label.get(),"whiteSpace",0);Pixels(label.get(),"fontSize",14);Pixels(label.get(),"marginBottom",6);
-    float r=.9f,g=.9f,b=.9f,a=1;
-    Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
-    Ref box(Style(label.get(),"color"));api.Call(box.get(),"set_value",{api.object_unbox(color.get())});WriteStyle(label.get(),"color",box.get());
+    Color(label.get(),"color",.91f,.91f,.86f);
     Add(parent,label.get());return label.get();
 }
 Obj Row(Obj parent) {
     Ref row(api.New(api.Class(Ui,UiSpace,"VisualElement")));Enum(row.get(),"flexDirection",2);
-    Pixels(row.get(),"marginBottom",6);Add(parent,row.get());return row.get();
+    Enum(row.get(),"alignItems",2);Enum(row.get(),"flexWrap",1);
+    Pixels(row.get(),"marginBottom",8);Add(parent,row.get());return row.get();
 }
 Obj Button(Obj parent,const std::string& text) {
     Ref item(api.New(api.Class("Core.dll",Figma,"ListElementBasic")));int kind=1;
@@ -85,9 +90,26 @@ Obj Button(Obj parent,const std::string& text) {
 Obj Input(Obj parent,const std::string& value,const char* tooltip,int maxLength) {
     Ref input(api.New(api.Class("Core.dll",Figma,"TextInput")));
     Text(input.get(),value);Text(input.get(),tooltip,"set_tooltip");api.Call(input.get(),"set_maxLength",{&maxLength});
-    Pixels(input.get(),"width",65);Pixels(input.get(),"minWidth",0);Add(parent,input.get());return input.get();
+    Pixels(input.get(),"width",88);Pixels(input.get(),"minWidth",0);Pixels(input.get(),"marginRight",12);Add(parent,input.get());return input.get();
 }
 void TabValue(Obj tab,bool value){api.Call(tab,"SetValueWithoutNotify",{&value});}
+Obj Section(Obj parent,const char* title) {
+    Ref card(api.New(api.Class(Ui,UiSpace,"VisualElement")));
+    for(const char* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(card.get(),property,12);
+    Pixels(card.get(),"marginBottom",12);Color(card.get(),"backgroundColor",.14f,.15f,.13f,.88f);
+    Add(parent,card.get());Ref heading(Label(card.get(),title));
+    Pixels(heading.get(),"fontSize",16);Enum(heading.get(),"unityFontStyleAndWeight",1);
+    Color(heading.get(),"color",.78f,.88f,.44f);Pixels(heading.get(),"marginBottom",10);
+    return card.get();
+}
+void MatchTabHeight() {
+    // Use the sibling's resolved theme geometry after layout; never a guessed pixel offset.
+    Ref resolved(api.Call(state.resourceTab.get(),"get_resolvedStyle"));
+    const float height=api.Value<float>(api.Call(resolved.get(),"get_height"));
+    if(!std::isfinite(height)||height<16||height>128||std::abs(height-state.tabHeight)<.01f)return;
+    state.tabHeight=height;
+    for(const char* property:{"height","minHeight","maxHeight"})Pixels(state.tab.get(),property,height);
+}
 bool Current() {
     return Session()&&state.pane.get()&&!state.cleanup&&state.cached.get()==module->cached.get()&&
         state.compositor.get()==module->compositor.get()&&
@@ -99,12 +121,16 @@ void Cancel() {
     if(state.request)state.request->cancelled.store(true);
     state.request.reset();state.requested=false;
 }
-void Leave() {
+void Leave(bool restoreSelection=true) {
     if(!state.active)return;
     // Restore exact original inline display styles before native tab switching.
     if(state.recipesDisplay.get())WriteStyle(state.recipes.get(),"display",state.recipesDisplay.get());
     if(state.resourcesDisplay.get())WriteStyle(state.resources.get(),"display",state.resourcesDisplay.get());
-    TabValue(state.recipeTab.get(),state.recipeWasOn);TabValue(state.resourceTab.get(),state.resourceWasOn);
+    if(restoreSelection){
+        // Activate the saved native tab first: the group deliberately disallows an empty selection.
+        if(state.recipeWasOn)TabValue(state.recipeTab.get(),true);
+        else if(state.resourceWasOn)TabValue(state.resourceTab.get(),true);
+    }
     Enum(state.pane.get(),"display",1);TabValue(state.tab.get(),false);
     state.recipesDisplay.reset();state.resourcesDisplay.reset();state.active=false;Cancel();
 }
@@ -116,7 +142,9 @@ void Enter() {
     state.resourceWasOn=api.Value<bool>(api.Call(state.resourceTab.get(),"get_isOn"));
     state.active=true; // Cleanup owns partially applied changes from here.
     Enum(state.recipes.get(),"display",1);Enum(state.resources.get(),"display",1);
-    TabValue(state.recipeTab.get(),false);TabValue(state.resourceTab.get(),false);TabValue(state.tab.get(),true);
+    // Native API temporarily allows an empty group and restores its policy afterwards.
+    // SetValueWithoutNotify(false) alone refuses to clear its final selected item.
+    api.Call(state.tabGroup.get(),"ForceAllSelectionsOff");TabValue(state.tab.get(),true);
     Enum(state.pane.get(),"display",0);state.nextPoll=0;
 }
 bool Parameters(int& target,int& coefficient,bool& epic) {
@@ -136,9 +164,11 @@ void Render() {
         if(valid) {
             const auto plan=jobsxp::Simulate(r,state.xp,target,coefficient,epic);
             caption+="\n"+std::to_string(jobsxp::CraftXp(r,state.query.level,coefficient,epic))+" XP / fabrication";
-            caption+=plan.reached?" · "+std::to_string(plan.count)+" pour la cible":" · cible non atteignable";
+            caption+=plan.reached?" · "+std::to_string(plan.count)+" fabrications pour le niveau "+std::to_string(target):" · cible non atteignable";
         }
         Text(state.rows[i].get(),caption);Text(state.rows[i].get(),jobsxp::Ingredients(r,1),"set_tooltip");
+        Float(state.rows[i].get(),"borderLeftWidth",state.selected==static_cast<int>(i)?4.f:0.f);
+        Color(state.rows[i].get(),"borderLeftColor",.64f,.79f,.26f);
     }
     Enabled(state.previous.get(),state.query.skip>0&&!state.request);
     Enabled(state.next.get(),state.havePage&&state.query.skip+jobsxp::PageSize<state.page.total&&!state.request);
@@ -155,7 +185,7 @@ void Render() {
             if(!plan.reached)text+="\nChoisis une autre recette pour continuer.";
         }
         Text(state.details.get(),text);
-    } else Text(state.details.get(),"Clique une recette pour calculer les quantités d'ingrédients nécessaires.");
+    } else Text(state.details.get(),"Sélectionne une recette dans la liste ci-dessus : les ingrédients et leurs quantités totales apparaîtront ici.");
     state.lastTarget=target;state.lastCoefficient=coefficient;state.lastEpic=epic;
 }
 void Search() {
@@ -200,13 +230,17 @@ void Create(Obj owner) {
     if(!state.root.get()||!api.Call(state.root.get(),"get_panel")){state=State{};return;}
     state.tabs.reset(api.Call(binding.get(),"get_ctr_tabs"));state.content.reset(api.Call(binding.get(),"get_content"));
     state.recipeTab.reset(api.Call(binding.get(),"get_tab_recipe"));state.resourceTab.reset(api.Call(binding.get(),"get_tab_ressources"));
+    state.tabGroup.reset(api.Call(state.recipeTab.get(),"get_group"));
+    if(!state.tabGroup.get()||state.tabGroup.get()!=api.Call(state.resourceTab.get(),"get_group"))
+        throw std::runtime_error("Jobs native tab group unavailable");
     state.recipes.reset(api.Call(binding.get(),"get_recipesUI"));state.resources.reset(api.Call(binding.get(),"get_jobSkillsUI"));
     state.cached.reset(module->cached.get());state.compositor.reset(module->compositor.get());state.generation=++generation;
     state.tab.reset(api.New(api.Class("Core.dll",Figma,"DofusTab")));Text(state.tab.get(),"XP · DofusDB");
     int size=api.Value<int>(api.Call(state.recipeTab.get(),"get_size"));api.Call(state.tab.get(),"set_size",{&size});
-    // JobRecipesAndSkills offsets both native tabs by bottom: -1px.
-    // Inherit the actual inline value so all three share the same baseline.
-    Ref bottom(Style(state.recipeTab.get(),"bottom"));WriteStyle(state.tab.get(),"bottom",bottom.get());
+    int fontCase=api.Value<int>(api.Call(state.recipeTab.get(),"get_fontCase"));api.Call(state.tab.get(),"set_fontCase",{&fontCase});Text(state.tab.get(),"XP · DofusDB");
+    for(const char* property:{"bottom","top","marginTop","marginBottom","marginLeft","alignSelf"}) {
+        Ref value(Style(state.resourceTab.get(),property));WriteStyle(state.tab.get(),property,value.get());
+    }
     Float(state.tab.get(),"flexGrow",1);Pixels(state.tab.get(),"minWidth",0);
     Text(state.tab.get(),"Recettes et simulation d'expérience du métier sélectionné.","set_tooltip");
     int vertical=0;state.pane.reset(api.New(api.Class(Ui,UiSpace,"ScrollView"),{&vertical}));
@@ -216,21 +250,31 @@ void Create(Obj owner) {
     Ref body(api.Call(state.pane.get(),"get_contentContainer"));
     for(const char* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(body.get(),property,8);
     state.title.reset(Label(body.get(),"Métier sélectionné"));
-    Ref controls(Row(body.get()));Label(controls.get(),"Cible ");state.target.reset(Input(controls.get(),"200","Niveau cible (1 à 200)",3));
-    Label(controls.get()," XP % ");state.coefficient.reset(Input(controls.get(),"100","Coefficient d'XP, bonus Almanax inclus (100 = normal)",3));
+    Pixels(state.title.get(),"fontSize",18);Enum(state.title.get(),"unityFontStyleAndWeight",1);
+    Ref intro(Label(body.get(),"Ton métier, ton niveau et ton XP sont lus automatiquement. Choisis un objectif, puis une recette."));
+    Pixels(intro.get(),"marginBottom",14);
+    Ref goal(Section(body.get(),"1. Ton objectif"));
+    Ref controls(Row(goal.get()));Label(controls.get(),"Niveau à atteindre");
+    state.target.reset(Input(controls.get(),"200","Niveau cible (1 à 200)",3));
+    Ref bonuses(Row(goal.get()));Label(bonuses.get(),"XP de fabrication (%)");
+    state.coefficient.reset(Input(bonuses.get(),"100","100 % = normal. Inclure les bonus d'XP de fabrication, par exemple l'Almanax.",3));
     state.epic.reset(api.New(api.Class("Core.dll",Figma,"CheckboxCustom")));
-    Text(state.epic.get(),"Serveur Épique","set_rightText");Add(body.get(),state.epic.get());
-    state.refresh.reset(Button(body.get(),"Actualiser les recettes"));
-    state.status.reset(Label(body.get(),"Sélectionne un métier. Recettes classées par niveau, comme DofusDB."));
+    Text(state.epic.get(),"Serveur Épique","set_rightText");Add(goal.get(),state.epic.get());
+    Ref bonusHelp(Label(goal.get(),"Garde 100 % et Épique décoché si tu n'as pas de bonus particulier."));
+    Pixels(bonusHelp.get(),"fontSize",12);Color(bonusHelp.get(),"color",.74f,.76f,.69f);
+    Ref list(Section(body.get(),"2. Choisis une recette"));
+    state.status.reset(Label(list.get(),"Recettes disponibles pour ton niveau, classées par niveau décroissant."));
+    state.refresh.reset(Button(list.get(),"Actualiser la liste"));Pixels(state.refresh.get(),"marginBottom",8);
     bool no=false;
     for(auto& row:state.rows){
-        row.reset(Button(body.get(),""));Pixels(row.get(),"minHeight",48);
+        row.reset(Button(list.get(),""));Pixels(row.get(),"minHeight",58);Pixels(row.get(),"marginBottom",5);
         Ref label(api.Field(row.get(),"m_textLabel"));api.Call(label.get(),"set_isSingleLine",{&no});
         Enum(label.get(),"whiteSpace",0);Enum(row.get(),"display",1);
     }
-    Ref pages(Row(body.get()));state.previous.reset(Button(pages.get(),"Précédentes"));state.next.reset(Button(pages.get(),"Suivantes"));
-    Float(state.previous.get(),"flexGrow",1);Float(state.next.get(),"flexGrow",1);
-    state.details.reset(Label(body.get(),"Choisis une recette pour simuler le niveau cible."));
+    Ref pages(Row(list.get()));state.previous.reset(Button(pages.get(),"← Précédentes"));state.next.reset(Button(pages.get(),"Suivantes →"));
+    Float(state.previous.get(),"flexGrow",1);Float(state.next.get(),"flexGrow",1);Pixels(state.previous.get(),"marginRight",8);
+    Ref result(Section(body.get(),"3. Ingrédients à préparer"));
+    state.details.reset(Label(result.get(),"Sélectionne une recette pour afficher les quantités nécessaires à ton objectif."));
     Add(state.tabs.get(),state.tab.get());Add(state.content.get(),state.pane.get());
     Log("JOBS_XP_PANEL_READY nativeTab=true provider=DofusDB");
 }
@@ -267,7 +311,12 @@ void DisableHook(Obj owner,Method method){
 }
 void SwitchHook(Obj handler,int index,Method method){
     // Native receives only its original indices. Our tab is outside its group.
-    try{if(state.handler.get()==handler){Leave();if(state.tab.get())TabValue(state.tab.get(),false);}}
+    try{if(state.handler.get()==handler){
+        Leave(false);
+        if(index==0)TabValue(state.recipeTab.get(),true);
+        else if(index==1)TabValue(state.resourceTab.get(),true);
+        if(state.tab.get())TabValue(state.tab.get(),false);
+    }}
     catch(const std::exception& e){state.cleanup=true;Log(std::string("JOBS_XP_SWITCH_ERROR ")+e.what());}
     originalSwitch(handler,index,method);
 }
@@ -291,6 +340,10 @@ void InstallJobsXp(){
     api.FindVerified(tab,".ctor",0,0x1712DC0);api.FindVerified(tab,"set_text",1,0x17136F0);
     api.FindVerified(tab,"get_size",0,0x16CE880);api.FindVerified(tab,"set_size",1,0x1713550);
     api.FindVerified(tab,"get_isOn",0,0x1712F50);api.FindVerified(tab,"SetValueWithoutNotify",1,0x1711970);
+    api.FindVerified(tab,"get_fontCase",0,0x1706A00);api.FindVerified(tab,"set_fontCase",1,0x1712FC0);
+    api.FindVerified(tab,"get_group",0,0x155DB30);
+    api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","SelectableGroup"),"ForceAllSelectionsOff",0,0x15C1FC0);
+    api.FindVerified(api.Class(Ui,UiSpace,"VisualElement"),"get_resolvedStyle",0,0x55F72E0);
     api.FindVerified(api.Class("Core.dll","","fag"),"bbxi",1,0x19DEA10);
     const auto job=api.Class("Core.dll","","ll");
     api.FindVerified(job,"obv",0,0x7EF1B0);api.FindVerified(job,"obx",0,0x73DC70);api.FindVerified(job,"obt",0,0x68D2D0);
@@ -331,6 +384,7 @@ void TickJobsXp(){
             Create(pending.get());if(state.pane.get())pending.reset();
         }
         if(!state.pane.get())return;
+        MatchTabHeight();
         if(api.Value<bool>(api.Call(state.tab.get(),"get_isOn")))Enter();
         if(!state.active)return;
         TabValue(state.tab.get(),true);
