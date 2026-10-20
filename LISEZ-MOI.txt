@@ -1,4 +1,21 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 76
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 77
+
+R77 — RESSOURCES : CATALOGUE, VOLET ET ICÔNES
+- 86 ressources de récolte, dont 16 minerais. Ajout des cristaux pliable et
+  liquide, du Bois de Pin, de la Tulipe en papier et du Pichon d’encre.
+- Carte M : volet « Ressources » repliable à droite, séparé des filtres de
+  zaaps. Ouvrir le volet puis un métier pour choisir plusieurs ressources.
+- Noms clairs, niveaux dorés et icônes natives dans la liste. Les sélections
+  existantes sont conservées.
+- Carte et mini-carte : icônes du jeu avec un petit compteur par ressource,
+  à la place des grands rectangles d’abréviations. Les clics de navigation
+  traversent les repères. Zoomer si les repères sont trop proches.
+- Relevés DofusDB : monde, coordonnées et quantités par carte, intérieurs
+  inclus (*). Pour les cristaux, sélectionner leur monde de Pandala.
+  Il s’agit des points recensés, pas de leur disponibilité après récolte.
+- Vérifications hors jeu : compilation, 50 suites, contrats natifs et données.
+  Le rendu et le chargement dans le client ouvert ne sont pas testés.
+  Aucun client ouvert n’a été manipulé.
 
 R76 — DOFUSDB DANS UN PANNEAU NATIF
 - Options > Mod (r76) > Général > Chasse au trésor > Ouvrir le panneau.

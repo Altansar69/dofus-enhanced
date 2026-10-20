@@ -149,6 +149,8 @@ managed::Obj Module::FindService(const char* name)const{return fake::services[na
 void Log(const std::string&){}
 namespace resourceMap {
 std::vector<Placement> fakePlacements;
+void InstallIcons(){}
+void LoadItemIcon(managed::Obj element,int id){fake::Check(id==101||id==102,"Use native item icon ID, not item ID");fake::Get(element).numbers["icon"]=id;}
 std::span<const Resource> Catalog(){static const Resource catalog[]{{1,2,1,101,"Frêne"},{2,24,1,102,"Fer"}};return catalog;}
 std::span<const Placement> Placements(){return fakePlacements;}
 }
@@ -174,6 +176,8 @@ void BothMapsAndCounts(){Fixture f;f.Tick();Check(LiveMarkers(f.banner).size()==
     auto labels=AllOwned("Label");bool first=false,second=false,interior=false;
     for(auto l:labels){Check(Get(l).picking==1,"Labels must preserve travel picking");first|=Get(l).text=="4";second|=Get(l).text=="2";interior|=Get(l).text=="5*";Check(Get(l).text.find("99")==std::string::npos,"Other world leaked");}
     Check(first&&second&&interior,"Per-resource counts and interior marker missing");
+    int icons=0;for(auto e:AllOwned("VisualElement"))if(Get(e).numbers.contains("icon")){++icons;Check(Get(e).picking==1,"Resource images must not consume map clicks");}
+    Check(icons==6,"Every visible resource must use its item image");
     auto before=creates,previousWrites=writes;f.Tick();Check(creates==before&&writes==previousWrites,"Unchanged frames must reuse markers without UI writes");
     for(auto m:LiveMarkers(f.full))Check(Get(Get(m).refs["<dtwe>k__BackingField"]).picking==1,"Native marker root must ignore picking");
 }

@@ -2,6 +2,9 @@
 #include <array>
 #include <iostream>
 #include <stdexcept>
+#include <algorithm>
+#include <set>
+#include <tuple>
 using namespace resourceMap;
 void Check(bool b,const char* message){if(!b)throw std::runtime_error(message);}
 int main(){try{
@@ -30,5 +33,21 @@ int main(){try{
     r=Query(catalog,data,selected,1,{-1,-1,3,3},0);Check(r.limited&&r.cells.empty(),"Zero drawing budget");
     Check(Query(catalog,data,selected,1,{2,0,1,1}).cells.empty(),"Inverted bounds rejected");
     Check(Query(catalog,data,selected,1,{-100001,0,1,1}).cells.empty(),"Oversized coordinates rejected");
+    const auto actual=Catalog();const auto placements=Placements();
+    Check(actual.size()==86,"Complete DofusDB standard harvest catalog");
+    Check(std::count_if(actual.begin(),actual.end(),[](const Resource& r){return r.jobId==24;})==16,"All sixteen ores selectable");
+    std::set<int> covered;std::set<std::pair<int64_t,int>> unique;
+    auto key=[](const Placement& p){return std::tuple(p.world,p.x,p.y,p.itemId,p.mapId);};
+    Check(std::is_sorted(placements.begin(),placements.end(),[&](const Placement& a,const Placement& b){return key(a)<key(b);}),"Generated data must support spatial queries");
+    for(const auto& p:placements){
+        Check(LookupResource(actual,p.itemId)&&p.count>0&&p.count<=560,"Source references a valid resource");
+        Check(unique.emplace(p.mapId,p.itemId).second,"No duplicate map/item counts");
+        covered.insert(p.itemId);
+    }
+    Check(covered.size()==actual.size(),"Every selected resource has recorded positions");
+    for(int id:{23824,23825,23902,23903,27375})Check(LookupResource(actual,id)&&covered.contains(id),"Previously missing endgame harvest resources retained");
+    const std::vector<int> crystals{23902,23903};
+    r=Query(actual,placements,crystals,28,{-100,-100,100,100});
+    Check(!r.cells.empty(),"Pandala crystals appear in their own world");
     std::cout<<"ResourceMapPolicyTests: PASS\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

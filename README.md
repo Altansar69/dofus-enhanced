@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r76**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r77**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -12,7 +12,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r76) → Général** :
+Dans **Options → Mod (r77) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -44,13 +44,27 @@ La révision réellement chargée apparaît dans le nom de l’onglet **Mod (rN)
 
 ## Chasse au trésor
 
-**Options → Mod (r76) → Général → Chasse au trésor → Ouvrir le panneau**.
+**Options → Mod (r77) → Général → Chasse au trésor → Ouvrir le panneau**.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
 Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
 le départ suivant ; aucun trajet ni validation de chasse ne se lance.
 Les requêtes vont directement à DofusDB, sans identifiants ni cookies.
 Un refus d’accès ou une erreur réseau reste visible dans le panneau.
+
+## Ressources sur les cartes
+
+Ouvrir la carte avec **M**, puis le volet repliable **Ressources**, à droite.
+Les filtres de transport restent à leur place. Ouvrir un métier pour sélectionner
+les ressources : 86 choix dont 16 minerais, avec leur icône et leur niveau.
+Les choix sont conservés entre les lancements.
+
+La carte et la mini-carte affichent les icônes du jeu avec les quantités recensées
+par ressource. Un astérisque signale des points en intérieur ; zoomer pour voir
+les repères trop proches. Les repères laissent passer les clics de navigation.
+Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
+[Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
+n’est pas connue. La r77 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 ## Compilation et publication
 
@@ -80,7 +94,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r76 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r77 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

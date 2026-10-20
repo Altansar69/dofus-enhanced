@@ -1,4 +1,5 @@
 #include "resource-map-ui.hpp"
+#include "resource-map-icons.hpp"
 #include "resource-map-data.hpp"
 #include "module.hpp"
 #include "features.hpp"
@@ -61,6 +62,9 @@ Obj Panel(Obj value){while(value){if(Get(value).fields["panel"])return Get(value
 void OriginalEnable(Obj owner,Method){++nativeEnable;Get(owner).enabled=true;}
 void OriginalDisable(Obj owner,Method){++nativeDisable;Get(owner).enabled=false;}
 void Init(){
+    api.class_get_field_from_name=[](Klass,const char* name)->void*{static size_t right=0x318,level=0x320,item=0x60;return std::string(name)=="deuc"?&item:std::string(name)=="m_rightLabel"?&right:&level;};
+    api.field_get_offset=[](void* field)->size_t{return *static_cast<size_t*>(field);};
+    api.field_get_value_object=[](void* field,Obj self)->Obj{Check(!self&&*static_cast<size_t*>(field)==0x60,"Box complete static item catalog type");return Make("AddressableEntryType");};
     api.object_get_class=[](Obj value)->Klass{return Get(value).type;};
     api.class_is_valuetype=[](Klass type){const auto& name=static_cast<Type*>(type)->name;return name=="Box"||name=="Length"||name=="StyleValue"||name=="Hierarchy";};
     api.object_unbox=[](Obj value)->void*{return Get(value).data.data();};
@@ -73,10 +77,24 @@ void Init(){
 Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     const auto& m=*static_cast<const MethodData*>(method);const std::vector<void*> args(arguments);
     Check(static_cast<int>(args.size())==m.argc,"Managed argument count mismatch");
+    if(m.name=="qbk"){Check(!self,"Static catalog initializer");return Make("AddressableCatalogName");}
+    if(m.type->name=="AddressableEntry"&&m.name==".ctor"){
+        Check(args.size()==2&&*static_cast<int*>(args[1])>0,"Native entry receives icon ID");
+        *static_cast<int*>(self)=*static_cast<int*>(args[1]);return nullptr;
+    }
+    if(m.name=="paw"){
+        Check(!self&&args.size()==7&&args[0]&&*static_cast<int*>(args[1])==39401,"Native item sprite loader ABI");
+        Check(!args[2]&&!args[3]&&!args[4]&&!(*static_cast<bool*>(args[5]))&&*static_cast<bool*>(args[6]),"Same cache/lifetime flags as native CheckboxCustom");
+        Get(args[0]).size=*static_cast<int*>(args[1]);return nullptr;
+    }
     auto& object=Get(self);
     if(m.name=="get_ctr_filters")return object.fields["filters"];
     if(m.name==".ctor"){
-        if(m.type->name=="CheckboxCustom"||m.type->name=="DofusLabel"){Check(args.empty(),"Checkbox/label constructor ABI");return nullptr;}
+        if(m.type->name=="CheckboxCustom"||m.type->name=="DofusLabel"){
+            Check(args.empty(),"Checkbox/label constructor ABI");
+            if(m.type->name=="CheckboxCustom")for(const char* name:{"m_rightLabel","m_farRightLabel"}){auto label=Make("DofusLabel",true);Add(self,label);object.fields[name]=label;}
+            return nullptr;
+        }
         if(m.type->name=="SectionHeader"){
             Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1]),"Native header must have content and folder button");
             for(int i=2;i<5;++i)Check(!*static_cast<bool*>(args[i]),"No foreign icon/data/action buttons");
@@ -98,6 +116,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name=="set_isSingleLine"){Check(!*static_cast<bool*>(args[0]),"Source note can wrap");return nullptr;}
     if(m.name=="set_tooltip"){object.fields["tooltip"]=args[0];return nullptr;}
     if(m.name=="set_farRightText"){object.fields["level"]=args[0];return nullptr;}
+    if(m.name=="set_leftIconAddress"){Check(*static_cast<int*>(args[0])>0,"Native item icon address");return nullptr;}
     if(m.name=="set_size"){object.size=*static_cast<int*>(args[0]);return nullptr;}
     if(m.name=="set_canBeOpened"){object.enabled=*static_cast<bool*>(args[0]);return nullptr;}
     if(m.name=="set_isOpen"){object.open=*static_cast<bool*>(args[0]);return nullptr;}
@@ -171,22 +190,25 @@ struct Fixture {
     }
     ~Fixture(){moveFailureCountdown=-1;removeFailures=0;resourceMap::RestoreUi();module=nullptr;}
     void Open(){enableHook(owner,nullptr);resourceMap::TickUi();}
-    Obj Scroll(){for(auto child:Get(filters).children)if(Get(child).type->name=="ScrollView")return child;return nullptr;}
+    Obj Resources(){for(auto child:Get(root).children)if(Get(child).type->name=="SectionHeader")return child;return nullptr;}
+    Obj Scroll(){auto r=Resources();return r?Get(Get(r).fields.at("content")).children.front():nullptr;}
     Obj Content(){return Get(Scroll()).fields.at("content");}
-    Obj Resources(){return Get(Content()).children.front();}
-    Obj Master(){return Get(Get(Resources()).fields.at("content")).children.front();}
+    Obj Master(){return Get(Content()).children.front();}
     Obj Row(const char* text){for(const auto& object:objects)if(object->owned&&object->type->name=="CheckboxCustom"&&object->text==text&&Panel(object.get())==panel)return object.get();throw std::runtime_error("Missing resource checkbox");}
     void Restored(){Check(Get(filters).children==originals,"Original native children and order must be restored");for(int i=0;i<14;++i)Check(Get(originals[i]).notifications==i+10,"Native handlers/state changed");Check(nativeStyleWrites==0,"Native filter styles were modified");}
 };
 void NativeTreeAndDuplicateOpen(){
     Fixture f;f.Open();auto scroll=f.Scroll();Check(scroll,"Native scroll wrapper missing");
-    Check(Get(f.Content()).children.size()==15,"Original14 native rows plus owned resource section");
-    Check(std::equal(f.originals.begin(),f.originals.end(),Get(f.Content()).children.begin()+1),"Native controls must keep identity/order");
-    Check(Get(scroll).styles["height"]==516&&Get(scroll).styles["width"]==280,"Bounded sidebar dimensions");
-    const auto& categories=Get(Get(f.Resources()).fields.at("content")).children;Check(categories.size()==8,"Master, source note and six harvest job categories");
-    Check(Get(categories[1]).text=="Relevés statiques · couverture partielle\nDisponibilité en jeu inconnue"&&Get(Get(categories[1]).fields.at("tooltip")).text.find("Dofus Map")!=std::string::npos,"Static provenance, partial coverage and unknown live availability are visible");
+    f.Restored();Check(Get(f.Resources()).fields["parent"]==f.root,"Independent resources drawer must belong to map root");
+    Check(!Get(f.Resources()).open,"Resource drawer starts collapsed");
+    Check(Get(scroll).styles["height"]==520&&Get(f.Resources()).styles["width"]==300,"Bounded drawer dimensions");
+    Check(Get(f.Resources()).styles["right"]==64&&Get(f.Resources()).styles["top"]==80,"Drawer separated from native filters and corner controls");
+    const auto& categories=Get(f.Content()).children;Check(categories.size()==8,"Master, source note and six harvest job categories");
+    Check(Get(categories[1]).text.find("DofusDB")!=std::string::npos,"Source credit visible");
     Check(Get(categories[2]).text=="Base"&&Get(categories[3]).text=="Bûcheron"&&Get(categories[7]).text=="Pêcheur","Exact job labels");
     for(int i=2;i<8;++i)Check(!Get(categories[i]).open&&Get(categories[i]).enabled,"Native accordion initially collapsed");
+    Check(Get(Get(f.Row("Fer")).fields["m_farRightLabel"]).styles["color"]>.9f,"Levels need explicit readable light color");
+    Check(Get(Get(f.Row("Fer")).fields["m_rightLabel"]).styles["color"]>.9f,"Names need readable light color");
     Check(Get(f.Row("Eau")).size==2,"Rows match large native checkbox size");
     f.Open();Check(f.Scroll()==scroll&&nativeEnable==2,"Duplicate native OnEnable must not duplicate controls");
     Check(guards.at("SectionHeader..ctor")==0x1745F00&&guards.at("ScrollView..ctor")==0x5741C70&&guards.at("CheckboxCustom.SetValueWithoutNotify")==0x17044F0,"Verified exact constructor/value contracts");
@@ -214,8 +236,8 @@ void OwnerAndPanelLifetime(){
 }
 void PartialMoveAndRetryableCleanup(){
     Fixture f;
-    // Fail during the fourth native reparent, after Add already removed it.
-    enableHook(f.owner,nullptr);moveFailureCountdown=3;resourceMap::TickUi();moveFailureCountdown=-1;
+    // Reparenting native filters is forbidden, even during attachment.
+    enableHook(f.owner,nullptr);moveFailureCountdown=0;resourceMap::TickUi();Check(f.Resources(),"Resources attach without moving a native child");moveFailureCountdown=-1;
     if(f.Scroll())resourceMap::RestoreUi();f.Restored();
     f.Open();removeFailures=1;disableHook(f.owner,nullptr);Check(nativeDisable==1,"Cleanup failure cannot swallow native lifecycle");
     Check(resourceMap::UiCleanupPending(),"Transient cleanup keeps references for stop drain");
@@ -223,21 +245,25 @@ void PartialMoveAndRetryableCleanup(){
 }
 void ForeignChildrenAndNativeReparent(){
     Fixture f;f.Open();auto outside=Make("VisualElement");Add(f.root,outside);Add(outside,f.originals[3]);
-    auto foreign=Make("ForeignRow");Add(f.Content(),foreign);auto sibling=Make("OtherExtension");Add(f.filters,sibling);
+    auto foreign=Make("ForeignRow");Add(f.filters,foreign);auto sibling=Make("OtherExtension");Add(f.filters,sibling);
     resourceMap::RestoreUi();Check(Get(f.originals[3]).fields["parent"]==outside,"Restore must not steal independently reparented native row");
     Check(Get(foreign).fields["parent"]==f.filters&&Get(sibling).fields["parent"]==f.filters,"Foreign additions retained");
     Check(Get(f.filters).children.size()==15,"Only owned wrapper/resources removed");
 }
 void DeferredLayoutAndResize(){
     Fixture f;Get(f.root).bound.height=0;f.Open();Check(!f.Scroll(),"No wrapper before finite layout");
-    Get(f.root).bound.height=900;resourceMap::TickUi();Check(f.Scroll()&&Get(f.Scroll()).styles["height"]==616,"Pending map attaches after layout");
-    Get(f.root).bound.height=700;resourceMap::TickUi();Check(Get(f.Scroll()).styles["height"]==416,"Resize respects actual remaining map height");
+    Get(f.root).bound.height=900;resourceMap::TickUi();Check(f.Scroll()&&Get(f.Scroll()).styles["height"]==520,"Pending map attaches after layout");
+    Get(f.root).bound.height=700;resourceMap::TickUi();Check(Get(f.Scroll()).styles["height"]==508,"Resize respects actual remaining map height");
     Get(f.owner).fields["dtzz"]=Make("StaleService");resourceMap::TickUi();f.Restored();
 }
 }
 int main(){
     try{
         fake::Init();
+        resourceMap::InstallIcons();
+        auto icon=fake::Make("VisualElement",true);resourceMap::LoadItemIcon(icon,39401);
+        fake::Check(fake::Get(icon).size==39401,"New ores use the native item catalog");
+        fake::Check(fake::guards.at("AddressableEntry..ctor")==0x68D5C0&&fake::guards.at("pq.paw")==0x2E91370,"Native image methods pinned");
         fake::NativeTreeAndDuplicateOpen();std::cout<<"native lifecycle passed\n";
         fake::SelectionAndExternalChanges();std::cout<<"selection passed\n";
         fake::UnknownIdsArePreserved();std::cout<<"catalog migration passed\n";

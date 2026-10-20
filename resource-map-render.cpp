@@ -1,5 +1,6 @@
 #include "resource-map-render.hpp"
 #include "resource-map-policy.hpp"
+#include "resource-map-icons.hpp"
 #include "module.hpp"
 #include <algorithm>
 #include <array>
@@ -13,11 +14,11 @@ using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr size_t CellBudget = 384, BadgeBudget = 384;
-constexpr float BadgeWidth=62, BadgeHeight=18;
+constexpr float BadgeWidth=36, BadgeHeight=36;
 struct Vec2 { float x, y; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
-struct Badge { Ref root, label, fallback; int item = 0; };
+struct Badge { Ref root, label, icon; int item = 0; };
 struct Marker {
     Ref native, root, id;
     std::vector<Badge> badges;
@@ -233,11 +234,6 @@ Marker& NewMarker(View& v,const Frame& f,const Cell& cell) {
     api.Invoke(methods.position,m.native.get(),{v.layer.get(),const_cast<double*>(&f.zoom),&iconScale});
     return m;
 }
-std::string ShortName(const char* name) {
-    std::string result=name;size_t pos=0;int letters=0;
-    while(pos<result.size()&&letters<3) {const auto byte=static_cast<unsigned char>(result[pos]);pos+=byte<0x80?1:byte<0xE0?2:byte<0xF0?3:4;++letters;}
-    return result.substr(0,std::min(pos,result.size()));
-}
 void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
     const auto content=Describe(Catalog(),cell);
     if(marker.content==content&&Same(marker.scale,f.scale))return;
@@ -248,9 +244,12 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
         marker.badges.clear();
         for(const auto& count:cell.counts) {
             marker.badges.emplace_back(); auto& b=marker.badges.back(); b.item=count.itemId;
-            b.root.reset(Element()); b.label.reset(Element(true)); b.fallback.reset(Element(true));
+            b.root.reset(Element()); b.label.reset(Element(true)); b.icon.reset(Element());
             Name(b.root.get(),"resource_"+std::to_string(count.itemId));
-            api.Call(b.root.get(),"Add",{b.fallback.get()}); api.Call(b.root.get(),"Add",{b.label.get()}); api.Call(marker.root.get(),"Add",{b.root.get()});
+            const auto* resource=LookupResource(Catalog(),count.itemId);
+            if(!resource)throw std::runtime_error("Unknown selected map resource");
+            api.Call(b.root.get(),"Add",{b.icon.get()}); api.Call(b.root.get(),"Add",{b.label.get()}); api.Call(marker.root.get(),"Add",{b.root.get()});
+            LoadItemIcon(b.icon.get(),resource->iconId);
         }
     }
     const int columns=cell.counts.size()>1?2:1, rows=int((cell.counts.size()+columns-1)/columns);
@@ -259,13 +258,14 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
         const auto* resource=LookupResource(Catalog(),count.itemId);
         if (!resource) throw std::runtime_error("Unknown selected map resource");
         Place(badge.root.get(),{(float(i%columns)*BadgeWidth-columns*BadgeWidth/2)/f.scale.x,(float(i/columns)*BadgeHeight-rows*BadgeHeight/2)/f.scale.y,BadgeWidth/f.scale.x,BadgeHeight/f.scale.y});
-        Style(badge.root.get(),"backgroundColor",Color{.09f,.12f,.09f,.92f});
-        Place(badge.fallback.get(),{1/f.scale.x,0,35/f.scale.x,18/f.scale.y});
-        Pixels(badge.fallback.get(),"fontSize",9/f.scale.y); Style(badge.fallback.get(),"color",Color{.73f,.85f,.57f,1});
-        Style(badge.fallback.get(),"overflow",1); SetText(badge.fallback.get(),resource->mapLabel?resource->mapLabel:ShortName(resource->name));
-        Place(badge.label.get(),{36/f.scale.x,0,25/f.scale.x,18/f.scale.y});
-        Pixels(badge.label.get(),"fontSize",10/f.scale.y); Style(badge.label.get(),"color",Color{1,.96f,.80f,1});
-        Style(badge.label.get(),"unityTextAlign",5);
+        Place(badge.icon.get(),{0,0,32/f.scale.x,32/f.scale.y});
+        Place(badge.label.get(),{12/f.scale.x,20/f.scale.y,24/f.scale.x,16/f.scale.y});
+        Pixels(badge.label.get(),"fontSize",11/f.scale.y); Style(badge.label.get(),"color",Color{1,1,.95f,1});
+        Style(badge.label.get(),"backgroundColor",Color{.07f,.08f,.09f,.94f});
+        for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
+            Pixels(badge.label.get(),corner,5/f.scale.y);
+        for(auto edge:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(badge.label.get(),edge,0);
+        Style(badge.label.get(),"unityTextAlign",4);
         SetText(badge.label.get(),std::to_string(count.count)+(count.interiorCount?"*":""));
     }
     marker.content=content;marker.scale=f.scale;
@@ -332,6 +332,7 @@ void RequireField(Klass type,const char* name,size_t offset) {
 }
 void InstallRender() {
     if(installed)return;
+    InstallIcons();
     methods.service=api.Class("Core.dll","","fhk"); methods.view=api.Class("Core.dll","","fhw");
     methods.marker=api.Class("Core.dll","","fgh"); auto manager=api.Class("Core.dll","","fga");
     methods.world=api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.World","WorldMapData");

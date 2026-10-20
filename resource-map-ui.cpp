@@ -1,8 +1,10 @@
 #include "resource-map-ui.hpp"
 #include "resource-map-data.hpp"
 #include "resource-map-policy.hpp"
+#include "resource-map-icons.hpp"
 #include "module.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <memory>
 #include <set>
@@ -14,12 +16,13 @@ using namespace managed;
 constexpr const char* UiAssembly="UnityEngine.UIElementsModule.dll";
 constexpr const char* UiNamespace="UnityEngine.UIElements";
 constexpr const char* Figma="Core.UILogic.Components.Figma";
-constexpr size_t MaxRows=128,MaxNativeChildren=64;
+constexpr size_t MaxRows=128;
 struct Rect {float x,y,width,height;};
+struct Color {float r,g,b,a;};
 using LifeFn=void(*)(Obj,Method);
 LifeFn originalEnable{},originalDisable{};
 Klass checkboxClass{},headerClass{},scrollClass{},labelClass{};
-Method bindingFilters{},checkboxCtor{},checkboxValue{},checkboxSet{},checkboxText{},checkboxSize{},checkboxLevel{};
+Method checkboxCtor{},checkboxValue{},checkboxSet{},checkboxText{},checkboxSize{},checkboxLevel{},checkboxIcon{};
 Method headerCtor{},headerTitle{},headerOpen{},headerCanOpen{},headerAdd{},scrollCtor{},scrollContent{};
 Method scrollHorizontal{},scrollVertical{};
 Method labelCtor{},labelText{},labelSingleLine{},tooltip{};
@@ -27,12 +30,11 @@ bool installed=false;
 Ref pending;
 struct Row {int id=0; Ref checkbox;};
 struct State {
-    Ref owner,root,panel,filters,scroll,content,resources,master,compositor,character,cartography;
-    std::vector<Ref> nativeChildren;
+    Ref owner,root,panel,scroll,content,resources,master,compositor,character,cartography;
     std::vector<Row> rows;
     std::vector<int> selection;
     bool enabled=true,attached=false;
-    float height=-1;
+    float height=-1,width=-1;
 };
 std::unique_ptr<State> owned;
 bool Session(){return installed&&module&&module->ready&&module->servicesReady&&!module->stopped&&!module->stopRequested&&module->compositor.get();}
@@ -55,33 +57,17 @@ void Pixels(Obj element,const char* property,float value){
     Ref style(api.Call(element,"get_style"));
     api.Call(style.get(),(std::string("UnityEngine.UIElements.IStyle.set_")+property).c_str(),{api.object_unbox(box.get())});
 }
-std::vector<Obj> Children(Obj element){
-    Ref hierarchy(api.Call(element,"get_hierarchy"));
-    const auto count=api.Value<int>(api.Call(hierarchy.get(),"get_childCount"));
-    if(count<0||count>static_cast<int>(MaxNativeChildren+2))throw std::runtime_error("Resource filters child bounds");
-    std::vector<Obj> result;
-    for(int i=0;i<count;++i)result.push_back(api.Call(hierarchy.get(),"get_Item",{&i}));
-    return result;
+template<class T> void Style(Obj element,const char* property,T value){
+    Ref box(ReadStyle(element,property));api.Call(box.get(),"set_value",{&value});
+    Ref style(api.Call(element,"get_style"));
+    api.Call(style.get(),(std::string("UnityEngine.UIElements.IStyle.set_")+property).c_str(),{api.object_unbox(box.get())});
 }
 Obj Parent(Obj element){return api.Call(element,"get_parent");}
-void Insert(Obj parent,int index,Obj child){api.Call(parent,"Insert",{&index,child});}
 bool Detach(){
     if(!owned)return true;
     auto& state=*owned;
     try {
-        // Move only the original children still owned by our scroll content.
-        // A native/third-party move to another owner takes precedence.
-        int index=0;
-        for(const auto& child:state.nativeChildren){
-            const auto parent=Parent(child.get());
-            if(!parent||parent==state.content.get()||parent==state.filters.get())Insert(state.filters.get(),index++,child.get());
-        }
-        if(state.content.get())for(auto child:Children(state.content.get())){
-            if(child==state.resources.get())continue;
-            // Preserve any foreign row added while the wrapper was active.
-            api.Call(state.filters.get(),"Add",{child});
-        }
-        if(state.scroll.get()&&Parent(state.scroll.get()))api.Call(state.scroll.get(),"RemoveFromHierarchy");
+        if(state.resources.get()&&Parent(state.resources.get()))api.Call(state.resources.get(),"RemoveFromHierarchy");
         owned.reset();return true;
     }catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_RESTORE_ERROR ")+error.what());return false;}
 }
@@ -97,76 +83,80 @@ Obj Checkbox(const char* text,bool selected){
     Ref result(api.object_new(checkboxClass));api.Invoke(checkboxCtor,result.get());
     int size=2;api.Invoke(checkboxSize,result.get(),{&size});
     Text(result.get(),checkboxText,text);api.Invoke(checkboxSet,result.get(),{&selected});
+    Style(api.Field(result.get(),"m_rightLabel"),"color",Color{.94f,.94f,.90f,1});
     return result.get();
 }
 void AddSub(Obj parent,Obj child){api.Invoke(headerAdd,parent,{child});}
 bool Layout(State& state){
     const auto root=api.Value<Rect>(api.Call(state.root.get(),"get_worldBound"));
-    const auto filters=api.Value<Rect>(api.Call(state.filters.get(),"get_worldBound"));
-    const float height=root.y+root.height-filters.y-12.0f;
-    if(!std::isfinite(height)||root.height<=0||height<96)return false;
-    const float bounded=(std::min)(height,720.0f);
+    const float height=root.height-192.0f,width=(std::min)(300.0f,root.width-112.0f);
+    if(!std::isfinite(height)||!std::isfinite(width)||height<96||width<200)return false;
+    const float bounded=(std::min)(height,520.0f);
     if(state.height!=bounded){Pixels(state.scroll.get(),"height",bounded);state.height=bounded;}
+    if(state.width!=width){Pixels(state.resources.get(),"width",width);state.width=width;}
     return true;
 }
 bool Fresh(const State& state){
     return CurrentOwner(state.owner.get())&&state.compositor.get()==module->compositor.get()&&
         state.character.get()==module->FindService("fng")&&state.cartography.get()==module->FindService("fkc")&&
         api.Field(state.owner.get(),"dzyj")==state.root.get()&&api.Call(state.root.get(),"get_panel")==state.panel.get()&&
-        Parent(state.filters.get())&&(!state.attached||Parent(state.scroll.get())==state.filters.get());
+        (!state.attached||Parent(state.resources.get())==state.root.get());
 }
 void Attach(Obj owner){
     if(!CurrentOwner(owner))return;
     Ref root(api.Field(owner,"dzyj"));
     if(!root.get())return;
     Ref panel(api.Call(root.get(),"get_panel"));if(!panel.get())return;
-    Ref filters(api.Invoke(bindingFilters,api.FieldAddress(owner,"dzyi")));
-    if(!filters.get()||api.Call(filters.get(),"get_panel")!=panel.get()||!Parent(filters.get()))return;
-    auto original=Children(filters.get());
-    if(original.empty()||original.size()>MaxNativeChildren)throw std::runtime_error("Resource filters native rows unavailable");
+    const auto bounds=api.Value<Rect>(api.Call(root.get(),"get_worldBound"));
+    if(!std::isfinite(bounds.width)||!std::isfinite(bounds.height)||bounds.width<312||bounds.height<288)return;
     const auto catalog=Catalog();
     if(catalog.empty()||catalog.size()>MaxRows)throw std::runtime_error("Resource catalog bounds");
     std::set<int> ids;
     for(const auto& resource:catalog)if(resource.itemId<=0||!resource.name||!*resource.name||!ids.insert(resource.itemId).second)
         throw std::runtime_error("Resource catalog entry invalid");
     auto next=std::make_unique<State>();
-    next->owner.reset(owner);next->root.reset(root.get());next->panel.reset(panel.get());next->filters.reset(filters.get());
+    next->owner.reset(owner);next->root.reset(root.get());next->panel.reset(panel.get());
     next->compositor.reset(module->compositor.get());next->character.reset(module->FindService("fng"));next->cartography.reset(module->FindService("fkc"));
-    for(auto child:original)next->nativeChildren.emplace_back(child);
     next->selection=module->settings.resourceMapItems;next->enabled=module->settings.resourceMapEnabled;
     next->scroll.reset(api.object_new(scrollClass));int mode=0;api.Invoke(scrollCtor,next->scroll.get(),{&mode});
     next->content.reset(api.Invoke(scrollContent,next->scroll.get()));
     if(!next->content.get())throw std::runtime_error("Resource filter scroll content unavailable");
     int hidden=2,automatic=0;api.Invoke(scrollHorizontal,next->scroll.get(),{&hidden});api.Invoke(scrollVertical,next->scroll.get(),{&automatic});
-    Pixels(next->scroll.get(),"width",280.0f);
-    next->resources.reset(Header("Ressources",true));
+    next->resources.reset(Header("Ressources",false));
+    Style(next->resources.get(),"position",1);
+    Pixels(next->resources.get(),"right",64.0f);Pixels(next->resources.get(),"top",80.0f);
+    Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
+    for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
+        Pixels(next->resources.get(),corner,8.0f);
+    AddSub(next->resources.get(),next->scroll.get());
+    auto add=[&](Obj child){api.Call(next->content.get(),"Add",{child});};
     next->master.reset(Checkbox("Afficher les ressources",next->enabled));
-    AddSub(next->resources.get(),next->master.get());
+    add(next->master.get());
     Ref note(api.object_new(labelClass));api.Invoke(labelCtor,note.get());
-    Text(note.get(),labelText,"Relevés statiques · couverture partielle\nDisponibilité en jeu inconnue");
+    Text(note.get(),labelText,"DofusDB · Points de récolte recensés");
     bool multiline=false;api.Invoke(labelSingleLine,note.get(),{&multiline});
-    Text(note.get(),tooltip,"Source : Dofus Map et cartes locales dont la ressource est identifiée. Ces relevés ne donnent pas la disponibilité actuelle en jeu.");
+    Text(note.get(),tooltip,"Source : DofusDB. Quantités recensées par carte, intérieurs inclus. La présence actuelle après récolte n’est pas connue.");
     Pixels(note.get(),"fontSize",12.0f);Pixels(note.get(),"marginBottom",6.0f);
-    AddSub(next->resources.get(),note.get());
+    Style(note.get(),"color",Color{.75f,.79f,.81f,1});add(note.get());
     for(const auto& job:Jobs){
         Ref header(Header(job.name,false));bool hasRows=false;
         for(const auto& resource:catalog)if(resource.jobId==job.id){
             const bool selected=std::binary_search(next->selection.begin(),next->selection.end(),resource.itemId);
-            const std::string caption=resource.mapLabel ? std::string(resource.mapLabel)+" · "+resource.name : resource.name;
-            Row row;row.id=resource.itemId;row.checkbox.reset(Checkbox(caption.c_str(),selected));
+            Row row;row.id=resource.itemId;row.checkbox.reset(Checkbox(resource.name,selected));
+            Ref address(ItemIconAddress(resource.iconId));api.Invoke(checkboxIcon,row.checkbox.get(),{api.object_unbox(address.get())});
             const auto level=std::string("Niv. ")+std::to_string(resource.level);
             Text(row.checkbox.get(),checkboxLevel,level.c_str());
+            Style(api.Field(row.checkbox.get(),"m_farRightLabel"),"color",Color{.94f,.82f,.43f,1});
+            Text(row.checkbox.get(),tooltip,(std::string(resource.name)+" · "+level).c_str());
             AddSub(header.get(),row.checkbox.get());next->rows.push_back(std::move(row));hasRows=true;
         }
-        api.Invoke(headerCanOpen,header.get(),{&hasRows});AddSub(next->resources.get(),header.get());
+        api.Invoke(headerCanOpen,header.get(),{&hasRows});add(header.get());
     }
     if(next->rows.size()!=catalog.size())throw std::runtime_error("Resource catalog job unsupported");
-    api.Call(next->content.get(),"Add",{next->resources.get()});
     if(!Layout(*next))return;
-    // From the first reparent onward, retain all references for retryable cleanup.
+    // The transport filters and their original parent/order are never modified.
     owned=std::move(next);
-    for(const auto& child:owned->nativeChildren)api.Call(owned->content.get(),"Add",{child.get()});
-    api.Call(filters.get(),"Add",{owned->scroll.get()});owned->attached=true;
+    api.Call(root.get(),"Add",{owned->resources.get()});owned->attached=true;
     Log("RESOURCE_MAP_UI_READY rows="+std::to_string(owned->rows.size()));
 }
 void Sync(State& state){
@@ -206,17 +196,21 @@ void DisableHook(Obj owner,Method method){
 void InstallUi(){
     if(installed)return;
     auto native=api.Class("Core.dll","","fhi");
-    auto binding=api.Class("Core.dll","Core.UILogic.Bindings","CartographyMapUIBinding");
     checkboxClass=api.Class("Core.dll",Figma,"CheckboxCustom");headerClass=api.Class("Core.dll",Figma,"SectionHeader");
     scrollClass=api.Class(UiAssembly,UiNamespace,"ScrollView");
     labelClass=api.Class("Core.dll","Core.UILogic.Components","DofusLabel");
-    bindingFilters=api.FindVerified(binding,"get_ctr_filters",0,0x2EA2480);
+    InstallIcons();
     checkboxCtor=api.FindVerified(checkboxClass,".ctor",0,0x1704CD0);
     checkboxValue=api.FindVerified(checkboxClass,"get_value",0,0x1705050);
     checkboxSet=api.FindVerified(checkboxClass,"SetValueWithoutNotify",1,0x17044F0);
     checkboxText=api.FindVerified(checkboxClass,"set_rightText",1,0x1705590);
     checkboxSize=api.FindVerified(checkboxClass,"set_size",1,0x17055E0);
     checkboxLevel=api.FindVerified(checkboxClass,"set_farRightText",1,0x1705060);
+    checkboxIcon=api.FindVerified(checkboxClass,"set_leftIconAddress",1,0x1705510);
+    for(const auto& [name,offset]:std::array<std::pair<const char*,size_t>,2>{{{"m_rightLabel",0x318},{"m_farRightLabel",0x320}}}){
+        auto field=api.class_get_field_from_name(checkboxClass,name);
+        if(!field||api.field_get_offset(field)!=offset)throw std::runtime_error("Resource checkbox label layout mismatch");
+    }
     headerCtor=api.FindVerified(headerClass,".ctor",5,0x1745F00);
     headerTitle=api.FindVerified(headerClass,"set_title",1,0x17467B0);
     headerOpen=api.FindVerified(headerClass,"set_isOpen",1,0x17462F0);
