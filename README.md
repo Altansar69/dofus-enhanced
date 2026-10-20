@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r80**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r81**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r80) → Général** :
+Dans **Options → Mod (r81) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -45,7 +45,7 @@ La révision réellement chargée apparaît dans le nom de l’onglet **Mod (rN)
 
 ## Chasse au trésor
 
-**Options → Mod (r80) → Général → Chasse au trésor → Ouvrir le panneau**.
+**Options → Mod (r81) → Général → Chasse au trésor → Ouvrir le panneau**.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
 Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
@@ -55,7 +55,7 @@ Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 
 ## Carnet
 
-**Options → Mod (r80) → Général → Carnet → Ouvrir le carnet**.
+**Options → Mod (r81) → Général → Carnet → Ouvrir le carnet**.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
 coordonnées saisies. Le trajet se lance au clic. Un message enregistré est ajouté
@@ -87,7 +87,7 @@ ni la possession d’une monture ni la validation d’un succès.
 
 ## Surbrillance
 
-**Options → Mod (r80) → Général → Surbrillance** choisit le niveau : derrière
+**Options → Mod (r81) → Général → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
@@ -97,23 +97,29 @@ Le budget existant de huit contours simultanés est partagé entre les catégori
 
 ## Ressources sur les cartes
 
-Sur la **mini-carte** ou sur la grande carte (**M**), ouvrir le volet repliable
-**Ressources**, à droite. Il démarre fermé et reste accessible même sans
-ressource sélectionnée ou lorsque leur affichage est désactivé.
-La sélection est commune aux deux cartes et se synchronise entre leurs volets.
-Les filtres de transport restent à leur place. Ouvrir un métier pour sélectionner
-les ressources : 86 choix dont 16 minerais, avec leur icône et leur niveau.
-Les choix sont conservés entre les lancements.
+Sur la **mini-carte**, une barre de six icônes rondes donne accès aux métiers.
+Un clic ouvre uniquement les ressources du métier choisi ; cliquer à nouveau
+sur son icône referme la liste. Les noms sont disponibles au survol.
+Sur la grande carte (**M**), ouvrir le volet **Ressources**, à droite : chaque
+catégorie affiche également son icône (eau pour Base, qui n’a pas de métier).
+Les images des métiers proviennent du catalogue du jeu.
 
-La carte et la mini-carte affichent les icônes du jeu avec les quantités recensées
-par ressource. Les repères sont plus compacts sur la mini-carte (28 px,
-contre 36 px sur la grande carte). Le volet suit sa taille et dispose de son
-propre défilement ; il apparaît à partir de 144 × 160 unités UI visibles.
-Un astérisque signale des points en intérieur ; zoomer pour voir
-les repères trop proches. Les repères laissent passer les clics de navigation.
+La sélection est commune aux deux cartes, sauvegardée entre les lancements et
+accessible même sans ressource sélectionnée ou si leur affichage est désactivé.
+Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
+sont disponibles, avec leur icône et leur niveau.
+
+Les repères mesurent 34 px sur la mini-carte et 42 px sur la grande carte.
+Les quantités sont en gras à 14 px, en texte sombre sur une pastille dorée claire
+opaque et bordée pour rester lisibles sur les différents fonds de carte.
+Un astérisque signale des points en intérieur ; zoomer pour voir les repères
+trop proches. Les repères laissent passer les clics de navigation.
+La barre se répartit sur plusieurs lignes si nécessaire et la liste dispose
+de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
+contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r80 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La r81 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 ## Compilation et publication
 
@@ -143,7 +149,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r80 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r81 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

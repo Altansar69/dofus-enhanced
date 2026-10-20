@@ -5,7 +5,7 @@ namespace {
 using namespace managed;
 Klass addresses{}, entry{}, entryType{};
 Method initialize{}, construct{}, load{};
-void* itemTypeField{};
+void* itemTypeField{},*jobTypeField{};
 }
 void InstallIcons() {
     if (load) return;
@@ -18,22 +18,28 @@ void InstallIcons() {
     // mc.mlu constructs the normal item image using rz's entry type at 0x60.
     if (!itemTypeField || api.field_get_offset(itemTypeField) != 0x60)
         throw std::runtime_error("Resource item icon catalog layout mismatch");
+    // JobProgressUIHandler.BindJobProgressItem reads this complete type at
+    // static offset 0x660 before constructing the job icon AddressableEntry.
+    jobTypeField = api.class_get_field_from_name(addresses, "devy");
+    if (!jobTypeField || api.field_get_offset(jobTypeField) != 0x660)
+        throw std::runtime_error("Resource job icon catalog layout mismatch");
     initialize = api.FindVerified(addresses, "qbk", 0, 0x1E2A0D0);
     construct = api.FindVerified(entry, ".ctor", 2, 0x68D5C0);
     load = api.FindVerified(api.Class("Core.dll", "", "pq"), "paw", 7, 0x2E91370);
 }
-managed::Obj ItemIconAddress(int iconId) {
+managed::Obj IconAddress(void* typeField,int iconId) {
     if (!load || iconId <= 0) throw std::runtime_error("Invalid resource icon");
     // This native getter initializes rz. Read the complete boxed value type;
     // StaticField's pointer-sized destination is unsuitable for this struct.
     Ref initialized(api.Invoke(initialize, nullptr));
-    Ref type(api.field_get_value_object(itemTypeField, nullptr));
+    Ref type(api.field_get_value_object(typeField, nullptr));
     if (!type.get() || api.object_get_class(type.get()) != entryType)
         throw std::runtime_error("Resource item icon type unavailable");
     Ref result(api.object_new(entry));
     api.Invoke(construct, api.object_unbox(result.get()), {api.object_unbox(type.get()), &iconId});
     return result.get();
 }
+managed::Obj ItemIconAddress(int iconId) {return IconAddress(itemTypeField,iconId);}
 void LoadItemIcon(managed::Obj element, int iconId) {
     Ref address(ItemIconAddress(iconId));
     bool no = false, yes = true;
@@ -41,5 +47,16 @@ void LoadItemIcon(managed::Obj element, int iconId) {
     // CreateIconFromAddress. The managed cache owns any pending completion;
     // it can finish on a detached element without calling back into this DLL.
     api.Invoke(load, nullptr, {element, api.object_unbox(address.get()), nullptr, nullptr, nullptr, &no, &yes});
+}
+void LoadJobIcon(managed::Obj element,int jobId) {
+    // DofusDB job icon IDs, rendered through the installed game's own catalog.
+    // Base has no profession icon: use the water item for that category.
+    if(jobId==1){LoadItemIcon(element,15026);return;}
+    int icon=0;
+    switch(jobId){case 2:icon=1;break;case 24:icon=13;break;case 26:icon=14;break;
+        case 28:icon=18;break;case 36:icon=30;break;default:throw std::runtime_error("Unknown harvest job");}
+    Ref address(IconAddress(jobTypeField,icon));
+    bool no=false,yes=true;
+    api.Invoke(load,nullptr,{element,api.object_unbox(address.get()),nullptr,nullptr,nullptr,&no,&yes});
 }
 }

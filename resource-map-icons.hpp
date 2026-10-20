@@ -7,4 +7,5 @@ namespace resourceMap {
 void InstallIcons();
 managed::Obj ItemIconAddress(int iconId);
 void LoadItemIcon(managed::Obj element, int iconId);
+void LoadJobIcon(managed::Obj element, int jobId);
 }

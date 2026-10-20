@@ -22,7 +22,7 @@ struct Rect {float x,y,width,height;};
 struct Color {float r,g,b,a;};
 using LifeFn=void(*)(Obj,Method);
 LifeFn originalEnable{},originalDisable{};
-Klass checkboxClass{},headerClass{},scrollClass{},labelClass{};
+Klass checkboxClass{},headerClass{},scrollClass{},labelClass{},elementClass{};
 Method checkboxCtor{},checkboxValue{},checkboxSet{},checkboxText{},checkboxSize{},checkboxLevel{},checkboxIcon{};
 Method headerCtor{},headerTitle{},headerOpen{},headerCanOpen{},headerAdd{},scrollCtor{},scrollContent{};
 Method scrollHorizontal{},scrollVertical{};
@@ -34,6 +34,9 @@ struct State {
     Ref owner,root,panel,scroll,content,resources,master,compositor,character,cartography;
     std::vector<Row> rows;
     std::vector<int> selection;
+    Ref toolbar;
+    std::vector<Ref> tabs,groups;
+    int activeJob=-1;
     bool enabled=true,attached=false;
     float height=-1,width=-1,left=-1,top=-1;
 };
@@ -72,10 +75,10 @@ bool Detach(std::unique_ptr<State>& target){
         target.reset();return true;
     }catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_RESTORE_ERROR ")+error.what());return false;}
 }
-Obj Header(const char* title,bool open){
+Obj Header(const char* title,bool open,bool icon=false){
     Ref result(api.object_new(headerClass));
     bool subContent=true,folderButton=true,no=false;
-    api.Invoke(headerCtor,result.get(),{&subContent,&folderButton,&no,&no,&no});
+    api.Invoke(headerCtor,result.get(),{&subContent,&folderButton,&no,&icon,&no});
     Text(result.get(),headerTitle,title);
     bool yes=true;api.Invoke(headerCanOpen,result.get(),{&yes});api.Invoke(headerOpen,result.get(),{&open});
     return result.get();
@@ -88,11 +91,38 @@ Obj Checkbox(const char* text,bool selected){
     return result.get();
 }
 void AddSub(Obj parent,Obj child){api.Invoke(headerAdd,parent,{child});}
+Obj Element(){return api.New(elementClass);}
+void Rounded(Obj element,float radius){
+    for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(element,corner,radius);
+}
+void Ignore(Obj element){int ignore=1;api.Call(element,"set_pickingMode",{&ignore});}
+void ShowJob(State& state,int selected){
+    state.activeJob=selected;
+    for(size_t i=0;i<state.tabs.size();++i){
+        bool active=int(i)==selected;
+        api.Invoke(checkboxSet,state.tabs[i].get(),{&active});
+        Style(state.tabs[i].get(),"backgroundColor",active?Color{.38f,.32f,.12f,1}:Color{.10f,.12f,.13f,1});
+        for(auto side:{"borderTopColor","borderBottomColor","borderLeftColor","borderRightColor"})
+            Style(state.tabs[i].get(),side,active?Color{1,.82f,.32f,1}:Color{.49f,.51f,.48f,1});
+        Style(state.groups[i].get(),"display",active?0:1);
+    }
+    Style(state.scroll.get(),"display",selected<0?1:0);
+}
+void PollTabs(State& state){
+    if(state.tabs.empty())return;
+    // Switching categories is UI state only; it never alters selected resources.
+    for(size_t i=0;i<state.tabs.size();++i)
+        if(int(i)!=state.activeJob&&api.Value<bool>(api.Invoke(checkboxValue,state.tabs[i].get()))){ShowJob(state,int(i));return;}
+    if(state.activeJob>=0&&!api.Value<bool>(api.Invoke(checkboxValue,state.tabs[state.activeJob].get())))ShowJob(state,-1);
+}
 bool Layout(State& state,const MiniMapSurface* mini=nullptr){
     const auto root=api.Value<Rect>(api.Call(state.root.get(),"get_worldBound"));
-    const float height=mini?mini->height-112.0f:root.height-192.0f;
-    const float width=mini?(std::min)(260.0f,mini->width-16.0f):(std::min)(300.0f,root.width-112.0f);
-    if(!std::isfinite(height)||!std::isfinite(width)||height<(mini?48:96)||width<(mini?128:200))return false;
+    const float width=mini?(std::min)(300.0f,mini->width-16.0f):(std::min)(320.0f,root.width-112.0f);
+    if(!std::isfinite(width)||width<(mini?128:200))return false;
+    const int columns=(std::max)(1,int(width/44));
+    const float toolbarHeight=44.0f*float((std::size(Jobs)+columns-1)/columns);
+    const float height=mini?mini->height-60.0f-toolbarHeight:root.height-192.0f;
+    if(!std::isfinite(height)||height<(mini?48:96))return false;
     const float bounded=(std::min)(height,520.0f);
     if(state.height!=bounded){Pixels(state.scroll.get(),"height",bounded);state.height=bounded;}
     if(state.width!=width){Pixels(state.resources.get(),"width",width);state.width=width;}
@@ -133,14 +163,22 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     next->content.reset(api.Invoke(scrollContent,next->scroll.get()));
     if(!next->content.get())throw std::runtime_error("Resource filter scroll content unavailable");
     int hidden=2,automatic=0;api.Invoke(scrollHorizontal,next->scroll.get(),{&hidden});api.Invoke(scrollVertical,next->scroll.get(),{&automatic});
-    next->resources.reset(Header("Ressources",false));
+    next->resources.reset(mini?Element():Header("Ressources",false));
     Style(next->resources.get(),"position",1);
     if(!mini){Pixels(next->resources.get(),"right",64.0f);Pixels(next->resources.get(),"top",80.0f);}
     Text(next->resources.get(),tooltip,"Choisir les ressources affichées sur la carte et la mini-carte.");
-    Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
-    for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
-        Pixels(next->resources.get(),corner,8.0f);
-    AddSub(next->resources.get(),next->scroll.get());
+    if(mini){
+        next->toolbar.reset(Element());
+        Style(next->toolbar.get(),"flexDirection",2);Style(next->toolbar.get(),"flexWrap",1);
+        api.Call(next->resources.get(),"Add",{next->toolbar.get()});
+        api.Call(next->resources.get(),"Add",{next->scroll.get()});
+        Style(next->scroll.get(),"backgroundColor",Color{.105f,.115f,.12f,1});
+        Rounded(next->scroll.get(),8);
+    }else{
+        Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
+        Rounded(next->resources.get(),8);
+        AddSub(next->resources.get(),next->scroll.get());
+    }
     auto add=[&](Obj child){api.Call(next->content.get(),"Add",{child});};
     next->master.reset(Checkbox("Afficher les ressources",next->enabled));
     add(next->master.get());
@@ -151,7 +189,33 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     Pixels(note.get(),"fontSize",12.0f);Pixels(note.get(),"marginBottom",6.0f);
     Style(note.get(),"color",Color{.75f,.79f,.81f,1});add(note.get());
     for(const auto& job:Jobs){
-        Ref header(Header(job.name,false));bool hasRows=false;
+        Ref header(Header(job.name,mini!=nullptr,true));bool hasRows=false;
+        Ref icon(api.Field(header.get(),"iconContainer"));
+        if(!icon.get())throw std::runtime_error("Resource job header icon unavailable");
+        Pixels(icon.get(),"width",28);Pixels(icon.get(),"height",28);
+        Ref jobImage(Element());Ignore(jobImage.get());Style(jobImage.get(),"position",1);
+        Pixels(jobImage.get(),"left",0);Pixels(jobImage.get(),"top",0);
+        Pixels(jobImage.get(),"width",28);Pixels(jobImage.get(),"height",28);
+        LoadJobIcon(jobImage.get(),job.id);api.Call(icon.get(),"Add",{jobImage.get()});
+        if(mini){
+            Ref tab(Checkbox("",false));
+            // Preserve CheckboxCustom's own root clickable/keyboard behavior.
+            // Only the checkbox square and empty caption of our button are hidden.
+            Style(api.Field(tab.get(),"m_checkbox"),"display",1);
+            Style(api.Field(tab.get(),"m_rightLabel"),"display",1);
+            Pixels(tab.get(),"width",40);Pixels(tab.get(),"height",40);
+            Pixels(tab.get(),"minWidth",40);Style(tab.get(),"flexShrink",0.0f);
+            Pixels(tab.get(),"marginRight",4);Pixels(tab.get(),"marginBottom",4);
+            for(auto side:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(tab.get(),side,0);
+            for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})Style(tab.get(),side,1.0f);
+            Rounded(tab.get(),20);
+            Text(tab.get(),tooltip,(std::string(job.name)+" · choisir les ressources").c_str());
+            Ref image(Element());Ignore(image.get());Style(image.get(),"position",1);
+            Pixels(image.get(),"left",3);Pixels(image.get(),"top",3);Pixels(image.get(),"width",32);Pixels(image.get(),"height",32);
+            LoadJobIcon(image.get(),job.id);api.Call(tab.get(),"Add",{image.get()});
+            api.Call(next->toolbar.get(),"Add",{tab.get()});next->tabs.push_back(std::move(tab));
+            next->groups.emplace_back(header.get());
+        }
         for(const auto& resource:catalog)if(resource.jobId==job.id){
             const bool selected=std::binary_search(next->selection.begin(),next->selection.end(),resource.itemId);
             Row row;row.id=resource.itemId;row.checkbox.reset(Checkbox(resource.name,selected));
@@ -162,9 +226,10 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
             Text(row.checkbox.get(),tooltip,(std::string(resource.name)+" · "+level).c_str());
             AddSub(header.get(),row.checkbox.get());next->rows.push_back(std::move(row));hasRows=true;
         }
-        api.Invoke(headerCanOpen,header.get(),{&hasRows});add(header.get());
+        bool canOpen=hasRows&&!mini;api.Invoke(headerCanOpen,header.get(),{&canOpen});add(header.get());
     }
     if(next->rows.size()!=catalog.size())throw std::runtime_error("Resource catalog job unsupported");
+    if(mini)ShowJob(*next,-1);
     if(!Layout(*next,mini))return;
     // The transport filters and their original parent/order are never modified.
     target=std::move(next);
@@ -211,6 +276,9 @@ void InstallUi(){
     checkboxClass=api.Class("Core.dll",Figma,"CheckboxCustom");headerClass=api.Class("Core.dll",Figma,"SectionHeader");
     scrollClass=api.Class(UiAssembly,UiNamespace,"ScrollView");
     labelClass=api.Class("Core.dll","Core.UILogic.Components","DofusLabel");
+    elementClass=api.Class(UiAssembly,UiNamespace,"VisualElement");
+    api.FindVerified(elementClass,".ctor",0,0x55F50B0);
+    api.FindVerified(elementClass,"set_pickingMode",1,0x55F97B0);
     InstallIcons();
     checkboxCtor=api.FindVerified(checkboxClass,".ctor",0,0x1704CD0);
     checkboxValue=api.FindVerified(checkboxClass,"get_value",0,0x1705050);
@@ -223,6 +291,10 @@ void InstallUi(){
         auto field=api.class_get_field_from_name(checkboxClass,name);
         if(!field||api.field_get_offset(field)!=offset)throw std::runtime_error("Resource checkbox label layout mismatch");
     }
+    auto square=api.class_get_field_from_name(checkboxClass,"m_checkbox");
+    auto headerIcon=api.class_get_field_from_name(headerClass,"iconContainer");
+    if(!square||api.field_get_offset(square)!=0x360||!headerIcon||api.field_get_offset(headerIcon)!=0x310)
+        throw std::runtime_error("Resource job controls layout mismatch");
     headerCtor=api.FindVerified(headerClass,".ctor",5,0x1745F00);
     headerTitle=api.FindVerified(headerClass,"set_title",1,0x17467B0);
     headerOpen=api.FindVerified(headerClass,"set_isOpen",1,0x17462F0);
@@ -260,7 +332,7 @@ void TickUi(){
         if(!miniOwned&&surface.root.get())Attach(miniOwned,nullptr,&surface);
         if(miniOwned){
             if(!Layout(*miniOwned,&surface)){Detach(miniOwned);return;}
-            Poll(*miniOwned);
+            PollTabs(*miniOwned);Poll(*miniOwned);
             // Resource marker layers can be recreated after native filter
             // refreshes. Keep the drawer above those non-interactive markers.
             api.Invoke(bringToFront,miniOwned->resources.get());

@@ -1,4 +1,14 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 80
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 81
+
+R81 — SÉLECTION COMPACTE ET REPÈRES PLUS LISIBLES
+- Mini-carte : barre d’icônes rondes des métiers. Cliquer sur un métier ouvre
+  ses ressources ; un second clic referme la liste.
+- Grande carte : icônes des métiers à côté des noms de catégories.
+  Base utilise l’icône de l’eau, les métiers utilisent leurs images natives.
+- Repères agrandis : 34 px sur la mini-carte, 42 px sur la grande carte.
+- Quantités en gras 14 px, texte sombre sur pastille dorée claire opaque.
+- Choix partagés et conservés ; navigation inchangée sur les repères.
+- Validation hors jeu. Aucun client ouvert manipulé ; rendu réel à confirmer.
 
 R80 — RESSOURCES SUR LA MINI-CARTE
 - Volet Ressources directement dans la mini-carte, replié par défaut :
@@ -14,7 +24,7 @@ R80 — RESSOURCES SUR LA MINI-CARTE
   n'a été manipulé. Chargement de la révision au prochain lancement.
 
 R79 — CARNET, XP MÉTIERS ET CROISEMENTS
-- Options > Mod (r80) > Général > Carnet > Ouvrir le carnet :
+- Options > Mod (r81) > Général > Carnet > Ouvrir le carnet :
   positions nommées, notes multiligne et messages enregistrés.
   Créer, modifier, enregistrer et supprimer depuis les contrôles du jeu.
   Les positions permettent un trajet explicite. Les messages préparent le

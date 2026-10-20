@@ -101,7 +101,7 @@ Obj Api::Call(Obj self,const char* n,std::initializer_list<void*> args)const{
     const std::string get="UnityEngine.UIElements.IStyle.get_",set="UnityEngine.UIElements.IStyle.set_";
     if(name.starts_with(get)){auto p=Make("StyleBox");Get(p).property=name.substr(get.size());Get(p).value.fill(0);auto& previous=Get(o.styleOwner).styles[Get(p).property];std::memcpy(Get(p).value.data(),previous.data(),16);return p;}
     if(name.starts_with(set)){Check(Get(o.styleOwner).owned,"Style mutation of native map");std::memcpy(Get(o.styleOwner).styles[name.substr(set.size())].data(),a[0],16);++writes;return nullptr;}
-    if(name=="set_value"){std::memcpy(o.value.data(),a[0],sizeof(float));return nullptr;}
+    if(name=="set_value"){std::memcpy(o.value.data(),a[0],o.property=="color"||o.property.ends_with("Color")?16:sizeof(float));return nullptr;}
     if(name=="set_pickingMode"){Check(o.owned,"Native picking mutation");o.picking=*static_cast<int*>(a[0]);return nullptr;}
     if(name=="set_focusable")return nullptr;
     if(name=="set_name"||name=="set_text"){Check(o.owned,"Native text mutation");o.text=Get(a[0]).text;++writes;return nullptr;}
@@ -176,6 +176,14 @@ void BothMapsAndCounts(){Fixture f;f.Tick();Check(LiveMarkers(f.banner).size()==
     auto labels=AllOwned("Label");bool first=false,second=false,interior=false;
     for(auto l:labels){Check(Get(l).picking==1,"Labels must preserve travel picking");first|=Get(l).text=="4";second|=Get(l).text=="2";interior|=Get(l).text=="5*";Check(Get(l).text.find("99")==std::string::npos,"Other world leaked");}
     Check(first&&second&&interior,"Per-resource counts and interior marker missing");
+    for(auto l:labels)if(Get(l).text=="4"||Get(l).text=="2"||Get(l).text=="5*"){
+        const auto& style=Get(l).styles;
+        float foreground[4]{},background[4]{},font=0;
+        std::memcpy(foreground,style.at("color").data(),16);std::memcpy(background,style.at("backgroundColor").data(),16);
+        std::memcpy(&font,style.at("fontSize").data(),4);
+        Check(foreground[0]<.15f&&foreground[3]==1&&background[0]>.9f&&background[3]==1&&font==14,"Quantity badges need large dark text on a fully opaque light background");
+        int weight=0;std::memcpy(&weight,style.at("unityFontStyleAndWeight").data(),4);Check(weight==1,"Quantity text must be bold");
+    }
     int icons=0;for(auto e:AllOwned("VisualElement"))if(Get(e).numbers.contains("icon")){++icons;Check(Get(e).picking==1,"Resource images must not consume map clicks");}
     Check(icons==6,"Every visible resource must use its item image");
     auto before=creates,previousWrites=writes;f.Tick();Check(creates==before&&writes==previousWrites,"Unchanged frames must reuse markers without UI writes");

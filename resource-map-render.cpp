@@ -14,7 +14,7 @@ using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr size_t CellBudget = 384, BadgeBudget = 384;
-constexpr float FullBadgeSize=36, MiniBadgeSize=28;
+constexpr float FullBadgeSize=42, MiniBadgeSize=34;
 struct Vec2 { float x, y; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
@@ -260,9 +260,15 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
         if (!resource) throw std::runtime_error("Unknown selected map resource");
         Place(badge.root.get(),{(float(i%columns)*size-columns*size/2)/f.scale.x,(float(i/columns)*size-rows*size/2)/f.scale.y,size/f.scale.x,size/f.scale.y});
         Place(badge.icon.get(),{0,0,(size-4)/f.scale.x,(size-4)/f.scale.y});
-        Place(badge.label.get(),{(size-24)/f.scale.x,(size-16)/f.scale.y,24/f.scale.x,16/f.scale.y});
-        Pixels(badge.label.get(),"fontSize",11/f.scale.y); Style(badge.label.get(),"color",Color{1,1,.95f,1});
-        Style(badge.label.get(),"backgroundColor",Color{.07f,.08f,.09f,.94f});
+        Place(badge.label.get(),{(size-32)/f.scale.x,(size-20)/f.scale.y,32/f.scale.x,20/f.scale.y});
+        Pixels(badge.label.get(),"fontSize",14/f.scale.y);
+        Style(badge.label.get(),"unityFontStyleAndWeight",1);
+        Style(badge.label.get(),"color",Color{.09f,.10f,.08f,1});
+        Style(badge.label.get(),"backgroundColor",Color{.98f,.87f,.55f,1});
+        for(auto side:{"borderTopColor","borderBottomColor","borderLeftColor","borderRightColor"})
+            Style(badge.label.get(),side,Color{.18f,.15f,.08f,1});
+        for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})
+            Style(badge.label.get(),side,1/f.scale.y);
         for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
             Pixels(badge.label.get(),corner,5/f.scale.y);
         for(auto edge:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(badge.label.get(),edge,0);

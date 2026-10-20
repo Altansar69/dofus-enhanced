@@ -63,9 +63,9 @@ Obj Panel(Obj value){while(value){if(Get(value).fields["panel"])return Get(value
 void OriginalEnable(Obj owner,Method){++nativeEnable;Get(owner).enabled=true;}
 void OriginalDisable(Obj owner,Method){++nativeDisable;Get(owner).enabled=false;}
 void Init(){
-    api.class_get_field_from_name=[](Klass,const char* name)->void*{static size_t right=0x318,level=0x320,item=0x60;return std::string(name)=="deuc"?&item:std::string(name)=="m_rightLabel"?&right:&level;};
+    api.class_get_field_from_name=[](Klass,const char* name)->void*{static std::map<std::string,size_t> offsets{{"m_rightLabel",0x318},{"m_farRightLabel",0x320},{"deuc",0x60},{"devy",0x660},{"m_checkbox",0x360},{"iconContainer",0x310}};return &offsets.at(name);};
     api.field_get_offset=[](void* field)->size_t{return *static_cast<size_t*>(field);};
-    api.field_get_value_object=[](void* field,Obj self)->Obj{Check(!self&&*static_cast<size_t*>(field)==0x60,"Box complete static item catalog type");return Make("AddressableEntryType");};
+    api.field_get_value_object=[](void* field,Obj self)->Obj{Check(!self,"Static catalog type");return Box(int(*static_cast<size_t*>(field)),"AddressableEntryType");};
     api.object_get_class=[](Obj value)->Klass{return Get(value).type;};
     api.class_is_valuetype=[](Klass type){const auto& name=static_cast<Type*>(type)->name;return name=="Box"||name=="Length"||name=="StyleValue"||name=="Hierarchy";};
     api.object_unbox=[](Obj value)->void*{return Get(value).data.data();};
@@ -81,24 +81,25 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name=="qbk"){Check(!self,"Static catalog initializer");return Make("AddressableCatalogName");}
     if(m.type->name=="AddressableEntry"&&m.name==".ctor"){
         Check(args.size()==2&&*static_cast<int*>(args[1])>0,"Native entry receives icon ID");
-        *static_cast<int*>(self)=*static_cast<int*>(args[1]);return nullptr;
+        *static_cast<int*>(self)=*static_cast<int*>(args[1]);static_cast<int*>(self)[1]=*static_cast<int*>(args[0]);return nullptr;
     }
     if(m.name=="paw"){
-        Check(!self&&args.size()==7&&args[0]&&*static_cast<int*>(args[1])==39401,"Native item sprite loader ABI");
+        Check(!self&&args.size()==7&&args[0]&&*static_cast<int*>(args[1])>0,"Native item/job sprite loader ABI");
         Check(!args[2]&&!args[3]&&!args[4]&&!(*static_cast<bool*>(args[5]))&&*static_cast<bool*>(args[6]),"Same cache/lifetime flags as native CheckboxCustom");
-        Get(args[0]).size=*static_cast<int*>(args[1]);return nullptr;
+        Get(args[0]).size=*static_cast<int*>(args[1]);Get(args[0]).fields["catalog"]=Box(static_cast<int*>(args[1])[1]);return nullptr;
     }
     auto& object=Get(self);
     if(m.name=="get_ctr_filters")return object.fields["filters"];
     if(m.name==".ctor"){
         if(m.type->name=="CheckboxCustom"||m.type->name=="DofusLabel"){
             Check(args.empty(),"Checkbox/label constructor ABI");
-            if(m.type->name=="CheckboxCustom")for(const char* name:{"m_rightLabel","m_farRightLabel"}){auto label=Make("DofusLabel",true);Add(self,label);object.fields[name]=label;}
+            if(m.type->name=="CheckboxCustom")for(const char* name:{"m_rightLabel","m_farRightLabel","m_checkbox"}){auto label=Make("DofusLabel",true);Add(self,label);object.fields[name]=label;}
             return nullptr;
         }
         if(m.type->name=="SectionHeader"){
             Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1]),"Native header must have content and folder button");
-            for(int i=2;i<5;++i)Check(!*static_cast<bool*>(args[i]),"No foreign icon/data/action buttons");
+            for(int i:{2,4})Check(!*static_cast<bool*>(args[i]),"No data/action buttons");
+            if(*static_cast<bool*>(args[3])){auto icon=Make("VisualElement",true);Add(self,icon);object.fields["iconContainer"]=icon;}
             auto content=Make("VisualElement",true);Add(self,content);object.fields["content"]=content;return nullptr;
         }
         if(m.type->name=="ScrollView"){
@@ -107,6 +108,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         }
         throw std::runtime_error("Unexpected native constructor");
     }
+    if(m.name=="set_pickingMode"){object.notifications=*static_cast<int*>(args[0]);return nullptr;}
     if(m.name=="get_contentContainer")return object.fields["content"];
     if(m.name=="get_panel")return Panel(self);
     if(m.name=="get_parent")return object.fields["parent"];
@@ -154,6 +156,7 @@ Obj Api::Call(Obj self,const char* name,std::initializer_list<void*> args)const{
 Obj Api::Field(Obj self,const char* name)const{return fake::Get(self).fields[name];}
 void* Api::FieldAddress(Obj self,const char* name)const{if(std::string(name)=="dtzx")return &fake::Get(self).enabled;if(std::string(name)=="dzyi")return fake::Get(self).fields.at(name);throw std::runtime_error("Unexpected field address");}
 Obj Api::New(Klass type,std::initializer_list<void*> args)const{
+    if(static_cast<fake::Type*>(type)->name=="VisualElement"){fake::Check(args.size()==0,"Native VisualElement ctor");return fake::Make("VisualElement",true);}
     fake::Check(static_cast<fake::Type*>(type)->name=="Length"&&args.size()==2,"Only native Length constructor");
     const std::vector<void*> values(args);struct Length{float value;int unit;};return fake::Box(Length{*static_cast<float*>(values[0]),*static_cast<int*>(values[1])},"Length");
 }
@@ -212,7 +215,7 @@ void NativeTreeAndDuplicateOpen(){
     Fixture f;f.Open();auto scroll=f.Scroll();Check(scroll,"Native scroll wrapper missing");
     f.Restored();Check(Get(f.Resources()).fields["parent"]==f.root,"Independent resources drawer must belong to map root");
     Check(!Get(f.Resources()).open,"Resource drawer starts collapsed");
-    Check(Get(scroll).styles["height"]==520&&Get(f.Resources()).styles["width"]==300,"Bounded drawer dimensions");
+    Check(Get(scroll).styles["height"]==520&&Get(f.Resources()).styles["width"]==320,"Bounded drawer dimensions");
     Check(Get(f.Resources()).styles["right"]==64&&Get(f.Resources()).styles["top"]==80,"Drawer separated from native filters and corner controls");
     const auto& categories=Get(f.Content()).children;Check(categories.size()==8,"Master, source note and six harvest job categories");
     Check(Get(categories[1]).text.find("DofusDB")!=std::string::npos,"Source credit visible");
@@ -220,6 +223,8 @@ void NativeTreeAndDuplicateOpen(){
     for(int i=2;i<8;++i)Check(!Get(categories[i]).open&&Get(categories[i]).enabled,"Native accordion initially collapsed");
     Check(Get(Get(f.Row("Fer")).fields["m_farRightLabel"]).styles["color"]>.9f,"Levels need explicit readable light color");
     Check(Get(Get(f.Row("Fer")).fields["m_rightLabel"]).styles["color"]>.9f,"Names need readable light color");
+    for(int i=2;i<8;++i){auto container=Get(categories[i]).fields["iconContainer"];Check(container&&!Get(container).children.empty(),"Job header icon container");auto icon=Get(container).children.back();Check(Get(icon).size>0,"Every category includes its native icon");
+        const int catalog=*reinterpret_cast<int*>(Get(Get(icon).fields["catalog"]).data.data());Check(catalog==(i==2?0x60:0x660),"Profession icons use the job catalog, Base uses water");}
     Check(Get(f.Row("Eau")).size==2,"Rows match large native checkbox size");
     f.Open();Check(f.Scroll()==scroll&&nativeEnable==2,"Duplicate native OnEnable must not duplicate controls");
     Check(guards.at("SectionHeader..ctor")==0x1745F00&&guards.at("ScrollView..ctor")==0x5741C70&&guards.at("CheckboxCustom.SetValueWithoutNotify")==0x17044F0,"Verified exact constructor/value contracts");
@@ -272,16 +277,28 @@ Obj FindUnder(Obj root,const char* type,const char* text=nullptr){
     for(auto child:Get(root).children)if(auto found=FindUnder(child,type,text))return found;
     return nullptr;
 }
+Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).fields["tooltip"])return child;return nullptr;}
 void MiniMapSelectionAndLifetime(){
     Fixture f;
     miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
     f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
     resourceMap::TickUi();
-    auto drawer=FindUnder(miniRoot,"SectionHeader","Ressources");
-    Check(drawer&&!Get(drawer).open&&!f.Resources(),"Mini-map picker discovered without opening full map or selecting resources");
+    auto drawer=MiniDrawer();
+    Check(drawer&&Get(drawer).type->name=="VisualElement"&&!f.Resources(),"Mini-map picker discovered without opening full map or selecting resources");
     auto scroll=FindUnder(drawer,"ScrollView");
-    Check(Get(drawer).styles["width"]==260&&Get(drawer).styles["left"]==32&&Get(drawer).styles["top"]==40,"Mini picker leaves space for native controls");
-    Check(Get(scroll).styles["height"]==188,"Mini picker stays within its viewport");
+    Check(Get(scroll).styles["display"]!=0,"Mini-map list starts hidden, leaving only profession icons");
+    auto tabs=Get(Get(drawer).children.front()).children;
+    Check(tabs.size()==6,"Six compact profession buttons");
+    for(auto tab:tabs){Check(Get(tab).styles["width"]==40&&Get(tab).fields["tooltip"],"Round profession buttons with hover labels");}
+    Get(tabs[2]).value=true;resourceMap::TickUi();
+    Check(changes==0&&Get(scroll).styles["display"]==0,"Opening Mineur only opens the list without altering preferences");
+    Check(Get(FindUnder(drawer,"SectionHeader","Mineur")).styles["display"]==0&&Get(FindUnder(drawer,"SectionHeader","Paysan")).styles["display"]!=0,"Only selected profession resources appear");
+    Get(tabs[4]).value=true;resourceMap::TickUi();
+    Check(!Get(tabs[2]).value&&Get(tabs[4]).value,"Profession tabs are mutually exclusive");
+    Get(tabs[4]).value=false;resourceMap::TickUi();
+    Check(Get(scroll).styles["display"]!=0,"Second click closes the resource list");
+    Check(Get(drawer).styles["width"]==284&&Get(drawer).styles["left"]==8&&Get(drawer).styles["top"]==40,"Mini picker leaves space for native controls");
+    Check(Get(scroll).styles["height"]==196,"Mini picker stays within its viewport");
     auto master=FindUnder(drawer,"CheckboxCustom","Afficher les ressources");
     Get(master).value=true;Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
     resourceMap::TickUi();
@@ -295,12 +312,12 @@ void MiniMapSelectionAndLifetime(){
     auto foreign=Make("NativeCommand");Add(miniRoot,foreign);
     resourceMap::TickUi();Check(Get(miniRoot).children.back()==drawer&&Get(foreign).fields["parent"]==miniRoot,"Drawer stays above marker layers without modifying native children");
     Get(miniRoot).bound={0,0,200,200};resourceMap::TickUi();
-    Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==88,"Small mini-map stays usable after resize");
+    Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==52,"Small mini-map stays usable after resize");
     const auto previous=miniRoot;
     miniRoot=nullptr;resourceMap::TickUi();
     Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{foreign},"Hidden mini-map detaches only owned resources");
     miniRoot=previous;resourceMap::TickUi();
-    auto replacement=FindUnder(miniRoot,"SectionHeader","Ressources");Check(replacement&&replacement!=drawer,"Mini-map reopening recreates picker");
+    auto replacement=MiniDrawer();Check(replacement&&replacement!=drawer,"Mini-map reopening recreates picker");
     Get(FindUnder(replacement,"CheckboxCustom","Frêne")).value=true;
     const auto count=changes;f.state.stopRequested=true;resourceMap::TickUi();
     Check(changes==count&&!resourceMap::UiCleanupPending(),"Stopping discards pending mini-map changes and removes controls");
@@ -308,7 +325,7 @@ void MiniMapSelectionAndLifetime(){
 }
 void MiniMapCleanupRetries(){
     Fixture f;miniRoot=Make("MiniMap");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
-    resourceMap::TickUi();auto drawer=FindUnder(miniRoot,"SectionHeader","Ressources");
+    resourceMap::TickUi();auto drawer=MiniDrawer();
     removeFailures=1;resourceMap::RestoreUi();
     Check(resourceMap::UiCleanupPending(),"Failed mini-map cleanup retains references");
     resourceMap::RestoreUi();Check(!resourceMap::UiCleanupPending()&&!Get(drawer).fields["parent"],"Mini-map cleanup can retry");
