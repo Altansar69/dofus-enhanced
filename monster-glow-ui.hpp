@@ -27,7 +27,7 @@ struct UiProjection {
 void InstallGlowUi();
 UiFrame BeginGlowUi(uint64_t nowMs = GetTickCount64());
 UiProjection ProjectGlowRenderers(const UiFrame& frame, const std::vector<managed::Obj>& renderers, bool everywhere = false);
-bool ShowGlowUi(const UiFrame& frame, int64_t id, const UiProjection& projection, managed::Obj texture);
+bool ShowGlowUi(const UiFrame& frame, int64_t id, const UiProjection& projection, managed::Obj texture, bool interactive = false);
 void EndGlowUi();
 // Call before releasing render textures, on disable, session/context changes,
 // and shutdown. Only this module's noninteractive overlay is removed.

@@ -12,6 +12,7 @@ struct OptionsUi {
     managed::Ref soulSource, soulOption;
     managed::Ref soulAutoSource, soulAutoOption;
     managed::Ref glowSource, glowOption;
+    managed::Ref glowNpcsSource, glowNpcsOption, glowInteractivesSource, glowInteractivesOption;
     managed::Ref transitionsSource, transitionsOption;
     managed::Ref preloadSource, preloadOption;
     managed::Ref spouseSource, spouseOption;

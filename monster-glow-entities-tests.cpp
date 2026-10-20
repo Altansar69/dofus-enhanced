@@ -22,7 +22,7 @@ struct Object {
     alignas(16) std::array<unsigned char, 0x400> bytes{};
     Class* klass{};
     int64_t value=0;
-    int flags=9, countOverride=-1, cursor=0;
+    int flags=9, countOverride=-1, cursor=0, npcId=0;
     int8_t visibility=2;
     bool visibilityKnown=true, alive=true, aliveKnown=true, exists=true, enabled=true, active=true;
     bool throwCurrent=false, missingIterator=false;
@@ -69,7 +69,7 @@ Klass Api::Class(const char*,const char*,const char* name) const { return fake::
 Method Api::FindVerified(Klass,const char* name,int argc,uintptr_t rva) const {
     static const std::map<std::string,uintptr_t> expected={
         {"baml",0x19579E0},{"bamm",0x1957A70},{"bajh",0x1951440},{"bajs",0x19518F0},
-        {"bakd",0x1951D50},{"bajy",0x1951B60},{"vkq",0x27695E0},{"zzm",0x190FE40},
+        {"baks",0x1952330},{"bakd",0x1951D50},{"bajy",0x1951B60},{"vkq",0x27695E0},{"zzm",0x190FE40},
         {"qfv",0x260F8D0},{"rgq",0x26172B0},{"dayr",0x782BE0},{"op_Implicit",0x5439190},
         {"get_enabled",0x53F2300},{"get_gameObject",0x5429D00},{"get_activeInHierarchy",0x5432080}};
     fake::Check(expected.at(name)==rva,"Unexpected glow method RVA");
@@ -110,6 +110,10 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args) const 
     if(m.name=="bajy") {
         fake::Check(*static_cast<int*>(p[0])==2,"Unexpected visibility key");
         *static_cast<int8_t*>(p[1])=object.visibility; return fake::Box(object.visibilityKnown);
+    }
+    if(m.name=="baks") {
+        fake::Check(*static_cast<int*>(p[0])==15,"NPC identification must use native NPC data key");
+        *static_cast<int*>(p[1])=object.npcId; return fake::Box(object.npcId!=0);
     }
     if(m.name=="bamm" || m.name=="zzm" || m.name=="vkq") {
         auto found=object.byId.find(*static_cast<int64_t*>(p[0]));
@@ -199,6 +203,17 @@ void MonsterFlags() {
         auto result=monsterGlow::ReadEntities();
         Check(result.valid && result.targets.size()==1 && result.targets[0].id==1,"Monster mask accepted partial/wrong scene flags");
     }
+}
+void NpcSelection() {
+    Fixture f(false); f.Add(1); f.Add(2); f.Data(2).flags=2; f.Data(2).npcId=123;
+    f.Add(3); f.Data(3).flags=2; // Other roleplay actor without NPC identity.
+    f.Add(4); f.Data(4).flags=0x86; f.Data(4).npcId=123; // Player must stay excluded.
+    auto hidden=f.Add(5); f.Data(5).flags=2; f.Data(5).npcId=456; Put(hidden,0x382,false);
+    {auto r=monsterGlow::ReadEntities(); Check(r.targets.size()==1 && !r.npcCount,"NPC glow defaults off");}
+    f.state.settings.glowNpcs=true;
+    {auto r=monsterGlow::ReadEntities(); Check(r.targets.size()==2 && r.targets[1].id==2 && r.npcCount==2,"Only visible identified NPCs join monsters");}
+    f.state.settings.glowNpcs=false;
+    {auto r=monsterGlow::ReadEntities(); Check(r.targets.size()==1,"NPC toggle must immediately remove NPCs");}
 }
 void ActualRendering() {
     Fixture f; f.Add(1);
@@ -321,7 +336,7 @@ void ChangesAndBounds() {
 }
 int main() {
     try {
-        fake::Initialize(); monsterGlow::InstallEntities(); CombatAndRoleplay(); PrivacyAndLife(); MonsterFlags();
+        fake::Initialize(); monsterGlow::InstallEntities(); CombatAndRoleplay(); PrivacyAndLife(); MonsterFlags(); NpcSelection();
         VisibleTransparency(); InvalidOrInvisibleOpacity(); ActualRendering(); MountedParts(); MalformedChildren(); ChangesAndBounds();
         std::cout<<"Monster glow entity offline fixtures passed\n"; return 0;
     } catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }

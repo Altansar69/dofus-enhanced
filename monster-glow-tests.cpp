@@ -1,5 +1,6 @@
 #include "monster-glow.hpp"
 #include "monster-glow-entities.hpp"
+#include "monster-glow-interactives.hpp"
 #include "monster-glow-render.hpp"
 #include "monster-glow-ui.hpp"
 #include "monster-glow-world.hpp"
@@ -20,7 +21,8 @@ Obj context = Ptr(1), camera = Ptr(2);
 bool valid = true, combat = true, uiValid = true, throwRender = false, failShow = false;
 bool pendingCleanup = false, loadingMap = false;
 bool worldValid = true, worldCovered = false, worldSelectionValid = true, worldThrows = false;
-unsigned worldReads = 0, wallCaptures = 0;
+unsigned worldReads = 0, wallCaptures = 0, interactiveReads = 0;
+bool interactiveValid = true;
 std::vector<monsterGlow::ScreenRect> lastCoverage;
 unsigned resetFailures = 0;
 uint64_t generation = 1;
@@ -43,6 +45,15 @@ Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string& text) { fake::log.push_back(text); }
 namespace monsterGlow {
 void InstallEntities() {}
+void InstallGlowInteractives() {}
+Snapshot ReadGlowInteractives() {
+    ++fake::interactiveReads; Snapshot result;
+    if (fake::combat || !fake::interactiveValid) return result;
+    result.valid=true; result.context.reset(fake::context); result.interactiveCount=1;
+    Target target; target.id=10; target.interactive=true;
+    target.entity.reset(fake::Ptr(500)); target.renderers.emplace_back(fake::Ptr(1500));
+    result.targets.push_back(std::move(target)); return result;
+}
 void InstallGlowRender() {}
 void InstallGlowUi() {}
 void InstallGlowWorld() {}
@@ -109,10 +120,10 @@ managed::Obj RenderGlow(size_t slot,managed::Obj camera,const std::vector<manage
     fake::slots.at(slot) = true;
     return fake::Ptr(10000+slot);
 }
-bool ShowGlowUi(const UiFrame&,int64_t id,const UiProjection&,managed::Obj texture) {
+bool ShowGlowUi(const UiFrame&,int64_t id,const UiProjection&,managed::Obj texture,bool interactive) {
     fake::Check(texture != nullptr,"Cannot show null texture");
     if (fake::failShow) return false;
-    fake::current.push_back(id); return true;
+    fake::current.push_back(interactive ? -id : id); return true;
 }
 void EndGlowUi() { ++fake::ends; fake::visible = fake::current; }
 void ResetGlowUi() {
@@ -230,6 +241,18 @@ int main() {
         fixture.settings.monsterGlowMode=false; TickMonsterGlow();
         fixture.settings.monsterGlowMode=true; throwRender=false; Step();
         Check(visible.size()==1,"Explicit toggle must retry failed rendering");
+        combat=false; roster={10};
+        fixture.settings.glowInteractives=true; TickMonsterGlow();
+        Check(visible==std::vector<int64_t>{10,-10},"Actor and interactive IDs must not collide");
+        fixture.settings.glowInteractives=false; TickMonsterGlow();
+        Check(visible==std::vector<int64_t>{10},"Category disable must bypass throttle and remove its contour");
+        const auto beforeNpcs=gpuResets;
+        fixture.settings.glowNpcs=true; TickMonsterGlow();
+        Check(gpuResets>beforeNpcs,"NPC category changes must refresh immediately");
+        roster.clear(); fixture.settings.glowInteractives=true; TickMonsterGlow();
+        Check(visible==std::vector<int64_t>{-10},"Interactives must render without any actors");
+        interactiveValid=false; Step(); Check(visible.empty(),"Invalid interactive snapshot clears old object contour");
+        interactiveValid=true; fixture.settings.glowInteractives=false; fixture.settings.glowNpcs=false;
         roster.clear(); Step(); Check(visible.empty() && handles.empty(),"Empty scene clears all");
         roster.reserve(256); for (int i=0;i<256;++i) roster.push_back(i+1);
         occluded=false; const auto beforeProjection=projects; Step();

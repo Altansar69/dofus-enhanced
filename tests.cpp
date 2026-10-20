@@ -42,6 +42,14 @@ int main() {
             Require(!actual, "Explicit opt-outs survive new defaults and later malformed values");
             Require(autoLoadSpecified == (std::string(key)=="autoLoad"), "Only valid auto-load values count as explicit preferences");
         }
+        Require(!defaults.glowNpcs && !defaults.glowInteractives,"Extra glow categories default off");
+        for (bool npcs : {false,true}) for (bool interactives : {false,true}) {
+            auto categories=defaults; categories.glowNpcs=npcs; categories.glowInteractives=interactives;
+            categories.Save(path);
+            Require(Settings::Read(path)==categories,"Independent glow categories must persist");
+            { std::ofstream invalid(path,std::ios::app); invalid << "glowNpcs=2\nglowInteractives=-1\n"; }
+            Require(Settings::Read(path)==categories,"Malformed flags must preserve saved choices");
+        }
         Require(defaults.resourceMapEnabled && defaults.resourceMapItems.empty(), "No resource annotations before a selection");
         {
             Settings many;

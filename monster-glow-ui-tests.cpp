@@ -379,6 +379,17 @@ void WindowsStayAboveGlow(){
  Check(Get(layers).children==nativeLayerOrder&&Get(tree).children.size()==1&&Get(document).children.size()==1,"Native layer order and document siblings must remain unchanged");
  Check(Get(Overlay()).fields["parent"]==hud&&Get(hud).children.back()==Overlay()&&writesToNative==0,"Only private HUD branch is reordered");
 }
+void ActorAndObjectIdsAreSeparate(){
+ Fixture f;Painted({430,330,150,150});auto frame=monsterGlow::BeginGlowUi(1000);
+ auto projection=monsterGlow::ProjectGlowRenderers(frame,{Renderer()});
+ Check(monsterGlow::ShowGlowUi(frame,1,projection,Make("RenderTexture")),"Actor contour");
+ Check(monsterGlow::ShowGlowUi(frame,1,projection,Make("RenderTexture"),true),"Interactive contour with same ID");
+ Check(VisibleImages().size()==2,"Interactive IDs cannot replace actor overlays");
+ monsterGlow::EndGlowUi();
+ frame=monsterGlow::BeginGlowUi(1001);projection=monsterGlow::ProjectGlowRenderers(frame,{Renderer()});
+ Check(monsterGlow::ShowGlowUi(frame,1,projection,Make("RenderTexture")),"Remaining actor");
+ monsterGlow::EndGlowUi();Check(VisibleImages().size()==1,"Removed interactive overlay must hide independently");
+}
 void MissingOrChangedHudFailsClosed(){
  Fixture f;Painted({430,330,150,150});auto frame=monsterGlow::BeginGlowUi(1000);
  auto projection=monsterGlow::ProjectGlowRenderers(frame,{Renderer()});
@@ -402,7 +413,7 @@ void MissingOrChangedHudFailsClosed(){
 }
 int main(){try{
  fake::Initialize();
- for(auto test:{fake::OnlyDisplayModulesOcclude,fake::AlwaysScopeUsesViewport,fake::WindowsStayAboveGlow,fake::MissingOrChangedHudFailsClosed,fake::ResolvedOverlayDiagnostics,fake::FullPanelAfterSmallDecorations,fake::UnrepresentableClipDoesNotClearOtherGlows,fake::NativeContractsAndProjection,fake::TransparentAndHiddenUi,fake::BoundedDisjointClips,fake::BordersClippingAndUnbounded,fake::ScaleOffsetResizeAndCache,fake::LifecycleIdentityFailures,fake::InvalidGeometryAndBudgets,fake::ScanBudgetAndOwnOverlayExclusion}){
+ for(auto test:{fake::ActorAndObjectIdsAreSeparate,fake::OnlyDisplayModulesOcclude,fake::AlwaysScopeUsesViewport,fake::WindowsStayAboveGlow,fake::MissingOrChangedHudFailsClosed,fake::ResolvedOverlayDiagnostics,fake::FullPanelAfterSmallDecorations,fake::UnrepresentableClipDoesNotClearOtherGlows,fake::NativeContractsAndProjection,fake::TransparentAndHiddenUi,fake::BoundedDisjointClips,fake::BordersClippingAndUnbounded,fake::ScaleOffsetResizeAndCache,fake::LifecycleIdentityFailures,fake::InvalidGeometryAndBudgets,fake::ScanBudgetAndOwnOverlayExclusion}){
   test();fake::Check(fake::handles.empty(),"Managed UI references leaked");
  }
  std::cout<<"PASS: glow projection, native scale, painted UI occlusion, clipping, empty roots, bounds, ownership, target budgets, identity and cleanup recovery\n";return 0;

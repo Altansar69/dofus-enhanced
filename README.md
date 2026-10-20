@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r77**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r78**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -12,7 +12,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r77) → Général** :
+Dans **Options → Mod (r78) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -44,13 +44,23 @@ La révision réellement chargée apparaît dans le nom de l’onglet **Mod (rN)
 
 ## Chasse au trésor
 
-**Options → Mod (r77) → Général → Chasse au trésor → Ouvrir le panneau**.
+**Options → Mod (r78) → Général → Chasse au trésor → Ouvrir le panneau**.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
 Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
 le départ suivant ; aucun trajet ni validation de chasse ne se lance.
 Les requêtes vont directement à DofusDB, sans identifiants ni cookies.
 Un refus d’accès ou une erreur réseau reste visible dans le panneau.
+
+## Surbrillance
+
+**Options → Mod (r78) → Général → Surbrillance** choisit le niveau : derrière
+les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
+Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
+ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
+Les objets doivent être visibles et proposer une action disponible dans le jeu.
+Les grandes fenêtres restent devant les contours et les clics restent natifs.
+Le budget existant de huit contours simultanés est partagé entre les catégories.
 
 ## Ressources sur les cartes
 
@@ -64,7 +74,7 @@ par ressource. Un astérisque signale des points en intérieur ; zoomer pour voi
 les repères trop proches. Les repères laissent passer les clics de navigation.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r77 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La r78 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 ## Compilation et publication
 
@@ -94,7 +104,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r77 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r78 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

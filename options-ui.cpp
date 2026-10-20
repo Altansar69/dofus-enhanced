@@ -68,7 +68,7 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return source.get() && api.Value<bool>(api.Call(source.get(), "IsLoaded"));
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) &&
-        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.githubSource);
+        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.githubSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -83,6 +83,8 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.soulSource.get(), settings.soulReminder, notify);
     SetSource(ui.soulAutoSource.get(), settings.soulAutoEquip, notify);
     SetSource(ui.glowSource.get(), settings.monsterGlowMode, notify);
+    SetSource(ui.glowNpcsSource.get(), settings.glowNpcs, notify);
+    SetSource(ui.glowInteractivesSource.get(), settings.glowInteractives, notify);
     SetSource(ui.transitionsSource.get(), settings.fastMapTransitions, notify);
     SetSource(ui.preloadSource.get(), settings.preloadNextMap, notify);
     SetSource(ui.spouseSource.get(), settings.spouseTeleport, notify);
@@ -138,6 +140,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.soulSource.reset(api.New(booleanType, {&defaults.soulReminder, &readOnly}));
     prepared.soulAutoSource.reset(api.New(booleanType, {&defaults.soulAutoEquip, &readOnly}));
     prepared.glowSource.reset(api.New(integerType, {&defaults.monsterGlowMode, &readOnly}));
+    prepared.glowNpcsSource.reset(api.New(booleanType, {&defaults.glowNpcs, &readOnly}));
+    prepared.glowInteractivesSource.reset(api.New(booleanType, {&defaults.glowInteractives, &readOnly}));
     prepared.transitionsSource.reset(api.New(booleanType, {&defaults.fastMapTransitions, &readOnly}));
     prepared.preloadSource.reset(api.New(booleanType, {&defaults.preloadNextMap, &readOnly}));
     prepared.spouseSource.reset(api.New(booleanType, {&defaults.spouseTeleport, &readOnly}));
@@ -170,8 +174,12 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.soulAutoOption.reset(MakeBoolOption(prepared.soulAutoSource.get(), current.get(), tooltip.get(), "Équiper automatiquement la pierre d’âme",
         "Avec l’alerte pierre d’âme activée, tente d’équiper la pierre de la tranche requise pendant le placement d’un combat capturable. Une seule tentative par combat et tranche, uniquement si une pierre utilisable est disponible. En cas de refus, le bouton Équiper reste disponible. Activé par défaut."));
     ui.modeSource = std::move(prepared.modeSource);
-    prepared.glowOption.reset(MakeChoiceOption(prepared.glowSource.get(), current.get(), "Surbrillance des monstres",
+    prepared.glowOption.reset(MakeChoiceOption(prepared.glowSource.get(), current.get(), "Surbrillance",
         "Affiche le contour des monstres derrière les modules d’affichage, derrière ces modules et les murs, ou tout le temps. La grande carte, l’inventaire, les sorts et les autres fenêtres restent devant le contour dans tous les modes. Les clics restent ceux du jeu. Par défaut : derrière l’interface.", glowModes));
+    prepared.glowNpcsOption.reset(MakeBoolOption(prepared.glowNpcsSource.get(), current.get(), tooltip.get(), "Inclure les PNJ",
+        "Ajoute les PNJ visibles hors combat au niveau de surbrillance choisi ci-dessus. Indépendant des éléments interactifs. Désactivé par défaut."));
+    prepared.glowInteractivesOption.reset(MakeBoolOption(prepared.glowInteractivesSource.get(), current.get(), tooltip.get(), "Inclure les éléments interactifs",
+        "Ajoute les objets visibles avec une action disponible hors combat : ressources récoltables, portes, zaaps… Utilise le niveau de surbrillance choisi ci-dessus. Désactivé par défaut."));
     prepared.transitionsOption.reset(MakeBoolOption(prepared.transitionsSource.get(), current.get(), tooltip.get(), "Transitions rapides entre cartes",
         "Raccourcit les fondus de sortie et d’arrivée hors combat. Le chargement des ressources et l’attente du serveur restent nécessaires : cette option ne garantit pas des changements de carte sans chargement. Activé par défaut."));
     prepared.preloadOption.reset(MakeBoolOption(prepared.preloadSource.get(), current.get(), tooltip.get(), "Précharger la prochaine carte (expérimental)",
@@ -199,6 +207,10 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.transitionsOption = std::move(prepared.transitionsOption);
     ui.glowSource = std::move(prepared.glowSource);
     ui.glowOption = std::move(prepared.glowOption);
+    ui.glowNpcsSource = std::move(prepared.glowNpcsSource);
+    ui.glowNpcsOption = std::move(prepared.glowNpcsOption);
+    ui.glowInteractivesSource = std::move(prepared.glowInteractivesSource);
+    ui.glowInteractivesOption = std::move(prepared.glowInteractivesOption);
     ui.animationSource = std::move(prepared.animationSource);
     ui.modeOption = std::move(prepared.modeOption);
     ui.animationOption = std::move(prepared.animationOption);
@@ -327,6 +339,8 @@ bool OptionsUi::Attach(Obj page) {
     api.Call(options, "Add", {soulOption.get()});
     api.Call(options, "Add", {soulAutoOption.get()});
     api.Call(options, "Add", {glowOption.get()});
+    api.Call(options, "Add", {glowNpcsOption.get()});
+    api.Call(options, "Add", {glowInteractivesOption.get()});
     api.Call(options, "Add", {transitionsOption.get()});
     api.Call(options, "Add", {preloadOption.get()});
     api.Call(options, "Add", {spouseOption.get()});
@@ -379,6 +393,8 @@ void OptionsUi::Tick() {
     next.soulReminder = api.Value<bool>(api.Call(soulSource.get(), "get_property"));
     next.soulAutoEquip = api.Value<bool>(api.Call(soulAutoSource.get(), "get_property"));
     next.monsterGlowMode = api.Value<int>(api.Call(glowSource.get(), "get_property"));
+    next.glowNpcs = api.Value<bool>(api.Call(glowNpcsSource.get(), "get_property"));
+    next.glowInteractives = api.Value<bool>(api.Call(glowInteractivesSource.get(), "get_property"));
     next.fastMapTransitions = api.Value<bool>(api.Call(transitionsSource.get(), "get_property"));
     next.preloadNextMap = api.Value<bool>(api.Call(preloadSource.get(), "get_property"));
     next.spouseTeleport = api.Value<bool>(api.Call(spouseSource.get(), "get_property"));
@@ -443,6 +459,8 @@ void OptionsUi::Restore() {
     soulAutoOption.reset();
     glowSource.reset();
     glowOption.reset();
+    glowNpcsSource.reset(); glowNpcsOption.reset();
+    glowInteractivesSource.reset(); glowInteractivesOption.reset();
     preloadSource.reset();
     preloadOption.reset();
     resourcesSource.reset();

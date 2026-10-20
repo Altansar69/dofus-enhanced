@@ -1,4 +1,17 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 77
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 78
+
+R78 — SURBRILLANCE DES PNJ ET OBJETS INTERACTIFS
+- Options > Mod (r78) > Général > Surbrillance : deux nouvelles cases,
+  « Inclure les PNJ » et « Inclure les éléments interactifs ».
+- Indépendantes, mémorisées et décochées par défaut. Elles ajoutent ces
+  catégories hors combat au niveau choisi : interface, interface + murs,
+  ou tout le temps. Désactiver la surbrillance masque toutes les catégories.
+- Les objets statiques et animés doivent être visibles, appartenir à la carte
+  actuelle et avoir une action disponible (récolte, porte, zaap…).
+- Les grandes fenêtres restent devant le contour. Aucun clic n'est intercepté
+  et aucune interaction n'est déclenchée. Budget partagé de huit contours.
+- Vérifications hors jeu : compilation, contrats natifs et tests automatisés.
+  Rendu en jeu à confirmer. Aucun client ouvert n'a été manipulé.
 
 R77 — RESSOURCES : CATALOGUE, VOLET ET ICÔNES
 - 86 ressources de récolte, dont 16 minerais. Ajout des cristaux pliable et

@@ -395,11 +395,11 @@ void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original)
 namespace fake {
 std::vector<Obj> AllSources(OptionsUi& ui) {
     return {ui.modeSource.get(), ui.roleplayModeSource.get(),
-        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get()};
+        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get()};
 }
 std::vector<Obj> AllOptions(OptionsUi& ui) {
     return {ui.modeOption.get(), ui.roleplayModeOption.get(),
-        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.treasureOption.get()};
+        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.treasureOption.get()};
 }
 const std::vector<Obj>& Rows(Obj category) { return Get(Get(category).refs.at("options")).items; }
 std::string Label(Obj option) { return Get(Get(option).refs.at("text")).text; }
@@ -415,12 +415,12 @@ void CheckLayout(Fixture& f) {
         Get(section).integers.at("categoryId") == GeneralId &&
         Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
     Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
-    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly thirteen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance des monstres", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur les cartes", "Chasse au trésor"};
+    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly fifteen rows in the requested order");
+    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur les cartes", "Chasse au trésor"};
     for (size_t i = 0; i != Rows(section).size(); ++i) {
         const auto option = Rows(section)[i];
         Check(Label(option) == labels[i], "Simple option label or ordering changed");
-        Check(Get(option).klass->name == (i == 12 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
+        Check(Get(option).klass->name == (i == 14 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
             "Simple settings must use native controls");
         if (i < 3 || i == 7) {
             const auto& choices = Get(Get(option).refs.at("choices")).items;
@@ -431,7 +431,7 @@ void CheckLayout(Fixture& f) {
                     "A percentage or minimum choice remains in native search models");
         }
     }
-    Check(sourceModels == 12 && optionModels == 13,
+    Check(sourceModels == 14 && optionModels == 15,
         "The UI must create twelve private sources plus one action with no source");
     Check(uiHooks == 3, "Only native page and text button callbacks must be hooked");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
@@ -494,7 +494,7 @@ void RegistrationAndValues() {
     for (size_t i = 0; i != sources.size(); ++i) {
         const auto& source = Get(sources[i]);
         Check(sources[i] != f.nativeInt && sources[i] != f.nativeBool, "Mod must use independent sources");
-        Check(i >= 3 && i != 7 ? source.defaultBoolean : source.defaultInteger == (i == 0 ? 2 : i == 1 ? 0 : 1),
+        Check(i >= 3 && i != 7 ? source.defaultBoolean == (i != 8 && i != 9) : source.defaultInteger == (i == 0 ? 2 : i == 1 ? 0 : 1),
             "Persisted settings must not replace native reset defaults");
     }
     Check(Get(f.Ui().modeSource.get()).integer == 2 && Get(f.Ui().roleplayModeSource.get()).integer == 1 &&
@@ -595,6 +595,19 @@ void GlowModeValuesAndDefaults() {
     f.StopAndRestore();
 }
 
+void GlowCategories() {
+    Fixture f; f.state.settings.glowNpcs=true;
+    initHook(f.page, false, true, ModId, nullptr);
+    auto& npc=Get(f.Ui().glowNpcsSource.get()); auto& interactive=Get(f.Ui().glowInteractivesSource.get());
+    Check(npc.boolean && !npc.defaultBoolean && !interactive.boolean && !interactive.defaultBoolean,"Independent category preferences and opt-in defaults");
+    auto expected=f.state.settings; interactive.boolean=true; f.Ui().Tick(); expected.glowInteractives=true;
+    Check(f.state.settings==expected,"Interactive option must preserve mode and NPC preference");
+    npc.boolean=false; f.Ui().Tick(); expected.glowNpcs=false;
+    Check(f.state.settings==expected,"NPC option must preserve interactive preference");
+    f.state.settings.glowNpcs=true; f.state.settings.glowInteractives=false; f.Ui().Sync();
+    Check(npc.boolean && !interactive.boolean,"External preferences update both category checkboxes");
+    f.StopAndRestore();
+}
 void ReducedMiniaturesDescription() {
     Fixture f;
     initHook(f.page, false, true, ModId, nullptr);

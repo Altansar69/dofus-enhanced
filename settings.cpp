@@ -42,6 +42,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "animationMode" && ValidAnimationMode(value)) { settings.animationMode = value; animationModeRead = true; }
             else if (key == "soulAutoEquip" && (value == 0 || value == 1)) settings.soulAutoEquip = value != 0;
             else if (key == "soulReminder" && (value == 0 || value == 1)) settings.soulReminder = value != 0;
+            else if (key == "glowNpcs" && (value == 0 || value == 1)) settings.glowNpcs = value != 0;
+            else if (key == "glowInteractives" && (value == 0 || value == 1)) settings.glowInteractives = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
             else if (key == "fastMapTransitions" && (value == 0 || value == 1)) settings.fastMapTransitions = value != 0;
@@ -96,6 +98,8 @@ void Settings::Save(const std::filesystem::path& path) const {
              << "\nsoulReminder=" << (soulReminder ? 1 : 0)
              << "\nmonsterUiGlow=" << (monsterGlowMode != 0 ? 1 : 0)
              << "\nmonsterGlowMode=" << monsterGlowMode
+             << "\nglowNpcs=" << (glowNpcs ? 1 : 0)
+             << "\nglowInteractives=" << (glowInteractives ? 1 : 0)
              << "\nfastMapTransitions=" << (fastMapTransitions ? 1 : 0)
              << "\npreloadNextMap=" << (preloadNextMap ? 1 : 0)
              << "\nspouseTeleport=" << (spouseTeleport ? 1 : 0)

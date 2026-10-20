@@ -13,6 +13,8 @@ struct Settings {
     int preferredMode = 2;
     int preferredRoleplayMode = 1;
     bool soulReminder = true;
+    bool glowNpcs = false;
+    bool glowInteractives = false;
     int monsterGlowMode = 1; // 0: off; 1: UI; 2: UI and walls; 3: always.
     int soulPanelX = 24, soulPanelY = 180;
     bool fastMapTransitions = true;

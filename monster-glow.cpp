@@ -1,5 +1,6 @@
 #include "monster-glow.hpp"
 #include "monster-glow-entities.hpp"
+#include "monster-glow-interactives.hpp"
 #include "monster-glow-render.hpp"
 #include "monster-glow-ui.hpp"
 #include "monster-glow-world.hpp"
@@ -16,7 +17,8 @@ constexpr size_t MaxGlows = 8;
 constexpr size_t MaxProjectedTargets = 128;
 constexpr ULONGLONG FrameInterval = 33;
 bool installed = false, enabled = false, failed = false;
-bool worldAvailable = false;
+bool worldAvailable = false, interactivesAvailable = false;
+bool previousNpcs = false, previousInteractives = false;
 int previousMode = 0;
 bool hadResources = false, previousCombat = false, cleanupPending = false;
 Ref previousContext, previousCamera;
@@ -34,6 +36,7 @@ void Trace(ULONGLONG now, const char* stage, const Snapshot& entities, const UiF
     std::ostringstream text;
     text << "[DEBUG:glow] stage=" << stage << " combat=" << entities.combat
          << " entities=" << entities.reason << " roster=" << entities.rosterCount
+         << " npcs=" << entities.npcCount << " interactives=" << entities.interactiveCount
          << " monsters=" << entities.monsterCount << " roots=" << entities.matchedRoots
          << " visible=" << entities.targets.size() << " rejectedPart=" << entities.lastRejectedPart
          << " rejectedAlpha=" << entities.lastRejectedAlpha;
@@ -76,6 +79,8 @@ void InstallMonsterGlow() {
         // A missing decor registry must not disable the existing HUD contour.
         try { monsterGlow::InstallGlowWorld(); worldAvailable = true; }
         catch (const std::exception& e) { Log(std::string("GLOW_WORLD_UNAVAILABLE ") + e.what()); }
+        try { monsterGlow::InstallGlowInteractives(); interactivesAvailable = true; }
+        catch (const std::exception& e) { Log(std::string("GLOW_INTERACTIVES_UNAVAILABLE ") + e.what()); }
         installed = true;
         Log("GLOW_READY configurable contour; default UI; max8 targets at30Hz");
     } catch (const std::exception& e) {
@@ -98,9 +103,11 @@ void TickMonsterGlow() {
         return;
     }
     const int mode = module->settings.monsterGlowMode;
-    if (!enabled || mode != previousMode) {
+    if (!enabled || mode != previousMode || module->settings.glowNpcs != previousNpcs ||
+        module->settings.glowInteractives != previousInteractives) {
         if (enabled) { Clear(); if (cleanupPending) return; }
         previousMode = mode;
+        previousNpcs = module->settings.glowNpcs; previousInteractives = module->settings.glowInteractives;
         enabled = true; failed = false; nextFrame = 0; nextDiagnostic = 0; lastDiagnostic.clear();
         Log("GLOW_ENABLED mode=" + std::to_string(mode));
     }
@@ -116,6 +123,16 @@ void TickMonsterGlow() {
     nextFrame = now + FrameInterval;
     try {
         auto entities = ReadEntities();
+        if (interactivesAvailable && module->settings.glowInteractives) {
+            auto interactive = ReadGlowInteractives();
+            if (interactive.valid) {
+                if (!entities.valid) entities = std::move(interactive);
+                else if (!entities.combat && entities.context.get() == interactive.context.get()) {
+                    entities.interactiveCount = interactive.interactiveCount;
+                    for (auto& target : interactive.targets) entities.targets.push_back(std::move(target));
+                }
+            }
+        }
         if (!entities.valid || !entities.context.get() || entities.targets.empty()) {
             Trace(now,"entities",entities); Clear(); return;
         }
@@ -144,10 +161,10 @@ void TickMonsterGlow() {
         }
         const char* worldReason = mode == 2 ? world.reason : "unused";
         const char* projectionReason = "none";
-        std::unordered_set<int64_t> seen;
+        std::unordered_set<int64_t> seenActors, seenInteractives;
         for (const auto& target : entities.targets) {
             if (captures >= MaxGlows || projected >= MaxProjectedTargets) break;
-            if (!target.id || !target.entity.get() || target.renderers.empty() || !seen.insert(target.id).second) continue;
+            if (!target.id || !target.entity.get() || target.renderers.empty() || !(target.interactive ? seenInteractives : seenActors).insert(target.id).second) continue;
             ++projected;
             std::vector<Obj> renderers;
             renderers.reserve(target.renderers.size());
@@ -190,7 +207,7 @@ void TickMonsterGlow() {
                 coverage.renderers.empty() ? nullptr : &coverage);
             if (!texture) continue;
             ++textures;
-            if (!ShowGlowUi(frame, target.id, projection, texture)) continue;
+            if (!ShowGlowUi(frame, target.id, projection, texture, target.interactive)) continue;
             ++slot;
         }
         EndGlowUi();

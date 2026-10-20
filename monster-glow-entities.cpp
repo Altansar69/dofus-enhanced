@@ -12,7 +12,7 @@ constexpr size_t MaxTargets = 128, MaxParts = 32;
 struct Methods {
     Klass information{}, registry{}, entity{}, creature{}, fight{}, context{}, rendered{}, world{};
     Klass animator{}, renderer{}, combatRegistry{};
-    Method list{}, findInfo{}, id{}, flag{}, boolTry{}, byteTry{};
+    Method list{}, findInfo{}, id{}, flag{}, boolTry{}, byteTry{}, intTry{};
     Method findFight{}, findWorld{}, visible{}, alpha{}, children{};
     Method exists{}, enabled{}, gameObject{}, active{};
     bool installed = false;
@@ -37,6 +37,14 @@ bool Monster(Obj info, bool combat) {
     bool alive = false;
     return api.Value<bool>(api.Invoke(methods.byteTry, info, {&visibilityKey, &visibility})) && visibility == 2 &&
         api.Value<bool>(api.Invoke(methods.boolTry, info, {&aliveKey, &alive})) && alive;
+}
+bool Npc(Obj info, bool combat) {
+    if (combat || !module->settings.glowNpcs || !Is(info, methods.information) || !Flag(info, 2)) return false;
+    for (int excluded : {1, 8, 0x80, 0x10, 0x20}) if (Flag(info, excluded)) return false;
+    // Native NpcMenuMaker reads integer property 15, populated by gwu.bmpa.
+    // The combat humanoid flag 0x40 is NOT the roleplay NPC discriminator.
+    int npcKey = 15, npcId = 0;
+    return api.Value<bool>(api.Invoke(methods.intTry, info, {&npcKey, &npcId})) && npcId > 0;
 }
 struct Owners {
     Ref compositor, creature, services, registry, fight, context, rendered, world;
@@ -143,6 +151,7 @@ void InstallEntities() {
     methods.flag = Verify(methods.information, "bajs", 1, 0x19518F0);
     methods.boolTry = Verify(methods.information, "bakd", 2, 0x1951D50);
     methods.byteTry = Verify(methods.information, "bajy", 2, 0x1951B60);
+    methods.intTry = Verify(methods.information, "baks", 2, 0x1952330);
     methods.findFight = Verify(methods.combatRegistry, "vkq", 1, 0x27695E0);
     methods.findWorld = Verify(methods.world, "zzm", 2, 0x190FE40);
     methods.visible = Verify(methods.entity, "qfv", 0, 0x260F8D0);
@@ -204,8 +213,9 @@ Snapshot ReadEntities() {
         for (int i = 0; i < count && result.targets.size() < MaxTargets; ++i) {
             if (!owners.Current()) return {};
             Ref info(api.Call(list.get(), "get_Item", {&i}));
-            if (!Monster(info.get(), owners.combat)) continue;
-            ++result.monsterCount;
+            const bool monster = Monster(info.get(), owners.combat);
+            if (!monster && !Npc(info.get(), owners.combat)) continue;
+            if (monster) ++result.monsterCount; else ++result.npcCount;
             int64_t id = api.Value<int64_t>(api.Invoke(methods.id, info.get()));
             if (!id) continue;
             Obj current = nullptr;
@@ -223,7 +233,7 @@ Snapshot ReadEntities() {
         }
         if (!owners.Current()) return {};
         result.context.reset(owners.compositor.get()); result.combat = owners.combat; result.valid = true;
-        result.reason = result.targets.empty() ? "no-visible-monsters" : "ready";
+        result.reason = result.targets.empty() ? "no-visible-actors" : "ready";
         reported = false;
     } catch (const std::exception& error) {
         if (!reported) Log(std::string("MONSTER_GLOW_ENTITIES_ERROR ") + error.what());

@@ -22,7 +22,7 @@ struct Color { float r, g, b, a; };
 struct Background { Obj texture, sprite, renderTexture, vectorImage; };
 static_assert(sizeof(Bounds) == 24 && sizeof(Background) == 32 && sizeof(UiRect) == 16);
 struct Fragment { Ref clip, image; };
-struct Entry { int64_t id = 0; bool used = false; Ref texture; std::vector<Fragment> fragments; };
+struct Entry { int64_t id = 0; bool used = false, interactive = false; Ref texture; std::vector<Fragment> fragments; };
 struct State {
     Ref document, root, panel, camera, cameraService, layerService, layers, compositor, overlay;
     std::vector<UiRect> paint;
@@ -407,7 +407,7 @@ UiProjection ProjectGlowRenderers(const UiFrame& frame, const std::vector<Obj>& 
     } catch (const std::exception& error) { Report("project",error); }
     return result;
 }
-bool ShowGlowUi(const UiFrame& frame, int64_t id, const UiProjection& projection, Obj texture) {
+bool ShowGlowUi(const UiFrame& frame, int64_t id, const UiProjection& projection, Obj texture, bool interactive) {
     try {
         if (!Current(frame) || !projection.valid || projection.generation != frame.generation || projection.serial != frame.serial ||
             !texture || projection.clipRects.empty() || projection.clipRects.size() > MaxFragments) return false;
@@ -422,14 +422,14 @@ bool ShowGlowUi(const UiFrame& frame, int64_t id, const UiProjection& projection
         // Reorder only within RootLow. RootMedium and higher native layers keep
         // inventory, spells, the world map, menus and tooltips above the glow.
         api.Call(state.overlay.get(),"BringToFront");
-        auto found = std::find_if(state.entries.begin(),state.entries.end(),[&](const Entry& entry){return entry.id == id;});
+        auto found = std::find_if(state.entries.begin(),state.entries.end(),[&](const Entry& entry){return entry.id == id && entry.interactive == interactive;});
         if (found == state.entries.end()) {
             found = std::find_if(state.entries.begin(),state.entries.end(),[](const Entry& entry){return !entry.used;});
             if (found == state.entries.end()) {
                 if (state.entries.size() >= MaxTargets) return false;
                 state.entries.emplace_back(); found = std::prev(state.entries.end());
             }
-            found->id = id;
+            found->id = id; found->interactive = interactive;
         }
         auto& entry = *found;
         // Mark used only after every fragment has a valid binding and geometry.
