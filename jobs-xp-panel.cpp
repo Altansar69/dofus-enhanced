@@ -204,6 +204,9 @@ void Create(Obj owner) {
     state.cached.reset(module->cached.get());state.compositor.reset(module->compositor.get());state.generation=++generation;
     state.tab.reset(api.New(api.Class("Core.dll",Figma,"DofusTab")));Text(state.tab.get(),"XP · DofusDB");
     int size=api.Value<int>(api.Call(state.recipeTab.get(),"get_size"));api.Call(state.tab.get(),"set_size",{&size});
+    // JobRecipesAndSkills offsets both native tabs by bottom: -1px.
+    // Inherit the actual inline value so all three share the same baseline.
+    Ref bottom(Style(state.recipeTab.get(),"bottom"));WriteStyle(state.tab.get(),"bottom",bottom.get());
     Float(state.tab.get(),"flexGrow",1);Pixels(state.tab.get(),"minWidth",0);
     Text(state.tab.get(),"Recettes et simulation d'expérience du métier sélectionné.","set_tooltip");
     int vertical=0;state.pane.reset(api.New(api.Class(Ui,UiSpace,"ScrollView"),{&vertical}));

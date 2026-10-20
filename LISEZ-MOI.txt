@@ -1,4 +1,9 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 81
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 82
+
+R82 — ALIGNEMENT DE L’ONGLET XP
+- L’onglet XP · DofusDB reprend le décalage vertical natif des onglets
+  Recettes et Ressources dans la fenêtre Métiers.
+- Validation hors jeu ; aucun client ouvert manipulé.
 
 R81 — SÉLECTION COMPACTE ET REPÈRES PLUS LISIBLES
 - Mini-carte : barre d’icônes rondes des métiers. Cliquer sur un métier ouvre
@@ -24,7 +29,7 @@ R80 — RESSOURCES SUR LA MINI-CARTE
   n'a été manipulé. Chargement de la révision au prochain lancement.
 
 R79 — CARNET, XP MÉTIERS ET CROISEMENTS
-- Options > Mod (r81) > Général > Carnet > Ouvrir le carnet :
+- Options > Mod (r82) > Général > Carnet > Ouvrir le carnet :
   positions nommées, notes multiligne et messages enregistrés.
   Créer, modifier, enregistrer et supprimer depuis les contrôles du jeu.
   Les positions permettent un trajet explicite. Les messages préparent le
