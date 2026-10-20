@@ -122,6 +122,7 @@ struct Fixture {
     std::array<Obj, 3> views{};
     std::array<Obj, 4> animationViews{};
     std::array<Obj, 4> glowViews{};
+    std::array<Obj, 2> glowCategoryViews{};
     explicit Fixture(bool inCombat = false) {
         RestoreContextDisplayMenu();
         module = &state;
@@ -166,7 +167,7 @@ struct Fixture {
         root = subroot = animationRoot = glowRoot = nullptr;
         views.fill(nullptr);
         animationViews.fill(nullptr);
-        glowViews.fill(nullptr);
+        glowViews.fill(nullptr);glowCategoryViews.fill(nullptr);
     }
     Obj Create() {
         auto result = (combat ? fightHook : worldHook)(maker, nullptr);
@@ -185,6 +186,7 @@ struct Fixture {
         return nullptr;
     }
     Obj GlowChoice(int index) const { auto sub = Submenu("Surbrillance"); return sub ? Items(sub).at(index) : nullptr; }
+    Obj GlowCategory(int index) const {return Items(Submenu("Surbrillance")).at(5+index);}
     void Open() {
         Check(Submenu() != nullptr, "Three-way context submenu missing");
         root = Make("DofusContextualMenuRoot");
@@ -223,6 +225,12 @@ struct Fixture {
             Get(glowViews[i]).refs["panel"] = panel;
             Get(glowViews[i]).refs["parent"] = glowRoot;
         }
+        for (int i = 0; i < 2; ++i) {
+            glowCategoryViews[i] = Make("ContextMenuItemView");
+            Get(glowCategoryViews[i]).refs["itemData"] = GlowCategory(i);
+            Get(glowCategoryViews[i]).refs["panel"] = panel;
+            Get(glowCategoryViews[i]).refs["parent"] = glowRoot;
+        }
         TickContextDisplayMenu();
     }
     void ClickView(Obj view, bool keyboard) {
@@ -233,7 +241,7 @@ struct Fixture {
         // toggle/radio group, dispatches InvokeCallback, then honors closeOnSelect.
         auto submenu = Get(choice).refs.at("root");
         if (Get(choice).numbers["state"] == 1) Get(choice).flags["isOn"] = !Get(choice).flags["isOn"];
-        else for (auto item : Items(submenu)) Get(item).flags["isOn"] = item == choice;
+        else for (auto item : Items(submenu)) if (Get(item).numbers["state"] == 2) Get(item).flags["isOn"] = item == choice;
         auto parent = Get(view).refs.at("parent");
         callbackHook(Get(choice).refs.at("m_callback"), view, nullptr);
         Check(Get(view).refs.at("parent") == parent && Get(parent).refs.at("panel") == panel,
@@ -249,6 +257,7 @@ struct Fixture {
     void Click(int index, bool keyboard = false) { ClickView(views[index], keyboard); }
     void ClickAnimation(int index, bool keyboard = false) { ClickView(animationViews[index], keyboard); }
     void ClickGlow(int selected, bool keyboard = false) { ClickView(glowViews[selected], keyboard); }
+    void ClickGlowCategory(int index, bool keyboard = false) {ClickView(glowCategoryViews[index], keyboard);}
     void CheckUnchanged() const { Check(Items(menu) == baseline, "Native model/row order not restored exactly"); }
 };
 }
@@ -274,6 +283,7 @@ void* Api::Native(Method method, uintptr_t rva) const {
     const auto& m = *static_cast<const fake::MethodInfo*>(method);
     if (m.name == "AppendRadioButtonItem") fake::Check(m.argc == 12 && rva == 0x16D72F0,
         "Glow must reuse the verified native radio overload");
+    if (m.name == "AppendCheckboxItem") fake::Check(m.argc == 9 && rva == 0x16D63D0,"Exact native checkbox ABI");
     return reinterpret_cast<void*>(rva);
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
@@ -339,6 +349,18 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
         items.insert(items.begin() + index, arguments[1]);
         Get(arguments[1]).refs["root"] = self;
         return done(self);
+    }
+    if (name == "AppendSeparator") {
+        Check(args.size() == 0, "Native separator ABI");Items(self).push_back(Make("ContextMenuSeparator"));return done(self);
+    }
+    if (name == "AppendCheckboxItem") {
+        Check(args.size() == 9 && !arguments[1] && !*static_cast<bool*>(arguments[3]) &&
+            !*static_cast<bool*>(arguments[4]) && *static_cast<unsigned*>(arguments[6]) == 1000 &&
+            *static_cast<int*>(arguments[7]) == 0 && !Get(arguments[5]).text.empty(), "Native checkbox ABI and keep-open help");
+        auto item=NativeItem(nullptr,Get(arguments[0]).text);
+        Get(item).numbers["state"]=1;Get(item).flags["isOn"]=*static_cast<bool*>(arguments[2]);
+        Get(item).flags["disabled"]=false;Get(item).flags["closeOnSelect"]=false;
+        Get(item).refs["root"]=self;Items(self).push_back(item);return done(self);
     }
     if (name == "AppendRadioButtonItem") {
         Check(args.size() == 12 && arguments[1] == nullptr && *static_cast<int*>(arguments[3]) == 0 &&
@@ -532,6 +554,41 @@ void GlowRepeatedChoicesKeepMenuOpen() {
         Check(expected.monsterGlowMode == initial, "Round trips must restore the initial glow mode");
     }
 }
+void GlowCategoriesIndependentAndPersistent() {
+    for(bool inCombat:{false,true})for(int initial=0;initial<4;++initial){
+        Fixture f(inCombat);f.state.settings.glowNpcs=(initial&1)!=0;f.state.settings.glowInteractives=(initial&2)!=0;
+        auto expected=f.state.settings;f.Create();f.Open();
+        Check(Items(f.Submenu("Surbrillance")).size()==7&&Get(f.GlowCategory(0)).text=="Inclure les PNJ"&&
+            Get(f.GlowCategory(1)).text=="Inclure les éléments interactifs","Two native checkboxes follow four glow modes and separator");
+        Check(Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Initial checkbox state follows saved options");
+        for(int i=0;i<4;++i){
+            const int category=i%2;f.ClickGlowCategory(category,i%2==0);
+            if(category==0)expected.glowNpcs=!expected.glowNpcs;else expected.glowInteractives=!expected.glowInteractives;
+            TickContextDisplayMenu();
+            Check(f.state.settings==expected&&changes==unsigned(i+1)&&nativeCloses==0&&scheduledCloses==0,"Checkbox changes exactly one preference and keeps menu open for mouse/keyboard");
+            Check(Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Categories remain independent");
+        }
+        f.ClickGlow(0);expected.monsterGlowMode=0;
+        Check(f.state.settings==expected&&Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Mode radio does not uncheck inclusion checkboxes");
+        f.ClickGlowCategory(0);expected.glowNpcs=!expected.glowNpcs;
+        Check(f.state.settings==expected,"Category selection can be saved while glow is disabled without enabling it");
+        const auto retained=handles.size();f.NewMenu();f.Create();f.Open();
+        Check(handles.size()==retained&&Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Reopening restores persisted selections without retaining old callbacks");
+    }
+}
+void GlowCategoryCallbackGuards(){
+    for(int reason=0;reason<6;++reason){
+        Fixture f;f.Create();f.Open();auto item=f.GlowCategory(0),view=f.glowCategoryViews[0];
+        auto callback=Get(item).refs.at("m_callback");
+        if(reason==0)view=f.glowCategoryViews[1];
+        if(reason==1)Get(view).refs["panel"]=nullptr;
+        if(reason==2)Get(item).flags["disabled"]=true;
+        if(reason==3)Get(item).refs["root"]=f.menu;
+        if(reason==4)f.state.stopRequested=true;
+        if(reason==5)Get(f.maker).refs["m_cachedDataService"]=Make("OtherSession");
+        callbackHook(callback,view,nullptr);Check(changes==0,"Invalid checkbox callback never changes preferences");
+    }
+}
 void CallbackIdentityAndDisabledRows() {
     Fixture f;
     f.Create();
@@ -659,13 +716,15 @@ void NativeAndOtherMenuIsolation() {
     Check(changes == 0 && handles.size() == 3, "Menus without exact native creature argument should remain untouched");
 }
 void ExternalChoiceClosesStaleMenu() {
-    for (int setting = 0; setting < 3; ++setting) {
+    for (int setting = 0; setting < 5; ++setting) {
         Fixture f;
         f.Create();
         f.Open();
         if (setting == 0) f.state.settings.roleplayMode = 0;
         else if (setting == 1) f.state.settings.animationMode = 0;
-        else f.state.settings.monsterGlowMode = 3;
+        else if (setting == 2) f.state.settings.monsterGlowMode = 3;
+        else if (setting == 3) f.state.settings.glowNpcs = true;
+        else f.state.settings.glowInteractives = true;
         TickContextDisplayMenu();
         f.CheckUnchanged();
         Check(changes == 0 && Get(f.root).flags["scheduledClose"] && Get(f.subroot).flags["scheduledClose"] &&
@@ -678,6 +737,8 @@ void FailureRollback() {
         {"AppendRadioButtonItem", 3, false}, {"AppendRadioButtonItem", 6, false}, {"AppendSubMenu", 2, true},
         {"AppendRadioButtonItem", 8, false}, {"AppendRadioButtonItem", 8, true},
         {"AppendRadioButtonItem", 9, false}, {"AppendRadioButtonItem", 10, true}, {"AppendRadioButtonItem", 11, false},
+        {"AppendCheckboxItem", 1, false}, {"AppendCheckboxItem", 1, true},
+        {"AppendCheckboxItem", 2, false}, {"AppendCheckboxItem", 2, true}, {"AppendSeparator", 1, true},
         {"AppendSubMenu", 3, false}, {"AppendSubMenu", 3, true},
         {"InsertItem", 1, false}, {"InsertItem", 1, true}, {"InsertItem", 2, false}, {"InsertItem", 2, true},
         {"InsertItem", 3, false}, {"InsertItem", 3, true}
@@ -762,6 +823,8 @@ int main() {
         run(fake::AnimationChoicesPreserveOtherSettings);
         run(fake::GlowChoicesAndReopens);
         run(fake::GlowRepeatedChoicesKeepMenuOpen);
+        run(fake::GlowCategoriesIndependentAndPersistent);
+        run(fake::GlowCategoryCallbackGuards);
         run(fake::CallbackIdentityAndDisabledRows);
         run(fake::NativeDisabledStateIsPreserved);
         run(fake::ReopenPruneAndDuplicateCreation);

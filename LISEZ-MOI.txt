@@ -1,4 +1,14 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 87
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 88
+
+R88 — CASES PNJ ET INTERACTIFS DANS LE MENU SURBRILLANCE
+- Clic droit > Surbrillance : les cases Inclure les PNJ et Inclure les éléments
+  interactifs figurent sous les quatre modes, séparées par un trait.
+- Les deux cases sont indépendantes et partagent les réglages sauvegardés des
+  options du mod. Les modes de surbrillance et les autres options sont conservés.
+- Le menu reste ouvert après un clic, à la souris comme au clavier.
+- L’effet sur les PNJ et objets interactifs reste limité au hors combat.
+- Compilation et tests hors jeu ; rendu réel à confirmer. Aucun client ouvert
+  manipulé. La nouvelle version se charge au prochain lancement.
 
 R87 — CARNET ET CHASSE À CÔTÉ DE CAPTURE D’ÂME
 - Deux boutons directs, Chasse au trésor et Carnet personnel, sont ajoutés
