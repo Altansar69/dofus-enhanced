@@ -10,3 +10,4 @@ DofusMiniatures-notebook.json*
 __pycache__/
 *.pyc
 /.vs/
+offline-test-data/
