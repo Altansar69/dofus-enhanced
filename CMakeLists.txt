@@ -245,7 +245,7 @@ endforeach()
 
 add_executable(TreasureDataTests treasure-data-tests.cpp treasure-data.cpp treasure-http.cpp)
 target_link_libraries(TreasureDataTests PRIVATE winhttp normaliz)
-add_executable(TreasurePanelTests treasure-panel-tests.cpp treasure-launch.cpp treasure-data.cpp soul-panel.cpp tools-ui.cpp)
+add_executable(TreasurePanelTests treasure-panel-tests.cpp treasure-launch.cpp treasure-data.cpp soul-panel.cpp tools-ui.cpp native-click.cpp)
 target_link_libraries(TreasurePanelTests PRIVATE normaliz)
 if(MSVC)
   target_compile_options(TreasureDataTests PRIVATE /W4 /EHsc /utf-8)

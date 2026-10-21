@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.4.0** (révision r97).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.5.0** (révision r98).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -55,7 +55,12 @@ Son entrée **Réduire les titres des modules** propose en revanche les trois
 panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet) à la suite des modules
 du jeu ; le choix est conservé entre les lancements et **Tout réduire** /
 **Tout agrandir** les suivent.
-La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
+La fenêtre n’utilise que des composants du jeu, comme le carnet : barre de titre
+native avec sa croix de fermeture, poignées de redimensionnement, trois sections
+natives **Point de départ** (X, Y, **Ma position**, onglets natifs Nord / Ouest /
+Sud / Est), **Indice à trouver** (filtre, **Étape en cours**, **Rechercher les
+indices**) et **Résultats** (lignes natives avec l’icône de chasse, **Chemin**
+sur chaque ligne, compteur et pagination), puis une ligne d’état.
 À l’ouverture, le départ reprend la carte où tu te trouves et, si une chasse est
 en cours, sa direction et son indice sont lus dans le jeu (**Étape en cours**
 relance cette lecture et la recherche ; **Ma position** ne reprend que les
@@ -74,6 +79,7 @@ Un second clic, **⋯ → Masquer le module** ou le bouton de fermeture de la ba
 de titre ferme le carnet (une modification non enregistrée demande un second
 clic). Le menu ⋯ des modules ne le liste plus non plus, sauf dans **Réduire les
 titres des modules**.
+La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat.
 Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
 **Notes** et **Messages**, deux sections **Mes entrées** (liste à l’icône de
 l’onglet, entrée courante surlignée, pagination et compteur) et **Détail**
@@ -160,10 +166,13 @@ sont disponibles, avec leur icône et leur niveau.
 Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
 des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
 pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Chaque repère est dessiné par le mod avec l’image de l’objet (catalogue du jeu)
-et sa pastille de quantité. Plusieurs ressources sur une même case s’empilent
-avec un léger décalage, centrées sur la case ; le survol de la souris les étale
-côte à côte, puis elles se replient quand le curseur s’éloigne.
+Chaque ressource d’une case est un repère natif du jeu dans lequel le mod
+dessine l’image de l’objet (catalogue du jeu) et sa pastille de quantité. Les
+repères d’une même case rejoignent le groupe de position du jeu, celui de ses
+indices : pastille de nombre, étalement animé au survol de la souris et repli
+sont ceux de Dofus. La pastille du groupe affiche le total de la case (3 cuivre
+et 11 fer donnent 14) ; les quantités par ressource n’apparaissent qu’une fois
+le groupe étalé.
 Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
 Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les

@@ -1,4 +1,24 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 97 — VERSION 1.4.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 98 — VERSION 1.5.0
+
+R98 — VERSION 1.5.0 : REGROUPEMENT NATIF DES RESSOURCES, FENÊTRES REDIMENSIONNABLES, CHASSE AU TRÉSOR NATIVE
+- Ressources sur les cartes : les ressources d’une même case rejoignent le
+  groupe de position du jeu (celui de ses indices) : pastille de nombre,
+  étalement animé au survol et repli sont ceux de Dofus. La pastille du
+  groupe affiche le total de la case (3 cuivre + 11 fer = 14) ; les
+  quantités par ressource n’apparaissent qu’une fois le groupe étalé. L’image
+  de chaque ressource reste dessinée par le mod dans le repère natif.
+- Carnet personnel : fenêtre redimensionnable (poignées du jeu, comme la
+  carte ou le chat), le contenu suit la taille.
+- Chasse au trésor : panneau refait avec les composants du jeu, comme le
+  carnet : sections natives (Point de départ, Indice à trouver, Résultats),
+  onglets natifs pour la direction, boutons natifs avec icônes, lignes de
+  résultat natives, compteur et pagination, croix de fermeture dans la barre
+  de titre, fenêtre redimensionnable.
+- Bouton TP : quand le jeu accepte l’autopilote juste après la téléportation
+  puis l’abandonne aussitôt (journal de la 1.4.0), le mod relance une fois le
+  trajet au lieu d’attendre un nouveau clic. Un trajet interrompu plus tard,
+  volontairement, n’est jamais relancé.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R97 — VERSION 1.4.0 : ICÔNES DES RESSOURCES, ENVOI DANS LE CHAT, SURBRILLANCE TOLÉRANTE
 - Ressources sur les cartes : retour du rendu de la 1.0.0 (icône de l’objet

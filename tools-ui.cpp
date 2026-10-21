@@ -162,7 +162,7 @@ void Install(){if(installed)return;
     AddHook(api.FindVerified(manager,"SetAllHeaderState",1,0x17DDDD0),0x17DDDD0,reinterpret_cast<void*>(&AllHeadersHook),reinterpret_cast<void**>(&originalAll));
     soul::SetAuxiliaryPanelMenus(Populate,Callback);installed=true;
 }
-managed::Obj ScrollBody(managed::Obj window,managed::Obj root){
+managed::Obj ScrollBody(managed::Obj window,managed::Obj root,bool resizable){
     Ref host(api.Call(window,"get_contentContainer")),scroll(api.New(api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","ScrollView")));
     Ref resolved(api.Call(root,"get_resolvedStyle"));float height=api.Value<float>(api.Call(resolved.get(),"get_height"));
     float width=api.Value<float>(api.Call(resolved.get(),"get_width"));
@@ -175,8 +175,17 @@ managed::Obj ScrollBody(managed::Obj window,managed::Obj root){
         api.Call(box.get(),"set_value",{api.object_unbox(length.get())});
         api.Call(style.get(),(std::string("UnityEngine.UIElements.IStyle.set_")+property).c_str(),{api.object_unbox(box.get())});
     };
-    pixels(scroll.get(),"maxHeight",std::clamp(height-120.f,160.f,560.f));
-    pixels(window,"maxWidth",width-32.f);pixels(window,"left",16);pixels(window,"top",48);
+    if(resizable){
+        // The window's resizers set its size; the scroll view fills it.
+        float grow=1;Ref style(api.Call(scroll.get(),"get_style"));
+        Ref box(api.Call(style.get(),"UnityEngine.UIElements.IStyle.get_flexGrow"));api.Call(box.get(),"set_value",{&grow});
+        api.Call(style.get(),"UnityEngine.UIElements.IStyle.set_flexGrow",{api.object_unbox(box.get())});
+        pixels(scroll.get(),"maxHeight",height-96.f);
+    } else {
+        pixels(scroll.get(),"maxHeight",std::clamp(height-120.f,160.f,560.f));
+        pixels(window,"maxWidth",width-32.f);
+    }
+    pixels(window,"left",16);pixels(window,"top",48);
     api.Call(host.get(),"Add",{scroll.get()});return api.Call(scroll.get(),"get_contentContainer");
 }
 void AttachHeader(const char* key,Obj window){auto& e=Find(key);if(e.window.get())DetachHeader(key);e.window.reset(window);e.header.reset(api.Call(window,"get_headerWidget"));e.cached.reset(module->cached.get());e.compositor.reset(module->compositor.get());e.service.reset(module->FindService("fpz"));if(!e.service.get())throw std::runtime_error("Panel menu service unavailable");int more=202,left=0;bool yes=true,no=false;api.Call(window,"set_headerIconRight",{&more});api.Call(e.header.get(),"set_showRightButton",{&yes});e.button.reset(api.Field(e.header.get(),"rightButton"));if(!e.button.get())throw std::runtime_error("Panel header button unavailable");e.manipulator.reset(api.New(api.Class("Core.dll",Menus,"DofusContextualMenuManipulator"),{e.service.get(),nullptr,&left,&no}));api.Invoke(add,nullptr,{e.button.get(),e.manipulator.get()});

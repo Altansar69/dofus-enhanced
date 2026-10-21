@@ -276,12 +276,16 @@ void ContinueOnward() {
     if (Map()==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
     if (Map()!=journey.arrivalMap) { Cancel("left arrival before onward confirmation"); return; }
     if (pending) { journey.onwardAccepted=true; return; }
-    if (GetTickCount64()-journey.onwardAt<1000) return;
-    // Never restart a route which the native game accepted then cancelled.
-    // One bounded retry is allowed only when no acceptance was ever observed.
-    if (journey.onwardAccepted || journey.onwardAttempts>=2) {
+    const auto elapsed=GetTickCount64()-journey.onwardAt;
+    if (elapsed<1000) return;
+    // One bounded retry. A route the game accepted and then dropped within a
+    // few seconds of the arrival (the player still settling on the zaap map)
+    // is retried once as well: in play, pressing TP again was what it took.
+    // A route dropped later than that was interrupted on purpose: never restart it.
+    if (journey.onwardAttempts>=2 || (journey.onwardAccepted && elapsed>3000)) {
         Cancel("onward not started","l'autopilote n'a pas démarré. Le jeu a refusé ou interrompu le trajet."); return;
     }
+    if (journey.onwardAccepted && journey.onwardAttempts==1) Log("CHAT_TRAVEL onward dropped right after acceptance; one retry");
     if (journey.Settled(ArrivalReady())) RequestOnward();
 }
 }

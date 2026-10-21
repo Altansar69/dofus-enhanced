@@ -312,16 +312,19 @@ void Create(Obj root) {
         throw std::runtime_error("Notebook native session mismatch");
     state.window.reset(api.New(api.Class("Core.dll","Core.UILogic.Components","MagneticDragWindow")));
     Text(state.window.get(),"","set_name"); Text(state.window.get(),"Carnet personnel","set_headerTitle");
-    bool yes=true,no=false; int icon=IconPin,size=1;
+    bool yes=true; int icon=IconPin,size=1;
     api.Call(state.window.get(),"set_headerIcon",{&icon}); api.Call(state.window.get(),"set_headerSize",{&size});
     // The window's own close button; the game invokes no close callback of
     // its own for a window it does not manage, the panel handles the click.
     api.Call(state.window.get(),"set_headerShowCloseButton",{&yes});
+    // Resizable like the game's own windows (map, chat): the native resizers
+    // of the window; the body below fills the size the user gives it.
     for(const auto* setter:{"set_verticalResizable","set_horizontalResizable","set_cornerResizable"})
-        api.Call(state.window.get(),setter,{&no});
+        api.Call(state.window.get(),setter,{&yes});
     api.Call(state.window.get(),"set_hasBackground",{&yes});
     Enum(state.window.get(),"position",1); Float(state.window.get(),"flexGrow",0);
     Pixels(state.window.get(),"width",660); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
+    Pixels(state.window.get(),"minWidth",560); Pixels(state.window.get(),"minHeight",360);
     state.header.reset(api.Call(state.window.get(),"get_headerWidget"));
     state.closeButton.reset(api.Field(state.header.get(),"closeButton"));
     if(!state.closeButton.get()) throw std::runtime_error("Notebook native close button unavailable");
@@ -332,8 +335,8 @@ void Create(Obj root) {
     const char* getters[]={"ydf","ydh","ydj","ydl"};
     for(size_t i=0;i<4;++i) state.inputEvents[i].reset(api.Call(input.get(),getters[i]));
     api.Call(state.window.get(),"Init",{state.dependencies.get()});
-    Ref content(toolsUi::ScrollBody(state.window.get(),root));
-    Float(content.get(),"flexGrow",0);
+    Ref content(toolsUi::ScrollBody(state.window.get(),root,true));
+    Float(content.get(),"flexGrow",1);
     for(const auto* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"}) Pixels(content.get(),property,10);
     // Native tab bar.
     Ref tabs(Row(content.get())); Pixels(tabs.get(),"marginBottom",0);

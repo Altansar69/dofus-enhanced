@@ -281,9 +281,11 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="set_name") { obj.name=Get(args.at(0)).text;return nullptr; }
     if(m.name=="set_headerTitle") { obj.text=Get(args.at(0)).text;return nullptr; }
     if(m.name=="set_headerIcon") { const int icon=*static_cast<int*>(args.at(0));Check(icon==(notebookFixture?225:treasureFixture?317:128),"Use the native panel icon in the window title");obj.enums[m.name]=icon;return nullptr; }
-    if(m.name=="set_headerShowCloseButton") { Check(*static_cast<bool*>(args[0])==notebookFixture,"Only the notebook shows the native close button");obj.enums[m.name]=*static_cast<bool*>(args[0])?1:0;return nullptr; }
+    if(m.name=="set_headerShowCloseButton") { Check(*static_cast<bool*>(args[0])==(notebookFixture||treasureFixture),"Only the notebook and treasure windows show the native close button");obj.enums[m.name]=*static_cast<bool*>(args[0])?1:0;return nullptr; }
     if(m.name=="set_verticalResizable"||m.name=="set_horizontalResizable"||m.name=="set_cornerResizable") {
-        Check(!*static_cast<bool*>(args[0]),"Native compact widget must not expose resize/close controls");obj.enums[m.name]=0;return nullptr;
+        // The soul-stone widget stays compact; the notebook and treasure windows resize like the game's own windows.
+        Check(*static_cast<bool*>(args[0])==(notebookFixture||treasureFixture),"Only the notebook and treasure windows expose the native resizers");
+        obj.enums[m.name]=*static_cast<bool*>(args[0])?1:0;return nullptr;
     }
     if(m.name=="set_hasBackground") { Check(*static_cast<bool*>(args[0]),"Use native themed background");return nullptr; }
     if(m.name=="set_headerSize") { Check(*static_cast<int*>(args[0])==1,"Native large header retains its readable 24px title");return nullptr; }

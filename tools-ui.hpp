@@ -10,7 +10,9 @@ bool Visible(const char* key);
 bool Toggle(const char* key);
 void AttachHeader(const char* key, managed::Obj window);
 void DetachHeader(const char* key);
-managed::Obj ScrollBody(managed::Obj window, managed::Obj root);
+// A scrolling body inside a mod window. A resizable window keeps no size caps:
+// the scroll view fills whatever height the user gives the window.
+managed::Obj ScrollBody(managed::Obj window, managed::Obj root, bool resizable = false);
 void Install();
 void Tick();
 void Restore();

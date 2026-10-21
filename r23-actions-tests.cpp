@@ -437,7 +437,13 @@ int main(){using namespace fake;try{
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
       auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(123);Get(services["fjs"]).fields["dsjs"]=d;
       routePendingNative=true;TickChatTravel();routePendingNative=false;Sleep(1050);TickChatTravel();TickChatTravel();
-      Check(walked==1,"Accepted then cancelled native route must not be retried");}
+      Check(walked==2,"A route the game accepted then dropped right after the arrival is retried once (pressing TP again was what it took in play)");
+      Sleep(1050);TickChatTravel();TickChatTravel();Check(walked==2,"No third attempt");}
+    {Fixture f;acceptRoute=false;StartChatTravel({10,10,1});f.Price();TickChatTravel();
+      Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
+      auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(123);Get(services["fjs"]).fields["dsjs"]=d;
+      routePendingNative=true;TickChatTravel();routePendingNative=false;Sleep(3100);TickChatTravel();TickChatTravel();
+      Check(walked==1,"A route accepted then interrupted later on purpose is never restarted");}
     {Fixture f;acceptRoute=false;StartChatTravel({10,10,1});f.Price();TickChatTravel();
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
       auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(999);Get(services["fjs"]).fields["dsjs"]=d;
