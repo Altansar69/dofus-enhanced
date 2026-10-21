@@ -1,4 +1,19 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 92 — VERSION 1.0.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 93 — VERSION 1.1.0
+
+R93 — VERSION 1.1.0 : GROUPES NATIFS, CHASSE AU TRÉSOR ASSISTÉE
+- Ressources : chaque ressource d’une case est désormais un repère natif du
+  jeu (icône de l’objet, pastille de quantité). Les repères d’une même case
+  rejoignent le groupe de position natif, comme les indices : pastille de
+  nombre, étalement au survol de la souris et repli sont ceux de Dofus.
+- Chasse au trésor : à l’ouverture, le départ reprend la carte où tu te
+  trouves et l’étape en cours (direction et indice) est lue dans le jeu.
+  Boutons Ma position et Étape en cours ; les résultats sont filtrés sur
+  l’indice de l’étape. Chaque résultat a un bouton Chemin qui lance le
+  trajet amélioré du mod (zaaps, bateaux, puis /travel), comme le TP du chat.
+  Aucune validation de chasse n’est envoyée.
+- Mini-carte : le bouton de recentrage garde le survol et l’infobulle natifs
+  du composant ; l’option Bouton de recentrage sur la mini-carte le masque.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R92 — DOFUS ENHANCED 1.0.0
 - Versionnage x.y.z : cette révision est la version 1.0.0. L’onglet des

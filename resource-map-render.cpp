@@ -13,25 +13,20 @@ namespace {
 using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
-constexpr size_t CellBudget = 384, BadgeBudget = 384;
-constexpr float FullBadgeSize=50, MiniBadgeSize=44;
-// Several resources on one cell stack with a small cascade so the cell stays
-// identifiable; hovering the stack spreads it into a two-column grid.
-constexpr float StackStepRatio=.2f;
-constexpr uint64_t HoverInterval=80;
+constexpr size_t CellBudget = 384, MarkerBudget = 384;
+constexpr float FullMarkerSize=50, MiniMarkerSize=44;
 struct Vec2 { float x, y; };
-struct Vec3 { float x, y, z; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
-struct Badge { Ref root, label, icon; int item = 0; };
+// One native icon marker (fgm) per resource and cell. Markers of one cell share
+// the game's own position group (fgk): count badge, hover spread and collapse
+// are the native cartography behaviour, not a reimplementation.
 struct Marker {
-    Ref native, root, id;
-    std::vector<Badge> badges;
-    int x = 0, y = 0;
-    bool used = false, expanded = false;
+    Ref native, root, id, label;
+    int x = 0, y = 0, item = 0;
+    bool used = false;
     std::string content;
-    Vec2 scale{}, center{};
-    float size = 0;
+    Vec2 scale{};
 };
 struct View {
     Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer;
@@ -55,12 +50,12 @@ struct Frame {
 };
 struct Methods {
     Klass view{}, service{}, marker{}, world{}, element{}, label{};
-    Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{}, centerPlayer{};
-    Method pointerPosition{}, pointerPanel{};
+    Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, cluster{}, uncluster{};
+    Method mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{}, centerPlayer{};
 } methods;
 std::array<View, 2> views;
 bool installed = false, reported = false;
-uint64_t nextPump = 0, nextHover = 0, serial = 0;
+uint64_t nextPump = 0, serial = 0;
 bool Session() {
     return installed && module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested &&
         module->compositor.get();
@@ -178,9 +173,14 @@ void RemoveMarker(View& v,Marker& m) {
     if (!m.native.get()) return;
     // A replaced dictionary entry belongs to its new owner. Detach only our
     // visual in that case; native begd would remove the replacement by key.
-    if (MarkerRegistered(v,m) == m.native.get()) api.Invoke(methods.dispose,m.native.get());
+    if (MarkerRegistered(v,m) == m.native.get()) {
+        // Leave the native position group first so an emptied group is dropped
+        // from the manager and never retained for a later layer.
+        api.Invoke(methods.uncluster,v.manager.get(),{m.native.get()});
+        api.Invoke(methods.dispose,m.native.get());
+    }
     else if (m.root.get()) api.Call(m.root.get(),"RemoveFromHierarchy");
-    m.badges.clear(); m.root.reset(); m.id.reset(); m.native.reset();
+    m.label.reset(); m.root.reset(); m.id.reset(); m.native.reset();
 }
 bool Cleanup(View& v) {
     v.cleaning=true;
@@ -224,110 +224,59 @@ void CreateView(View& v,const Frame& f) {
     v.layer.reset(Element()); Name(v.layer.get(),group); Place(v.layer.get(),{0,0,0,0});
     api.Call(v.root.get(),"Add",{v.layer.get()});
 }
-Marker& NewMarker(View& v,const Frame& f,const Cell& cell) {
-    v.markers.emplace_back(); auto& m=v.markers.back(); m.x=cell.x; m.y=cell.y;
-    m.id.reset(api.string_new(("cell_"+std::to_string(cell.x)+"_"+std::to_string(cell.y)).c_str()));
+Marker& NewMarker(View& v,const Frame& f,const Cell& cell,const Count& count) {
+    const auto* resource=LookupResource(Catalog(),count.itemId);
+    if(!resource)throw std::runtime_error("Unknown selected map resource");
+    v.markers.emplace_back(); auto& m=v.markers.back(); m.x=cell.x; m.y=cell.y; m.item=count.itemId;
+    m.id.reset(api.string_new(("cell_"+std::to_string(cell.x)+"_"+std::to_string(cell.y)+"_"+std::to_string(count.itemId)).c_str()));
     float x=float(cell.x),y=float(cell.y),zero=0; int layer=-1;
     auto point=api.Value<Vec2>(api.Invoke(methods.mapToPixel,nullptr,{&x,&y,f.world.get(),const_cast<double*>(&f.zoom)}));
+    // Native icon marker: the item image comes from the game's item catalog.
+    // Untinted, without the optional caption and reference id; the 15-parameter
+    // constructor itself opts the marker into position groups.
+    Ref address(ItemIconAddress(resource->iconId)),caption(api.string_new(""));
+    Color tint{1,1,1,1}; uint32_t reference=0; bool shown=true;
     m.native.reset(api.object_new(methods.marker));
-    api.Invoke(methods.markerCtor,m.native.get(),{m.id.get(),&point.x,&point.y,&zero,&zero,const_cast<double*>(&f.zoom),&layer,v.group.get(),v.manager.get(),v.layer.get()});
+    api.Invoke(methods.markerCtor,m.native.get(),{m.id.get(),&point.x,&point.y,&zero,&zero,const_cast<double*>(&f.zoom),&layer,
+        api.object_unbox(address.get()),v.group.get(),v.manager.get(),&tint,caption.get(),&reference,v.layer.get(),&shown});
     m.root.reset(api.Field(m.native.get(),"<dtwe>k__BackingField"));
     if (!m.root.get()) throw std::runtime_error("Resource map native marker root unavailable");
     Ignore(m.root.get());
+    // Opt into the manager's position groups (the flag the game sets for its
+    // own hints), keyed by map coordinates like native hints and flags.
+    *static_cast<bool*>(api.FieldAddress(m.native.get(),"dtxh")) = true;
     Ref groups(api.Field(v.manager.get(),"dttw"));
     v.groupItems.reset(StringItem(groups.get(),v.group.get()));
     api.Invoke(methods.enableGroup,v.manager.get(),{v.group.get()});
+    Vec2 key{x,y};
+    api.Invoke(methods.cluster,v.manager.get(),{&key,m.native.get(),v.layer.get()});
     double iconScale=1;
     api.Invoke(methods.position,m.native.get(),{v.layer.get(),const_cast<double*>(&f.zoom),&iconScale});
     return m;
 }
-Rect BadgeOffset(size_t index,size_t count,float size,bool expanded) {
-    if(count<2)return {-size/2,-size/2,size,size};
-    if(!expanded){const float step=size*StackStepRatio,extent=size+float(count-1)*step;return {-extent/2+float(index)*step,-extent/2+float(index)*step,size,size};}
-    const int columns=2,rows=int((count+1)/2);
-    return {float(index%columns)*size-columns*size/2,float(index/columns)*size-rows*size/2,size,size};
-}
-Rect StackExtent(size_t count,float size,bool expanded) {
-    if(count<2)return {-size/2,-size/2,size,size};
-    if(!expanded){const float extent=size+float(count-1)*size*StackStepRatio;return {-extent/2,-extent/2,extent,extent};}
-    const int columns=2,rows=int((count+1)/2);
-    return {-columns*size/2,-rows*size/2,columns*size,rows*size};
-}
-void PlaceBadges(Marker& marker,Vec2 scale) {
-    for(size_t i=0;i<marker.badges.size();++i) {
-        const auto r=BadgeOffset(i,marker.badges.size(),marker.size,marker.expanded);
-        Place(marker.badges[i].root.get(),{r.x/scale.x,r.y/scale.y,r.width/scale.x,r.height/scale.y});
-    }
-}
-bool Inside(Vec2 p,Rect r) { return p.x>=r.x&&p.x<=r.x+r.width&&p.y>=r.y&&p.y<=r.y+r.height; }
-bool ReadPointer(const View& v,Vec2& pointer) {
-    int mouse=0,player=0; // PointerId.mousePointerId, ContextType.Player
-    if(api.Invoke(methods.pointerPanel,nullptr,{&mouse,&player})!=v.panel.get())return false;
-    const auto position=api.Value<Vec3>(api.Invoke(methods.pointerPosition,nullptr,{&mouse,&player}));
-    if(!std::isfinite(position.x)||!std::isfinite(position.y))return false;
-    pointer={position.x,position.y};
-    return Inside(pointer,v.viewport);
-}
-void UpdateHover(View& v) {
-    if(!v.cached||v.cleaning||v.markers.empty())return;
-    Vec2 pointer{};Marker* best=nullptr;float bestDistance=0;
-    if(ReadPointer(v,pointer))for(auto& m:v.markers) {
-        if(!m.native.get()||m.badges.size()<2)continue;
-        const auto e=StackExtent(m.badges.size(),m.size,m.expanded);
-        if(!Inside(pointer,{m.center.x+e.x,m.center.y+e.y,e.width,e.height}))continue;
-        const float distance=(pointer.x-m.center.x)*(pointer.x-m.center.x)+(pointer.y-m.center.y)*(pointer.y-m.center.y);
-        if(!best||distance<bestDistance){best=&m;bestDistance=distance;}
-    }
-    for(auto& m:v.markers) {
-        const bool expand=&m==best;
-        if(!m.native.get()||expand==m.expanded)continue;
-        m.expanded=expand;PlaceBadges(m,v.scale);
-        if(expand)api.Call(m.root.get(),"BringToFront");
-    }
-}
-void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
-    const auto content=Describe(Catalog(),cell);
-    if(marker.content==content&&Same(marker.scale,f.scale))return;
-    bool replaced=marker.badges.size()!=cell.counts.size();
-    for(size_t i=0;!replaced&&i<cell.counts.size();++i)replaced=marker.badges[i].item!=cell.counts[i].itemId;
-    if (replaced) {
-        for(auto& b:marker.badges) api.Call(b.root.get(),"RemoveFromHierarchy");
-        marker.badges.clear();
-        for(const auto& count:cell.counts) {
-            marker.badges.emplace_back(); auto& b=marker.badges.back(); b.item=count.itemId;
-            b.root.reset(Element()); b.label.reset(Element(true)); b.icon.reset(Element());
-            Name(b.root.get(),"resource_"+std::to_string(count.itemId));
-            const auto* resource=LookupResource(Catalog(),count.itemId);
-            if(!resource)throw std::runtime_error("Unknown selected map resource");
-            api.Call(b.root.get(),"Add",{b.icon.get()}); api.Call(b.root.get(),"Add",{b.label.get()}); api.Call(marker.root.get(),"Add",{b.root.get()});
-            LoadItemIcon(b.icon.get(),resource->iconId);
-        }
-    }
-    const float size=marker.size;
-    for(size_t i=0;i<cell.counts.size();++i) {
-        const auto& count=cell.counts[i]; auto& badge=marker.badges[i];
-        const auto* resource=LookupResource(Catalog(),count.itemId);
-        if (!resource) throw std::runtime_error("Unknown selected map resource");
-        Place(badge.icon.get(),{0,0,(size-4)/f.scale.x,(size-4)/f.scale.y});
-        const auto quantity=std::to_string(count.count)+(count.interiorCount?"*":"");
-        const float countWidth=(std::max)(18.0f,8.0f*float(quantity.size())+6.0f);
-        Place(badge.label.get(),{(size-countWidth)/f.scale.x,(size-18)/f.scale.y,countWidth/f.scale.x,18/f.scale.y});
-        Pixels(badge.label.get(),"fontSize",14/f.scale.y);
-        Style(badge.label.get(),"unityFontStyleAndWeight",1);
-        Style(badge.label.get(),"color",Color{.09f,.10f,.08f,1});
-        Style(badge.label.get(),"backgroundColor",Color{.98f,.87f,.55f,1});
-        for(auto side:{"borderTopColor","borderBottomColor","borderLeftColor","borderRightColor"})
-            Style(badge.label.get(),side,Color{.18f,.15f,.08f,1});
-        for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})
-            Style(badge.label.get(),side,1/f.scale.y);
-        for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
-            Pixels(badge.label.get(),corner,5/f.scale.y);
-        for(auto edge:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(badge.label.get(),edge,0);
-        Style(badge.label.get(),"unityTextAlign",4);
-        SetText(badge.label.get(),quantity);
-    }
-    PlaceBadges(marker,f.scale);
-    marker.content=content;marker.scale=f.scale;
+void UpdateLabel(Marker& marker,const Frame& f,const Count& count) {
+    const auto quantity=std::to_string(count.count)+(count.interiorCount?"*":"");
+    if(marker.content==quantity&&Same(marker.scale,f.scale))return;
+    if(!marker.label.get()){marker.label.reset(Element(true));api.Call(marker.root.get(),"Add",{marker.label.get()});}
+    // Bottom-right quantity badge inside the native marker, whatever its size.
+    const float countWidth=(std::max)(18.0f,8.0f*float(quantity.size())+6.0f);
+    Style(marker.label.get(),"position",1);
+    Pixels(marker.label.get(),"right",0);Pixels(marker.label.get(),"bottom",0);
+    Pixels(marker.label.get(),"width",countWidth/f.scale.x);Pixels(marker.label.get(),"height",18/f.scale.y);
+    Pixels(marker.label.get(),"fontSize",14/f.scale.y);
+    Style(marker.label.get(),"unityFontStyleAndWeight",1);
+    Style(marker.label.get(),"color",Color{.09f,.10f,.08f,1});
+    Style(marker.label.get(),"backgroundColor",Color{.98f,.87f,.55f,1});
+    for(auto side:{"borderTopColor","borderBottomColor","borderLeftColor","borderRightColor"})
+        Style(marker.label.get(),side,Color{.18f,.15f,.08f,1});
+    for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})
+        Style(marker.label.get(),side,1/f.scale.y);
+    for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
+        Pixels(marker.label.get(),corner,5/f.scale.y);
+    for(auto edge:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(marker.label.get(),edge,0);
+    Style(marker.label.get(),"unityTextAlign",4);
+    SetText(marker.label.get(),quantity);
+    marker.content=quantity;marker.scale=f.scale;
 }
 void Render(View& v,const Frame& f) {
     if(v.cached&&Same(v.viewport,f.viewport)&&Same(v.scale,f.scale)&&Same(v.origin,f.origin)&&v.zoom==f.zoom&&
@@ -346,26 +295,26 @@ void Render(View& v,const Frame& f) {
         return std::tuple(distance(a),a.x,a.y)<std::tuple(distance(b),b.x,b.y);
     });
     for(auto& m:v.markers)m.used=false;
-    size_t badgeCount=0;
+    size_t markerCount=0;
     for(const auto& cell:result.cells) {
         if(cell.counts.empty())continue;
-        if(badgeCount+cell.counts.size()>BadgeBudget) {result.limited=true;continue;}
+        if(markerCount+cell.counts.size()>MarkerBudget) {result.limited=true;continue;}
         float x=float(cell.x),y=float(cell.y);
         auto local=api.Value<Vec2>(api.Invoke(methods.mapToPixel,nullptr,{&x,&y,f.world.get(),const_cast<double*>(&f.zoom)}));
         auto screen=api.Value<Vec2>(api.Invoke(methods.toWorld,nullptr,{f.root.get(),&local}));
-        const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
-        const auto extent=StackExtent(cell.counts.size(),size,true);
-        const Rect bounds{screen.x+extent.x,screen.y+extent.y,extent.width,extent.height};
+        const float size=f.key==0?MiniMarkerSize:FullMarkerSize;
+        const Rect bounds{screen.x-size/2,screen.y-size/2,size,size};
         if(!Finite(bounds) || !Overlaps(bounds,f.viewport))continue;
-        // Each cell keeps its complete resource grid. Overlap with another
-        // cell must not delete minerals when the selection changes.
-        if(badgeCount%16==0&&!Current(f))throw std::runtime_error("Cartography changed during resource rendering");
-        auto found=std::find_if(v.markers.begin(),v.markers.end(),[&](const Marker& m){return m.x==cell.x && m.y==cell.y && m.native.get();});
-        if(found!=v.markers.end() && MarkerRegistered(v,*found)!=found->native.get()) {RemoveMarker(v,*found);found=v.markers.end();}
-        auto& marker=found==v.markers.end()?NewMarker(v,f,cell):*found;
-        marker.center=screen;marker.size=size;
-        UpdateBadges(marker,f,cell); marker.used=true;
-        badgeCount+=cell.counts.size();
+        // Each cell keeps every selected resource. Overlap with another cell
+        // must not delete minerals when the selection changes.
+        if(markerCount%16==0&&!Current(f))throw std::runtime_error("Cartography changed during resource rendering");
+        for(const auto& count:cell.counts) {
+            auto found=std::find_if(v.markers.begin(),v.markers.end(),[&](const Marker& m){return m.x==cell.x && m.y==cell.y && m.item==count.itemId && m.native.get();});
+            if(found!=v.markers.end() && MarkerRegistered(v,*found)!=found->native.get()) {RemoveMarker(v,*found);found=v.markers.end();}
+            auto& marker=found==v.markers.end()?NewMarker(v,f,cell,count):*found;
+            UpdateLabel(marker,f,count); marker.used=true;
+            ++markerCount;
+        }
     }
     for(auto& marker:v.markers)if(!marker.used)RemoveMarker(v,marker);
     std::erase_if(v.markers,[](const Marker& m){return !m.native.get();});
@@ -383,34 +332,37 @@ void InstallRender() {
     if(installed)return;
     InstallIcons();
     methods.service=api.Class("Core.dll","","fhk"); methods.view=api.Class("Core.dll","","fhw");
-    methods.marker=api.Class("Core.dll","","fgh"); auto manager=api.Class("Core.dll","","fga");
+    methods.marker=api.Class("Core.dll","","fgm"); auto manager=api.Class("Core.dll","","fga");
     methods.world=api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.World","WorldMapData");
     methods.element=api.Class(UiAssembly,UiSpace,"VisualElement"); methods.label=api.Class(UiAssembly,UiSpace,"Label");
     RequireField(methods.service,"dueo",0x98); RequireField(methods.view,"dugq",0x68);
     RequireField(methods.view,"dugv",0x90); RequireField(methods.view,"dugy",0xA8);
     RequireField(methods.view,"<dugi>k__BackingField",0x38); RequireField(methods.view,"<dugk>k__BackingField",0x48);
     RequireField(methods.view,"<dugf>k__BackingField",0x20); RequireField(methods.world,"id",0x10);
-    RequireField(methods.marker,"<dtwe>k__BackingField",0x10); RequireField(manager,"dttw",0x10); RequireField(manager,"dttx",0x18);
+    auto baseMarker=api.Class("Core.dll","","fgh"); // fgm : fgg : fgh owns the root element field.
+    RequireField(baseMarker,"<dtwe>k__BackingField",0x10); RequireField(methods.marker,"dtxh",0xC1);
+    RequireField(manager,"dttw",0x10); RequireField(manager,"dttx",0x18); RequireField(manager,"dtty",0x20);
     methods.centerPlayer=api.FindVerified(methods.view,"beus",1,0x1BFA370);
-    methods.markerCtor=api.FindVerified(methods.marker,".ctor",10,0x1C3C420);
-    methods.position=api.FindVerified(methods.marker,"beft",3,0x1C3CBB0);
-    methods.dispose=api.FindVerified(methods.marker,"begd",0,0x1C3D370);
+    // Icon marker (fgm): native item image, group opt-in flag and overrides of
+    // the base marker's positioning and disposal.
+    methods.markerCtor=api.FindVerified(methods.marker,".ctor",15,0x1C40D70);
+    methods.position=api.FindVerified(methods.marker,"beft",3,0x1C410D0);
+    methods.dispose=api.FindVerified(methods.marker,"begd",0,0x1C411D0);
     methods.find=api.FindVerified(manager,"beec",2,0x1B9EAE0);
     methods.enableGroup=api.FindVerified(manager,"beem",1,0x1B9F530);
+    // Position groups keyed by map coordinates: the same calls the game makes
+    // for its hints; the view's own mouse-move handler spreads a hovered group.
+    methods.cluster=api.FindVerified(manager,"bedx",3,0x1B9E370);
+    methods.uncluster=api.FindVerified(manager,"bedy",1,0x1B9E5C0);
     auto conversion=api.Class("Core.dll","","fhl");
     methods.mapToPixel=api.FindVerified(conversion,"bepx",4,0x1C4EB30);
     methods.pixelToMap=api.FindVerified(conversion,"bepv",3,0x1C4E8D0);
     auto extensions=api.Class(UiAssembly,UiSpace,"VisualElementExtensions");
     methods.toWorld=api.FindVerified(extensions,"LocalToWorld",2,0x56766A0);
     methods.toLocal=api.FindVerified(extensions,"WorldToLocal",2,0x56776A0);
-    // Last mouse position/panel known to UI Toolkit; no input hook and no
-    // pickable marker is needed to spread a hovered resource stack.
-    auto pointerState=api.Class(UiAssembly,UiSpace,"PointerDeviceState");
-    methods.pointerPosition=api.FindVerified(pointerState,"GetPointerPosition",2,0x577C600);
-    methods.pointerPanel=api.FindVerified(pointerState,"GetPanel",2,0x577C3A0);
     api.FindVerified(methods.label,".ctor",0,0x5729760);
     struct Guard {const char* name;int argc;uintptr_t rva;};
-    for(const auto& g:std::array<Guard,14>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},{"BringToFront",0,0x55E08E0},
+    for(const auto& g:std::array<Guard,13>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},
         {"get_contentContainer",0,0x3153690},{"get_panel",0,0x55F7170},{"get_parent",0,0x55F7180},{"get_worldBound",0,0x55F7CC0},{"get_worldClip",0,0x55F7EE0},
         {"get_visible",0,0x55F7BC0},{"get_resolvedStyle",0,0x55F72E0},{"set_name",1,0x55F9670},
         {"set_pickingMode",1,0x55F97B0},{"get_style",0,0x55F74A0}}}) api.FindVerified(methods.element,g.name,g.argc,g.rva);
@@ -420,7 +372,7 @@ bool RenderCleanupPending() {
     for(const auto& v:views)if(v.owner.get() || v.layer.get() || !v.markers.empty())return true;
     return false;
 }
-void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; nextHover=0; }
+void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; }
 MiniMapSurface ReadMiniMapSurface() {
     MiniMapSurface surface;
     if(!Session())return surface;
@@ -458,27 +410,18 @@ bool CenterMiniMap(const MiniMapSurface& expected) {
 }
 void PumpRender(uint64_t now) {
     if(!Session()||(!module->settings.resourceMapEnabled&&!module->settings.resourceMiniMapEnabled)||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
-    const bool render=now>=nextPump,hover=now>=nextHover;
-    if(!render&&!hover)return;
-    if(render)nextPump=now+200;
-    if(hover)nextHover=now+HoverInterval;
+    if(now<nextPump)return;
+    nextPump=now+200;
     for(int key=0;key<2;++key) {
         auto& v=views[key];
         try {
             if(v.cleaning && !Cleanup(v))continue;
             const bool enabled=key==0?module->settings.resourceMiniMapEnabled:module->settings.resourceMapEnabled;
             if(!enabled){Cleanup(v);continue;}
-            if(!render) {
-                // Hover re-places badges only on the geometry of the last render.
-                if(v.cached&&v.layer.get()&&v.compositor.get()==module->compositor.get()&&
-                    api.Call(v.root.get(),"get_panel")==v.panel.get()&&api.Call(v.layer.get(),"get_parent")==v.root.get())UpdateHover(v);
-                continue;
-            }
             auto f=ReadFrame(key);
             if(!f.valid) {Cleanup(v);continue;}
             if(!SameView(v,f)) {if(!Cleanup(v))continue;CreateView(v,f);}
             Render(v,f);
-            UpdateHover(v);
         } catch(const std::exception& error) {Report(error);Cleanup(v);}
     }
 }

@@ -69,7 +69,7 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return source.get() && api.Value<bool>(api.Call(source.get(), "IsLoaded"));
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) &&
-        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.githubSource);
+        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -91,6 +91,7 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.spouseSource.get(), settings.spouseTeleport, notify);
     SetSource(ui.resourcesSource.get(), settings.resourceMapEnabled, notify);
     SetSource(ui.resourcesMiniSource.get(), settings.resourceMiniMapEnabled, notify);
+    SetSource(ui.miniCenterSource.get(), settings.miniMapCenterButton, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -149,6 +150,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.spouseSource.reset(api.New(booleanType, {&defaults.spouseTeleport, &readOnly}));
     prepared.resourcesSource.reset(api.New(booleanType, {&defaults.resourceMapEnabled, &readOnly}));
     prepared.resourcesMiniSource.reset(api.New(booleanType, {&defaults.resourceMiniMapEnabled, &readOnly}));
+    prepared.miniCenterSource.reset(api.New(booleanType, {&defaults.miniMapCenterButton, &readOnly}));
     if (!ModelsLoaded(prepared)) return false;
     // Native reset uses constructor defaults, independently of persisted values.
     ApplySettings(prepared, module->settings, false);
@@ -193,6 +195,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Dans les filtres de la carte (M), ouvrez un métier puis cochez les ressources souhaitées. La carte et la mini-carte affichent leurs points de récolte recensés par case. Cela ne renseigne pas leur disponibilité en temps réel. Désactiver conserve votre sélection."));
     prepared.resourcesMiniOption.reset(MakeBoolOption(prepared.resourcesMiniSource.get(), current.get(), tooltip.get(), "Ressources sur la mini-carte",
         "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
+    prepared.miniCenterOption.reset(MakeBoolOption(prepared.miniCenterSource.get(), current.get(), tooltip.get(), "Bouton de recentrage sur la mini-carte",
+        "Affiche en bas à gauche de la mini-carte le bouton qui la ramène sur ton personnage, avec le même aspect que le bouton joueur de la grande carte. Décocher le masque."));
     // Last row: credits. The native text button has no owned delegate; its
     // click is recognised by the unique description reference in TextButtonHook.
     prepared.creditsOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"), {nullptr, tooltip.get()}));
@@ -207,6 +211,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.creditsMarker = std::move(prepared.creditsMarker);
     ui.resourcesMiniSource = std::move(prepared.resourcesMiniSource);
     ui.resourcesMiniOption = std::move(prepared.resourcesMiniOption);
+    ui.miniCenterSource = std::move(prepared.miniCenterSource);
+    ui.miniCenterOption = std::move(prepared.miniCenterOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -357,6 +363,7 @@ bool OptionsUi::Attach(Obj page) {
     api.Call(options, "Add", {spouseOption.get()});
     api.Call(options, "Add", {resourcesOption.get()});
     api.Call(options, "Add", {resourcesMiniOption.get()});
+    api.Call(options, "Add", {miniCenterOption.get()});
     api.Call(options, "Add", {creditsOption.get()});
     api.Call(api.Field(category.get(), "subcategories"), "Add", {general.get()});
     Page owned;
@@ -412,6 +419,7 @@ void OptionsUi::Tick() {
     next.spouseTeleport = api.Value<bool>(api.Call(spouseSource.get(), "get_property"));
     next.resourceMapEnabled = api.Value<bool>(api.Call(resourcesSource.get(), "get_property"));
     next.resourceMiniMapEnabled = api.Value<bool>(api.Call(resourcesMiniSource.get(), "get_property"));
+    next.miniMapCenterButton = api.Value<bool>(api.Call(miniCenterSource.get(), "get_property"));
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
         !Settings::ValidAnimationMode(next.animationMode) || !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
         Sync(); return;
@@ -476,6 +484,7 @@ void OptionsUi::Restore() {
     resourcesSource.reset();
     resourcesOption.reset();
     resourcesMiniSource.reset(); resourcesMiniOption.reset();
+    miniCenterSource.reset(); miniCenterOption.reset();
     creditsOption.reset(); creditsMarker.reset();
     spouseSource.reset();
     spouseOption.reset();

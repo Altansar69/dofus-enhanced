@@ -404,11 +404,11 @@ void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original)
 namespace fake {
 std::vector<Obj> AllSources(OptionsUi& ui) {
     return {ui.modeSource.get(), ui.roleplayModeSource.get(),
-        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get(), ui.resourcesMiniSource.get()};
+        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get()};
 }
 std::vector<Obj> AllOptions(OptionsUi& ui) {
     return {ui.modeOption.get(), ui.roleplayModeOption.get(),
-        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.resourcesMiniOption.get(), ui.creditsOption.get()};
+        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.resourcesMiniOption.get(), ui.miniCenterOption.get(), ui.creditsOption.get()};
 }
 const std::vector<Obj>& Rows(Obj category) { return Get(Get(category).refs.at("options")).items; }
 std::string Label(Obj option) { return Get(Get(option).refs.at("text")).text; }
@@ -424,18 +424,18 @@ void CheckLayout(Fixture& f) {
         Get(section).integers.at("categoryId") == GeneralId &&
         Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
     Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
-    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly sixteen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte", "Dofus Enhanced 1.0.0 — par Altansar"};
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.0.0", "Tab name carries no revision; version is x.y.z");
+    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly seventeen rows in the requested order");
+    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte", "Bouton de recentrage sur la mini-carte", "Dofus Enhanced 1.1.0 — par Altansar"};
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.1.0", "Tab name carries no revision; version is x.y.z");
     for (size_t i = 0; i != Rows(section).size(); ++i) {
         const auto option = Rows(section)[i];
         Check(Label(option) == labels[i], "Simple option label or ordering changed");
-        Check(Get(option).klass->name == (i == 15 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
+        Check(Get(option).klass->name == (i == 16 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
             "Simple settings must use native controls");
-        if (i == 15) {
+        if (i == 16) {
             const auto description = Description(option);
             Check(description.find("Altansar") != std::string::npos && description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos &&
-                description.find("r92") != std::string::npos, "Credits must name the author, the project page and the revision");
+                description.find("r93") != std::string::npos, "Credits must name the author, the project page and the revision");
             Check(Get(*static_cast<Obj*>(api.FieldAddress(option, "buttonText"))).text == "Ouvrir GitHub", "Credits button opens the project page");
         }
         if (i < 3 || i == 7) {
@@ -447,8 +447,8 @@ void CheckLayout(Fixture& f) {
                     "A percentage or minimum choice remains in native search models");
         }
     }
-    Check(sourceModels == 15 && optionModels == 16,
-        "The UI must create fifteen private sources and sixteen rows");
+    Check(sourceModels == 16 && optionModels == 17,
+        "The UI must create sixteen private sources and seventeen rows");
     Check(uiHooks == 3, "Only native page callbacks and the text button action must be hooked");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
     if (!displayed.empty()) {

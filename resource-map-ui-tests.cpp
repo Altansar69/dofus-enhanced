@@ -357,7 +357,7 @@ Obj FindUnder(Obj root,const char* type,const char* text=nullptr){
 }
 Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="VisualElement"&&Get(child).fields["tooltip"])return child;return nullptr;}
 Obj MiniCenter(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="CheckboxCustom")return child;return nullptr;}
-void CheckIgnored(Obj element,int depth=0){Check(Get(element).notifications==1,"Native button subtree must not intercept the polled click");for(auto child:Get(element).children)CheckIgnored(child,depth+1);}
+void CheckPickable(Obj element){Check(Get(element).notifications==0,"Native button subtree stays pickable for hover, cursor and tooltip");for(auto child:Get(element).children)CheckPickable(child);}
 void MiniMapSelectionAndLifetime(){
     Fixture f;
     miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
@@ -377,12 +377,17 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(center).text.empty()&&!Get(center).fields["m_rightLabel"],"Center button shows no caption");
     auto nativeButton=FindUnder(center,"DofusButtonCustom");
     Check(nativeButton&&Get(nativeButton).owned&&Get(nativeButton).size==228,"Center uses the native button component with the full map's player icon");
-    CheckIgnored(nativeButton);
+    CheckPickable(nativeButton);
+    Check(Get(nativeButton).fields["tooltip"]&&Get(Get(nativeButton).fields["tooltip"]).text=="Recentrer la mini-carte sur mon personnage","Native button carries the hover tooltip");
     const auto unchanged=f.state.settings;
     NativeToggle(center,true);resourceMap::TickUi();
     Check(centerRequests==1&&!Get(center).value&&f.state.settings==unchanged&&changes==0,"Center is a one-shot action even with resources disabled and nothing selected");
     resourceMap::TickUi();Check(centerRequests==1,"Idle ticks do not center repeatedly");
     NativeToggle(center,true);resourceMap::TickUi();Check(centerRequests==2,"Each new activation can center again");
+    f.state.settings.miniMapCenterButton=false;resourceMap::TickUi();
+    Check(Get(center).styles["display"]!=0&&Get(center).fields["parent"]==miniRoot,"The option hides the center button without rebuilding the picker");
+    NativeToggle(center,true);resourceMap::TickUi();Check(centerRequests==2&&!Get(center).value,"A hidden center button never centers");
+    f.state.settings.miniMapCenterButton=true;resourceMap::TickUi();Check(Get(center).styles["display"]==0,"Re-enabling the option shows the button again");
     Check(Get(Get(center).fields.at("m_checkbox")).styles["visibility"]!=0,"Center must never show a checkbox square");
     // Native map wheel/move callbacks are on MiniMapContent. A UI event on
     // our controls bubbles to MiniHost without entering that map subtree.

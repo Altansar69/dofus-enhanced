@@ -23,6 +23,7 @@ struct Settings {
     bool spouseTeleport = true;
     bool resourceMapEnabled = true;
     bool resourceMiniMapEnabled = true;
+    bool miniMapCenterButton = true;
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
     static bool ValidResourceSelection(const std::vector<int>& items) {

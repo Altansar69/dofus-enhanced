@@ -23,6 +23,8 @@ Page ParsePage(const std::string&, const Query&, int skip);
 std::vector<Clue> Nearest(std::vector<Clue>);
 std::string SearchKey(const std::string&);
 std::vector<Clue> Filter(const std::vector<Clue>&, const std::string&);
+// Exact point-of-interest match for the step read from the game's hunt.
+std::vector<Clue> FilterById(const std::vector<Clue>&, int id);
 // HTTPS only; no account credentials, cookies, game objects or client state.
 std::vector<Clue> Fetch(const Query&, const std::atomic_bool& cancelled);
 }

@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.0.0** (révision r92).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.1.0** (révision r93).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -52,9 +52,14 @@ Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, 
 Un second clic ou **⋯ → Masquer le module** ferme le panneau.
 Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
-Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
-Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
-le départ suivant ; aucun trajet ni validation de chasse ne se lance.
+À l’ouverture, le départ reprend la carte où tu te trouves et, si une chasse est
+en cours, sa direction et son indice sont lus dans le jeu (**Étape en cours**
+relance cette lecture et la recherche ; **Ma position** ne reprend que les
+coordonnées). Renseigner X, Y et une direction reste possible à la main, puis
+Rechercher et filtrer par indice. Chaque résultat affiche sa position la plus
+proche et sa distance. Un clic prépare le départ suivant ; **Chemin** lance le
+trajet amélioré du mod vers l’indice (zaaps, bateaux, puis `/travel`), comme le
+bouton TP du chat. Aucune validation de chasse n’est envoyée.
 Les requêtes vont directement à DofusDB, sans identifiants ni cookies.
 Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 
@@ -127,16 +132,19 @@ sélectionnée. Décocher l’affichage d’une carte, dans son volet ou dans le
 options, masque aussi le volet de sélection de cette carte jusqu’à réactivation
 par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
 bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
-carte ; il ramène la mini-carte sur le personnage en conservant le zoom.
+carte, avec son survol et son infobulle natifs ; il ramène la mini-carte sur le
+personnage en conservant le zoom. L’option **Bouton de recentrage sur la
+mini-carte** permet de le masquer.
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
 Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
 des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
 pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Les ressources aux mêmes coordonnées gardent chacune leur icône et leur quantité :
-elles s’empilent sur la case avec un léger décalage et s’étalent côte à côte au
-survol de la souris, puis se replient quand le curseur s’éloigne.
+Chaque ressource d’une case est un repère natif du jeu (image de l’objet et
+pastille de quantité). Les repères d’une même case rejoignent le groupe de
+position natif, comme les indices du jeu : pastille de nombre, étalement au
+survol et repli sont ceux de Dofus.
 Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
 Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les
@@ -146,7 +154,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La 1.0.0 (r92) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La 1.1.0 (r93) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -179,7 +187,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r92 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r93 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

@@ -1,5 +1,8 @@
 #include "treasure-launch.hpp"
 #include "treasure-data.hpp"
+#include "treasure-hunt.hpp"
+#include "notebook-native.hpp"
+#include "chat-travel.hpp"
 #include "soul-panel.hpp"
 #include "tools-ui.hpp"
 #include "module.hpp"
@@ -20,9 +23,11 @@ struct Job {
 };
 struct State {
     Ref root, window, header, dragger, dependencies, cached, compositor;
-    Ref x, y, filter, status, search, close, previous, next;
+    Ref x, y, filter, status, search, close, previous, next, position, hunt;
     std::array<Ref, 4> direction, inputEvents;
-    std::array<Ref, Rows> rows;
+    std::array<Ref, Rows> rows, lines, travel;
+    unsigned poiFilter = 0;
+    std::string huntLabel;
     std::vector<Ref> manipulators;
     std::vector<treasure::Clue> clues, filtered;
     std::shared_ptr<Job> job;
@@ -134,7 +139,7 @@ bool Current() {
 void Invalidate() {
     state.haveResults=false; state.clues.clear(); state.filtered.clear(); state.offset=0;
     if(state.job) state.job->cancelled.store(true);
-    for(auto& row:state.rows) if(row.get()) Enum(row.get(),"display",1);
+    for(auto& line:state.lines) if(line.get()) Enum(line.get(),"display",1);
     if(state.previous.get()) Enabled(state.previous.get(),false);
     if(state.next.get()) Enabled(state.next.get(),false);
 }
@@ -142,12 +147,13 @@ void ShowRows() {
     for(size_t i=0;i<Rows;++i) {
         const size_t index=state.offset+i;
         const bool show=index<state.filtered.size();
-        Enum(state.rows[i].get(),"display",show?0:1);
+        Enum(state.lines[i].get(),"display",show?0:1);
         if(show) {
             const auto& clue=state.filtered[index];
             const auto text=clue.name+" → ["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] · "+std::to_string(clue.distance)+" carte(s)";
             Text(state.rows[i].get(),clue.name+"\n["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] · "+std::to_string(clue.distance)+" carte(s)");
             Text(state.rows[i].get(),text+"\nCliquer pour utiliser ces coordonnées comme nouveau départ.","set_tooltip");
+            Text(state.travel[i].get(),"Lancer le trajet vers ["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] : zaaps, bateaux et /travel, comme le bouton TP du chat.","set_tooltip");
         }
     }
     Enabled(state.previous.get(),state.offset>0);
@@ -159,6 +165,38 @@ void ShowRows() {
 bool ReadQuery(treasure::Query& query) {
     query.direction=state.directionValue;
     return treasure::Coordinate(Read(state.x.get()),query.x) && treasure::Coordinate(Read(state.y.get()),query.y);
+}
+std::vector<treasure::Clue> Filtered(const std::string& text) {
+    // The game's current point of interest filters exactly until the player
+    // types their own clue text.
+    if(text.empty() && state.poiFilter) return treasure::FilterById(state.clues,int(state.poiFilter));
+    return treasure::Filter(state.clues,text);
+}
+bool FillPosition() {
+    try {
+        const auto here=notebook::CurrentPosition();
+        Text(state.x.get(),std::to_string(here.x)); Text(state.y.get(),std::to_string(here.y));
+        state.lastX=Read(state.x.get()); state.lastY=Read(state.y.get());
+        return true;
+    } catch(const std::exception& error) { Text(state.status.get(),error.what()); return false; }
+}
+const char* DirectionName(int direction) {
+    return direction==6?"Nord":direction==4?"Ouest":direction==2?"Sud":direction==0?"Est":"?";
+}
+void Search();
+bool ApplyHunt(bool search) {
+    const auto step=treasure::CurrentStep();
+    if(!step.active) { state.poiFilter=0; state.huntLabel.clear(); Text(state.status.get(),"Aucune chasse au trésor en cours. Renseigne le départ et la direction à la main."); return false; }
+    if(step.direction!=0 && step.direction!=2 && step.direction!=4 && step.direction!=6) { Text(state.status.get(),"Étape de chasse sans direction exploitable."); return false; }
+    Invalidate();
+    state.directionValue=step.direction; state.poiFilter=step.poiId; Text(state.filter.get(),""); state.lastFilter.clear();
+    const std::string target=step.poiId ? (step.hint.empty() ? "indice n°"+std::to_string(step.poiId) : step.hint) :
+        step.type==5 ? "indice d’un PNJ (non recherché sur DofusDB)" : std::to_string(step.mapCount)+" carte(s) dans cette direction";
+    state.huntLabel="Étape "+std::to_string(step.index)+" · "+DirectionName(step.direction)+" · "+target;
+    if(!FillPosition()) return false;
+    Text(state.status.get(),state.huntLabel+(search?"":"\nDépart : ta position actuelle. Clique sur Étape en cours pour rechercher."));
+    if(search && step.poiId) Search();
+    return true;
 }
 void Search() {
     if(state.job || GetTickCount64()<state.nextRequest) return;
@@ -183,11 +221,11 @@ void Search() {
     } catch(...) { state.job.reset(); activeJob.reset(); throw; }
 }
 bool Action(Obj owner) {
-    int direction=-1, result=-1;
+    int direction=-1, result=-1, travel=-1;
     for(int i=0;i<4;++i) if(owner && owner==state.direction[i].get()) direction=i;
-    for(size_t i=0;i<Rows;++i) if(owner && owner==state.rows[i].get()) result=static_cast<int>(i);
-    const bool own=owner && (direction>=0 || result>=0 || owner==state.search.get() || owner==state.close.get() ||
-        owner==state.previous.get() || owner==state.next.get());
+    for(size_t i=0;i<Rows;++i) { if(owner && owner==state.rows[i].get()) result=static_cast<int>(i); if(owner && owner==state.travel[i].get()) travel=static_cast<int>(i); }
+    const bool own=owner && (direction>=0 || result>=0 || travel>=0 || owner==state.search.get() || owner==state.close.get() ||
+        owner==state.previous.get() || owner==state.next.get() || owner==state.position.get() || owner==state.hunt.get());
     if(!own) return false;
     try {
         if(!wanted || !Current() || !api.Value<bool>(api.Call(owner,"get_enabledInHierarchy"))) return true;
@@ -196,6 +234,17 @@ bool Action(Obj owner) {
             const int values[]={6,4,2,0}; state.directionValue=values[direction];
             Invalidate(); Text(state.status.get(),"Direction modifiée. Clique sur Rechercher.");
         } else if(owner==state.search.get()) Search();
+        else if(owner==state.position.get()) { if(FillPosition()) { Invalidate(); Text(state.status.get(),"Position actuelle renseignée. Choisis la direction puis Rechercher."); } }
+        else if(owner==state.hunt.get()) ApplyHunt(true);
+        else if(travel>=0 && state.haveResults && state.offset+travel<state.filtered.size()) {
+            const auto clue=state.filtered[state.offset+travel];
+            try {
+                // Same improved journey as the chat TP button: zaaps, boats, then /travel.
+                const auto here=notebook::CurrentPosition();
+                StartChatTravel({clue.x,clue.y,here.world});
+                Text(state.status.get(),"Trajet lancé vers ["+std::to_string(clue.x)+","+std::to_string(clue.y)+"]. Clique le résultat pour en faire le prochain départ.");
+            } catch(const std::exception& error) { Text(state.status.get(),error.what()); }
+        }
         else if(owner==state.previous.get() && state.offset>=Rows) {state.offset-=Rows;ShowRows();}
         else if(owner==state.next.get() && state.offset+Rows<state.filtered.size()) {state.offset+=Rows;ShowRows();}
         else if(result>=0 && state.haveResults && state.offset+result<state.filtered.size()) {
@@ -247,22 +296,30 @@ void Create(Obj root) {
     Ref coords(Row(departure.get()));
     Label(coords.get(),"X "); state.x.reset(Input(coords.get(),"X","",5));
     Label(coords.get(),"  Y "); state.y.reset(Input(coords.get(),"Y","",5));
+    state.position.reset(Button(coords.get(),"Ma position"));
+    Text(state.position.get(),"Reprendre les coordonnées de la carte où tu te trouves.","set_tooltip");
     Ref directions(Row(departure.get()));
     const char* names[]={"↑ Nord","← Ouest","↓ Sud","→ Est"};
     for(size_t i=0;i<4;++i) {state.direction[i].reset(Button(directions.get(),names[i])); Float(state.direction[i].get(),"flexGrow",1);}
     Ref clueSection(Section(content.get(),"2 · Indice à trouver"));
     state.filter.reset(Input(clueSection.get(),"Nom de l’indice (ou laisse vide pour les lister)","",100));
     Pixels(state.filter.get(),"marginBottom",8);
+    state.hunt.reset(Button(clueSection.get(),"Étape en cours"));
+    Text(state.hunt.get(),"Reprend ta position, la direction et l’indice de la chasse au trésor en cours, puis lance la recherche.","set_tooltip");
+    Pixels(state.hunt.get(),"marginBottom",8);
     state.search.reset(Button(clueSection.get(),"Rechercher les indices"));Select(state.search.get(),true);
     state.status.reset(Label(content.get(),"Renseigne le départ et la direction, puis lance la recherche."));
     Ref results(Section(content.get(),"3 · Résultats"));
-    for(auto& row:state.rows) {
-        row.reset(Button(results.get(),"")); Enum(row.get(),"display",1);
+    for(size_t i=0;i<Rows;++i) {
+        auto& row=state.rows[i];
+        state.lines[i].reset(Row(results.get())); Enum(state.lines[i].get(),"display",1);
+        row.reset(Button(state.lines[i].get(),"")); Float(row.get(),"flexGrow",1);
         Pixels(row.get(),"height",48);
         Ref label(api.Field(row.get(),"m_textLabel"));
         api.Call(label.get(),"set_isSingleLine",{&no});
         Enum(label.get(),"whiteSpace",0);
         Pixels(label.get(),"fontSize",14);
+        state.travel[i].reset(Button(state.lines[i].get(),"Chemin")); Pixels(state.travel[i].get(),"height",48); Pixels(state.travel[i].get(),"marginRight",0);
     }
     Ref pages(Row(results.get()));
     state.previous.reset(Button(pages.get(),"Précédents")); state.next.reset(Button(pages.get(),"Suivants"));
@@ -271,6 +328,8 @@ void Create(Obj root) {
     state.close.reset(Button(content.get(),"Fermer"));
     Add(root,state.window.get());
     Log("TREASURE_PANEL_OPEN native=true provider=DofusDB");
+    // Start from where the player stands and from the running hunt, if any.
+    if(!ApplyHunt(false)) FillPosition();
 }
 }
 void InstallTreasurePanel() {
@@ -349,7 +408,7 @@ void TickTreasurePanel() {
         if(!job->cancelled && ReadQuery(current) && current==job->query) {
             if(job->error.empty()) {
                 state.clues=std::move(job->clues); state.haveResults=true;
-                state.filtered=treasure::Filter(state.clues,filter); state.offset=0; ShowRows();
+                state.filtered=Filtered(filter); state.offset=0; ShowRows();
                 Log("TREASURE_PANEL_RESULTS count="+std::to_string(state.clues.size()));
             } else {
                 Text(state.status.get(),job->error);
@@ -360,7 +419,7 @@ void TickTreasurePanel() {
     Enabled(state.search.get(),!state.job && GetTickCount64()>=state.nextRequest);
     if(filter!=state.lastFilter) {
         state.lastFilter=filter; state.offset=0;
-        if(state.haveResults) {state.filtered=treasure::Filter(state.clues,filter);ShowRows();}
+        if(state.haveResults) {state.filtered=Filtered(filter);ShowRows();}
     }
     const int values[]={6,4,2,0};
     const char* names[]={"↑ Nord","← Ouest","↓ Sud","→ Est"};

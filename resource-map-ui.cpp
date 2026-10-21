@@ -42,7 +42,7 @@ struct State {
     Ref toolbar,center;
     std::vector<Ref> tabs,groups,cursorTargets;
     int activeJob=-1;
-    bool enabled=true,attached=false,mini=false,cleaning=false,shown=true;
+    bool enabled=true,attached=false,mini=false,cleaning=false,shown=true,centerShown=true;
     float height=-1,width=-1,left=-1,top=-1,centerLeft=-1,centerTop=-1;
 };
 std::unique_ptr<State> owned,miniOwned;
@@ -120,15 +120,6 @@ void Rounded(Obj element,float radius){
     for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(element,corner,radius);
 }
 void Ignore(Obj element){int ignore=1;api.Call(element,"set_pickingMode",{&ignore});}
-void IgnoreTree(Obj element,int depth=0){
-    Ignore(element);
-    if(depth>=6)return;
-    Ref tree(api.Call(element,"get_hierarchy"));
-    if(!tree.get()||!api.class_is_valuetype(api.object_get_class(tree.get())))throw std::runtime_error("Native button hierarchy unavailable");
-    const int count=api.Value<int>(api.Call(tree.get(),"get_childCount"));
-    if(count<0||count>32)throw std::runtime_error("Native button subtree bounds");
-    for(int i=0;i<count;++i){Ref child(api.Call(tree.get(),"get_Item",{&i}));if(child.get())IgnoreTree(child.get(),depth+1);}
-}
 void HideCheckboxSquare(Obj control){
     Ref square(api.Field(control,"m_checkbox"));
     // Native selection refreshes display; visibility keeps the square hidden.
@@ -232,10 +223,12 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         Style(next->center.get(),"alignItems",2);Style(next->center.get(),"justifyContent",1);
         Text(next->center.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
         // Same native component and icon as btn_player on the full map. The
-        // whole button subtree ignores picking: the polled checkbox gets the click.
+        // button stays pickable so its native hover state, cursor and tooltip
+        // work; without an action of its own, the click bubbles to the polled
+        // checkbox around it.
         Ref button(api.object_new(buttonClass));api.Invoke(buttonCtor,button.get());
         int player=PlayerIcon;api.Invoke(buttonIcon,button.get(),{&player});
-        IgnoreTree(button.get());
+        Text(button.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
         api.Call(next->center.get(),"Add",{button.get()});
     }else{
         Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
@@ -327,6 +320,10 @@ void Sync(State& state){
 void ApplyVisibility(State& state){
     // A map whose resource display is off also hides its picker; the option
     // or the other map's picker re-enables it.
+    if(state.center.get()){
+        const bool center=module->settings.miniMapCenterButton;
+        if(state.centerShown!=center){Style(state.center.get(),"display",center?0:1);state.centerShown=center;}
+    }
     if(state.shown==state.enabled)return;
     Style(state.resources.get(),"display",state.enabled?0:1);state.shown=state.enabled;
 }
@@ -371,9 +368,6 @@ void InstallUi(){
     api.FindVerified(elementClass,".ctor",0,0x55F50B0);
     api.FindVerified(elementClass,"Insert",2,0x55E5710);
     api.FindVerified(elementClass,"set_pickingMode",1,0x55F97B0);
-    api.FindVerified(elementClass,"get_hierarchy",0,0x185C4A0);
-    auto hierarchyClass=api.NestedClass(elementClass,"Hierarchy");
-    api.FindVerified(hierarchyClass,"get_childCount",0,0x55FFA80);api.FindVerified(hierarchyClass,"get_Item",1,0x55FE670);
     buttonClass=api.Class("Core.dll",Figma,"DofusButtonCustom");
     buttonCtor=api.FindVerified(buttonClass,".ctor",0,0x170D6F0);
     buttonIcon=api.FindVerified(buttonClass,"set_icon",1,0x170DFE0);
@@ -439,7 +433,7 @@ void TickUi(){
             if(!Layout(*miniOwned,&surface)){Detach(miniOwned);return;}
             if(api.Value<bool>(api.Invoke(checkboxValue,miniOwned->center.get()))){
                 bool off=false;api.Invoke(checkboxSet,miniOwned->center.get(),{&off});
-                CenterMiniMap(surface);
+                if(module->settings.miniMapCenterButton)CenterMiniMap(surface);
             }
             PollTabs(*miniOwned);Poll(*miniOwned);ApplyVisibility(*miniOwned);
             // Resource marker layers can be recreated after native filter

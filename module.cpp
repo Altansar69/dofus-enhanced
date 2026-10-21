@@ -21,6 +21,7 @@
 #include "spouse-party-widget.hpp"
 #include "startup-options.hpp"
 #include "treasure-launch.hpp"
+#include "treasure-hunt.hpp"
 #include "notebook-panel.hpp"
 #include "tools-ui.hpp"
 #include "jobs-xp-panel.hpp"
@@ -361,6 +362,7 @@ static DWORD WINAPI Worker(void*) {
         InstallSoulHelper();
         toolsUi::Install();
         InstallTreasurePanel();
+        treasure::InstallHunt();
         InstallNotebookPanel();
         InstallJobsXp();
         InstallSoulWidget();

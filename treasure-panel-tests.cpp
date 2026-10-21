@@ -2,6 +2,9 @@
 #include "native-panel-test-fixture.hpp"
 #include "treasure-launch.hpp"
 #include "treasure-data.hpp"
+#include "treasure-hunt.hpp"
+#include "notebook-native.hpp"
+#include "chat-travel.hpp"
 #include <atomic>
 #include <thread>
 
@@ -16,6 +19,14 @@ std::vector<Clue> Fetch(const Query& query,const std::atomic_bool& cancelled) {
     return {{1,query.x+1,query.y,1,"Épée"}, {2,query.x+2,query.y,2,"Crâne décoré"}};
 }
 }
+namespace {
+bool positionAvailable=false; int travels=0; ChatTpTarget lastTravel; treasure::Step fakeStep;
+}
+namespace notebook {
+Entry CurrentPosition() { if(!positionAvailable) throw std::runtime_error("Position actuelle indisponible."); Entry here; here.map=123; here.x=-25; here.y=-36; here.world=1; return here; }
+}
+void StartChatTravel(ChatTpTarget target) { ++travels; lastTravel=target; }
+namespace treasure { Step CurrentStep() { return fakeStep; } }
 namespace soul {
 managed::Obj CreateSpellView(managed::Obj parent) { auto slot=fake::Element("SpellSlot");fake::Add(parent,slot);return slot; }
 bool UpdateSpellView(managed::Obj,bool) {return true;}
@@ -34,9 +45,15 @@ std::vector<Obj> Inputs(Obj root) {
     return result;
 }
 void Click(Obj object) {Check(!!object,"Missing native action");actionHook(object,nullptr);}
+int ResultLogs(){int n=0;for(const auto& m:logs)if(m.rfind("TREASURE_PANEL_RESULTS",0)==0||m.rfind("TREASURE_PANEL_PROVIDER_ERROR",0)==0)++n;return n;}
 void AwaitResult() {
-    for(int i=0;i<500;++i){TickTreasurePanel();if(finished==fetches&&fetches>0){TickTreasurePanel();return;}Sleep(2);}
-    throw std::runtime_error("Worker timeout");
+    // The worker flags completion after the fake fetch returns; keep ticking
+    // until the panel consumed the job (or, for a rejected job, a short grace).
+    const int before=ResultLogs();
+    for(int i=0;i<500;++i){TickTreasurePanel();if(finished==fetches&&fetches>0)break;Sleep(2);}
+    if(!(finished==fetches&&fetches>0))throw std::runtime_error("Worker timeout");
+    for(int i=0;i<200&&ResultLogs()==before;++i){Sleep(2);TickTreasurePanel();}
+    TickTreasurePanel();
 }
 int main() {
     try {
@@ -73,10 +90,26 @@ int main() {
         Check(!Panel(window)&&!TreasurePanelCleanupPending(),"Close detaches native window");
         for(const auto* key:{"ydf","ydh","ydj","ydl"})
             Check(Get(Get(Get(input).fields[key]).fields["m_input"]).children.size()==1,"Only foreign input delegate remains");
+        // Running hunt: the panel starts from the player's map and the game's own step.
+        positionAvailable=true;fakeStep={true,3,1,4,2,0,0,"Crâne décoré"};
+        OpenTreasureOverlay({});TickTreasurePanel();window=latestWindow;inputs=Inputs(window);
+        Check(Get(inputs[0]).text=="-25"&&Get(inputs[1]).text=="-36"&&Get(inputs[2]).text.empty()&&fetches==1,"Opening fills the start from the current map without querying");
+        Check(FindText(window,"Étape 3 · Ouest · Crâne décoré\nDépart : ta position actuelle. Clique sur Étape en cours pour rechercher."),"The running hunt step is described");
+        Get(inputs[0]).text="0";Get(inputs[1]).text="0";TickTreasurePanel();
+        Click(FindText(window,"Ma position"));Check(Get(inputs[0]).text=="-25"&&Get(inputs[1]).text=="-36","Position button fills the start from the current map");
+        Click(FindText(window,"Étape en cours"));AwaitResult();
+        Check(fetches==2,"The hunt step launches exactly one search");
+        Check(FindText(window,"Crâne décoré\n[-23,-36] · 2 carte(s)")&&!FindText(window,"Épée\n[-24,-36] · 1 carte(s)"),"Hunt results are filtered to the step's point of interest");
+        Click(FindText(window,"Chemin"));
+        Check(travels==1&&lastTravel==ChatTpTarget{-23,-36,1},"Path button starts the improved journey to the clue");
+        Get(inputs[2]).text="epee";TickTreasurePanel();
+        Check(FindText(window,"Épée\n[-24,-36] · 1 carte(s)"),"Typing a clue overrides the hunt filter");
+        positionAvailable=false;Click(FindText(window,"Chemin"));Check(travels==1,"Unavailable position never starts a journey");
+        fakeStep={};Click(FindText(window,"Fermer"));TickTreasurePanel();
         OpenTreasureOverlay({});TickTreasurePanel();window=latestWindow;inputs=Inputs(window);
         Get(inputs[0]).text="2";Get(inputs[1]).text="3";hold=true;
         Click(FindText(window,"Rechercher les indices"));
-        for(int i=0;i<100&&fetches<2;++i)Sleep(1);
+        for(int i=0;i<100&&fetches<3;++i)Sleep(1);
         Get(inputs[0]).text="4";TickTreasurePanel();hold=false;AwaitResult();
         Check(!FindText(window,"Épée\n[3,3] · 1 carte(s)"),"Changed input rejects stale response");
         // Cleanup must release owned drag and retry transient native failures.
@@ -94,7 +127,7 @@ int main() {
         Check(rejected&&!TreasurePanelCleanupPending(),"Partial native Init safely rolled back");
         toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;
         Check(handles.empty(),"Panel leaked GC handles");
-        std::cout<<"PASS: native panel, manual actions, result filtering, stale requests, session replacement and retryable cleanup\n";
+        std::cout<<"PASS: native panel, manual actions, hunt step, journey button, result filtering, stale requests, session replacement and retryable cleanup\n";
         return 0;
     } catch(const std::exception& e) {
         std::cerr<<"FAIL: "<<e.what()<<'\n';for(const auto& message:logs)std::cerr<<message<<'\n';return 1;

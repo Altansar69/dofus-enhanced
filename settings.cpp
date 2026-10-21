@@ -45,6 +45,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "soulReminder" && (value == 0 || value == 1)) settings.soulReminder = value != 0;
             else if (key == "glowNpcs" && (value == 0 || value == 1)) settings.glowNpcs = value != 0;
             else if (key == "glowInteractives" && (value == 0 || value == 1)) settings.glowInteractives = value != 0;
+            else if (key == "miniMapCenterButton" && (value == 0 || value == 1)) settings.miniMapCenterButton = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
             else if (key == "fastMapTransitions" && (value == 0 || value == 1)) settings.fastMapTransitions = value != 0;
@@ -110,6 +111,7 @@ void Settings::Save(const std::filesystem::path& path) const {
              << "\nspouseTeleport=" << (spouseTeleport ? 1 : 0)
              << "\nresourceMapEnabled=" << (resourceMapEnabled ? 1 : 0)
              << "\nresourceMiniMapEnabled=" << (resourceMiniMapEnabled ? 1 : 0)
+             << "\nminiMapCenterButton=" << (miniMapCenterButton ? 1 : 0)
              << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';
         file.flush();

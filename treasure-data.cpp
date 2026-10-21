@@ -112,4 +112,9 @@ std::vector<Clue> Filter(const std::vector<Clue>& clues, const std::string& text
         if (SearchKey(clue.name).find(key) != std::string::npos) result.push_back(clue);
     return result;
 }
+std::vector<Clue> FilterById(const std::vector<Clue>& clues, int id) {
+    std::vector<Clue> result;
+    for (const auto& clue : clues) if (id > 0 && clue.id == id) result.push_back(clue);
+    return result;
+}
 }
