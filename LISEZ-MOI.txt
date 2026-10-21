@@ -1,4 +1,20 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 101 — VERSION 1.6.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 102 — VERSION 1.7.0
+
+R102 — VERSION 1.7.0 : SÉPARATION NATIVE DES RESSOURCES, AVEC LES ÉLÉMENTS DU JEU
+- Ressources sur les cartes : retour au regroupement natif du jeu, corrigé.
+  Le repère natif reçoit sa largeur et sa hauteur par son constructeur (le
+  placement du jeu les recopie dans le style) ; la 1.5.0 passait zéro, d’où
+  des repères sans taille et des groupes vides. Les ressources d’une même
+  case rejoignent le groupe de position du jeu, celui de ses propres indices
+  (foreuse, indice de chasse…) : pastille de nombre, étalement animé au
+  survol et repli sont ceux de Dofus, et la pile s’étale avec les éléments du
+  jeu présents sur la case (fer, cuivre, foreuse). L’image de chaque
+  ressource reste dessinée par le mod dans le repère natif.
+- Quantités : quand le groupe ne contient que des ressources du mod, sa
+  pastille affiche le total de la case et les quantités par ressource
+  n’apparaissent qu’une fois le groupe étalé ; s’il contient aussi un élément
+  du jeu, la pastille de nombre du jeu est laissée telle quelle.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R101 — VERSION 1.6.0 : CARNET EN VERSION COMPACTE
 - Carnet personnel : le menu ⋯ de la fenêtre propose « Version compacte » :
