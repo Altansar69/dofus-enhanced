@@ -335,7 +335,7 @@ static DWORD WINAPI Worker(void*) {
     logPath = ModulePath(selfModule).parent_path() / L"module.log";
     void* attached = nullptr;
     try {
-        Log(std::string("START version=3.7.12.12 mod=") + ModVersion + " prototype=" + std::to_string(ModRevision));
+        Log(std::string("START version=3.7.12.12 mod=") + ModVersion + " release=" + ModSemanticVersion + " prototype=" + std::to_string(ModRevision));
         WriteStartupStatus(ModulePath(selfModule).parent_path(), GetCurrentProcessId(), "STARTING");
         if (!SupportedClient(ModulePath(nullptr))) throw std::runtime_error("Unsupported client; hooks refused");
         auto game = GetModuleHandleW(L"GameAssembly.dll");

@@ -14,14 +14,9 @@ struct Entry {
     Ref menu,item,callback;
     bool armed=false;
 };
-struct Choice {std::string key;Ref menu,item,callback,cached,compositor,owner,service;};
 std::vector<Entry> entries;
-std::vector<Choice> choices;
-bool retiring=false;
-Method add{},remove{},appendTitle{},appendSeparator{},appendItem{},appendCheckbox{};
+Method add{},remove{},appendTitle{},appendSeparator{},appendItem{};
 bool installed=false;
-using BuildFn=void(*)(Obj,Obj,Method);
-BuildFn originalBuild=nullptr;
 bool Ready(){return module&&module->ready&&module->servicesReady&&!module->stopped&&!module->stopRequested;}
 Entry& Find(const char* key){auto i=std::find_if(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;});if(i==entries.end())throw std::runtime_error("Unknown native tool panel");return *i;}
 Obj Root(Obj menu){if(!menu)return nullptr;Obj root=api.Field(menu,"dofusContextualMenuRoot");return root&&api.Call(root,"get_menuData")==menu?root:nullptr;}
@@ -44,41 +39,13 @@ bool Populate(Obj owner,Obj event){
     }catch(const std::exception& error){e.armed=false;Log(std::string("TOOL_PANEL_MENU_ERROR ")+error.what());}
     return true;
 }
-void CloseChoices(){
-    retiring=true;
-    for(auto& c:choices){Ref root(Root(c.menu.get()));if(root.get()&&api.Call(root.get(),"get_panel")){bool delayed=false;api.Call(root.get(),"RemoveMenu",{&delayed});}}
-    choices.clear();retiring=false;
-}
 bool Callback(Obj callback,Obj view){
     for(auto& e:entries)if(callback&&callback==e.callback.get()){
         try{if(!e.armed||!Current(e)||!view||!api.Call(view,"get_panel")||api.Call(view,"get_itemData")!=e.item.get()||api.Value<bool>(api.Call(e.item.get(),"get_disabled"))||!Present(e.menu.get(),e.item.get()))return true;
             Ref root(Root(e.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;Close(e);if(e.visible())e.toggle();
         }catch(const std::exception& error){Log(std::string("TOOL_PANEL_HIDE_ERROR ")+error.what());}return true;
     }
-    for(auto& c:choices)if(callback&&callback==c.callback.get()){
-        try{if(retiring||!Ready()||c.cached.get()!=module->cached.get()||c.compositor.get()!=module->compositor.get()||c.service.get()!=module->FindService("frm")||api.Field(c.service.get(),"<dzqi>k__BackingField")!=c.owner.get()||!view||!api.Call(view,"get_panel")||api.Call(view,"get_itemData")!=c.item.get()||api.Value<bool>(api.Call(c.item.get(),"get_disabled"))||!Present(c.menu.get(),c.item.get()))return true;
-            Ref root(Root(c.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;
-            auto& e=Find(c.key.c_str());e.toggle();bool on=e.visible();api.Call(c.item.get(),"set_isOn",{&on});
-        }catch(const std::exception& error){Log(std::string("TOOL_MODULE_TOGGLE_ERROR ")+error.what());}return true;
-    }
     return false;
-}
-void BuildHook(Obj owner,Obj menu,Method method){
-    originalBuild(owner,menu,method);
-    try{
-        if(!Ready()||!owner||!menu)return;Ref service(module->FindService("frm"));if(!service.get()||api.Field(service.get(),"<dzqi>k__BackingField")!=owner)return;
-        if(!retiring&&!choices.empty()&&std::all_of(choices.begin(),choices.end(),[&](const Choice& c){
-            return c.menu.get()==menu&&c.owner.get()==owner&&c.cached.get()==module->cached.get()&&c.compositor.get()==module->compositor.get()&&Present(menu,c.item.get());
-        }))return;
-        CloseChoices();api.Invoke(appendSeparator,menu);
-        for(const auto& e:entries){
-            Ref rows(api.Call(menu,"get_menuItems"));int index=api.Value<int>(api.Call(rows.get(),"get_Count"));if(index<0||index>256)throw std::runtime_error("Module menu bounds");
-            Ref title(api.string_new(e.title.c_str())),help(api.string_new("Afficher ou masquer ce panneau.")),empty(api.string_new(""));bool on=e.visible(),disabled=false,close=false;unsigned delay=500;int icon=e.icon;
-            api.Invoke(appendCheckbox,menu,{title.get(),nullptr,&on,&disabled,&close,help.get(),&delay,&icon,empty.get()});
-            Ref item(api.Call(rows.get(),"get_Item",{&index}));Ref callback(api.Call(item.get(),"get_m_callback"));
-            choices.push_back({e.key,Ref(menu),std::move(item),std::move(callback),Ref(module->cached.get()),Ref(module->compositor.get()),Ref(owner),Ref(service.get())});
-        }
-    }catch(const std::exception& error){Log(std::string("TOOL_MODULE_MENU_ERROR ")+error.what());}
 }
 }
 void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)()){
@@ -97,10 +64,11 @@ void Install(){if(installed)return;
     auto scroll=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","ScrollView");
     api.FindVerified(scroll,".ctor",0,0x5742BD0);api.FindVerified(scroll,"get_contentContainer",0,0x5742BE0);
     auto klass=api.Class("Core.dll",Menus,"DofusContextualMenu");
-    appendTitle=api.FindVerified(klass,"AppendTitle",1,0x16D7F70);appendSeparator=api.FindVerified(klass,"AppendSeparator",0,0x16D76E0);appendItem=api.FindVerified(klass,"AppendDefaultItem",13,0x16D6C60);appendCheckbox=api.FindVerified(klass,"AppendCheckboxItem",9,0x16D63D0);
+    appendTitle=api.FindVerified(klass,"AppendTitle",1,0x16D7F70);appendSeparator=api.FindVerified(klass,"AppendSeparator",0,0x16D76E0);appendItem=api.FindVerified(klass,"AppendDefaultItem",13,0x16D6C60);
     auto extensions=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElementExtensions");add=api.FindVerified(extensions,"AddManipulator",2,0x56755F0);remove=api.FindVerified(extensions,"RemoveManipulator",2,0x5676A90);
-    auto manager=api.Class("Core.dll","Core.UILogic.Common","WidgetManager");
-    AddHook(api.FindVerified(manager,"AddPresetContextualMenuItems",1,0x17D83F0),0x17D83F0,reinterpret_cast<void*>(&BuildHook),reinterpret_cast<void**>(&originalBuild));
+    // The native widget list ("…" in the top bar) receives no owned entries:
+    // the toolbar buttons beside Capture d’âme are the only shortcuts, and each
+    // open panel keeps its own header menu above.
     soul::SetAuxiliaryPanelMenus(Populate,Callback);installed=true;
 }
 managed::Obj ScrollBody(managed::Obj window,managed::Obj root){
@@ -124,16 +92,9 @@ void AttachHeader(const char* key,Obj window){auto& e=Find(key);if(e.window.get(
 void DetachHeader(const char* key){auto& e=Find(key);Close(e);if(e.manipulator.get()){api.Invoke(remove,nullptr,{e.button.get(),e.manipulator.get()});e.manipulator.reset();}e.button.reset();e.header.reset();e.window.reset();e.cached.reset();e.compositor.reset();e.service.reset();}
 void Tick(){try{
     if(!Ready()){Restore();return;}
-    if(retiring){CloseChoices();return;}
-    for(auto& c:choices){
-        Ref root(Root(c.menu.get()));
-        if(c.cached.get()!=module->cached.get()||c.compositor.get()!=module->compositor.get()||!root.get()||!api.Call(root.get(),"get_panel")){CloseChoices();return;}
-        bool on=Find(c.key.c_str()).visible();api.Call(c.item.get(),"set_isOn",{&on});
-    }
-}catch(const std::exception& error){Log(std::string("TOOL_MODULE_REFRESH_ERROR ")+error.what());}}
+}catch(const std::exception& error){Log(std::string("TOOL_PANEL_REFRESH_ERROR ")+error.what());}}
 void Restore(){
-    try{CloseChoices();}catch(const std::exception& error){Log(std::string("TOOL_MODULE_MENU_CLEANUP_ERROR ")+error.what());}
     for(auto& e:entries)if(e.window.get())try{DetachHeader(e.key.c_str());}catch(const std::exception& error){Log(std::string("TOOL_HEADER_CLEANUP_ERROR ")+error.what());}
 }
-bool CleanupPending(){return !choices.empty()||std::any_of(entries.begin(),entries.end(),[](const Entry& e){return e.window.get()!=nullptr;});}
+bool CleanupPending(){return std::any_of(entries.begin(),entries.end(),[](const Entry& e){return e.window.get()!=nullptr;});}
 }

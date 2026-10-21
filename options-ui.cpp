@@ -5,6 +5,7 @@
 #include "glow-mode-labels.hpp"
 #include <algorithm>
 #include <exception>
+#include <string>
 
 using namespace managed;
 
@@ -20,6 +21,10 @@ using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
 EnableFn originalEnable = nullptr;
 InitFn originalInit = nullptr;
+using TextButtonFn = void(*)(Obj, Obj, Method);
+TextButtonFn originalTextButton = nullptr;
+Method textButtonModelGetter = nullptr, openUrl = nullptr;
+constexpr const char* ProjectUrl = "https://github.com/Altansar69/dofus-miniatures";
 
 template<class T> T& FieldValue(Obj owner, const char* name) {
     return *static_cast<T*>(api.FieldAddress(owner, name));
@@ -188,6 +193,18 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Dans les filtres de la carte (M), ouvrez un métier puis cochez les ressources souhaitées. La carte et la mini-carte affichent leurs points de récolte recensés par case. Cela ne renseigne pas leur disponibilité en temps réel. Désactiver conserve votre sélection."));
     prepared.resourcesMiniOption.reset(MakeBoolOption(prepared.resourcesMiniSource.get(), current.get(), tooltip.get(), "Ressources sur la mini-carte",
         "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
+    // Last row: credits. The native text button has no owned delegate; its
+    // click is recognised by the unique description reference in TextButtonHook.
+    prepared.creditsOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"), {nullptr, tooltip.get()}));
+    const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
+    const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
+        " (révision " + ModVersion + ", Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
+    Describe(prepared.creditsOption.get(), creditsTitle.c_str(), creditsText.c_str());
+    SetTextField(prepared.creditsOption.get(), "buttonText", "Ouvrir GitHub");
+    prepared.creditsMarker.reset(api.Call(prepared.creditsOption.get(), "get_description"));
+    if (!prepared.creditsMarker.get()) throw std::runtime_error("Credits option identity unavailable");
+    ui.creditsOption = std::move(prepared.creditsOption);
+    ui.creditsMarker = std::move(prepared.creditsMarker);
     ui.resourcesMiniSource = std::move(prepared.resourcesMiniSource);
     ui.resourcesMiniOption = std::move(prepared.resourcesMiniOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
@@ -258,6 +275,23 @@ void UiError(const std::exception& error) {
 bool Active() {
     return module && module->ready.load() && !module->stopped && !module->stopRequested.load();
 }
+void TextButtonHook(Obj self, Obj element, Method method) {
+    try {
+        Ref option(api.Invoke(textButtonModelGetter, self));
+        // Native search/display uses MemberwiseClone: the unique description
+        // reference identifies our credits row even when the model is cloned.
+        if (module && module->ui && module->ui->creditsMarker.get() && option.get() &&
+            api.Call(option.get(), "get_description") == module->ui->creditsMarker.get()) {
+            if (Active()) { Ref url(api.string_new(ProjectUrl)); api.Invoke(openUrl, nullptr, {url.get()}); }
+            return;
+        }
+    } catch (const std::exception& error) {
+        // Never fall through to a possibly owned action with a null delegate.
+        Log(std::string("CREDITS_LINK_ERROR ") + error.what());
+        return;
+    }
+    originalTextButton(self, element, method);
+}
 void EnableHook(Obj self, Method method) {
     originalEnable(self, method);
     if (!Active()) return;
@@ -280,7 +314,11 @@ void OptionsUi::Install() {
             reinterpret_cast<void*>(EnableHook), reinterpret_cast<void**>(&originalEnable));
     AddHook(api.Find(tab, "Init", 3), 0x2D84EC0,
             reinterpret_cast<void*>(InitHook), reinterpret_cast<void**>(&originalInit));
-
+    auto textButton = api.Class("Core.dll", Config, "TextButtonOptionElement");
+    textButtonModelGetter = api.FindVerified(textButton, "get_m_textButtonOption", 0, 0x2D88930);
+    openUrl = api.FindVerified(api.Class("UnityEngine.CoreModule.dll", "UnityEngine", "Application"), "OpenURL", 1, 0x53ACA50);
+    AddHook(api.Find(textButton, "<Init>b__3_0", 1), 0x2D88800,
+            reinterpret_cast<void*>(TextButtonHook), reinterpret_cast<void**>(&originalTextButton));
 }
 void OptionsUi::CapturePage(Obj page) {
     pendingPage.reset(page);
@@ -319,6 +357,7 @@ bool OptionsUi::Attach(Obj page) {
     api.Call(options, "Add", {spouseOption.get()});
     api.Call(options, "Add", {resourcesOption.get()});
     api.Call(options, "Add", {resourcesMiniOption.get()});
+    api.Call(options, "Add", {creditsOption.get()});
     api.Call(api.Field(category.get(), "subcategories"), "Add", {general.get()});
     Page owned;
     owned.owner.reset(page);
@@ -326,7 +365,7 @@ bool OptionsUi::Attach(Obj page) {
     pages.push_back(std::move(owned));
     try { api.Call(categories.get(), "Add", {pages.back().category.get()}); }
     catch (...) { pages.pop_back(); throw; }
-    Log(std::string("UI_MOD_REGISTERED category=Mod controls=native loaded=") + ModVersion);
+    Log(std::string("UI_MOD_REGISTERED category=") + ModCategoryTitle + " controls=native loaded=" + ModVersion + " version=" + ModSemanticVersion);
     return true;
 }
 void OptionsUi::Tick() {
@@ -437,6 +476,7 @@ void OptionsUi::Restore() {
     resourcesSource.reset();
     resourcesOption.reset();
     resourcesMiniSource.reset(); resourcesMiniOption.reset();
+    creditsOption.reset(); creditsMarker.reset();
     spouseSource.reset();
     spouseOption.reset();
     transitionsSource.reset();

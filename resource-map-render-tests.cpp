@@ -44,6 +44,7 @@ std::map<std::string,Obj> services;
 GCHandle next=0xA987000000ULL;
 bool nativeRemoveFails=false; int creates=0,disposes=0,nativeWrites=0,writes=0;
 std::vector<Obj> centeredViews;
+Vec2 pointer{-1,-1}; Obj pointerPanel{};
 std::function<void()> onConvert;
 std::map<std::string,size_t> offsets{{"dueo",0x98},{"dugq",0x68},{"dugv",0x90},{"dugy",0xA8},
     {"<dugi>k__BackingField",0x38},{"<dugk>k__BackingField",0x48},{"<dugf>k__BackingField",0x20},
@@ -109,6 +110,7 @@ Obj Api::Call(Obj self,const char* n,std::initializer_list<void*> args)const{
     if(name=="set_name"||name=="set_text"){Check(o.owned,"Native text mutation");o.text=Get(a[0]).text;++writes;return nullptr;}
     if(name=="Add"){Check(Get(a[0]).owned,"Attach only owned UI");Attach(self,a[0]);return nullptr;}
     if(name=="RemoveFromHierarchy"){Check(o.owned,"Detach only owned UI");if(nativeRemoveFails)throw std::runtime_error("Synthetic detach failure");Detach(self);return nullptr;}
+    if(name=="BringToFront"){Check(o.owned&&o.parent,"Only attached owned markers are reordered");auto parent=o.parent;Detach(self);Attach(parent,self);return nullptr;}
     throw std::runtime_error("Unexpected fake call: "+name);
 }
 Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
@@ -125,6 +127,12 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         Check(m.rva==0x1C4E8D0,"Pixel to map RVA");auto p=*static_cast<Vec2*>(a[0]);auto& root=Get(a[2]);
         auto result=Box(Vec2{float(std::floor((p.x-root.origin.x)/root.scale.x/(100*root.zoom))),float(std::floor((p.y-root.origin.y)/root.scale.y/(100*root.zoom)))});
         if(onConvert)onConvert();return result;
+    }
+    if(m.name=="GetPointerPosition"||m.name=="GetPanel"){
+        Check(!self&&a.size()==2&&*static_cast<int*>(a[0])==0&&*static_cast<int*>(a[1])==0,"Mouse pointer of the runtime player context");
+        Check(m.rva==(m.name=="GetPanel"?0x577C3A0:0x577C600),"Pointer state RVA");
+        if(m.name=="GetPanel")return pointerPanel;
+        struct Vec3{float x,y,z;};return Box(Vec3{pointer.x,pointer.y,0});
     }
     auto& o=Get(self);
     if(m.name=="beus"){
@@ -168,7 +176,7 @@ struct Fixture {
     Fixture(){module=&state;state.ready=true;state.servicesReady=true;state.settings.resourceMapEnabled=true;state.settings.resourceMapItems={1,2};
         state.compositor.reset(Make("Compositor"));services["fng"]=Make("Player");
         service=services["fkc"]=Make("fhk");dictionary=Make("IntDict");Get(service).refs["dueo"]=dictionary;
-        banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=0;onConvert={};centeredViews.clear();
+        banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=0;onConvert={};centeredViews.clear();pointer={-1,-1};pointerPanel=nullptr;
         fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,3,2,1,5,true},{20,2,1,1,1,99,false}};
     }
     Obj View(int key){auto owner=Make(key?"fhw":"CartographyBannerView");auto root=Make("NativeRoot"),host=Make("NativeHost");Get(host).panel=Make("Panel");Attach(host,root);
@@ -294,11 +302,34 @@ void AddingMineralKeepsSameAndNeighbouringCells(){Fixture f;
                     std::memcpy(&left0,Get(badges[0]).styles.at("left").data(),4);
                     std::memcpy(&left1,Get(badges[1]).styles.at("left").data(),4);
                     std::memcpy(&width0,Get(badges[0]).styles.at("width").data(),4);
-                    Check(left1>=left0+width0-.001f,"Shared-cell resource images must be side by side");
+                    Check(left1>left0&&left1<left0+width0-.001f,"Shared-cell resource images stack with a visible cascade until hovered");
                 }
             }
         }
     }
+}
+void StackedBadgesExpandOnHover(){Fixture f;
+    fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,2,1,1,5,true}};
+    f.Tick();
+    auto marker=[&](Obj owner,const char* id)->Obj{for(auto m:LiveMarkers(owner))if(Get(Get(m).refs.at("id")).text==id)return m;throw std::runtime_error("Missing marker");};
+    auto root=[](Obj m)->Obj{return Get(m).refs.at("<dtwe>k__BackingField");};
+    auto style=[](Obj e,const char* n){float v=0;std::memcpy(&v,Get(e).styles.at(n).data(),4);return v;};
+    auto stacked=[&](Obj m){const auto& b=Get(root(m)).children;Check(b.size()==2,"Shared cell keeps two badges");
+        return style(b[1],"left")>style(b[0],"left")&&style(b[1],"left")<style(b[0],"left")+style(b[0],"width")-.001f&&style(b[1],"top")>style(b[0],"top");};
+    auto spread=[&](Obj m){const auto& b=Get(root(m)).children;return style(b[1],"left")>=style(b[0],"left")+style(b[0],"width")-.001f&&style(b[1],"top")==style(b[0],"top");};
+    auto shared=marker(f.full,"cell_1_1"),mini=marker(f.banner,"cell_1_1");
+    Check(stacked(shared)&&stacked(mini),"Shared-cell badges stack by default on both maps");
+    const auto writesBefore=writes;f.Tick();Check(writes==writesBefore,"Idle hover must not rewrite styles");
+    // Cell (1,1) is centred at pixel (150,150) with this fixture's unit zoom and scale.
+    pointer={150,150};pointerPanel=Panel(f.Root(f.full));f.Tick();
+    Check(spread(shared)&&stacked(mini),"Hovering a stack spreads it side by side on the hovered map only");
+    Check(Get(Get(root(shared)).parent).children.back()==root(shared),"A spread stack is raised above neighbouring markers");
+    Check(Get(root(marker(f.full,"cell_2_1"))).children.size()==1,"Single badge cells are never spread");
+    pointer={195,170};f.Tick();Check(spread(shared),"The spread stack stays open while the pointer remains inside its grid");
+    pointer={400,400};f.Tick();Check(stacked(shared),"Leaving the stack collapses it again");
+    pointer={150,150};pointerPanel=Make("OtherPanel");f.Tick();Check(stacked(shared),"A pointer over another panel never spreads a stack");
+    pointerPanel=Panel(f.Root(f.full));f.Tick();Check(spread(shared),"Returning spreads the stack again");
+    f.state.settings.resourceMapItems={1};f.Tick();Check(Get(root(marker(f.full,"cell_1_1"))).children.size()==1,"Selection changes rebuild badges while hovered");
 }
 void CenterOnlyCurrentMiniMap(){Fixture f;
     f.state.settings.resourceMiniMapEnabled=false;f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
@@ -317,4 +348,4 @@ void CenterOnlyCurrentMiniMap(){Fixture f;
     surface.root.reset();surface.mapRoot.reset();foreign.root.reset();foreign.mapRoot.reset();
 }
 }
-int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,ResourceImageVisibility,AddingMineralKeepsSameAndNeighbouringCells,CenterOnlyCurrentMiniMap})test();std::cout<<"ResourceMapRenderTests: 11 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,ResourceImageVisibility,AddingMineralKeepsSameAndNeighbouringCells,StackedBadgesExpandOnHover,CenterOnlyCurrentMiniMap})test();std::cout<<"ResourceMapRenderTests: 12 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -42,6 +42,7 @@ bool newSourcesLoaded = true;
 bool rejectAutoLoad = false;
 bool rejectRebuild = false;
 unsigned treasureOpens = 0, notebookOpens = 0, foreignButtonClicks = 0;
+std::vector<std::string> openedUrls;
 unsigned changes = 0, serial = 0, enableCalls = 0;
 unsigned sourceModels = 0, optionModels = 0, uiHooks = 0;
 std::vector<std::string> logs;
@@ -192,7 +193,7 @@ struct Fixture {
         newSourcesLoaded = true;
         rejectAutoLoad = false;
         rejectRebuild = false;
-        treasureOpens = notebookOpens = foreignButtonClicks = 0;
+        treasureOpens = notebookOpens = foreignButtonClicks = 0; openedUrls.clear();
         changes = 0;
         sourceModels = optionModels = uiHooks = 0;
         state.servicesReady = true;
@@ -244,8 +245,9 @@ Api api{};
 uintptr_t gameBase = 0;
 Klass Api::Class(const char*, const char*, const char* name) const { return fake::Type(name); }
 Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva) const {
-    fake::Check(rva == 0x2D88930 && std::string(name) == "get_m_textButtonOption" && argc == 0,
-        "Wrong verified treasure element getter");
+    const std::string method = name;
+    fake::Check((rva == 0x2D88930 && method == "get_m_textButtonOption" && argc == 0) ||
+        (rva == 0x53ACA50 && method == "OpenURL" && argc == 1), "Wrong verified credits contract");
     return Find(klass, name, argc);
 }
 Method Api::Find(Klass klass, const char* name, int argc) const {
@@ -255,7 +257,13 @@ Method Api::Find(Klass klass, const char* name, int argc) const {
     return result;
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
-    return Call(self, static_cast<const fake::MethodInfo*>(method)->name.c_str(), args);
+    const auto& name = static_cast<const fake::MethodInfo*>(method)->name;
+    if (name == "OpenURL") {
+        fake::Check(!self && args.size() == 1, "Static Application.OpenURL(string)");
+        fake::openedUrls.push_back(fake::Get(*args.begin()).text);
+        return nullptr;
+    }
+    return Call(self, name.c_str(), args);
 }
 Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> args) const {
     using namespace fake;
@@ -400,7 +408,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
 }
 std::vector<Obj> AllOptions(OptionsUi& ui) {
     return {ui.modeOption.get(), ui.roleplayModeOption.get(),
-        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.resourcesMiniOption.get()};
+        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.resourcesMiniOption.get(), ui.creditsOption.get()};
 }
 const std::vector<Obj>& Rows(Obj category) { return Get(Get(category).refs.at("options")).items; }
 std::string Label(Obj option) { return Get(Get(option).refs.at("text")).text; }
@@ -416,13 +424,20 @@ void CheckLayout(Fixture& f) {
         Get(section).integers.at("categoryId") == GeneralId &&
         Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
     Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
-    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly fifteen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte"};
+    Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly sixteen rows in the requested order");
+    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte", "Dofus Enhanced 1.0.0 — par Altansar"};
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.0.0", "Tab name carries no revision; version is x.y.z");
     for (size_t i = 0; i != Rows(section).size(); ++i) {
         const auto option = Rows(section)[i];
         Check(Label(option) == labels[i], "Simple option label or ordering changed");
-        Check(Get(option).klass->name == (i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
+        Check(Get(option).klass->name == (i == 15 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
             "Simple settings must use native controls");
+        if (i == 15) {
+            const auto description = Description(option);
+            Check(description.find("Altansar") != std::string::npos && description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos &&
+                description.find("r92") != std::string::npos, "Credits must name the author, the project page and the revision");
+            Check(Get(*static_cast<Obj*>(api.FieldAddress(option, "buttonText"))).text == "Ouvrir GitHub", "Credits button opens the project page");
+        }
         if (i < 3 || i == 7) {
             const auto& choices = Get(Get(option).refs.at("choices")).items;
             Check(choices.size() >= 2 && choices.size() <= 4, "Unexpected percentage selector remains");
@@ -432,9 +447,9 @@ void CheckLayout(Fixture& f) {
                     "A percentage or minimum choice remains in native search models");
         }
     }
-    Check(sourceModels == 15 && optionModels == 15,
-        "The UI must create fifteen private sources, without misplaced panel actions");
-    Check(uiHooks == 2, "Only native page callbacks must be hooked");
+    Check(sourceModels == 15 && optionModels == 16,
+        "The UI must create fifteen private sources and sixteen rows");
+    Check(uiHooks == 3, "Only native page callbacks and the text button action must be hooked");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
     if (!displayed.empty()) {
         const auto clone = displayed.back();
@@ -793,6 +808,29 @@ void CollisionAndSessionMismatch() {
     Check(!f.Ui().Attach(f.page), "Changed account preference owner must block registration");
 }
 
+void CreditsLinkOpensProject() {
+    Fixture f;
+    initHook(f.page, false, true, ModId, nullptr);
+    auto element = Make("TextButtonOptionElement");
+    Get(element).refs["option"] = f.Ui().creditsOption.get();
+    textButtonHook(element, Make("Visual"), nullptr);
+    Check(openedUrls == std::vector<std::string>{"https://github.com/Altansar69/dofus-miniatures"} && foreignButtonClicks == 0,
+        "Credits button opens the project page without running the null native action");
+    auto foreign = Make("TextButtonOptionElement"), other = Make("TextButtonOption");
+    Get(other).refs["description"] = Make("Description");
+    Get(foreign).refs["option"] = other;
+    textButtonHook(foreign, Make("Visual"), nullptr);
+    Check(foreignButtonClicks == 1 && openedUrls.size() == 1, "Foreign text buttons keep their native action");
+    f.state.stopRequested.store(true);
+    textButtonHook(element, Make("Visual"), nullptr);
+    Check(openedUrls.size() == 1 && foreignButtonClicks == 1, "A stopping module ignores the credits button without falling through");
+    f.state.stopRequested.store(false);
+    f.StopAndRestore();
+    Check(!f.Ui().creditsOption.get() && !f.Ui().creditsMarker.get(), "Restore releases the credits row");
+    textButtonHook(element, Make("Visual"), nullptr);
+    Check(openedUrls.size() == 1 && foreignButtonClicks == 2, "After restore the stale element runs the native action");
+}
+
 }
 
 int main() {
@@ -803,6 +841,7 @@ int main() {
             fake::Check(fake::handles.empty(), "UI test leaked GC references");
         };
         run(fake::ParentAndSectionSelection);
+        run(fake::CreditsLinkOpensProject);
         run(fake::RegistrationAndValues);
         run(fake::AnimationModeValuesAndDefaults);
         run(fake::GlowModeValuesAndDefaults);

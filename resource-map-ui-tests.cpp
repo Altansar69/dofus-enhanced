@@ -133,6 +133,10 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
             }
             return nullptr;
         }
+        if(m.type->name=="DofusButtonCustom"){
+            Check(args.empty(),"Native button default constructor");
+            auto icon=Make("DofusIcon",true),frame=Make("VisualElement",true);Add(self,frame);Add(frame,icon);object.fields["m_iconLeft"]=icon;return nullptr;
+        }
         if(m.type->name=="SectionHeader"){
             Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1]),"Native header must have content and folder button");
             for(int i:{2,4})Check(!*static_cast<bool*>(args[i]),"No data/action buttons");
@@ -149,6 +153,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         throw std::runtime_error("Unexpected native constructor");
     }
     if(m.name=="set_pickingMode"){object.notifications=*static_cast<int*>(args[0]);return nullptr;}
+    if(m.name=="set_icon"){Check(object.type->name=="DofusButtonCustom","Only the native button receives a Figma icon");object.size=*static_cast<int*>(args[0]);return nullptr;}
     if(m.name=="get_titleLabel")return object.fields.at("titleLabel");
     if(m.name=="get_contentContainer")return object.fields["content"];
     if(m.name=="get_panel")return Panel(self);
@@ -203,6 +208,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
 namespace managed {
 Api api{};uintptr_t gameBase=0;
 Klass Api::Class(const char*,const char*,const char* name)const{return fake::Class(name);}
+Klass Api::NestedClass(Klass,const char* name)const{return fake::Class(name);}
 Method Api::Find(Klass type,const char* name,int argc)const{auto method=std::make_unique<fake::MethodData>(fake::MethodData{static_cast<fake::Type*>(type),name,argc});auto result=method.get();fake::methods.push_back(std::move(method));return result;}
 Method Api::FindVerified(Klass type,const char* name,int argc,uintptr_t rva)const{fake::guards[static_cast<fake::Type*>(type)->name+"."+name]=rva;return Find(type,name,argc);}
 Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{return fake::Invoke(method,self,args);}
@@ -303,9 +309,12 @@ void SelectionAndExternalChanges(){
     Fixture f;f.state.settings.resourceMapItems={303};f.Open();Check(Get(f.Row("Frêne")).value,"Persisted selection restored");
     Get(f.Row("Eau")).value=true;Get(f.Row("Fer")).value=true;resourceMap::TickUi();
     Check(changes==1&&f.state.settings.resourceMapItems==std::vector<int>({303,311,312}),"Multiple checked resources saved once sorted");
+    Check(Get(f.Resources()).styles["display"]==0,"Enabled full-map resources show the picker");
     Get(f.Master()).value=false;resourceMap::TickUi();Check(changes==2&&!f.state.settings.resourceMapEnabled&&f.state.settings.resourceMapItems.size()==3,"Disable preserves selection");
+    Check(Get(f.Resources()).styles["display"]!=0,"Disabling full-map resources hides its picker");
     f.state.settings.resourceMapItems={289};f.state.settings.resourceMapEnabled=true;resourceMap::TickUi();
     Check(changes==2&&Get(f.Row("Blé")).value&&!Get(f.Row("Eau")).value&&Get(f.Master()).value,"External reset wins without feedback save");
+    Check(Get(f.Resources()).styles["display"]==0,"An external enable reveals the full-map picker");
     Get(f.Row("Fer")).value=true;rejectChange=true;resourceMap::TickUi();Check(f.state.settings.resourceMapItems==std::vector<int>{289},"Failed save must not mutate preferences");f.Restored();
 }
 void UnknownIdsArePreserved(){
@@ -346,7 +355,9 @@ Obj FindUnder(Obj root,const char* type,const char* text=nullptr){
     for(auto child:Get(root).children)if(auto found=FindUnder(child,type,text))return found;
     return nullptr;
 }
-Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).fields["tooltip"])return child;return nullptr;}
+Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="VisualElement"&&Get(child).fields["tooltip"])return child;return nullptr;}
+Obj MiniCenter(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="CheckboxCustom")return child;return nullptr;}
+void CheckIgnored(Obj element,int depth=0){Check(Get(element).notifications==1,"Native button subtree must not intercept the polled click");for(auto child:Get(element).children)CheckIgnored(child,depth+1);}
 void MiniMapSelectionAndLifetime(){
     Fixture f;
     miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
@@ -359,9 +370,14 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(scroll).styles["display"]!=0,"Mini-map list starts hidden, leaving only profession icons");
     auto tabs=Get(Get(drawer).children.front()).children;
     Check(tabs.size()==6,"Six compact profession buttons");
-    auto center=FindUnder(drawer,"CheckboxCustom","Centrer");
-    Check(center&&cursorTargets.contains(center)&&Get(center).fields["tooltip"],"Mini-map has a reachable centering button");
-    Check(Get(center).styles["top"]==-34&&Get(center).styles["height"]==30,"Center button stays above resource categories");
+    Check(Get(drawer).styles["display"]!=0,"Disabled mini-map resources hide the whole picker");
+    auto center=MiniCenter();
+    Check(center&&cursorTargets.contains(center)&&Get(center).fields["tooltip"]&&!FindUnder(drawer,"CheckboxCustom","Centrer"),"Mini-map has a reachable centering button beside the drawer");
+    Check(Get(center).styles["left"]==8&&Get(center).styles["top"]==252&&Get(center).styles["width"]==40&&Get(center).styles["height"]==40,"Center button sits in the bottom-left corner, clear of the header and the drawer");
+    Check(Get(center).text.empty()&&!Get(center).fields["m_rightLabel"],"Center button shows no caption");
+    auto nativeButton=FindUnder(center,"DofusButtonCustom");
+    Check(nativeButton&&Get(nativeButton).owned&&Get(nativeButton).size==228,"Center uses the native button component with the full map's player icon");
+    CheckIgnored(nativeButton);
     const auto unchanged=f.state.settings;
     NativeToggle(center,true);resourceMap::TickUi();
     Check(centerRequests==1&&!Get(center).value&&f.state.settings==unchanged&&changes==0,"Center is a one-shot action even with resources disabled and nothing selected");
@@ -401,31 +417,37 @@ void MiniMapSelectionAndLifetime(){
     NativeToggle(tabs[4],false);resourceMap::TickUi();
     Check(Get(scroll).styles["display"]!=0,"Second click closes the resource list");
     Check(Get(drawer).styles["width"]==284&&Get(drawer).styles["left"]==8&&Get(drawer).styles["top"]==40,"Mini picker leaves space for native controls");
+    Check(Get(drawer).styles["display"]!=0,"Opening a profession list does not reveal a disabled picker");
     Check(Get(scroll).styles["height"]==148,"Mini picker stays within its viewport");
     auto master=FindUnder(drawer,"CheckboxCustom","Afficher sur la mini-carte");
     Get(master).value=true;Get(FindUnder(drawer,"CheckboxCustom","Fer")).value=true;
     resourceMap::TickUi();
     Check(changes==1&&!f.state.settings.resourceMapEnabled&&f.state.settings.resourceMiniMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{312},"Mini visibility is independent and resource selection shared");
+    Check(Get(drawer).styles["display"]==0,"Enabling mini-map resources shows its picker");
     f.Open();Check(Get(f.Row("Fer")).value&&!Get(f.Master()).value,"Full map restores shared selection while retaining its own visibility");
+    Check(Get(f.Resources()).styles["display"]!=0,"Disabled full-map resources hide the full-map picker");
     Get(f.Row("Blé")).value=true;resourceMap::TickUi();
     Check(Get(FindUnder(drawer,"CheckboxCustom","Blé")).value,"Full map changes sync to mini-map");
     Get(FindUnder(drawer,"CheckboxCustom","Eau")).value=true;resourceMap::TickUi();resourceMap::TickUi();
     Check(Get(f.Row("Eau")).value,"Mini-map changes sync back to open full map");
     Get(f.Master()).value=true;resourceMap::TickUi();
+    Check(Get(f.Resources()).styles["display"]==0,"Enabling full-map resources from its picker shows it again");
     Get(master).value=false;resourceMap::TickUi();
     Check(f.state.settings.resourceMapEnabled&&!f.state.settings.resourceMiniMapEnabled&&Get(f.Master()).value,"Disabling mini-map retains full-map display");
+    Check(Get(drawer).styles["display"]!=0&&Get(center).fields["parent"]==miniRoot,"Disabling mini-map resources hides its picker but keeps the center button");
     f.state.settings.resourceMiniMapEnabled=true;resourceMap::TickUi();
-    Check(Get(master).value,"External mini-map preference reload synchronizes without saving stale UI");
+    Check(Get(master).value&&Get(drawer).styles["display"]==0,"External mini-map preference reload synchronizes and reveals the picker without saving stale UI");
     disableHook(f.owner,nullptr);Check(Get(drawer).fields["parent"]==miniRoot,"Closing full map retains mini-map picker");
     auto foreign=Make("NativeCommand");Add(miniRoot,foreign);
-    resourceMap::TickUi();Check(Get(miniRoot).children.back()==drawer&&Get(foreign).fields["parent"]==miniRoot,"Drawer stays above marker layers without modifying native children");
+    resourceMap::TickUi();{const auto& order=Get(miniRoot).children;Check(order.size()>=3&&order[order.size()-2]==drawer&&order.back()==center&&Get(foreign).fields["parent"]==miniRoot,"Drawer and center button stay above marker layers without modifying native children");}
     Get(miniRoot).bound={0,0,200,200};resourceMap::TickUi();
     Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==48,"Small mini-map stays usable after resize");
+    Check(Get(center).styles["top"]==152&&Get(center).styles["left"]==8,"Center button follows the mini-map height");
     const auto previous=miniRoot;
     NativeToggle(center,true);
     miniRoot=nullptr;resourceMap::TickUi();
     Check(centerRequests==2,"Closing the mini-map discards its pending center request");
-    Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{miniMapRoot,foreign},"Hidden mini-map detaches only owned resources");
+    Check(!Get(drawer).fields["parent"]&&!Get(center).fields["parent"]&&Get(previous).children==std::vector<Obj>{miniMapRoot,foreign},"Hidden mini-map detaches only owned resources and its button");
     miniRoot=previous;resourceMap::TickUi();
     auto replacement=MiniDrawer();Check(replacement&&replacement!=drawer,"Mini-map reopening recreates picker");
     Get(FindUnder(replacement,"CheckboxCustom","Frêne")).value=true;

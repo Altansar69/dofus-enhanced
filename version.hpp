@@ -1,4 +1,8 @@
 #pragma once
-inline constexpr unsigned ModRevision = 91;
-inline constexpr char ModVersion[] = "r91";
-inline constexpr char ModCategoryTitle[] = "Mod (r91)";
+inline constexpr unsigned ModRevision = 92;
+inline constexpr char ModVersion[] = "r92";
+// Public x.y.z version shown in the options tab, README and release name.
+// The integer revision stays the updater/tag identifier (tags rN, release.ini).
+inline constexpr char ModSemanticVersion[] = "1.0.0";
+inline constexpr char ModDisplayName[] = "Dofus Enhanced";
+inline constexpr char ModCategoryTitle[] = "Dofus Enhanced";

@@ -62,7 +62,9 @@ except urllib.error.HTTPError as error:
     if error.code != 404:
         raise
     release = request("POST", f"/repos/{REPO}/releases", {
-        "tag_name": tag, "target_commitish": commit, "name": f"{tag} — Dofus {package['clientVersion']}",
+        "tag_name": tag, "target_commitish": commit,
+        "name": (f"Dofus Enhanced {package['version']} ({tag}) — Dofus {package['clientVersion']}" if package.get("version")
+                 else f"{tag} — Dofus {package['clientVersion']}"),
         "body": args.notes.read_text(encoding="utf8"), "draft": True, "prerelease": False,
     })
 assets = request("GET", f"/repos/{REPO}/releases/{release['id']}/assets")

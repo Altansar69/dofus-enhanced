@@ -18,11 +18,16 @@ constexpr const char* UiAssembly="UnityEngine.UIElementsModule.dll";
 constexpr const char* UiNamespace="UnityEngine.UIElements";
 constexpr const char* Figma="Core.UILogic.Components.Figma";
 constexpr size_t MaxRows=128;
+// Mini-map centering control: the native button component and icon of the
+// full map's btn_player, hosted by a square polled CheckboxCustom.
+constexpr float CenterSize=40;
+constexpr int PlayerIcon=228; // FigmaIcons.player
 struct Rect {float x,y,width,height;};
 struct Color {float r,g,b,a;};
 using LifeFn=void(*)(Obj,Method);
 LifeFn originalEnable{},originalDisable{};
-Klass cursorClass{},checkboxClass{},headerClass{},scrollClass{},labelClass{},elementClass{};
+Klass cursorClass{},checkboxClass{},headerClass{},scrollClass{},labelClass{},elementClass{},buttonClass{};
+Method buttonCtor{},buttonIcon{};
 Method checkboxCtor{},checkboxValue{},checkboxSet{},checkboxText{},checkboxSize{},checkboxLevel{},checkboxIcon{};
 Method headerCtor{},headerTitle{},headerOpen{},headerCanOpen{},headerAdd{},scrollCtor{},scrollContent{};
 Method scrollHorizontal{},scrollVertical{};
@@ -37,8 +42,8 @@ struct State {
     Ref toolbar,center;
     std::vector<Ref> tabs,groups,cursorTargets;
     int activeJob=-1;
-    bool enabled=true,attached=false,mini=false,cleaning=false;
-    float height=-1,width=-1,left=-1,top=-1;
+    bool enabled=true,attached=false,mini=false,cleaning=false,shown=true;
+    float height=-1,width=-1,left=-1,top=-1,centerLeft=-1,centerTop=-1;
 };
 std::unique_ptr<State> owned,miniOwned;
 bool Session(){return installed&&module&&module->ready&&module->servicesReady&&!module->stopped&&!module->stopRequested&&module->compositor.get();}
@@ -87,6 +92,7 @@ bool Detach(std::unique_ptr<State>& target){
             }
             state.cursorTargets.pop_back();
         }
+        if(state.center.get()&&Parent(state.center.get()))api.Call(state.center.get(),"RemoveFromHierarchy");
         if(state.resources.get()&&Parent(state.resources.get()))api.Call(state.resources.get(),"RemoveFromHierarchy");
         target.reset();return true;
     }catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_RESTORE_ERROR ")+error.what());return false;}
@@ -114,6 +120,15 @@ void Rounded(Obj element,float radius){
     for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(element,corner,radius);
 }
 void Ignore(Obj element){int ignore=1;api.Call(element,"set_pickingMode",{&ignore});}
+void IgnoreTree(Obj element,int depth=0){
+    Ignore(element);
+    if(depth>=6)return;
+    Ref tree(api.Call(element,"get_hierarchy"));
+    if(!tree.get()||!api.class_is_valuetype(api.object_get_class(tree.get())))throw std::runtime_error("Native button hierarchy unavailable");
+    const int count=api.Value<int>(api.Call(tree.get(),"get_childCount"));
+    if(count<0||count>32)throw std::runtime_error("Native button subtree bounds");
+    for(int i=0;i<count;++i){Ref child(api.Call(tree.get(),"get_Item",{&i}));if(child.get())IgnoreTree(child.get(),depth+1);}
+}
 void HideCheckboxSquare(Obj control){
     Ref square(api.Field(control,"m_checkbox"));
     // Native selection refreshes display; visibility keeps the square hidden.
@@ -154,6 +169,12 @@ bool Layout(State& state,const MiniMapSurface* mini=nullptr){
         const float left=mini->left+mini->width-width-8,top=mini->top+40;
         if(state.left!=left){Pixels(state.resources.get(),"left",left);state.left=left;}
         if(state.top!=top){Pixels(state.resources.get(),"top",top);state.top=top;}
+        if(state.center.get()){
+            // Bottom-left corner: clear of the native header, the drawer and the resize grip.
+            const float centerLeft=mini->left+8,centerTop=mini->top+mini->height-CenterSize-8;
+            if(state.centerLeft!=centerLeft){Pixels(state.center.get(),"left",centerLeft);state.centerLeft=centerLeft;}
+            if(state.centerTop!=centerTop){Pixels(state.center.get(),"top",centerTop);state.centerTop=centerTop;}
+        }
     }
     return true;
 }
@@ -164,7 +185,7 @@ bool Fresh(const State& state,const MiniMapSurface* mini=nullptr){
     return !state.cleaning&&ownerCurrent&&Session()&&state.compositor.get()==module->compositor.get()&&
         state.character.get()==module->FindService("fng")&&state.cartography.get()==module->FindService("fkc")&&
         api.Call(state.root.get(),"get_panel")==state.panel.get()&&
-        (!state.attached||Parent(state.resources.get())==state.root.get());
+        (!state.attached||(Parent(state.resources.get())==state.root.get()&&(!state.center.get()||Parent(state.center.get())==state.root.get())));
 }
 void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=nullptr){
     if(!mini&&!CurrentOwner(owner))return;
@@ -202,16 +223,20 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         api.Call(next->resources.get(),"Add",{next->scroll.get()});
         Style(next->scroll.get(),"backgroundColor",Color{.105f,.115f,.12f,1});
         Rounded(next->scroll.get(),8);
-        next->center.reset(Checkbox("Centrer",false));
+        next->center.reset(Checkbox("",false));
         HideCheckboxSquare(next->center.get());
+        if(auto label=api.Field(next->center.get(),"m_rightLabel"))Style(label,"display",1);
         Style(next->center.get(),"position",1);
-        Pixels(next->center.get(),"left",0);Pixels(next->center.get(),"top",-34);
-        Pixels(next->center.get(),"width",96);Pixels(next->center.get(),"height",30);
-        Pixels(next->center.get(),"minHeight",30);Pixels(next->center.get(),"maxHeight",30);
-        Style(next->center.get(),"backgroundColor",Color{.10f,.12f,.13f,.96f});
-        Rounded(next->center.get(),8);
+        Pixels(next->center.get(),"width",CenterSize);Pixels(next->center.get(),"height",CenterSize);
+        for(auto side:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(next->center.get(),side,0);
+        Style(next->center.get(),"alignItems",2);Style(next->center.get(),"justifyContent",1);
         Text(next->center.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
-        api.Call(next->resources.get(),"Add",{next->center.get()});
+        // Same native component and icon as btn_player on the full map. The
+        // whole button subtree ignores picking: the polled checkbox gets the click.
+        Ref button(api.object_new(buttonClass));api.Invoke(buttonCtor,button.get());
+        int player=PlayerIcon;api.Invoke(buttonIcon,button.get(),{&player});
+        IgnoreTree(button.get());
+        api.Call(next->center.get(),"Add",{button.get()});
     }else{
         Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
         Rounded(next->resources.get(),8);
@@ -276,6 +301,7 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     // The transport filters and their original parent/order are never modified.
     target=std::move(next);
     api.Call(root.get(),"Add",{target->resources.get()});target->attached=true;
+    if(target->center.get())api.Call(root.get(),"Add",{target->center.get()});
     // Native handlers manage enter/leave. These owned category controls stay
     // enabled; avoid AddCursorHandler, which overwrites the native enabled-state callback.
     // Register only after retaining the tree so partial failure is retryable.
@@ -297,6 +323,12 @@ void Sync(State& state){
     bool enabled=state.mini?settings.resourceMiniMapEnabled:settings.resourceMapEnabled;
     api.Invoke(checkboxSet,state.master.get(),{&enabled});
     state.selection=settings.resourceMapItems;state.enabled=enabled;
+}
+void ApplyVisibility(State& state){
+    // A map whose resource display is off also hides its picker; the option
+    // or the other map's picker re-enables it.
+    if(state.shown==state.enabled)return;
+    Style(state.resources.get(),"display",state.enabled?0:1);state.shown=state.enabled;
 }
 void Poll(State& state){
     // External reload/reset wins over stale visual values. Native CheckboxCustom
@@ -339,6 +371,12 @@ void InstallUi(){
     api.FindVerified(elementClass,".ctor",0,0x55F50B0);
     api.FindVerified(elementClass,"Insert",2,0x55E5710);
     api.FindVerified(elementClass,"set_pickingMode",1,0x55F97B0);
+    api.FindVerified(elementClass,"get_hierarchy",0,0x185C4A0);
+    auto hierarchyClass=api.NestedClass(elementClass,"Hierarchy");
+    api.FindVerified(hierarchyClass,"get_childCount",0,0x55FFA80);api.FindVerified(hierarchyClass,"get_Item",1,0x55FE670);
+    buttonClass=api.Class("Core.dll",Figma,"DofusButtonCustom");
+    buttonCtor=api.FindVerified(buttonClass,".ctor",0,0x170D6F0);
+    buttonIcon=api.FindVerified(buttonClass,"set_icon",1,0x170DFE0);
     InstallIcons();
     cursorClass=api.Class("Core.dll","Core.UILogic","DofusCursor");
     enableCursor=api.FindVerified(cursorClass,"EnableCursorHandler",3,0x2808CD0);
@@ -388,7 +426,7 @@ void TickUi(){
             if(!CurrentOwner(pending.get()))pending.reset();
             else if(!owned){Attach(owned,pending.get());if(owned)pending.reset();}
         }
-        if(owned){if(!Layout(*owned))Detach(owned);else Poll(*owned);}
+        if(owned){if(!Layout(*owned))Detach(owned);else{Poll(*owned);ApplyVisibility(*owned);}}
     }catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_ERROR ")+error.what());pending.reset();Detach(owned);}
     // Discover the mini-map even when the full map was never opened. Its
     // controls must remain reachable with rendering disabled or no selection.
@@ -403,10 +441,11 @@ void TickUi(){
                 bool off=false;api.Invoke(checkboxSet,miniOwned->center.get(),{&off});
                 CenterMiniMap(surface);
             }
-            PollTabs(*miniOwned);Poll(*miniOwned);
+            PollTabs(*miniOwned);Poll(*miniOwned);ApplyVisibility(*miniOwned);
             // Resource marker layers can be recreated after native filter
-            // refreshes. Keep the drawer above those non-interactive markers.
+            // refreshes. Keep the drawer and the button above those markers.
             api.Invoke(bringToFront,miniOwned->resources.get());
+            if(miniOwned->center.get())api.Invoke(bringToFront,miniOwned->center.get());
         }
     }catch(const std::exception& error){Log(std::string("RESOURCE_MINIMAP_UI_ERROR ")+error.what());Detach(miniOwned);}
 }

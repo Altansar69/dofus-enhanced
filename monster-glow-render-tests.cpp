@@ -697,7 +697,7 @@ void BoundsReuseAndIndependentSlots() {
     const auto& secondParameters=executions[3][executions[3].size()-7].parameters;
     Check(firstParameters.textures.at("_MainTex") != secondParameters.textures.at("_MainTex"),
         "Recorded per-draw textures must remain independent across monsters");
-    Check(f.Render(16) == nullptr, "Slot budget exceeded");
+    Check(f.Render(32) == nullptr, "Slot budget exceeded");
     for (const auto& dimensions : allocations) Check(dimensions[0] <= 256 && dimensions[1] <= 256, "Texture budget exceeded");
     monsterGlow::ReleaseGlowSlot(0); monsterGlow::ReleaseGlowSlot(0); monsterGlow::ReleaseGlowSlot(99);
     Check(!Get(other).destroyed, "Releasing one slot destroyed another");

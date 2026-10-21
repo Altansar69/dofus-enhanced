@@ -34,11 +34,9 @@ std::map<std::string,uintptr_t> guards;
 std::map<std::string,Obj> services;
 std::vector<std::string> logs;
 GCHandle nextHandle=0xAABB00000000ULL;
-using BuildFn=void(*)(Obj,Obj,Method);
-BuildFn build=nullptr;
 bool(*populate)(Obj,Obj)=nullptr;
 bool(*callback)(Obj,Obj)=nullptr;
-int installs=0,menuRegistrations=0,nativeBuilds=0,closed=0,closeFailures=0,removeFailures=0;
+int installs=0,menuRegistrations=0,closed=0,closeFailures=0,removeFailures=0;
 bool notebook=false,treasure=false,refuseNotebook=false;
 int notebookToggles=0,treasureToggles=0;
 
@@ -52,7 +50,6 @@ Obj Row(Obj menu,const std::string& kind,const std::string& title){
     auto row=Make(kind);Get(row).text=title;
     Get(Get(menu).fields.at("rows")).items.push_back(row);return row;
 }
-void OriginalBuild(Obj,Obj menu,Method){++nativeBuilds;Row(menu,"NativeItem","Interface native");}
 bool NotebookVisible(){return notebook;}
 bool TreasureVisible(){return treasure;}
 bool ToggleNotebook(){if(refuseNotebook)return false;++notebookToggles;notebook=!notebook;return true;}
@@ -94,19 +91,12 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name=="get_itemData")return object.fields["item"];
     if(m.name=="get_disabled")return Box(object.disabled);
     if(m.name=="get_enabledInHierarchy")return Box(object.enabled);
-    if(m.name=="set_isOn"){object.on=*static_cast<bool*>(args[0]);return nullptr;}
     if(m.name=="get_headerWidget")return object.fields.at("header");
     if(m.name=="set_headerIconRight"){Check(*static_cast<int*>(args[0])==202,"Native ellipsis icon");return nullptr;}
     if(m.name=="set_showRightButton"){Check(*static_cast<bool*>(args[0]),"Header button shown");return nullptr;}
     if(m.name=="AppendTitle"){Row(self,"Title",Get(args[0]).text);return nullptr;}
     if(m.name=="AppendSeparator"){Row(self,"Separator","");return nullptr;}
-    if(m.name=="AppendCheckboxItem"){
-        Check(args.size()==9&&!args[1],"Native checkbox uses owned callback identity");
-        auto item=Row(self,"CheckboxItem",Get(args[0]).text);auto& row=Get(item);
-        row.on=*static_cast<bool*>(args[2]);row.disabled=*static_cast<bool*>(args[3]);
-        row.close=*static_cast<bool*>(args[4]);row.icon=*static_cast<int*>(args[7]);
-        row.fields["callback"]=Make("Callback");return nullptr;
-    }
+    if(m.name=="AppendCheckboxItem")throw std::runtime_error("Owned checkbox rows no longer belong in native menus");
     if(m.name=="AppendDefaultItem"){
         Check(args.size()==13&&!args[1],"Native hide row uses owned callback identity");
         auto item=Row(self,"DefaultItem",Get(args[0]).text);auto& row=Get(item);
@@ -137,6 +127,7 @@ Method Api::Find(Klass type,const char* name,int argc)const{
     auto result=m.get();fake::methods.push_back(std::move(m));return result;
 }
 Method Api::FindVerified(Klass type,const char* name,int argc,uintptr_t rva)const{
+    fake::Check(std::string(name)!="AppendCheckboxItem","The module shortcut list must not reserve the native checkbox row");
     fake::guards[static_cast<fake::Type*>(type)->name+"."+name]=rva;return Find(type,name,argc);
 }
 Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{return fake::Invoke(method,self,args);}
@@ -157,9 +148,8 @@ Module* module=nullptr;
 Module::Module(std::filesystem::path):features(nullptr),ui(nullptr){}
 managed::Obj Module::FindService(const char* name)const{return fake::services.at(name);}
 void Log(const std::string& message){fake::logs.push_back(message);}
-void AddHook(managed::Method method,uintptr_t rva,void* replacement,void** original){
-    fake::Check(static_cast<const fake::MethodData*>(method)->name=="AddPresetContextualMenuItems"&&rva==0x17D83F0,"Exact native widget menu hook");
-    ++fake::installs;fake::build=reinterpret_cast<fake::BuildFn>(replacement);*original=reinterpret_cast<void*>(fake::OriginalBuild);
+void AddHook(managed::Method,uintptr_t,void*,void**){
+    throw std::runtime_error("The tool menu must not hook the native widget list any more");
 }
 namespace soul {
 void SetAuxiliaryPanelMenus(bool(*populate)(managed::Obj,managed::Obj),bool(*callback)(managed::Obj,managed::Obj)){
@@ -176,7 +166,7 @@ struct Fixture {
         owner=Make("WidgetManager");panel=Make("Panel");
         services["frm"]=Make("WidgetService");Get(services["frm"]).fields["<dzqi>k__BackingField"]=owner;
         services["fpz"]=Make("ContextMenuService");
-        notebook=treasure=false;notebookToggles=treasureToggles=nativeBuilds=closed=0;
+        notebook=treasure=false;notebookToggles=treasureToggles=closed=0;
         closeFailures=removeFailures=0;logs.clear();
     }
     ~Fixture(){closeFailures=removeFailures=0;toolsUi::Restore();module=nullptr;}
@@ -189,7 +179,6 @@ struct Fixture {
     std::vector<Obj>& Rows(Obj menu){return Get(Get(menu).fields["rows"]).items;}
     Obj View(Obj item){auto view=Make("ItemView");Get(view).fields["item"]=item;Get(view).fields["panel"]=panel;return view;}
     Obj Callback(Obj item){return Get(item).fields["callback"];}
-    Obj ShowModules(){auto menu=Menu();build(owner,menu,nullptr);return menu;}
     void Header(){
         window=Make("Window");auto header=Make("Header");button=Make("Button");
         Get(window).fields["panel"]=Get(button).fields["panel"]=panel;
@@ -208,21 +197,17 @@ void ToolbarUsesRegisteredActions(){
         "Toolbar descriptors share the registered menu identity and native icon");
     Check(toolsUi::Toggle("notebook")&&toolsUi::Visible("notebook")&&notebookToggles==1,"Toolbar opens the registered panel");
     refuseNotebook=true;Check(!toolsUi::Toggle("notebook")&&toolsUi::Visible("notebook"),"Toolbar honors dirty-note close refusal");refuseNotebook=false;
-    auto menu=f.ShowModules();Check(Get(f.Rows(menu)[2]).on,"Menu reflects opening from the toolbar");
     Check(toolsUi::Toggle("notebook")&&!toolsUi::Visible("notebook"),"Toolbar closes the registered panel");
-    toolsUi::Tick();Check(!Get(f.Rows(menu)[2]).on,"Existing menu follows toolbar state");
+    toolsUi::Tick();Check(!toolsUi::CleanupPending()&&logs.empty(),"Idle ticks own nothing and log nothing");
     f.state.stopRequested=true;Check(!toolsUi::Toggle("treasure")&&!treasure,"Stopped module rejects shortcut actions");
 }
-void ModulesPreserveNativeAndStayOpen(){
-    Fixture f;auto menu=f.ShowModules();auto rows=f.Rows(menu);
-    Check(nativeBuilds==1&&rows.size()==4&&Get(rows[0]).type->name=="NativeItem"&&Get(rows[1]).type->name=="Separator","Native module choices preserved before owned additions");
-    Check(Get(rows[2]).text=="Carnet"&&Get(rows[3]).text=="Chasse au trésor"&&Get(rows[2]).icon==225&&Get(rows[3]).icon==317,"Named native module choices with correct icons");
-    for(size_t i=2;i<4;++i)Check(!Get(rows[i]).disabled&&!Get(rows[i]).close,"Display checkboxes stay open");
-    auto cb=f.Callback(rows[2]),view=f.View(rows[2]);
-    Check(callback(cb,view)&&notebook&&Get(rows[2]).on&&closed==0,"First checkbox click shows panel without closing menu");
-    Check(callback(cb,view)&&!notebook&&!Get(rows[2]).on&&closed==0,"Second click hides panel without closing menu");
-    treasure=true;toolsUi::Tick();Check(Get(rows[3]).on,"External visibility changes synchronize menu checkbox");
-    Check(!callback(Make("ForeignCallback"),view),"Foreign callbacks remain native");
+void NativeWidgetListUntouched(){
+    Fixture f;
+    // The top bar "…" list is built only by the game; the registered panels
+    // stay reachable through their toolbar buttons and header menus.
+    Check(installs==0&&menuRegistrations==1,"No native widget list hook or owned rows are installed");
+    auto menu=f.Menu();toolsUi::Tick();
+    Check(f.Rows(menu).empty()&&Get(f.MenuRoot(menu)).fields["panel"]==f.panel,"Native menus receive no owned entries and stay open");
 }
 void HeaderTitleAndHide(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu();auto rows=f.Rows(menu);
@@ -234,19 +219,7 @@ void HeaderTitleAndHide(){
     Check(callback(cb,view)&&!notebook&&notebookToggles==1&&closed==1,"Header hide closes owned menu then hides once");
     callback(cb,view);Check(notebookToggles==1,"Old header callback cannot toggle again");
     Check(!populate(Make("ForeignManipulator"),Make("Event")),"Foreign header menu preserved");
-}
-void StaleModuleCallbacks(){
-    for(int reason=0;reason<7;++reason){
-        Fixture f;auto menu=f.ShowModules(),item=f.Rows(menu)[2],cb=f.Callback(item),view=f.View(item);
-        if(reason==0)f.state.cached.reset(Make("NewCached"));
-        if(reason==1)f.state.compositor.reset(Make("NewCompositor"));
-        if(reason==2)Get(services["frm"]).fields["<dzqi>k__BackingField"]=Make("OtherManager");
-        if(reason==3)Get(view).fields["item"]=Make("OtherItem");
-        if(reason==4)Get(item).disabled=true;
-        if(reason==5)f.Rows(menu).erase(f.Rows(menu).begin()+2);
-        if(reason==6)Get(f.MenuRoot(menu)).fields["menu"]=Make("ReusedMenu");
-        Check(callback(cb,view)&&notebookToggles==0,"Stale or invalid module row must not toggle");
-    }
+    Check(!callback(Make("ForeignCallback"),view),"Foreign callbacks remain native");
 }
 void StaleHeaderCallbacks(){
     for(int reason=0;reason<5;++reason){
@@ -261,13 +234,12 @@ void StaleHeaderCallbacks(){
 }
 void RestoreAndFailures(){
     Fixture f;notebook=true;f.Header();auto headerMenu=f.HeaderMenu(),headerItem=f.Rows(headerMenu)[2];
-    auto menu=f.ShowModules(),item=f.Rows(menu)[2],view=f.View(item),cb=f.Callback(item);
     closeFailures=1;removeFailures=1;toolsUi::Restore();
-    Check(toolsUi::CleanupPending(),"Failed menu close or manipulator removal retains state for retry");
-    Check(callback(cb,view)&&notebookToggles==0,"Retiring menu callback is disarmed before close");
+    Check(toolsUi::CleanupPending()&&Get(f.button).items.size()==1,"Failed menu close retains the header for retry");
     callback(f.Callback(headerItem),f.View(headerItem));Check(notebookToggles==0,"Header menu already closed during failed detach stays disarmed");
+    toolsUi::Restore();Check(toolsUi::CleanupPending()&&Get(f.button).items.size()==1,"Failed manipulator removal retains the header for retry");
     toolsUi::Restore();Check(!toolsUi::CleanupPending()&&Get(f.button).items.empty(),"Retry removes owned manipulator and GC roots");
-    Check(!Get(f.MenuRoot(menu)).fields["panel"]&&!Get(f.MenuRoot(headerMenu)).fields["panel"],"Owned menus closed on cleanup");
+    Check(!Get(f.MenuRoot(headerMenu)).fields["panel"],"Owned menus closed on cleanup");
 }
 void HeaderCloseFailure(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu(),item=f.Rows(menu)[2],cb=f.Callback(item);
@@ -276,24 +248,19 @@ void HeaderCloseFailure(){
     Check(callback(cb,f.View(item))&&notebookToggles==0,"Header is disarmed even when native close fails");
     toolsUi::Restore();Check(!toolsUi::CleanupPending()&&Get(f.button).items.empty(),"Header close retry releases manipulator");
 }
-void MenuReplacementAndReentry(){
-    Fixture f;auto old=f.ShowModules(),oldItem=f.Rows(old)[2],oldCallback=f.Callback(oldItem);
-    auto current=f.ShowModules();
-    Check(!Get(f.MenuRoot(old)).fields["panel"]&&Get(f.MenuRoot(current)).fields["panel"],"New native menu retires only old owned menu");
-    callback(oldCallback,f.View(oldItem));Check(notebookToggles==0,"Replaced menu callbacks cannot toggle");
-    build(f.owner,current,nullptr);
-    const auto& rows=f.Rows(current);
-    Check(Get(f.MenuRoot(current)).fields["panel"],"Rebuilding the same native menu must not close it");
-    const auto owned=std::count_if(rows.begin(),rows.end(),[](Obj item){return Get(item).type->name=="CheckboxItem";});
-    Check(owned==2,"Repeated native build must not duplicate owned module choices");
-    Check(nativeBuilds==3,"Original native builder always runs");
+void HeaderMenuReplacement(){
+    Fixture f;notebook=true;f.Header();auto old=f.HeaderMenu(),oldItem=f.Rows(old)[2],oldCallback=f.Callback(oldItem);
+    auto current=f.HeaderMenu();
+    Check(!Get(f.MenuRoot(old)).fields["panel"]&&Get(f.MenuRoot(current)).fields["panel"],"A new header menu retires only the old owned menu");
+    callback(oldCallback,f.View(oldItem));Check(notebookToggles==0,"Replaced header callbacks cannot toggle");
+    auto event=Make("MenuEvent");Get(event).fields["menu"]=current;
+    Check(populate(f.manipulator,event)&&f.Rows(current).size()==3,"Repopulating the same menu must not duplicate rows");
 }
-void StopAndWrongOwner(){
-    Fixture f;auto foreign=f.Menu();build(Make("ForeignManager"),foreign,nullptr);
-    Check(f.Rows(foreign).size()==1,"Unrelated native widget menu preserved");
-    auto menu=f.ShowModules(),item=f.Rows(menu)[2];f.state.stopRequested=true;toolsUi::Tick();
+void StopClosesHeaderMenus(){
+    Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu(),item=f.Rows(menu)[2];
+    f.state.stopRequested=true;toolsUi::Tick();
     callback(f.Callback(item),f.View(item));
-    Check(!toolsUi::CleanupPending()&&!Get(f.MenuRoot(menu)).fields["panel"]&&notebookToggles==0,"Stop closes owned menus and discards stale actions");
+    Check(!toolsUi::CleanupPending()&&!Get(f.MenuRoot(menu)).fields["panel"]&&Get(f.button).items.empty()&&notebookToggles==0,"Stop closes owned menus, releases the header and discards stale actions");
 }
 }
 int main(){
@@ -303,11 +270,11 @@ int main(){
         toolsUi::Register("treasure","Chasse au trésor",317,fake::TreasureVisible,fake::ToggleTreasure);
         toolsUi::Register("notebook","Ignored duplicate",999,fake::NotebookVisible,fake::ToggleNotebook);
         toolsUi::Install();toolsUi::Install();
-        fake::Check(fake::installs==1&&fake::menuRegistrations==1,"Install and registration are idempotent");
-        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ModulesPreserveNativeAndStayOpen,fake::HeaderTitleAndHide,fake::StaleModuleCallbacks,
+        fake::Check(fake::installs==0&&fake::menuRegistrations==1,"Install registers header menus once and hooks nothing");
+        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::NativeWidgetListUntouched,fake::HeaderTitleAndHide,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
-                fake::MenuReplacementAndReentry,fake::StopAndWrongOwner})test();
+                fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus})test();
         fake::Check(fake::handles.empty(),"All menu handles released");
-        std::cout<<"ToolsUiTests: native module menu and header lifecycle passed\n";return 0;
+        std::cout<<"ToolsUiTests: native panel header menu lifecycle passed\n";return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
 }

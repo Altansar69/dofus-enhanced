@@ -21,6 +21,7 @@ assert len(cases) >= 48 and all(
     for case in cases
 ), "All release checks must pass before packaging"
 revision = int(re.search(r"ModRevision = (\d+)", (source / "version.hpp").read_text()).group(1))
+semantic = re.search(r'ModSemanticVersion\[\] = "([0-9]+\.[0-9]+\.[0-9]+)"', (source / "version.hpp").read_text(encoding="utf8")).group(1)
 assert revision >= 75
 constants = (source / "common.hpp").read_text()
 game = re.search(r'ExpectedGameHash\[\] = "([a-f0-9]{64})"', constants).group(1)
@@ -57,7 +58,7 @@ with zipfile.ZipFile(asset) as archive:
     for name in names:
         assert hashlib.sha256(archive.read(f"{folder.name}/{name}")).hexdigest() == hashes[name]
 result = {
-    "revision": revision, "clientVersion": version, "folder": str(folder),
+    "revision": revision, "version": semantic, "clientVersion": version, "folder": str(folder),
     "asset": str(asset), "sha256": sha(asset), "bytes": asset.stat().st_size,
     "testsPassed": len(cases), "hashes": hashes,
 }

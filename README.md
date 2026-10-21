@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r91**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.0.0** (révision r92).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r91) → Général** :
+Dans **Options → Dofus Enhanced → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -41,13 +41,16 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 ```
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
-La révision réellement chargée apparaît dans le nom de l’onglet **Mod (rN)**.
+L’onglet des options s’appelle **Dofus Enhanced**. La version chargée (x.y.z et
+révision) figure dans la ligne de crédits en fin d’options, avec l’auteur Altansar
+et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
+étiquette `rN` pour le vérificateur de mises à jour.
 
 ## Chasse au trésor
 
 Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, en haut à droite.
 Un second clic ou **⋯ → Masquer le module** ferme le panneau.
-L’entrée **Chasse au trésor · DofusDB** reste aussi accessible dans le menu des modules.
+Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 Renseigner X, Y et une direction, cliquer sur Rechercher, puis filtrer par indice.
 Chaque résultat affiche sa position la plus proche et sa distance. Un clic prépare
@@ -59,7 +62,7 @@ Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 
 Cliquer sur le bouton **Carnet personnel**, dans la même barre, à côté de **Capture d’âme**.
 Un second clic ou **⋯ → Masquer le module** ferme le carnet.
-Son entrée reste aussi accessible dans le menu des modules.
+Le menu ⋯ des modules ne le liste plus non plus.
 Un brouillon modifié demande une confirmation avant d’être abandonné.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
@@ -90,10 +93,12 @@ Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste v
 
 ## Surbrillance
 
-**Options → Mod (r91) → Général → Surbrillance** choisit le niveau : derrière
+**Options → Dofus Enhanced → Général → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
+Jusqu’à 32 cibles sont contourées en même temps, dans l’ordre monstres, PNJ
+puis éléments interactifs.
 Les mêmes cases sont disponibles dans **clic droit → Surbrillance**, sous les
 quatre modes. Elles sont indépendantes et le menu reste ouvert après sélection.
 Les objets doivent être visibles et proposer une action disponible dans le jeu.
@@ -118,15 +123,20 @@ proviennent du catalogue des objets du jeu.
 La sélection des ressources est commune aux deux cartes et sauvegardée entre
 les lancements. **Afficher sur la mini-carte** et **Afficher sur la grande carte**
 se règlent indépendamment. Les filtres restent accessibles sans ressource
-sélectionnée ou si les repères sont désactivés. Le bouton **Centrer**, au-dessus
-des catégories, ramène la mini-carte sur le personnage en conservant le zoom.
+sélectionnée. Décocher l’affichage d’une carte, dans son volet ou dans les
+options, masque aussi le volet de sélection de cette carte jusqu’à réactivation
+par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
+bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
+carte ; il ramène la mini-carte sur le personnage en conservant le zoom.
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
 Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
 des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
 pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Les ressources aux mêmes coordonnées gardent chacune leur icône et leur quantité.
+Les ressources aux mêmes coordonnées gardent chacune leur icône et leur quantité :
+elles s’empilent sur la case avec un léger décalage et s’étalent côte à côte au
+survol de la souris, puis se replient quand le curseur s’éloigne.
 Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
 Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les
@@ -136,7 +146,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r91 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La 1.0.0 (r92) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -169,7 +179,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r91 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r92 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

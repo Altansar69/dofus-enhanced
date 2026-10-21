@@ -1,4 +1,24 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 91
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 92 — VERSION 1.0.0
+
+R92 — DOFUS ENHANCED 1.0.0
+- Versionnage x.y.z : cette révision est la version 1.0.0. L’onglet des
+  options s’appelle « Dofus Enhanced », sans numéro de révision. Une ligne de
+  crédits en fin d’options indique la version, l’auteur Altansar et un bouton
+  Ouvrir GitHub vers Altansar69/dofus-miniatures. Les étiquettes rN et
+  release.ini restent inchangées pour le vérificateur de mises à jour.
+- Surbrillance : jusqu’à 32 cibles simultanées (monstres, PNJ, interactifs).
+- Ressources : plusieurs ressources sur une même case s’empilent avec un
+  léger décalage, centrées sur la case ; le survol de la souris les étale
+  côte à côte, puis elles se replient quand le curseur s’éloigne.
+- Mini-carte : le bouton de recentrage reprend le composant et l’icône du
+  bouton joueur de la grande carte, en bas à gauche de la mini-carte.
+- Décocher Ressources sur la mini-carte ou sur la grande carte masque aussi
+  le volet de sélection des ressources de cette carte ; l’option ou l’autre
+  carte le réaffiche.
+- Le menu ⋯ des modules ne liste plus Chasse au trésor ni Carnet personnel ;
+  leurs boutons à côté de Capture d’âme restent les seuls raccourcis, et le
+  menu ⋯ de chaque panneau conserve Masquer le module.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R91 — BUDGET DE SURBRILLANCE ÉLARGI
 - La surbrillance acceptait au plus 8 cibles par image (monstres, PNJ et

@@ -18,6 +18,8 @@ struct OptionsUi {
     managed::Ref spouseSource, spouseOption;
     managed::Ref resourcesSource, resourcesOption;
     managed::Ref resourcesMiniSource, resourcesMiniOption;
+    // Credits row: project name, x.y.z version, author and a GitHub button.
+    managed::Ref creditsOption, creditsMarker;
     std::string stableSelection;
     unsigned stableTicks = 0;
     void Install();

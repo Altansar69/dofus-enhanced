@@ -15,7 +15,12 @@ constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr size_t CellBudget = 384, BadgeBudget = 384;
 constexpr float FullBadgeSize=50, MiniBadgeSize=44;
+// Several resources on one cell stack with a small cascade so the cell stays
+// identifiable; hovering the stack spreads it into a two-column grid.
+constexpr float StackStepRatio=.2f;
+constexpr uint64_t HoverInterval=80;
 struct Vec2 { float x, y; };
+struct Vec3 { float x, y, z; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
 struct Badge { Ref root, label, icon; int item = 0; };
@@ -23,9 +28,10 @@ struct Marker {
     Ref native, root, id;
     std::vector<Badge> badges;
     int x = 0, y = 0;
-    bool used = false;
+    bool used = false, expanded = false;
     std::string content;
-    Vec2 scale{};
+    Vec2 scale{}, center{};
+    float size = 0;
 };
 struct View {
     Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer;
@@ -50,10 +56,11 @@ struct Frame {
 struct Methods {
     Klass view{}, service{}, marker{}, world{}, element{}, label{};
     Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{}, centerPlayer{};
+    Method pointerPosition{}, pointerPanel{};
 } methods;
 std::array<View, 2> views;
 bool installed = false, reported = false;
-uint64_t nextPump = 0, serial = 0;
+uint64_t nextPump = 0, nextHover = 0, serial = 0;
 bool Session() {
     return installed && module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested &&
         module->compositor.get();
@@ -234,6 +241,50 @@ Marker& NewMarker(View& v,const Frame& f,const Cell& cell) {
     api.Invoke(methods.position,m.native.get(),{v.layer.get(),const_cast<double*>(&f.zoom),&iconScale});
     return m;
 }
+Rect BadgeOffset(size_t index,size_t count,float size,bool expanded) {
+    if(count<2)return {-size/2,-size/2,size,size};
+    if(!expanded){const float step=size*StackStepRatio,extent=size+float(count-1)*step;return {-extent/2+float(index)*step,-extent/2+float(index)*step,size,size};}
+    const int columns=2,rows=int((count+1)/2);
+    return {float(index%columns)*size-columns*size/2,float(index/columns)*size-rows*size/2,size,size};
+}
+Rect StackExtent(size_t count,float size,bool expanded) {
+    if(count<2)return {-size/2,-size/2,size,size};
+    if(!expanded){const float extent=size+float(count-1)*size*StackStepRatio;return {-extent/2,-extent/2,extent,extent};}
+    const int columns=2,rows=int((count+1)/2);
+    return {-columns*size/2,-rows*size/2,columns*size,rows*size};
+}
+void PlaceBadges(Marker& marker,Vec2 scale) {
+    for(size_t i=0;i<marker.badges.size();++i) {
+        const auto r=BadgeOffset(i,marker.badges.size(),marker.size,marker.expanded);
+        Place(marker.badges[i].root.get(),{r.x/scale.x,r.y/scale.y,r.width/scale.x,r.height/scale.y});
+    }
+}
+bool Inside(Vec2 p,Rect r) { return p.x>=r.x&&p.x<=r.x+r.width&&p.y>=r.y&&p.y<=r.y+r.height; }
+bool ReadPointer(const View& v,Vec2& pointer) {
+    int mouse=0,player=0; // PointerId.mousePointerId, ContextType.Player
+    if(api.Invoke(methods.pointerPanel,nullptr,{&mouse,&player})!=v.panel.get())return false;
+    const auto position=api.Value<Vec3>(api.Invoke(methods.pointerPosition,nullptr,{&mouse,&player}));
+    if(!std::isfinite(position.x)||!std::isfinite(position.y))return false;
+    pointer={position.x,position.y};
+    return Inside(pointer,v.viewport);
+}
+void UpdateHover(View& v) {
+    if(!v.cached||v.cleaning||v.markers.empty())return;
+    Vec2 pointer{};Marker* best=nullptr;float bestDistance=0;
+    if(ReadPointer(v,pointer))for(auto& m:v.markers) {
+        if(!m.native.get()||m.badges.size()<2)continue;
+        const auto e=StackExtent(m.badges.size(),m.size,m.expanded);
+        if(!Inside(pointer,{m.center.x+e.x,m.center.y+e.y,e.width,e.height}))continue;
+        const float distance=(pointer.x-m.center.x)*(pointer.x-m.center.x)+(pointer.y-m.center.y)*(pointer.y-m.center.y);
+        if(!best||distance<bestDistance){best=&m;bestDistance=distance;}
+    }
+    for(auto& m:v.markers) {
+        const bool expand=&m==best;
+        if(!m.native.get()||expand==m.expanded)continue;
+        m.expanded=expand;PlaceBadges(m,v.scale);
+        if(expand)api.Call(m.root.get(),"BringToFront");
+    }
+}
 void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
     const auto content=Describe(Catalog(),cell);
     if(marker.content==content&&Same(marker.scale,f.scale))return;
@@ -252,13 +303,11 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
             LoadItemIcon(b.icon.get(),resource->iconId);
         }
     }
-    const int columns=cell.counts.size()>1?2:1, rows=int((cell.counts.size()+columns-1)/columns);
-    const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
+    const float size=marker.size;
     for(size_t i=0;i<cell.counts.size();++i) {
         const auto& count=cell.counts[i]; auto& badge=marker.badges[i];
         const auto* resource=LookupResource(Catalog(),count.itemId);
         if (!resource) throw std::runtime_error("Unknown selected map resource");
-        Place(badge.root.get(),{(float(i%columns)*size-columns*size/2)/f.scale.x,(float(i/columns)*size-rows*size/2)/f.scale.y,size/f.scale.x,size/f.scale.y});
         Place(badge.icon.get(),{0,0,(size-4)/f.scale.x,(size-4)/f.scale.y});
         const auto quantity=std::to_string(count.count)+(count.interiorCount?"*":"");
         const float countWidth=(std::max)(18.0f,8.0f*float(quantity.size())+6.0f);
@@ -277,6 +326,7 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
         Style(badge.label.get(),"unityTextAlign",4);
         SetText(badge.label.get(),quantity);
     }
+    PlaceBadges(marker,f.scale);
     marker.content=content;marker.scale=f.scale;
 }
 void Render(View& v,const Frame& f) {
@@ -303,9 +353,9 @@ void Render(View& v,const Frame& f) {
         float x=float(cell.x),y=float(cell.y);
         auto local=api.Value<Vec2>(api.Invoke(methods.mapToPixel,nullptr,{&x,&y,f.world.get(),const_cast<double*>(&f.zoom)}));
         auto screen=api.Value<Vec2>(api.Invoke(methods.toWorld,nullptr,{f.root.get(),&local}));
-        const int columns=cell.counts.size()>1?2:1,rows=int((cell.counts.size()+columns-1)/columns);
         const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
-        const Rect bounds{screen.x-columns*size/2,screen.y-rows*size/2,columns*size,rows*size};
+        const auto extent=StackExtent(cell.counts.size(),size,true);
+        const Rect bounds{screen.x+extent.x,screen.y+extent.y,extent.width,extent.height};
         if(!Finite(bounds) || !Overlaps(bounds,f.viewport))continue;
         // Each cell keeps its complete resource grid. Overlap with another
         // cell must not delete minerals when the selection changes.
@@ -313,6 +363,7 @@ void Render(View& v,const Frame& f) {
         auto found=std::find_if(v.markers.begin(),v.markers.end(),[&](const Marker& m){return m.x==cell.x && m.y==cell.y && m.native.get();});
         if(found!=v.markers.end() && MarkerRegistered(v,*found)!=found->native.get()) {RemoveMarker(v,*found);found=v.markers.end();}
         auto& marker=found==v.markers.end()?NewMarker(v,f,cell):*found;
+        marker.center=screen;marker.size=size;
         UpdateBadges(marker,f,cell); marker.used=true;
         badgeCount+=cell.counts.size();
     }
@@ -352,9 +403,14 @@ void InstallRender() {
     auto extensions=api.Class(UiAssembly,UiSpace,"VisualElementExtensions");
     methods.toWorld=api.FindVerified(extensions,"LocalToWorld",2,0x56766A0);
     methods.toLocal=api.FindVerified(extensions,"WorldToLocal",2,0x56776A0);
+    // Last mouse position/panel known to UI Toolkit; no input hook and no
+    // pickable marker is needed to spread a hovered resource stack.
+    auto pointerState=api.Class(UiAssembly,UiSpace,"PointerDeviceState");
+    methods.pointerPosition=api.FindVerified(pointerState,"GetPointerPosition",2,0x577C600);
+    methods.pointerPanel=api.FindVerified(pointerState,"GetPanel",2,0x577C3A0);
     api.FindVerified(methods.label,".ctor",0,0x5729760);
     struct Guard {const char* name;int argc;uintptr_t rva;};
-    for(const auto& g:std::array<Guard,13>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},
+    for(const auto& g:std::array<Guard,14>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},{"BringToFront",0,0x55E08E0},
         {"get_contentContainer",0,0x3153690},{"get_panel",0,0x55F7170},{"get_parent",0,0x55F7180},{"get_worldBound",0,0x55F7CC0},{"get_worldClip",0,0x55F7EE0},
         {"get_visible",0,0x55F7BC0},{"get_resolvedStyle",0,0x55F72E0},{"set_name",1,0x55F9670},
         {"set_pickingMode",1,0x55F97B0},{"get_style",0,0x55F74A0}}}) api.FindVerified(methods.element,g.name,g.argc,g.rva);
@@ -364,7 +420,7 @@ bool RenderCleanupPending() {
     for(const auto& v:views)if(v.owner.get() || v.layer.get() || !v.markers.empty())return true;
     return false;
 }
-void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; }
+void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; nextHover=0; }
 MiniMapSurface ReadMiniMapSurface() {
     MiniMapSurface surface;
     if(!Session())return surface;
@@ -402,18 +458,27 @@ bool CenterMiniMap(const MiniMapSurface& expected) {
 }
 void PumpRender(uint64_t now) {
     if(!Session()||(!module->settings.resourceMapEnabled&&!module->settings.resourceMiniMapEnabled)||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
-    if(now<nextPump)return;
-    nextPump=now+200;
+    const bool render=now>=nextPump,hover=now>=nextHover;
+    if(!render&&!hover)return;
+    if(render)nextPump=now+200;
+    if(hover)nextHover=now+HoverInterval;
     for(int key=0;key<2;++key) {
         auto& v=views[key];
         try {
             if(v.cleaning && !Cleanup(v))continue;
             const bool enabled=key==0?module->settings.resourceMiniMapEnabled:module->settings.resourceMapEnabled;
             if(!enabled){Cleanup(v);continue;}
+            if(!render) {
+                // Hover re-places badges only on the geometry of the last render.
+                if(v.cached&&v.layer.get()&&v.compositor.get()==module->compositor.get()&&
+                    api.Call(v.root.get(),"get_panel")==v.panel.get()&&api.Call(v.layer.get(),"get_parent")==v.root.get())UpdateHover(v);
+                continue;
+            }
             auto f=ReadFrame(key);
             if(!f.valid) {Cleanup(v);continue;}
             if(!SameView(v,f)) {if(!Cleanup(v))continue;CreateView(v,f);}
             Render(v,f);
+            UpdateHover(v);
         } catch(const std::exception& error) {Report(error);Cleanup(v);}
     }
 }

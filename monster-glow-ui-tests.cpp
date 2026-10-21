@@ -275,8 +275,8 @@ void InvalidGeometryAndBudgets(){
  Check(!monsterGlow::ProjectGlowRenderers(frame,{Renderer(std::numeric_limits<float>::quiet_NaN())}).valid,"Nonfinite renderer rejected");
  auto edge=monsterGlow::ProjectGlowRenderers(frame,{Renderer(0,400,100,100)});Check(edge.valid&&edge.screenRect.x==0&&edge.screenRect.width==64,"Padded crop clamps to physical viewport");
  auto texture=Make("RenderTexture");auto target=monsterGlow::ProjectGlowRenderers(frame,{Renderer()});
- for(int id=0;id<16;++id)Check(monsterGlow::ShowGlowUi(frame,id,target,texture),"Sixteen bounded targets accepted");
- Check(!monsterGlow::ShowGlowUi(frame,17,target,texture)&&VisibleImages().size()==16,"Seventeenth target cannot allocate unbounded images");
+ for(int id=0;id<32;++id)Check(monsterGlow::ShowGlowUi(frame,id,target,texture),"Thirty-two bounded targets accepted");
+ Check(!monsterGlow::ShowGlowUi(frame,33,target,texture)&&VisibleImages().size()==32,"Thirty-third target cannot allocate unbounded images");
  monsterGlow::EndGlowUi();Get(camera).fields["targetTexture"]=Make("RenderTexture");auto offscreen=monsterGlow::BeginGlowUi(1100);Check(!offscreen.valid&&!Overlay()&&std::string(offscreen.reason)=="camera-target-texture","Offscreen camera must report its actual rejection gate");
  Get(camera).fields["targetTexture"]=nullptr;f.owner.stopped=true;Check(!monsterGlow::BeginGlowUi(1101).valid,"Stopped context never creates UI");
 }
