@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r89**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, révision **r90**.
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Mod (r89) → Général** :
+Dans **Options → Mod (r90) → Général** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -90,7 +90,7 @@ Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste v
 
 ## Surbrillance
 
-**Options → Mod (r89) → Général → Surbrillance** choisit le niveau : derrière
+**Options → Mod (r90) → Général → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
@@ -118,14 +118,17 @@ proviennent du catalogue des objets du jeu.
 La sélection des ressources est commune aux deux cartes et sauvegardée entre
 les lancements. **Afficher sur la mini-carte** et **Afficher sur la grande carte**
 se règlent indépendamment. Les filtres restent accessibles sans ressource
-sélectionnée ou si les repères sont désactivés.
+sélectionnée ou si les repères sont désactivés. Le bouton **Centrer**, au-dessus
+des catégories, ramène la mini-carte sur le personnage en conservant le zoom.
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
 Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
 des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
 pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Un astérisque signale des points en intérieur. Les repères laissent passer
+Les ressources aux mêmes coordonnées gardent chacune leur icône et leur quantité.
+Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
+Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les
 repères trop proches peuvent toujours être espacés en zoomant.
 La barre se répartit sur plusieurs lignes si nécessaire et la liste dispose
@@ -133,7 +136,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La r89 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La r90 est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -166,7 +169,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r89 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r90 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

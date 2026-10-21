@@ -1,4 +1,15 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 89
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 90
+
+R90 — MINERAIS SIMULTANÉS ET RECENTRAGE DE LA MINI-CARTE
+- L’ajout d’un minerai ne masque plus les repères voisins à cause du filtre
+  de chevauchement. Cuivre et kobalte gardent leurs icônes et quantités propres
+  lorsqu’ils se trouvent aux mêmes coordonnées, sur les deux cartes.
+- Retrait du bandeau « Ressources en intérieur incluses ».
+- Bouton Centrer au-dessus des catégories de la mini-carte : retour sur le
+  personnage avec le zoom actuel, même si les ressources sont masquées.
+- Les limites de quantité de repères restent en place ; les vues fermées
+  ou remplacées ne reçoivent pas les actions de leurs anciens boutons.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R89 — SYNCHRONISATION DES CASES DE SURBRILLANCE
 - Les cases PNJ et éléments interactifs déjà affichées sont resynchronisées

@@ -43,6 +43,7 @@ std::map<GCHandle,Obj> handles;
 std::map<std::string,Obj> services;
 GCHandle next=0xA987000000ULL;
 bool nativeRemoveFails=false; int creates=0,disposes=0,nativeWrites=0,writes=0;
+std::vector<Obj> centeredViews;
 std::function<void()> onConvert;
 std::map<std::string,size_t> offsets{{"dueo",0x98},{"dugq",0x68},{"dugv",0x90},{"dugy",0xA8},
     {"<dugi>k__BackingField",0x38},{"<dugk>k__BackingField",0x48},{"<dugf>k__BackingField",0x20},
@@ -126,6 +127,11 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         if(onConvert)onConvert();return result;
     }
     auto& o=Get(self);
+    if(m.name=="beus"){
+        Check(m.rva==0x1BFA370&&a.size()==1&&*static_cast<bool*>(a[0]),"Native centering must request current player position");
+        Check(o.type->name=="CartographyBannerView","Never center the full map from the mini-map control");
+        centeredViews.push_back(self);return nullptr;
+    }
     if(m.name==".ctor"&&m.type->name=="fgh"){
         Check(m.rva==0x1C3C420&&*static_cast<int*>(a[6])==-1,"Native marker ctor ABI");
         auto root=Make("VisualElement",true);Get(root).picking=1;o.refs["<dtwe>k__BackingField"]=root;
@@ -162,7 +168,7 @@ struct Fixture {
     Fixture(){module=&state;state.ready=true;state.servicesReady=true;state.settings.resourceMapEnabled=true;state.settings.resourceMapItems={1,2};
         state.compositor.reset(Make("Compositor"));services["fng"]=Make("Player");
         service=services["fkc"]=Make("fhk");dictionary=Make("IntDict");Get(service).refs["dueo"]=dictionary;
-        banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=0;onConvert={};
+        banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=0;onConvert={};centeredViews.clear();
         fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,3,2,1,5,true},{20,2,1,1,1,99,false}};
     }
     Obj View(int key){auto owner=Make(key?"fhw":"CartographyBannerView");auto root=Make("NativeRoot"),host=Make("NativeHost");Get(host).panel=Make("Panel");Attach(host,root);
@@ -175,7 +181,8 @@ struct Fixture {
 };
 void BothMapsAndCounts(){Fixture f;f.Tick();Check(LiveMarkers(f.banner).size()==2&&LiveMarkers(f.full).size()==2,"Both maps must display exact cells");
     auto labels=AllOwned("Label");bool first=false,second=false,interior=false;
-    for(auto l:labels){Check(Get(l).picking==1,"Labels must preserve travel picking");first|=Get(l).text=="4";second|=Get(l).text=="2";interior|=Get(l).text=="5*";Check(Get(l).text.find("99")==std::string::npos,"Other world leaked");}
+    for(auto l:labels){Check(Get(l).picking==1,"Labels must preserve travel picking");first|=Get(l).text=="4";second|=Get(l).text=="2";interior|=Get(l).text=="5*";Check(Get(l).text.find("99")==std::string::npos,"Other world leaked");
+        Check(Get(l).text.find("Ressources en intérieur incluses")==std::string::npos,"Interior banner must be removed");}
     Check(first&&second&&interior,"Per-resource counts and interior marker missing");
     for(auto l:labels)if(Get(l).text=="4"||Get(l).text=="2"||Get(l).text=="5*"){
         const auto& style=Get(l).styles;
@@ -267,5 +274,47 @@ void ResourceImageVisibility(){Fixture f;f.Tick();
         Check(overlapWidth*overlapHeight<imageWidth*imageHeight*.25f,"Quantity badge must leave at least three quarters of the image unobscured");
     }
 }
+void AddingMineralKeepsSameAndNeighbouringCells(){Fixture f;
+    fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,2,1,1,5,true}};
+    for(auto owner:{f.banner,f.full})Get(f.Root(owner)).scale={.6f,.6f};
+    f.state.settings.resourceMapItems={1};f.Tick();
+    for(auto owner:{f.banner,f.full})Check(LiveMarkers(owner).size()==2,"Both initial mineral locations visible");
+    for(auto selection:{std::vector<int>{1,2},std::vector<int>{2},std::vector<int>{1,2}}){
+        f.state.settings.resourceMapItems=selection;f.Tick();
+        for(auto owner:{f.banner,f.full}){
+            const auto markers=LiveMarkers(owner);
+            Check(markers.size()==(selection.size()==2?2:1),"Selecting another mineral must not cull a neighbouring selected location");
+            for(auto marker:markers){
+                const auto root=Get(marker).refs.at("<dtwe>k__BackingField");
+                const auto& badges=Get(root).children;
+                const bool sharedCell=Get(Get(marker).refs.at("id")).text=="cell_1_1";
+                Check(badges.size()==(sharedCell?selection.size():1),"All selected minerals at the same coordinates need separate badges");
+                if(badges.size()==2){
+                    float left0=0,left1=0,width0=0;
+                    std::memcpy(&left0,Get(badges[0]).styles.at("left").data(),4);
+                    std::memcpy(&left1,Get(badges[1]).styles.at("left").data(),4);
+                    std::memcpy(&width0,Get(badges[0]).styles.at("width").data(),4);
+                    Check(left1>=left0+width0-.001f,"Shared-cell resource images must be side by side");
+                }
+            }
+        }
+    }
 }
-int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,ResourceImageVisibility})test();std::cout<<"ResourceMapRenderTests: 9 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+void CenterOnlyCurrentMiniMap(){Fixture f;
+    f.state.settings.resourceMiniMapEnabled=false;f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
+    const auto preferences=f.state.settings;
+    auto surface=ReadMiniMapSurface();
+    Check(CenterMiniMap(surface)&&centeredViews==std::vector<Obj>{f.banner},"Center works with resource rendering disabled");
+    Check(f.state.settings==preferences&&Get(f.banner).zoom==1,"Center does not change selection or zoom");
+    MiniMapSurface foreign;foreign.root.reset(Get(f.Root(f.full)).parent);foreign.mapRoot.reset(f.Root(f.full));
+    Check(!CenterMiniMap(foreign),"Reject the full map surface");
+    auto oldBanner=f.banner;f.banner=f.View(0);
+    Check(!CenterMiniMap(surface)&&centeredViews.size()==1,"Reject a replaced mini-map");
+    surface=ReadMiniMapSurface();Get(f.Root(f.banner)).visible=false;
+    Check(!CenterMiniMap(surface),"Reject hidden mini-map");Get(f.Root(f.banner)).visible=true;
+    f.state.stopRequested=true;Check(!CenterMiniMap(surface),"Never center after stop");f.state.stopRequested=false;
+    surface=ReadMiniMapSurface();Check(CenterMiniMap(surface)&&centeredViews.back()==f.banner,"New mini-map gets a fresh center action");
+    surface.root.reset();surface.mapRoot.reset();foreign.root.reset();foreign.mapRoot.reset();
+}
+}
+int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,ResourceImageVisibility,AddingMineralKeepsSameAndNeighbouringCells,CenterOnlyCurrentMiniMap})test();std::cout<<"ResourceMapRenderTests: 11 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

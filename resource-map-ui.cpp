@@ -34,7 +34,7 @@ struct State {
     Ref owner,root,mapRoot,panel,scroll,content,resources,master,compositor,character,cartography;
     std::vector<Row> rows;
     std::vector<int> selection;
-    Ref toolbar;
+    Ref toolbar,center;
     std::vector<Ref> tabs,groups,cursorTargets;
     int activeJob=-1;
     bool enabled=true,attached=false,mini=false,cleaning=false;
@@ -114,6 +114,12 @@ void Rounded(Obj element,float radius){
     for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(element,corner,radius);
 }
 void Ignore(Obj element){int ignore=1;api.Call(element,"set_pickingMode",{&ignore});}
+void HideCheckboxSquare(Obj control){
+    Ref square(api.Field(control,"m_checkbox"));
+    // Native selection refreshes display; visibility keeps the square hidden.
+    Style(square.get(),"visibility",1);Style(square.get(),"position",1);
+    Style(square.get(),"display",1);Ignore(square.get());
+}
 void ShowJob(State& state,int selected){
     state.activeJob=selected;
     for(size_t i=0;i<state.tabs.size();++i){
@@ -196,6 +202,16 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         api.Call(next->resources.get(),"Add",{next->scroll.get()});
         Style(next->scroll.get(),"backgroundColor",Color{.105f,.115f,.12f,1});
         Rounded(next->scroll.get(),8);
+        next->center.reset(Checkbox("Centrer",false));
+        HideCheckboxSquare(next->center.get());
+        Style(next->center.get(),"position",1);
+        Pixels(next->center.get(),"left",0);Pixels(next->center.get(),"top",-34);
+        Pixels(next->center.get(),"width",96);Pixels(next->center.get(),"height",30);
+        Pixels(next->center.get(),"minHeight",30);Pixels(next->center.get(),"maxHeight",30);
+        Style(next->center.get(),"backgroundColor",Color{.10f,.12f,.13f,.96f});
+        Rounded(next->center.get(),8);
+        Text(next->center.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
+        api.Call(next->resources.get(),"Add",{next->center.get()});
     }else{
         Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
         Rounded(next->resources.get(),8);
@@ -227,12 +243,7 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
             Ref tab(Checkbox("",false));
             // Preserve CheckboxCustom's own root clickable/keyboard behavior.
             // Only the checkbox square and empty caption of our button are hidden.
-            Ref square(api.Field(tab.get(),"m_checkbox"));
-            // UpdateContent restores display on every native selection change.
-            // Visibility and absolute positioning survive that refresh, keeping
-            // the square invisible and out of layout even during the click.
-            Style(square.get(),"visibility",1);Style(square.get(),"position",1);
-            Style(square.get(),"display",1);Ignore(square.get());
+            HideCheckboxSquare(tab.get());
             if(auto label=api.Field(tab.get(),"m_rightLabel"))Style(label,"display",1);
             Pixels(tab.get(),"width",48);Pixels(tab.get(),"height",48);
             Pixels(tab.get(),"minWidth",48);Style(tab.get(),"flexShrink",0.0f);
@@ -272,6 +283,11 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         target->cursorTargets.emplace_back(tab.get());
         int64_t hand=2097152;int normal=0;
         api.Invoke(enableCursor,nullptr,{tab.get(),&hand,&normal});
+    }
+    if(target->center.get()){
+        target->cursorTargets.emplace_back(target->center.get());
+        int64_t hand=2097152;int normal=0;
+        api.Invoke(enableCursor,nullptr,{target->center.get(),&hand,&normal});
     }
     Log("RESOURCE_MAP_UI_READY view="+std::string(mini?"mini":"full")+" rows="+std::to_string(target->rows.size()));
 }
@@ -383,6 +399,10 @@ void TickUi(){
         if(!miniOwned&&surface.root.get())Attach(miniOwned,nullptr,&surface);
         if(miniOwned){
             if(!Layout(*miniOwned,&surface)){Detach(miniOwned);return;}
+            if(api.Value<bool>(api.Invoke(checkboxValue,miniOwned->center.get()))){
+                bool off=false;api.Invoke(checkboxSet,miniOwned->center.get(),{&off});
+                CenterMiniMap(surface);
+            }
             PollTabs(*miniOwned);Poll(*miniOwned);
             // Resource marker layers can be recreated after native filter
             // refreshes. Keep the drawer above those non-interactive markers.

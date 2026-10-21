@@ -17,4 +17,6 @@ struct MiniMapSurface {
     float width=0, height=0, left=0, top=0;
 };
 MiniMapSurface ReadMiniMapSurface();
+// Explicit UI action, valid only for this still-attached mini-map surface.
+bool CenterMiniMap(const MiniMapSurface& expected);
 }

@@ -53,6 +53,22 @@ int main(){try{
         covered.insert(p.itemId);
     }
     Check(covered.size()==actual.size(),"Every selected resource has recorded positions");
+    bool sharedOreCell=false;
+    for(const auto& copper:placements)if(copper.itemId==441){
+        const auto kobalt=std::find_if(placements.begin(),placements.end(),[&](const Placement& p){
+            return p.itemId==443&&p.world==copper.world&&p.x==copper.x&&p.y==copper.y;
+        });
+        if(kobalt==placements.end())continue;
+        const Bounds cell{copper.x,copper.y,copper.x,copper.y};
+        const auto copperOnly=Query(actual,placements,std::vector<int>{441},copper.world,cell);
+        const auto both=Query(actual,placements,std::vector<int>{441,443},copper.world,cell);
+        Check(both.cells.size()==1&&both.cells[0].counts.size()==2&&
+            both.cells[0].counts[0].itemId==441&&both.cells[0].counts[1].itemId==443&&
+            both.cells[0].counts[0].count==copperOnly.cells[0].counts[0].count,
+            "Actual copper and kobalt placements must coexist without replacing copper counts");
+        sharedOreCell=true;break;
+    }
+    Check(sharedOreCell,"Regression requires actual shared copper/kobalt coordinates");
     for(int id:{23824,23825,23902,23903,27375})Check(LookupResource(actual,id)&&covered.contains(id),"Previously missing endgame harvest resources retained");
     const std::vector<int> crystals{23902,23903};
     r=Query(actual,placements,crystals,28,{-100,-100,100,100});

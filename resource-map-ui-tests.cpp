@@ -45,6 +45,7 @@ int cursorEnableFailureCountdown=-1;
 Obj cursorEnterMap{},cursorLeaveMap{};
 std::map<Obj,std::set<Obj>> cursorCacheKeys;
 int nativeEnable=0,nativeDisable=0,changes=0,nativeStyleWrites=0,moveFailureCountdown=-1,removeFailures=0;
+int centerRequests=0;
 bool rejectChange=false;
 using LifeFn=void(*)(Obj,Method);
 LifeFn enableHook{},disableHook{};
@@ -232,6 +233,10 @@ MiniMapSurface ReadMiniMapSurface(){
     }
     return result;
 }
+bool CenterMiniMap(const MiniMapSurface& surface){
+    fake::Check(surface.root.get()==fake::miniRoot&&surface.mapRoot.get()==fake::miniMapRoot,"Center must receive the current mini-map surface");
+    ++fake::centerRequests;return true;
+}
 }
 Module* module=nullptr;
 Module::Module(std::filesystem::path):features(nullptr),ui(nullptr){}
@@ -257,7 +262,7 @@ struct Fixture {
         Get(owner).fields["dtzy"]=character;Get(owner).fields["dtzz"]=cartography;Get(owner).fields["dzyj"]=root;
         const auto binding=Make("Binding");Get(binding).fields["filters"]=filters;Get(owner).fields["dzyi"]=binding;
         for(int i=0;i<14;++i){auto child=Make("NativeRow");Get(child).notifications=i+10;originals.push_back(child);Add(filters,child);}
-        nativeEnable=nativeDisable=changes=nativeStyleWrites=removeFailures=0;moveFailureCountdown=cursorEnableFailureCountdown=-1;rejectChange=false;logs.clear();
+        nativeEnable=nativeDisable=changes=nativeStyleWrites=removeFailures=centerRequests=0;moveFailureCountdown=cursorEnableFailureCountdown=-1;rejectChange=false;logs.clear();
         resourceMap::InstallUi();
     }
     ~Fixture(){moveFailureCountdown=cursorEnableFailureCountdown=-1;removeFailures=cursorRemoveFailures=cursorMapRemoveFailures=0;resourceMap::RestoreUi();Check(cursorTargets.empty(),"Native cursor handlers leaked");
@@ -354,9 +359,18 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(scroll).styles["display"]!=0,"Mini-map list starts hidden, leaving only profession icons");
     auto tabs=Get(Get(drawer).children.front()).children;
     Check(tabs.size()==6,"Six compact profession buttons");
+    auto center=FindUnder(drawer,"CheckboxCustom","Centrer");
+    Check(center&&cursorTargets.contains(center)&&Get(center).fields["tooltip"],"Mini-map has a reachable centering button");
+    Check(Get(center).styles["top"]==-34&&Get(center).styles["height"]==30,"Center button stays above resource categories");
+    const auto unchanged=f.state.settings;
+    NativeToggle(center,true);resourceMap::TickUi();
+    Check(centerRequests==1&&!Get(center).value&&f.state.settings==unchanged&&changes==0,"Center is a one-shot action even with resources disabled and nothing selected");
+    resourceMap::TickUi();Check(centerRequests==1,"Idle ticks do not center repeatedly");
+    NativeToggle(center,true);resourceMap::TickUi();Check(centerRequests==2,"Each new activation can center again");
+    Check(Get(Get(center).fields.at("m_checkbox")).styles["visibility"]!=0,"Center must never show a checkbox square");
     // Native map wheel/move callbacks are on MiniMapContent. A UI event on
     // our controls bubbles to MiniHost without entering that map subtree.
-    for(auto control:{tabs[0],scroll}){
+    for(auto control:{tabs[0],scroll,center}){
         bool reachesMap=false,reachesHost=false;
         for(auto node=control;node;node=Get(node).fields["parent"]){reachesMap|=node==miniMapRoot;reachesHost|=node==miniRoot;}
         Check(reachesHost&&!reachesMap,"Picker wheel and hover events must bypass native cartography handlers");
@@ -408,7 +422,9 @@ void MiniMapSelectionAndLifetime(){
     Get(miniRoot).bound={0,0,200,200};resourceMap::TickUi();
     Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==48,"Small mini-map stays usable after resize");
     const auto previous=miniRoot;
+    NativeToggle(center,true);
     miniRoot=nullptr;resourceMap::TickUi();
+    Check(centerRequests==2,"Closing the mini-map discards its pending center request");
     Check(!Get(drawer).fields["parent"]&&Get(previous).children==std::vector<Obj>{miniMapRoot,foreign},"Hidden mini-map detaches only owned resources");
     miniRoot=previous;resourceMap::TickUi();
     auto replacement=MiniDrawer();Check(replacement&&replacement!=drawer,"Mini-map reopening recreates picker");

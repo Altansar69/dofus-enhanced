@@ -28,7 +28,7 @@ struct Marker {
     Vec2 scale{};
 };
 struct View {
-    Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer, hint;
+    Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer;
     std::vector<Marker> markers;
     bool cleaning = false;
     int worldId=0;
@@ -49,7 +49,7 @@ struct Frame {
 };
 struct Methods {
     Klass view{}, service{}, marker{}, world{}, element{}, label{};
-    Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{};
+    Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{}, centerPlayer{};
 } methods;
 std::array<View, 2> views;
 bool installed = false, reported = false;
@@ -184,7 +184,7 @@ bool Cleanup(View& v) {
     }
     if (!complete) return false;
     v.markers.clear();
-    for (auto e:{&v.hint,&v.layer}) if (e->get()) {
+    for (auto e:{&v.layer}) if (e->get()) {
         try { api.Call(e->get(),"RemoveFromHierarchy"); e->reset(); }
         catch(const std::exception& error) { Report(error); return false; }
     }
@@ -279,16 +279,6 @@ void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
     }
     marker.content=content;marker.scale=f.scale;
 }
-void UpdateHint(View& v,const Frame& f,bool interiors) {
-    const std::string text=interiors?"* Ressources en intérieur incluses" : "";
-    if(text.empty()) { if(v.hint.get()) { api.Call(v.hint.get(),"RemoveFromHierarchy"); v.hint.reset(); } return; }
-    if(!v.hint.get()) { v.hint.reset(Element(true)); Name(v.hint.get(),"resource_map_interior_hint"); api.Call(v.root.get(),"Add",{v.hint.get()}); }
-    Vec2 corner{f.viewport.x+5,f.viewport.y+f.viewport.height-22};
-    auto local=api.Value<Vec2>(api.Invoke(methods.toLocal,nullptr,{f.root.get(),&corner}));
-    Place(v.hint.get(),{local.x,local.y,std::max(1.0f,f.viewport.width-10)/f.scale.x,18/f.scale.y});
-    Pixels(v.hint.get(),"fontSize",11/f.scale.y); Style(v.hint.get(),"color",Color{1,.96f,.8f,1});
-    Style(v.hint.get(),"backgroundColor",Color{.08f,.1f,.07f,.94f}); SetText(v.hint.get(),text);
-}
 void Render(View& v,const Frame& f) {
     if(v.cached&&Same(v.viewport,f.viewport)&&Same(v.scale,f.scale)&&Same(v.origin,f.origin)&&v.zoom==f.zoom&&
             v.selection==module->settings.resourceMapItems) {
@@ -306,7 +296,7 @@ void Render(View& v,const Frame& f) {
         return std::tuple(distance(a),a.x,a.y)<std::tuple(distance(b),b.x,b.y);
     });
     for(auto& m:v.markers)m.used=false;
-    size_t badgeCount=0; std::vector<Rect> occupied; bool interior=false;
+    size_t badgeCount=0;
     for(const auto& cell:result.cells) {
         if(cell.counts.empty())continue;
         if(badgeCount+cell.counts.size()>BadgeBudget) {result.limited=true;continue;}
@@ -317,20 +307,18 @@ void Render(View& v,const Frame& f) {
         const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
         const Rect bounds{screen.x-columns*size/2,screen.y-rows*size/2,columns*size,rows*size};
         if(!Finite(bounds) || !Overlaps(bounds,f.viewport))continue;
-        if(bounds.width>f.viewport.width || bounds.height>f.viewport.height ||
-            std::any_of(occupied.begin(),occupied.end(),[&](Rect other){return Overlaps(bounds,other);})) {result.limited=true;continue;}
-        if(occupied.size()%16==0&&!Current(f))throw std::runtime_error("Cartography changed during resource rendering");
+        // Each cell keeps its complete resource grid. Overlap with another
+        // cell must not delete minerals when the selection changes.
+        if(badgeCount%16==0&&!Current(f))throw std::runtime_error("Cartography changed during resource rendering");
         auto found=std::find_if(v.markers.begin(),v.markers.end(),[&](const Marker& m){return m.x==cell.x && m.y==cell.y && m.native.get();});
         if(found!=v.markers.end() && MarkerRegistered(v,*found)!=found->native.get()) {RemoveMarker(v,*found);found=v.markers.end();}
         auto& marker=found==v.markers.end()?NewMarker(v,f,cell):*found;
         UpdateBadges(marker,f,cell); marker.used=true;
-        badgeCount+=cell.counts.size(); occupied.push_back(bounds);
-        for(const auto& count:cell.counts)interior|=count.interiorCount>0;
+        badgeCount+=cell.counts.size();
     }
     for(auto& marker:v.markers)if(!marker.used)RemoveMarker(v,marker);
     std::erase_if(v.markers,[](const Marker& m){return !m.native.get();});
     if(!Current(f))throw std::runtime_error("Cartography changed before resource render commit");
-    UpdateHint(v,f,interior);
     // Re-enable only our group if a native filter refresh cleared its active list.
     if(!v.markers.empty())api.Invoke(methods.enableGroup,v.manager.get(),{v.group.get()});
     v.cached=true;v.viewport=f.viewport;v.scale=f.scale;v.origin=f.origin;v.zoom=f.zoom;v.selection=module->settings.resourceMapItems;
@@ -352,6 +340,7 @@ void InstallRender() {
     RequireField(methods.view,"<dugi>k__BackingField",0x38); RequireField(methods.view,"<dugk>k__BackingField",0x48);
     RequireField(methods.view,"<dugf>k__BackingField",0x20); RequireField(methods.world,"id",0x10);
     RequireField(methods.marker,"<dtwe>k__BackingField",0x10); RequireField(manager,"dttw",0x10); RequireField(manager,"dttx",0x18);
+    methods.centerPlayer=api.FindVerified(methods.view,"beus",1,0x1BFA370);
     methods.markerCtor=api.FindVerified(methods.marker,".ctor",10,0x1C3C420);
     methods.position=api.FindVerified(methods.marker,"beft",3,0x1C3CBB0);
     methods.dispose=api.FindVerified(methods.marker,"begd",0,0x1C3D370);
@@ -372,7 +361,7 @@ void InstallRender() {
     installed=true;
 }
 bool RenderCleanupPending() {
-    for(const auto& v:views)if(v.owner.get() || v.layer.get() || v.hint.get() || !v.markers.empty())return true;
+    for(const auto& v:views)if(v.owner.get() || v.layer.get() || !v.markers.empty())return true;
     return false;
 }
 void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; }
@@ -398,6 +387,18 @@ MiniMapSurface ReadMiniMapSurface() {
     surface.width=last.x-local.x;surface.height=last.y-local.y;
     surface.left=local.x;surface.top=local.y;
     return surface;
+}
+bool CenterMiniMap(const MiniMapSurface& expected) {
+    if(!Session() || !expected.root.get() || !expected.mapRoot.get())return false;
+    auto frame=ReadFrame(0);
+    if(!frame.valid || frame.root.get()!=expected.mapRoot.get() ||
+        api.Call(frame.root.get(),"get_parent")!=expected.root.get() || !Current(frame))return false;
+    // DisplayWhenReady(moveToPlayer=true), also used by CartographyBannerUI
+    // after a map change. It uses the current player position and keeps zoom.
+    bool moveToPlayer=true;
+    api.Invoke(methods.centerPlayer,frame.owner.get(),{&moveToPlayer});
+    views[0].cached=false;
+    return true;
 }
 void PumpRender(uint64_t now) {
     if(!Session()||(!module->settings.resourceMapEnabled&&!module->settings.resourceMiniMapEnabled)||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
