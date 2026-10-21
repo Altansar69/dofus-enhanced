@@ -425,8 +425,8 @@ void CheckLayout(Fixture& f) {
         Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
     Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
     Check(Rows(section) == AllOptions(f.Ui()), "General must contain exactly seventeen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte", "Bouton de recentrage sur la mini-carte", "Dofus Enhanced 1.5.2 — par Altansar"};
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.5.2", "Tab name carries no revision; version is x.y.z");
+    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte", "Bouton de recentrage sur la mini-carte", "Dofus Enhanced 1.6.0 — par Altansar"};
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.6.0", "Tab name carries no revision; version is x.y.z");
     for (size_t i = 0; i != Rows(section).size(); ++i) {
         const auto option = Rows(section)[i];
         Check(Label(option) == labels[i], "Simple option label or ordering changed");
@@ -435,7 +435,7 @@ void CheckLayout(Fixture& f) {
         if (i == 16) {
             const auto description = Description(option);
             Check(description.find("Altansar") != std::string::npos && description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos &&
-                description.find("r100") != std::string::npos, "Credits must name the author, the project page and the revision");
+                description.find("r101") != std::string::npos, "Credits must name the author, the project page and the revision");
             Check(Get(*static_cast<Obj*>(api.FieldAddress(option, "buttonText"))).text == "Ouvrir GitHub", "Credits button opens the project page");
         }
         if (i < 3 || i == 7) {

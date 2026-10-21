@@ -25,6 +25,7 @@ struct Settings {
     bool resourceMiniMapEnabled = true;
     bool miniMapCenterButton = true;
     bool smallHeaderSoul = false, smallHeaderTreasure = false, smallHeaderNotebook = false; // "Réduire les titres des modules"
+    bool notebookCompact = false; // Carnet : version compacte (liste et actions seulement), choisie dans le menu ⋯ du panneau
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
     static bool ValidResourceSelection(const std::vector<int>& items) {

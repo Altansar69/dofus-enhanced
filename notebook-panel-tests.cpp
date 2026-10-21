@@ -132,6 +132,17 @@ int main(){
         Check(!Panel(window),"Session replacement retires notebook");
         owner.cached.reset(Get(dependencies).fields["cached"]);initFailures=1;OpenNotebookPanel();TickNotebookPanel();
         Check(!NotebookPanelCleanupPending(),"Partial creation failure doesn't stop module or leak native state");
+        // Compact layout from the panel's ⋯ menu: entries and use actions only, no editor.
+        owner.settings.notebookCompact=false;OpenNotebookPanel();TickNotebookPanel();window=latestWindow;Check(Panel(window),"Full panel open");
+        Check(toolsUi::ToggleExtra("notebook")&&owner.settings.notebookCompact,"The layout row flips the saved setting");
+        TickNotebookPanel();TickNotebookPanel();Check(latestWindow!=window&&Panel(latestWindow),"The panel is rebuilt in the new layout");
+        window=latestWindow;auto detail=FindType(window,"SectionHeader","Détail"),entries=FindType(window,"SectionHeader","Mes entrées");
+        Check(Get(window).dimensions["width"]==360&&Get(Get(detail).fields.at("parent")).enums["display"]==1&&Get(FindText(window,"Nouvelle entrée")).enums["display"]==1,"Compact: narrow window, hidden editor, no new-entry button");
+        Check(FindText(entries,"Copier")&&FindText(entries,"Voyager")&&!FindText(detail,"Copier"),"Compact: the use actions sit under the entries list");
+        Check(FindText(window,"Choisis une entrée, puis Voyager, Envoyer ou Copier.")!=nullptr,"Compact status explains the layout");
+        Check(toolsUi::ToggleExtra("notebook")&&!owner.settings.notebookCompact,"Back to the full layout");TickNotebookPanel();TickNotebookPanel();window=latestWindow;
+        Check(Get(window).dimensions["width"]==660&&Get(Get(FindType(window,"SectionHeader","Détail")).fields.at("parent")).enums["display"]==0,"Full layout restored");
+        RestoreNotebookPanel();Check(!NotebookPanelCleanupPending()&&!Panel(window),"Layout scenario releases its window");
         toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
         std::filesystem::remove_all(directory);
         std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text and cleanup\n";return 0;

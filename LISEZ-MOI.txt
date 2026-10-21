@@ -1,4 +1,14 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 100 — VERSION 1.5.2
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 101 — VERSION 1.6.0
+
+R101 — VERSION 1.6.0 : CARNET EN VERSION COMPACTE
+- Carnet personnel : le menu ⋯ de la fenêtre propose « Version compacte » :
+  fenêtre étroite (360 px) avec les onglets, la liste des entrées, la
+  pagination et les actions Voyager / Envoyer / Préparer dans le chat /
+  Copier (et le canal des messages) sous la liste ; pas de formulaire. Le
+  même menu propose « Version complète » pour revenir à la grande fenêtre,
+  seule à permettre de créer et modifier les entrées. Le choix est enregistré
+  dans les réglages ; la fenêtre est reconstruite aussitôt.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R100 — VERSION 1.5.2 : REPÈRES DE RESSOURCES RÉPARÉS, TOTAL PAR CASE
 - Ressources sur les cartes : retour au rendu de la 1.4.0 (icône et pastille

@@ -10,8 +10,9 @@ using namespace managed;
 constexpr const char* Menus="Core.UILogic.Components.ContextMenu";
 struct Entry {
     std::string key,title; int icon=0; bool (*visible)()=nullptr; bool (*toggle)()=nullptr;
+    const char* (*extraLabel)()=nullptr; bool (*extraToggle)()=nullptr; // optional layout row
     Ref window,header,button,manipulator,cached,compositor,service;
-    Ref menu,item,callback;
+    Ref menu,item,callback,extraItem,extraCallback;
     bool armed=false;
 };
 // "Réduire les titres des modules": the game's header sub-menu lists its own
@@ -36,7 +37,7 @@ bool Ready(){return module&&module->ready&&module->servicesReady&&!module->stopp
 Entry& Find(const char* key){auto i=std::find_if(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;});if(i==entries.end())throw std::runtime_error("Unknown native tool panel");return *i;}
 Obj Root(Obj menu){if(!menu)return nullptr;Obj root=api.Field(menu,"dofusContextualMenuRoot");return root&&api.Call(root,"get_menuData")==menu?root:nullptr;}
 bool Present(Obj menu,Obj item){Ref rows(api.Call(menu,"get_menuItems"));int n=api.Value<int>(api.Call(rows.get(),"get_Count"));if(n<0||n>256)return false;for(int i=0;i<n;++i)if(api.Call(rows.get(),"get_Item",{&i})==item)return true;return false;}
-void Close(Entry& e){e.armed=false;Ref root(Root(e.menu.get()));if(root.get()&&api.Call(root.get(),"get_panel")){bool delayed=false;api.Call(root.get(),"RemoveMenu",{&delayed});}e.callback.reset();e.item.reset();e.menu.reset();}
+void Close(Entry& e){e.armed=false;Ref root(Root(e.menu.get()));if(root.get()&&api.Call(root.get(),"get_panel")){bool delayed=false;api.Call(root.get(),"RemoveMenu",{&delayed});}e.callback.reset();e.item.reset();e.extraCallback.reset();e.extraItem.reset();e.menu.reset();}
 bool Current(const Entry& e){return Ready()&&e.window.get()&&e.manipulator.get()&&e.cached.get()==module->cached.get()&&e.compositor.get()==module->compositor.get()&&e.service.get()==module->FindService("fpz")&&api.Call(e.window.get(),"get_panel")&&api.Call(e.button.get(),"get_panel")==api.Call(e.window.get(),"get_panel")&&api.Value<bool>(api.Call(e.button.get(),"get_enabledInHierarchy"));}
 bool Populate(Obj owner,Obj event){
     auto found=std::find_if(entries.begin(),entries.end(),[&](const Entry& e){return owner&&owner==e.manipulator.get();});if(found==entries.end())return false;
@@ -51,6 +52,15 @@ bool Populate(Obj owner,Obj event){
         bool disabled=false,close=true;unsigned delay=500;int style=1,icon=137;
         api.Invoke(appendItem,e.menu.get(),{text.get(),nullptr,&disabled,&close,help.get(),&delay,empty.get(),api.object_unbox(asset.get()),&style,&icon,api.object_unbox(color.get()),empty.get(),empty.get()});
         e.item.reset(api.Call(rows.get(),"get_Item",{&index}));e.callback.reset(api.Call(e.item.get(),"get_m_callback"));e.armed=true;
+        if(e.extraLabel&&e.extraToggle&&e.visible()){
+            // The panel's own layout row (e.g. the notebook's compact version).
+            api.Invoke(appendSeparator,e.menu.get());
+            Ref extraText(api.string_new(e.extraLabel())),extraHelp(api.string_new("Change la disposition de ce panneau ; le choix est conservé."));
+            int extraIndex=api.Value<int>(api.Call(rows.get(),"get_Count"));int extraIcon=185;
+            if(extraIndex<0||extraIndex>128)throw std::runtime_error("Tool menu bounds");
+            api.Invoke(appendItem,e.menu.get(),{extraText.get(),nullptr,&disabled,&close,extraHelp.get(),&delay,empty.get(),api.object_unbox(asset.get()),&style,&extraIcon,api.object_unbox(color.get()),empty.get(),empty.get()});
+            e.extraItem.reset(api.Call(rows.get(),"get_Item",{&extraIndex}));e.extraCallback.reset(api.Call(e.extraItem.get(),"get_m_callback"));
+        }
     }catch(const std::exception& error){e.armed=false;Log(std::string("TOOL_PANEL_MENU_ERROR ")+error.what());}
     return true;
 }
@@ -123,6 +133,11 @@ bool Callback(Obj callback,Obj view){
             Ref root(Root(e.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;Close(e);if(e.visible())e.toggle();
         }catch(const std::exception& error){Log(std::string("TOOL_PANEL_HIDE_ERROR ")+error.what());}return true;
     }
+    for(auto& e:entries)if(callback&&e.extraCallback.get()&&callback==e.extraCallback.get()){
+        try{if(!e.armed||!Current(e)||!view||!api.Call(view,"get_panel")||api.Call(view,"get_itemData")!=e.extraItem.get()||api.Value<bool>(api.Call(e.extraItem.get(),"get_disabled"))||!Present(e.menu.get(),e.extraItem.get()))return true;
+            Ref root(Root(e.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;Close(e);if(e.extraToggle)e.extraToggle();
+        }catch(const std::exception& error){Log(std::string("TOOL_PANEL_LAYOUT_ERROR ")+error.what());}return true;
+    }
     for(auto& c:choices)if(callback&&callback==c.callback.get()){
         try{
             if(!CurrentChoice(c)||!view||!api.Call(view,"get_panel")||api.Call(view,"get_itemData")!=c.item.get()||api.Value<bool>(api.Call(c.item.get(),"get_disabled"))||!Present(c.menu.get(),c.item.get()))return true;
@@ -134,11 +149,12 @@ bool Callback(Obj callback,Obj view){
     return false;
 }
 }
-void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)()){
+void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)(),const char*(*extraLabel)(),bool(*extraToggle)()){
     if(!visible||!toggle)throw std::runtime_error("Missing tool panel callbacks");
     if(std::any_of(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;}))return;
-    Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;entries.push_back(std::move(e));
+    Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;e.extraLabel=extraLabel;e.extraToggle=extraToggle;entries.push_back(std::move(e));
 }
+bool ToggleExtra(const char* key){auto& e=Find(key);return Ready()&&e.extraToggle&&e.extraToggle();}
 std::vector<Shortcut> Shortcuts(){
     std::vector<Shortcut> result;
     for(const auto& e:entries)result.push_back({e.key,e.title,e.icon});

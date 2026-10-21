@@ -49,6 +49,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "smallHeaderSoul" && (value == 0 || value == 1)) settings.smallHeaderSoul = value != 0;
             else if (key == "smallHeaderTreasure" && (value == 0 || value == 1)) settings.smallHeaderTreasure = value != 0;
             else if (key == "smallHeaderNotebook" && (value == 0 || value == 1)) settings.smallHeaderNotebook = value != 0;
+            else if (key == "notebookCompact" && (value == 0 || value == 1)) settings.notebookCompact = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
             else if (key == "fastMapTransitions" && (value == 0 || value == 1)) settings.fastMapTransitions = value != 0;
@@ -116,6 +117,7 @@ void Settings::Save(const std::filesystem::path& path) const {
              << "\nresourceMiniMapEnabled=" << (resourceMiniMapEnabled ? 1 : 0)
              << "\nminiMapCenterButton=" << (miniMapCenterButton ? 1 : 0)
              << "\nsmallHeaderSoul=" << (smallHeaderSoul ? 1 : 0) << "\nsmallHeaderTreasure=" << (smallHeaderTreasure ? 1 : 0) << "\nsmallHeaderNotebook=" << (smallHeaderNotebook ? 1 : 0)
+             << "\nnotebookCompact=" << (notebookCompact ? 1 : 0)
              << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';
         file.flush();

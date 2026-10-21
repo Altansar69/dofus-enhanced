@@ -65,6 +65,9 @@ bool NotebookVisible(){return notebook;}
 bool TreasureVisible(){return treasure;}
 bool ToggleNotebook(){if(refuseNotebook)return false;++notebookToggles;notebook=!notebook;return true;}
 bool ToggleTreasure(){++treasureToggles;treasure=!treasure;return true;}
+int compactToggles=0;bool compact=false;
+const char* CompactLabel(){return compact?"Version complète":"Version compacte";}
+bool ToggleCompact(){++compactToggles;compact=!compact;return true;}
 
 void Initialize(){
     api.object_get_class=[](Obj value)->Klass{return Get(value).type;};
@@ -189,7 +192,7 @@ struct Fixture {
         owner=Make("WidgetManager");panel=Make("Panel");currentPanel=panel;
         services["frm"]=Make("WidgetService");Get(services["frm"]).fields["<dzqi>k__BackingField"]=owner;
         services["fpz"]=Make("ContextMenuService");
-        notebook=treasure=false;notebookToggles=treasureToggles=closed=nativeSubMenus=nativeAllHeaders=changes=0;
+        notebook=treasure=false;notebookToggles=treasureToggles=closed=nativeSubMenus=nativeAllHeaders=changes=0;compactToggles=0;compact=false;
         closeFailures=removeFailures=0;soulWindow=nullptr;logs.clear();
     }
     ~Fixture(){closeFailures=removeFailures=0;toolsUi::Restore();soulWindow=nullptr;module=nullptr;}
@@ -231,13 +234,19 @@ void NativeWidgetListKeepsNativeRows(){
 }
 void HeaderTitleAndHide(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu();auto rows=f.Rows(menu);
-    Check(rows.size()==3&&Get(rows[0]).type->name=="Title"&&Get(rows[0]).text=="Carnet"&&Get(rows[1]).type->name=="Separator","Header menu includes title and separator");
+    Check(rows.size()==5&&Get(rows[0]).type->name=="Title"&&Get(rows[0]).text=="Carnet"&&Get(rows[1]).type->name=="Separator","Header menu includes title and separator");
+    Check(Get(rows[3]).type->name=="Separator"&&Get(rows[4]).text=="Version compacte"&&Get(rows[4]).icon==185&&Get(rows[4]).close,"The notebook menu offers its layout row after the hide row");
     Check(Get(rows[2]).text=="Masquer le module"&&Get(rows[2]).icon==137&&Get(rows[2]).close,"Native hide row includes eye-slash icon and closes");
     auto cb=f.Callback(rows[2]),view=f.View(rows[2]);
     auto wrong=f.View(Make("ForeignItem"));
     Check(callback(cb,wrong)&&notebook&&notebookToggles==0,"Wrong view must not hide module");
     Check(callback(cb,view)&&!notebook&&notebookToggles==1&&closed==1,"Header hide closes owned menu then hides once");
     callback(cb,view);Check(notebookToggles==1,"Old header callback cannot toggle again");
+    notebook=true;menu=f.HeaderMenu();rows=f.Rows(menu);
+    Check(callback(f.Callback(rows[4]),f.View(rows[4]))&&compactToggles==1&&compact&&notebookToggles==1&&closed==2,"The layout row closes the menu and applies its own action, not the hide one");
+    menu=f.HeaderMenu();rows=f.Rows(menu);Check(rows.size()==5&&Get(rows[4]).text=="Version complète","The layout row's label follows the current layout");
+    Check(toolsUi::ToggleExtra("notebook")&&compactToggles==2&&!compact,"The layout action is also reachable directly");
+    notebook=false;menu=f.HeaderMenu();Check(f.Rows(menu).size()==3,"A hidden panel's menu has no layout row");
     Check(!populate(Make("ForeignManipulator"),Make("Event")),"Foreign header menu preserved");
     Check(!callback(Make("ForeignCallback"),view),"Foreign callbacks remain native");
 }
@@ -274,7 +283,7 @@ void HeaderMenuReplacement(){
     Check(!Get(f.MenuRoot(old)).fields["panel"]&&Get(f.MenuRoot(current)).fields["panel"],"A new header menu retires only the old owned menu");
     callback(oldCallback,f.View(oldItem));Check(notebookToggles==0,"Replaced header callbacks cannot toggle");
     auto event=Make("MenuEvent");Get(event).fields["menu"]=current;
-    Check(populate(f.manipulator,event)&&f.Rows(current).size()==3,"Repopulating the same menu must not duplicate rows");
+    Check(populate(f.manipulator,event)&&f.Rows(current).size()==5,"Repopulating the same menu must not duplicate rows (hide row and layout row once each)");
 }
 void StopClosesHeaderMenus(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu(),item=f.Rows(menu)[2];
@@ -351,7 +360,7 @@ void RestoreClosesSubMenu(){
 int main(){
     try{
         fake::Initialize();
-        toolsUi::Register("notebook","Carnet",225,fake::NotebookVisible,fake::ToggleNotebook);
+        toolsUi::Register("notebook","Carnet",225,fake::NotebookVisible,fake::ToggleNotebook,fake::CompactLabel,fake::ToggleCompact);
         toolsUi::Register("treasure","Chasse au trésor",317,fake::TreasureVisible,fake::ToggleTreasure);
         toolsUi::Register("notebook","Ignored duplicate",999,fake::NotebookVisible,fake::ToggleNotebook);
         toolsUi::Install();toolsUi::Install();

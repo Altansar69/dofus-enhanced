@@ -32,6 +32,7 @@ struct State {
     notebook::Kind kind=notebook::Kind::Position;
     size_t offset=0;
     bool cleanup=false,confirmDelete=false,confirmDiscard=false,readable=true;
+    bool compact=false; // Compact layout: entries and use actions only, no editor (settings.notebookCompact at creation).
     std::filesystem::path path;
 } state;
 bool installed=false,wanted=false;
@@ -230,6 +231,7 @@ void Fill(notebook::Entry entry) {
     for(size_t i=0;i<3;++i){bool on=static_cast<size_t>(state.kind)==i;api.Call(state.tabs[i].get(),"SetValueWithoutNotify",{&on});}
 }
 bool Dirty() {
+    if(state.compact)return false; // Nothing is editable in the compact layout.
     return Read(state.title.get())!=state.editing.title || Read(state.body.get())!=state.editing.body || state.channelChoice!=state.editing.channel ||
         (state.kind==notebook::Kind::Position&&(Read(state.x.get())!=std::to_string(state.editing.x)||Read(state.y.get())!=std::to_string(state.editing.y)||state.worldChoice!=state.editing.world));
 }
@@ -251,9 +253,13 @@ void Reload() {
     try {state.document=notebook::Read(state.path);state.readable=true;ShowRows();}
     catch(...){state.readable=false;Enabled(state.save.get(),false);Enabled(state.remove.get(),false);throw;}
 }
+// What to do next in the current tab and layout (shown at opening and on tab change).
+void TabStatus() {
+    if(state.compact)Status(state.visible.empty()?"Aucune entrée ici. Passe en Version complète (menu ⋯) pour en créer.":"Choisis une entrée, puis Voyager, Envoyer ou Copier.");
+    else Status(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche.");
+}
 void SwitchTab(size_t tab) {
-    state.kind=static_cast<notebook::Kind>(tab);state.offset=0;Fill({});ShowRows();
-    Status(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche.");
+    state.kind=static_cast<notebook::Kind>(tab);state.offset=0;Fill({});ShowRows();TabStatus();
 }
 // The native tabs toggle themselves on click; the panel follows their state
 // each frame and refuses a change while an edit is unsaved.
@@ -323,8 +329,9 @@ void Create(Obj root) {
         api.Call(state.window.get(),setter,{&yes});
     api.Call(state.window.get(),"set_hasBackground",{&yes});
     Enum(state.window.get(),"position",1); Float(state.window.get(),"flexGrow",0);
-    Pixels(state.window.get(),"width",660); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
-    Pixels(state.window.get(),"minWidth",560); Pixels(state.window.get(),"minHeight",360);
+    const bool compact=module->settings.notebookCompact; state.compact=compact;
+    Pixels(state.window.get(),"width",compact?360.f:660.f); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
+    Pixels(state.window.get(),"minWidth",compact?300.f:560.f); Pixels(state.window.get(),"minHeight",compact?240.f:360.f);
     state.header.reset(api.Call(state.window.get(),"get_headerWidget"));
     state.closeButton.reset(api.Field(state.header.get(),"closeButton"));
     if(!state.closeButton.get()) throw std::runtime_error("Notebook native close button unavailable");
@@ -345,9 +352,11 @@ void Create(Obj root) {
     Divider(content.get());
     // Two columns: the entries, then the editor.
     Ref columns(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Enum(columns.get(),"flexDirection",2); Add(content.get(),columns.get());
-    Ref library(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Pixels(library.get(),"width",250); Float(library.get(),"flexShrink",0); Pixels(library.get(),"marginRight",12); Add(columns.get(),library.get());
+    Ref library(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(library.get(),"flexShrink",0); Add(columns.get(),library.get());
+    if(compact) Float(library.get(),"flexGrow",1); else { Pixels(library.get(),"width",250); Pixels(library.get(),"marginRight",12); }
     Ref entries(Section(library.get(),"Mes entrées",IconList));
     state.add.reset(Button(entries.get(),"Nouvelle entrée",IconPlus,1,0,"Commencer une nouvelle entrée dans cet onglet."));
+    if(compact)Enum(state.add.get(),"display",1);
     Pixels(state.add.get(),"marginBottom",8);
     for(auto& row:state.rows)row.reset(ListRow(entries.get()));
     Ref paging(Row(entries.get()));Pixels(paging.get(),"marginTop",4);
@@ -355,6 +364,8 @@ void Create(Obj root) {
     state.count.reset(Label(paging.get(),"",true));Float(state.count.get(),"flexGrow",1);Enum(state.count.get(),"unityTextAlign",4);
     state.next.reset(Button(paging.get(),"",IconNext,2,0,"Entrées suivantes"));Pixels(state.next.get(),"marginRight",0);
     Ref editorColumn(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(editorColumn.get(),"flexGrow",1); Pixels(editorColumn.get(),"minWidth",300); Add(columns.get(),editorColumn.get());
+    if(compact)Enum(editorColumn.get(),"display",1); // Compact: the editor stays built (actions read it) but hidden.
+    Obj useParent=compact?entries.get():nullptr; // Compact: the use actions sit under the entries list.
     Ref editor(Section(editorColumn.get(),"Détail",IconEdit));
     state.title.reset(Input(editor.get(),"Titre de l’entrée","",80));Pixels(state.title.get(),"marginBottom",8);
     state.coordinates.reset(Row(editor.get()));
@@ -372,13 +383,14 @@ void Create(Obj root) {
     state.current.reset(Button(state.coordinates.get(),"Ma position",IconPlayer,2,0,"Reprendre les coordonnées de la carte où tu te trouves."));Pixels(state.current.get(),"marginBottom",0);
     state.body.reset(Input(editor.get(),"","",8000));Pixels(state.body.get(),"marginBottom",8);
     // Messages: the chat channel the entry is sent to (kept with the entry).
-    state.channelRow.reset(Row(editor.get()));
+    if(!useParent)useParent=editor.get();
+    state.channelRow.reset(Row(useParent));
     state.channelButton.reset(Button(state.channelRow.get(),"Canal : actuel",IconChannel,2,0,"Canal du chat où ce message est envoyé. Clique pour passer au suivant ; « actuel » garde le canal en cours du chat."));
     Ref actions(Row(editor.get()));
     state.save.reset(Button(actions.get(),"Enregistrer",IconSave,0,0,"Conserver cette entrée dans le carnet."));
     state.remove.reset(Button(actions.get(),"Supprimer",IconTrash,2,1,"Supprimer cette entrée (confirmation au second clic)."));
-    state.useDivider.reset(Divider(editor.get(),"Utiliser"));
-    state.useRow.reset(Row(editor.get()));Pixels(state.useRow.get(),"marginBottom",0);
+    state.useDivider.reset(Divider(useParent,"Utiliser"));
+    state.useRow.reset(Row(useParent));Pixels(state.useRow.get(),"marginBottom",0);
     state.travel.reset(Button(state.useRow.get(),"Voyager",IconZaap,1,0,"Lancer le trajet vers cette position : zaaps, bateaux puis /travel."));
     state.send.reset(Button(state.useRow.get(),"Envoyer",IconSend,1,0,"Envoyer ce message dans le chat, sur le canal choisi (ou le canal en cours du chat)."));
     state.prepare.reset(Button(state.useRow.get(),"Préparer dans le chat",IconChat,1,0,"Placer ce message dans le brouillon du chat, sans l’envoyer."));
@@ -388,7 +400,7 @@ void Create(Obj root) {
     state.reload.reset(Button(footer.get(),"Actualiser",0,2,0,"Relire le fichier du carnet."));Pixels(state.reload.get(),"marginRight",0);Pixels(state.reload.get(),"marginBottom",0);
     state.path=notebook::DataPath(module->settingsPath);
     Fill({});
-    try {Reload();}catch(...){Status("Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.");}
+    try {Reload();TabStatus();}catch(...){Status("Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.");}
     Add(root,state.window.get());Log("NOTEBOOK_PANEL_OPEN native=true");
 }
 }
@@ -417,7 +429,15 @@ void InstallNotebookPanel(){
     api.FindVerified(dropdown,"get_selectedElement",0,0x155DB30);api.FindVerified(dropdown,"set_choiceText",1,0x1728550);
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15BFB50);
     notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);nativeClick::AddHandler(Action);
-    toolsUi::Register("notebook","Carnet personnel",IconPin,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;});installed=true;
+    // The panel's ⋯ menu offers the other layout (compact: entries and use
+    // actions only, like the game's own compact spell bar); the choice is saved
+    // and the window is rebuilt in the new layout.
+    toolsUi::Register("notebook","Carnet personnel",IconPin,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;},
+        []{return module&&module->settings.notebookCompact?"Version complète":"Version compacte";},
+        []{if(!Session())return false;if(wanted&&Current()&&!CanDiscard())return false;
+           Settings next=module->settings;next.notebookCompact=!next.notebookCompact;module->Change(next);
+           if(wanted){RestoreNotebookPanel();wanted=true;}return true;});
+    installed=true;
 }
 void OpenNotebookPanel(){if(!installed||!Session())return;wanted=true;if(Current())api.Call(state.window.get(),"BringToFront");}
 void RestoreNotebookPanel() {

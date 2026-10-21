@@ -52,8 +52,9 @@ int main() {
         }
         Require(defaults.resourceMapEnabled && defaults.resourceMiniMapEnabled && defaults.resourceMapItems.empty(), "No resource annotations before a selection");
         Require(!defaults.smallHeaderSoul && !defaults.smallHeaderTreasure && !defaults.smallHeaderNotebook, "Panel headers start at the native size");
+        Require(!defaults.notebookCompact, "The notebook starts in its full layout");
         for(bool full:{false,true})for(bool mini:{false,true}){
-            auto maps=defaults;maps.resourceMapEnabled=full;maps.resourceMiniMapEnabled=mini;maps.resourceMapItems={303,421};maps.smallHeaderNotebook=true;maps.smallHeaderSoul=mini;maps.smallHeaderTreasure=full;
+            auto maps=defaults;maps.resourceMapEnabled=full;maps.resourceMiniMapEnabled=mini;maps.resourceMapItems={303,421};maps.smallHeaderNotebook=true;maps.smallHeaderSoul=mini;maps.smallHeaderTreasure=full;maps.notebookCompact=full;
             maps.Save(path);
             Require(Settings::Read(path)==maps,"Map visibility flags persist independently without losing the shared selection");
             {std::ofstream file(path,std::ios::app);file<<"resourceMiniMapEnabled=7\n";}

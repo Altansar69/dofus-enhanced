@@ -3,7 +3,10 @@
 #include <vector>
 namespace toolsUi {
 // Registered once at installation; visibility is changed only by an explicit UI action.
-void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)());
+// extraLabel/extraToggle: an optional extra row in the panel's ⋯ menu (label
+// read when the menu opens, action when clicked), e.g. the notebook's layout.
+void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)(), const char* (*extraLabel)() = nullptr, bool (*extraToggle)() = nullptr);
+bool ToggleExtra(const char* key);
 struct Shortcut {std::string key,title;int icon=0;};
 std::vector<Shortcut> Shortcuts();
 bool Visible(const char* key);

@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.5.2** (révision r100).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.6.0** (révision r101).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -80,6 +80,11 @@ de titre ferme le carnet (une modification non enregistrée demande un second
 clic). Le menu ⋯ des modules ne le liste plus non plus, sauf dans **Réduire les
 titres des modules**.
 La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat.
+Son menu ⋯ propose **Version compacte** : une fenêtre étroite avec les onglets,
+la liste des entrées, la pagination et les actions (Voyager, Envoyer, Préparer
+dans le chat, Copier, canal des messages) sous la liste, sans formulaire ;
+**Version complète** ramène la grande fenêtre, seule à permettre de créer et
+modifier les entrées. Le choix est enregistré.
 Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
 **Notes** et **Messages**, deux sections **Mes entrées** (liste à l’icône de
 l’onglet, entrée courante surlignée, pagination et compteur) et **Détail**
