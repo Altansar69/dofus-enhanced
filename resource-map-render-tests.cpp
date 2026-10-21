@@ -177,6 +177,7 @@ Module* module=nullptr;
 Module::Module(std::filesystem::path path):folder(std::move(path)){}
 managed::Obj Module::FindService(const char* name)const{return fake::services[name];}
 void Log(const std::string&){}
+namespace mapMotion { bool CenterOnPlayer(managed::Obj) { return false; } }
 namespace resourceMap {
 std::vector<Placement> fakePlacements;
 void InstallIcons(){}

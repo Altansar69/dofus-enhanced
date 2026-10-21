@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.1.0** (révision r93).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.2.0** (révision r94).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -132,9 +132,13 @@ sélectionnée. Décocher l’affichage d’une carte, dans son volet ou dans le
 options, masque aussi le volet de sélection de cette carte jusqu’à réactivation
 par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
 bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
-carte, avec son survol et son infobulle natifs ; il ramène la mini-carte sur le
-personnage en conservant le zoom. L’option **Bouton de recentrage sur la
-mini-carte** permet de le masquer.
+carte, avec son survol et son infobulle natifs. Le recentrage, sur la grande
+carte comme sur la mini-carte, glisse pendant deux secondes jusqu’au
+personnage ; si la carte est plus dézoomée que l’échelle de départ du monde, le
+zoom revient à cette échelle pendant le glissement. Un glissement de la souris
+ou un coup de molette l’interrompt. Le zoom à la molette est lui aussi lissé sur
+quelques images au lieu de sauter d’un cran. L’option **Bouton de recentrage sur
+la mini-carte** permet de masquer le bouton.
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
@@ -154,7 +158,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La 1.1.0 (r93) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La 1.2.0 (r94) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -187,7 +191,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r93 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r94 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 

@@ -1,4 +1,15 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 93 — VERSION 1.1.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 94 — VERSION 1.2.0
+
+R94 — VERSION 1.2.0 : RECENTRAGE ANIMÉ ET ZOOM FLUIDE
+- Recentrage sur le personnage (bouton joueur de la grande carte, bouton de
+  la mini-carte) : glissement de deux secondes jusqu’à ta case. Si la carte
+  est plus dézoomée que l’échelle de départ du monde, le zoom revient à cette
+  échelle pendant le glissement. Un glissement de la souris ou un coup de
+  molette interrompt l’animation ; le placement final passe par la fonction
+  native du jeu.
+- Zoom à la molette : chaque cran est réparti sur quelques images par la
+  fonction de zoom du jeu, au lieu de sauter d’un coup, sur les deux cartes.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R93 — VERSION 1.1.0 : GROUPES NATIFS, CHASSE AU TRÉSOR ASSISTÉE
 - Ressources : chaque ressource d’une case est désormais un repère natif du
