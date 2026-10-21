@@ -160,8 +160,12 @@ int main() {
         Get(Get(content).fields["_version"]).scalar++;TickChatSoulStatus(true);
         Check(!chat_souls::state.iterator.get()&&Has(147,"Sac : ?"),"Mutation invalidates the partial snapshot and releases iterator");
         PumpFresh();FinishScan();Check(Has(147,"Âme en sac"),"Stable subsequent scan must recover");
-        fail="get_Current";PumpFresh();fail.clear();Check(Has(147,"Sac : ?"),"Read failure must clear stale ownership instead of presenting absence");
+        fail="get_Current";PumpFresh();fail.clear();Check(Has(147,"Âme en sac"),"A read failure keeps the last complete scan (never a false absence) and is retried");
         PumpFresh();FinishScan();Check(Has(147,"Âme en sac"),"Read failure must remain recoverable");
+        // Marketplace: the game refreshes the inventory content faster than a
+        // scan completes; every interrupted scan keeps the last complete result.
+        for(int i=0;i<3;++i){PumpFresh();Get(Get(content).fields["_version"]).scalar++;TickChatSoulStatus(true);Check(!chat_souls::state.iterator.get()&&Has(147,"Âme en sac"),"Interrupted scans keep the last complete result instead of falling back to unknown");}
+        PumpFresh();FinishScan();Check(Has(147,"Âme en sac"),"Scans resume after the interruptions");
         owner.cached.reset(Make("NextCharacter"));Check(Has(147,"Sac : ?"),"Character change invalidates cached possession immediately");
         Items({});PumpFresh();FinishScan();Check(Has(147,"Pas en sac"),"Next character must not inherit previous inventory");
         service=nullptr;TickChatSoulStatus(true);Check(Has(147,"Sac : ?"),"Unavailable inventory service is unknown");

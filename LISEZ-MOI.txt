@@ -1,4 +1,13 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 98 — VERSION 1.5.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 99 — VERSION 1.5.1
+
+R99 — VERSION 1.5.1 : STATUT « SAC » STABLE DANS L’HÔTEL DE VENTE
+- Chat, archimonstres : l’indication « Sac : en sac / pas en sac » ne retombe
+  plus sur « ? » dans l’hôtel de vente. Le contenu du sac y est rafraîchi par
+  le jeu plus vite que le balayage du mod ne se termine ; chaque interruption
+  effaçait le dernier résultat. Le dernier balayage complet reste affiché
+  tant qu’un nouveau n’a pas abouti (il n’expire qu’après 90 s sans
+  balayage), et un changement de personnage l’oublie toujours aussitôt.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R98 — VERSION 1.5.0 : REGROUPEMENT NATIF DES RESSOURCES, FENÊTRES REDIMENSIONNABLES, CHASSE AU TRÉSOR NATIVE
 - Ressources sur les cartes : les ressources d’une même case rejoignent le

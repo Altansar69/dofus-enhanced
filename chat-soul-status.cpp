@@ -185,8 +185,12 @@ const Goal* FindGoal(int monster) {
         [](const Goal& row,int id) { return row.monster < id; });
     return it != OcreGoals.end() && it->monster == monster ? &*it : nullptr;
 }
+// The last complete scan stays valid while later scans are interrupted (the
+// marketplace refreshes the inventory content faster than a scan completes);
+// it only expires after a long silence, so a stuck scanner still reads "?".
+constexpr uint64_t InventoryValidityMs = 90000;
 Progress Inventory(int monster) {
-    if (!SameSession() || !state.inventoryKnown || GetTickCount64() - state.inventoryAt > 10000) return Progress::Unknown;
+    if (!SameSession() || !state.inventoryKnown || GetTickCount64() - state.inventoryAt > InventoryValidityMs) return Progress::Unknown;
     return state.owned.contains(monster) ? Progress::Done : Progress::Missing;
 }
 Progress Quest(int monster) {
@@ -203,7 +207,9 @@ void TickChatSoulStatus(bool needed) {
     const auto now = GetTickCount64();
     try { Install(); } catch (const std::exception& e) { Error("metadata",e); return; }
     try { ScanInventory(now); } catch (const std::exception& e) {
-        state.inventoryKnown = false; state.owned.clear(); state.nextScan = now + 2000;
+        // An interrupted scan (content changed, owner replaced) keeps the last
+        // complete result and retries soon; only a service change forgets it.
+        state.nextScan = now + 1000;
         try { CancelScan(); } catch (...) {} Error("inventory",e);
     }
     try { ReadQuest(now); } catch (const std::exception& e) { state.progress.clear(); QuestReason("read-failed"); Error("quest",e); }
