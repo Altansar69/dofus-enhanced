@@ -13,7 +13,7 @@
 namespace {
 using namespace managed;
 using namespace monsterGlow;
-constexpr size_t MaxGlows = 8;
+constexpr size_t MaxGlows = 16;
 constexpr size_t MaxProjectedTargets = 128;
 constexpr ULONGLONG FrameInterval = 33;
 bool installed = false, enabled = false, failed = false;

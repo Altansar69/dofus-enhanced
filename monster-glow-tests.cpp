@@ -31,7 +31,7 @@ std::unordered_set<int64_t> missingRenderers;
 bool occluded = true;
 unsigned reads = 0, projects = 0, renders = 0, ends = 0, uiResets = 0, gpuResets = 0;
 std::vector<int64_t> current, visible;
-std::array<bool,8> slots{};
+std::array<bool,16> slots{};
 std::unordered_map<GCHandle,Obj> handles;
 GCHandle nextHandle = 0x123456780000;
 std::vector<std::string> log;
@@ -109,7 +109,7 @@ UiProjection ProjectGlowRenderers(const UiFrame&,const std::vector<managed::Obj>
 managed::Obj RenderGlow(size_t slot,managed::Obj camera,const std::vector<managed::Obj>&,ScreenRect rectangle,uint64_t,
                        const GlowCoverage* coverage) {
     ++fake::renders;
-    fake::Check(slot<8 && camera == fake::camera && rectangle.width==100,"Wrong capture slot/camera/crop");
+    fake::Check(slot<16 && camera == fake::camera && rectangle.width==100,"Wrong capture slot/camera/crop");
     if (fake::throwRender) throw std::runtime_error("offline fixture render failure");
     fake::lastCoverage.clear();
     if (coverage) {
@@ -178,10 +178,10 @@ int main() {
         loadingMap=false;Step();
         const auto beforeThrottle = reads;
         TickMonsterGlow(); Check(reads==beforeThrottle,"Duplicate frame must respect throttle");
-        roster={10,10,11,12,13,14,15,16,17,18,19}; Step();
-        Check(visible.size()==8 && visible[1]==11 && visible.back()==17,"Duplicates and max8 capture budget");
+        roster={10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27}; Step();
+        Check(visible.size()==16 && visible[1]==11 && visible.back()==25,"Duplicates and max16 capture budget");
         roster={11}; Step();
-        Check(visible==std::vector<int64_t>{11} && !slots[1] && !slots[7],"Removed entities and unused slots must disappear");
+        Check(visible==std::vector<int64_t>{11} && !slots[1] && !slots[15],"Removed entities and unused slots must disappear");
         occluded=false; Step();
         Check(visible.empty() && !slots[0],"Uncovered monsters must not retain glow");
         fixture.settings.monsterGlowMode=3;Step();
@@ -258,7 +258,7 @@ int main() {
         occluded=false; const auto beforeProjection=projects; Step();
         Check(projects-beforeProjection==128,"Projection work must be bounded when none overlap");
         occluded=true; failShow=true; const auto beforeFailedShows=renders; Step();
-        Check(renders-beforeFailedShows==8 && visible.empty(),"Rejected UI binding must still cap GPU capture attempts at8");
+        Check(renders-beforeFailedShows==16 && visible.empty(),"Rejected UI binding must still cap GPU capture attempts at16");
         failShow=false; roster={10}; Step();
         resetFailures=1; fixture.stopped=true; RestoreMonsterGlow();
         Check(MonsterGlowCleanupPending(),"Stop must expose pending cleanup before worker disables hooks");

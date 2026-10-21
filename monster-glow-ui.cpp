@@ -13,7 +13,7 @@ using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr const char* EngineAssembly = "UnityEngine.CoreModule.dll";
-constexpr size_t MaxNodes = 4096, MaxPaintRects = 512, MaxTargets = 8, MaxFragments = 8;
+constexpr size_t MaxNodes = 4096, MaxPaintRects = 512, MaxTargets = 16, MaxFragments = 8;
 constexpr float AlphaThreshold = 0.02f, PaddingPixels = 14.0f;
 struct Vec2 { float x, y; };
 struct Vec3 { float x, y, z; };

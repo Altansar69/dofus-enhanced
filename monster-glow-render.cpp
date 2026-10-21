@@ -12,7 +12,7 @@ struct Vector4 { float x, y, z, w; };
 struct Matrix { float v[16]{}; };
 struct TargetIdentifier { alignas(8) unsigned char data[40]{}; };
 static_assert(sizeof(Matrix) == 64 && sizeof(Vector4) == 16 && sizeof(TargetIdentifier) == 40);
-constexpr size_t MaxSlots = 8, MaxRenderers = 64, MaxDraws = 256;
+constexpr size_t MaxSlots = 16, MaxRenderers = 64, MaxDraws = 256;
 struct Methods {
     Klass materialClass{}, textureClass{}, bufferClass{}, listClass{}, blockClass{};
     Method shaderFind{}, materialCtor{}, materialCopyCtor{}, blockCtor{}, setFloat{}, setVector{}, setTexture{}, setMatrix{}, queue{};

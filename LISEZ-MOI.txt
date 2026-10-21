@@ -1,4 +1,13 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 90
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 91
+
+R91 — BUDGET DE SURBRILLANCE ÉLARGI
+- La surbrillance acceptait au plus 8 cibles par image (monstres, PNJ et
+  éléments interactifs confondus). En cochant « Inclure les PNJ », les
+  éléments interactifs ajoutés en dernier pouvaient disparaître, par exemple
+  un crabe. Le budget passe à 16 cibles simultanées.
+- Les textures de capture restent limitées à 256 px par côté ; l’ordre
+  monstres, PNJ puis éléments interactifs est inchangé.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R90 — MINERAIS SIMULTANÉS ET RECENTRAGE DE LA MINI-CARTE
 - L’ajout d’un minerai ne masque plus les repères voisins à cause du filtre
