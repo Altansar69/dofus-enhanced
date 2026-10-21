@@ -302,7 +302,9 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="Add") { Add(self,args.at(0));return nullptr; }
     if(m.name=="RemoveFromHierarchy") { Detach(self);return nullptr; }
     if(m.name=="set_icon"||m.name=="set_mainStyle"||m.name=="set_size"||m.name=="set_status"||m.name=="set_fontCase"||m.name=="set_componentStyle"||m.name=="set_orientation") {obj.enums[m.name]=*static_cast<int*>(args.at(0));return nullptr;}
-    if(m.name=="set_isActivated"||m.name=="set_canBeOpened"||m.name=="set_isOpen"||m.name=="SetHeaderSize") {obj.enums[m.name]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
+    if(m.name=="set_isActivated"||m.name=="set_canBeOpened"||m.name=="SetHeaderSize") {obj.enums[m.name]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
+    // Native SectionHeader.set_isOpen (0x17462F0) keeps the previous state unless canBeOpened is on; both are off after the constructor.
+    if(m.name=="set_isOpen") {if(obj.enums["set_canBeOpened"]==1)obj.enums[m.name]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
     if(m.name=="set_inlineText"||m.name=="set_title") {obj.text=Get(args.at(0)).text;return nullptr;}
     if(m.name=="AddSubContent") {Add(obj.fields.at("content"),args.at(0));return nullptr;}
     if(m.name=="get_isOn") return Box(obj.enums["isOn"]!=0);

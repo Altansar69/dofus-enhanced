@@ -22,7 +22,6 @@
 #include "startup-options.hpp"
 #include "treasure-launch.hpp"
 #include "treasure-hunt.hpp"
-#include "map-motion.hpp"
 #include "native-click.hpp"
 #include "notebook-panel.hpp"
 #include "tools-ui.hpp"
@@ -226,7 +225,6 @@ void Module::Pump(Obj source) {
     startupStage("map-travel", [] { TickMapTravel(); });
     startupStage("resource-map-render", [] { resourceMap::PumpRender(GetTickCount64()); });
     startupStage("resource-map-ui", [] { resourceMap::TickUi(); });
-    startupStage("map-motion", [] { mapMotion::Tick(GetTickCount64()); });
     if (!startupConfirmed) {
         WriteStartupStatus(folder, GetCurrentProcessId(), "READY");
         startupConfirmed = true;
@@ -262,7 +260,6 @@ void Module::Stop() {
     RestoreSpousePartyWidget();
     resourceMap::RestoreRender();
     resourceMap::RestoreUi();
-    mapMotion::Restore();
     RestoreMonsterGlow();
     RestoreTreasurePanel();
     RestoreNotebookPanel();
@@ -379,7 +376,6 @@ static DWORD WINAPI Worker(void*) {
         InstallMapTravel();
         resourceMap::InstallUi();
         resourceMap::InstallRender();
-        mapMotion::Install();
         InstallChatTpLinks(StartChatTravel);
         for (auto target : hookTargets) {
             auto result = MH_QueueEnableHook(target);

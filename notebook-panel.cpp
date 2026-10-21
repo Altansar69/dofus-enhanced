@@ -116,12 +116,14 @@ Obj Divider(Obj parent, const char* inlineText=nullptr) {
     Add(parent,divider.get()); return divider.get();
 }
 // Native titled section (the same SectionHeader as the map's resource
-// drawer), locked open; returns its content container.
+// drawer), opened then locked; returns its content container. The native
+// set_isOpen keeps the previous (closed) state while canBeOpened is off, which
+// it is after the constructor: open it while openable, then lock it.
 Obj Section(Obj parent, const char* title, int icon, Obj* header=nullptr) {
-    bool subContent=true,folderButton=true,no=false,hasIcon=true,open=true,locked=false;
+    bool subContent=true,folderButton=true,no=false,hasIcon=true,open=true,openable=true,locked=false;
     Ref section(api.New(api.Class("Core.dll",Figma,"SectionHeader"),{&subContent,&folderButton,&no,&hasIcon,&no}));
     Text(section.get(),title,"set_title"); api.Call(section.get(),"set_icon",{&icon});
-    api.Call(section.get(),"set_isOpen",{&open}); api.Call(section.get(),"set_canBeOpened",{&locked});
+    api.Call(section.get(),"set_canBeOpened",{&openable}); api.Call(section.get(),"set_isOpen",{&open}); api.Call(section.get(),"set_canBeOpened",{&locked});
     Ref content(api.New(api.Class(Ui,UiSpace,"VisualElement")));
     for(auto p:{"paddingLeft","paddingRight"})Pixels(content.get(),p,4); Pixels(content.get(),"paddingTop",8);
     api.Call(section.get(),"AddSubContent",{content.get()});

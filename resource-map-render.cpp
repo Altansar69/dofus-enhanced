@@ -1,7 +1,6 @@
 #include "resource-map-render.hpp"
 #include "resource-map-policy.hpp"
 #include "resource-map-icons.hpp"
-#include "map-motion.hpp"
 #include "module.hpp"
 #include <algorithm>
 #include <array>
@@ -402,13 +401,10 @@ bool CenterMiniMap(const MiniMapSurface& expected) {
     auto frame=ReadFrame(0);
     if(!frame.valid || frame.root.get()!=expected.mapRoot.get() ||
         api.Call(frame.root.get(),"get_parent")!=expected.root.get() || !Current(frame))return false;
-    // Two-second glide (zooming in to the world's start scale when further
-    // out). Otherwise DisplayWhenReady(moveToPlayer=true), also used by
-    // CartographyBannerUI after a map change: instant, keeps zoom.
-    if(!mapMotion::CenterOnPlayer(frame.owner.get())) {
-        bool moveToPlayer=true;
-        api.Invoke(methods.centerPlayer,frame.owner.get(),{&moveToPlayer});
-    }
+    // DisplayWhenReady(moveToPlayer=true), also used by CartographyBannerUI
+    // after a map change: the game's own instant centering, keeps zoom.
+    bool moveToPlayer=true;
+    api.Invoke(methods.centerPlayer,frame.owner.get(),{&moveToPlayer});
     views[0].cached=false;
     return true;
 }

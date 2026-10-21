@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.3.0** (révision r95).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.3.1** (révision r96).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -145,16 +145,10 @@ options, masque aussi le volet de sélection de cette carte jusqu’à réactiva
 par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
 bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
 carte, avec son survol et son infobulle natifs ; son clic est lu directement sur
-le composant du jeu. Le recentrage, sur la grande carte comme sur la mini-carte,
-se fait d’abord dans l’état du jeu (zoom ramené à l’échelle de départ du monde si
-la carte est plus dézoomée, puis déplacement natif sur ta case), et seule
-l’image glisse pendant deux secondes jusqu’à cet état. Le zoom à la molette
-fonctionne de même : chaque cran est appliqué d’un coup par le jeu, puis l’image
-rejoint le nouveau niveau en un cinquième de seconde, le point sous la souris
-restant fixe ; aucun recalcul natif par image, donc pas de saccade. Un
-glissement de la souris, un autre déplacement du jeu ou un arrêt du mod ramène
-l’image sur l’état du jeu. L’option **Bouton de recentrage sur la mini-carte**
-permet de masquer le bouton.
+le composant du jeu et déclenche le recentrage natif, instantané, en conservant
+le zoom. Le zoom à la molette et le recentrage sont ceux du jeu, sans animation
+ajoutée : les glissements des versions 1.2.0 et 1.3.0 ont été retirés en 1.3.1.
+L’option **Bouton de recentrage sur la mini-carte** permet de masquer le bouton.
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
