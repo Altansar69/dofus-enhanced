@@ -29,7 +29,8 @@ struct Object {
     std::vector<Obj> children;
     std::array<std::byte, 32> value{};
     std::string text, name;
-    bool active = false, enabled = true, movable = false, modal = false, hasBeenDragged = false, snapGroup = false;
+    bool active = false, enabled = true, movable = false, modal = false, hasBeenDragged = false, snapGroup = false, closeOnSelection = false;
+    int id = 0; // ListElementBasic.id (dropdown items)
     std::map<std::string,float> delayedResolved;
 };
 std::map<std::string, std::unique_ptr<Class>> classes;
@@ -305,7 +306,12 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="set_isActivated"||m.name=="set_canBeOpened"||m.name=="SetHeaderSize") {obj.enums[m.name]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
     // Native SectionHeader.set_isOpen (0x17462F0) keeps the previous state unless canBeOpened is on; both are off after the constructor.
     if(m.name=="set_isOpen") {if(obj.enums["set_canBeOpened"]==1)obj.enums[m.name]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
-    if(m.name=="set_inlineText"||m.name=="set_title") {obj.text=Get(args.at(0)).text;return nullptr;}
+    if(m.name=="set_inlineText"||m.name=="set_title"||m.name=="set_choiceText") {obj.text=Get(args.at(0)).text;return nullptr;}
+    // Native Dropdown: items with an id, selection without notification, read back by the owner.
+    if(m.name=="set_dropdownType"||m.name=="set_dropdownSize") {obj.enums[m.name]=*static_cast<int*>(args.at(0));return nullptr;}
+    if(m.name=="AddListElementBasic") {Check(args.size()==6&&!args.at(1),"Native dropdown item without callback");auto item=Element("ListElementBasic");Get(item).text=Get(args.at(0)).text;Get(item).id=*static_cast<int*>(args.at(5));Add(obj.fields.at("list"),item);return nullptr;}
+    if(m.name=="SelectItemIdWithoutNotify") {const int id=*static_cast<int*>(args.at(0));for(auto item:Get(obj.fields.at("list")).children)if(Get(item).id==id){obj.fields["selected"]=item;return nullptr;}throw std::runtime_error("Dropdown item id unknown");}
+    if(m.name=="get_selectedElement") {auto found=obj.fields.find("selected");return found==obj.fields.end()?nullptr:found->second;}
     if(m.name=="AddSubContent") {Add(obj.fields.at("content"),args.at(0));return nullptr;}
     if(m.name=="get_isOn") return Box(obj.enums["isOn"]!=0);
     if(m.name=="SetValueWithoutNotify") {obj.enums["isOn"]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
@@ -337,6 +343,7 @@ Obj Api::New(Klass klass,std::initializer_list<void*> arguments) const {
     if(name=="ScrollView") {auto scroll=Element(name),content=Element("ScrollContent");Add(scroll,content);Get(scroll).fields["content"]=content;return scroll;}
     if(name=="Label"||name=="ListElementBasic"||name=="VisualElement"||name=="TextInput"||name=="DofusTab"||name=="Divider"||name=="DofusButtonCustom") {Check(args.empty(),"Native element ctor argc");auto obj=name=="DofusButtonCustom"?NativeButton():Element(name);if(name=="ListElementBasic"){latestAction=obj;auto label=Element("DofusLabel");Get(obj).fields["m_textLabel"]=label;Add(obj,label);}return obj;}
     if(name=="SectionHeader") {Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1])&&!*static_cast<bool*>(args[2])&&*static_cast<bool*>(args[3])&&!*static_cast<bool*>(args[4]),"Native section header ctor ABI");auto section=Element(name);auto content=Element("SectionContent");Add(section,content);Get(section).fields["content"]=content;return section;}
+    if(name=="Dropdown") {Check(args.empty(),"Native dropdown ctor argc");auto dropdown=Element(name);auto list=Element("DropdownList");Add(dropdown,list);Get(dropdown).fields["list"]=list;return dropdown;}
     if(name=="DofusContextualMenuManipulator") {
         Check(args.size()==4&&args[0]==contextService&&!args[1]&&*static_cast<int*>(args[2])==0&&!*static_cast<bool*>(args[3]),"Native left-click menu constructor with null fallback");
         return Make(name);
@@ -361,6 +368,8 @@ void* Api::FieldAddress(Obj self,const char* name) const {
     if(std::string(name)=="m_active")return &fake::Get(self).active;
     if(std::string(name)=="m_hasBeenDragged")return &fake::Get(self).hasBeenDragged;
     if(std::string(name)=="m_isSnapGroup")return &fake::Get(self).snapGroup;
+    if(std::string(name)=="closeOnSelection")return &fake::Get(self).closeOnSelection;
+    if(std::string(name)=="id")return &fake::Get(self).id;
     throw std::runtime_error("Unexpected native field");
 }
 void* Api::NativeAt(uintptr_t rva) const {fake::Check(rva==0x166DF30,"Unexpected native helper");return reinterpret_cast<void*>(&fake::DragFlag);}
@@ -394,7 +403,9 @@ void* Api::Native(Method method,uintptr_t rva) const {
         {0x170D6F0,{".ctor",0}},{0x170DFE0,{"set_icon",1}},{0x170E5F0,{"set_text",1}},{0x170E210,{"set_mainStyle",1}},{0x170E330,{"set_size",1}},{0x170E400,{"set_status",1}},
         {0x1745F00,{".ctor",5}},{0x17467B0,{"set_title",1}},{0x1746200,{"set_icon",1}},{0x17462F0,{"set_isOpen",1}},{0x1746090,{"set_canBeOpened",1}},{0x1744360,{"AddSubContent",1}},
         {0x170BC10,{".ctor",0}},{0x170BDC0,{"set_componentStyle",1}},{0x170C160,{"set_orientation",1}},{0x170C0C0,{"set_inlineText",1}},
-        {0x1733BD0,{"set_icon",1}},{0x1733BF0,{"set_isActivated",1}}
+        {0x1733BD0,{"set_icon",1}},{0x1733BF0,{"set_isActivated",1}},
+        {0x17282C0,{".ctor",0}},{0x1728730,{"set_dropdownType",1}},{0x1728620,{"set_dropdownSize",1}},{0x1724840,{"AddListElementBasic",6}},
+        {0x17265B0,{"SelectItemIdWithoutNotify",1}},{0x155DB30,{"get_selectedElement",0}},{0x1728550,{"set_choiceText",1}}
     };
     const auto& contract=expected.at(rva);
     fake::Check(m.name==contract.first&&m.count==contract.second,"Native metadata contract mismatch");

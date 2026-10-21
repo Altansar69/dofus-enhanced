@@ -619,14 +619,27 @@ void CoverageBoundsAndBudgets() {
     GlowCoverage badMaterials{{badWall},{}};
     executions.clear();
     const auto retained = nativeOwned.size(), allocated = allocations.size(), refs = handles.size();
-    bool threw = false; try { f.Render(0,{0,0,64,64},&badMaterials); } catch (...) { threw = true; }
-    Check(threw && executions.empty() && nativeOwned.size() == retained && allocations.size() == allocated && handles.size() == refs,
-        "Wall material overflow must fail without drawing or leaking allocations");
+    // An implausible wall material count no longer disables the glow: that
+    // wall is left out of the frame and the monster is still drawn.
+    Check(f.Render(0,{0,0,64,64},&badMaterials) && executions.size() == 1 && handles.size() == refs,
+        "Wall material overflow leaves that wall out of the frame without failing");
+    sourceDraws = 0;
+    for (const auto& command : executions.back()) if (command.name == "source") ++sourceDraws;
+    Check(sourceDraws == 1, "Only the monster is recorded when the wall's materials are out of bounds");
+    (void)retained; (void)allocated;
     Get(badWall).items = std::vector<Obj>(32,f.material);
     badMaterials.renderers = std::vector<Obj>(9,badWall);
-    threw = false; try { f.Render(0,{0,0,64,64},&badMaterials); } catch (...) { threw = true; }
-    Check(threw && executions.empty() && nativeOwned.size() == retained && handles.size() == refs,
-        "Total wall submesh draw budget must be bounded with no retained partial collection");
+    executions.clear();
+    Check(f.Render(0,{0,0,64,64},&badMaterials) && executions.size() == 1 && handles.size() == refs,
+        "The wall draw budget ends the collection instead of failing the frame");
+    sourceDraws = 0;
+    for (const auto& command : executions.back()) if (command.name == "source") ++sourceDraws;
+    Check(sourceDraws == 1 + 8 * 32, "Walls are recorded up to the bounded draw budget");
+    const auto monsterOnly = Make("SpriteRenderer");
+    Get(monsterOnly).items = {};
+    bool skipped = false;
+    try { skipped = monsterGlow::RenderGlow(0, f.camera, {monsterOnly}, {0,0,64,64}, GetTickCount64(), nullptr) == nullptr; } catch (...) { skipped = false; }
+    Check(skipped, "A monster renderer without materials (map still loading) yields no texture for the frame and no exception");
 }
 
 void CoverageFailuresRestore() {
@@ -737,8 +750,9 @@ void AllocationFailureAndBackbuffer() {
     Check(f.Render() != nullptr && active == nullptr, "Backbuffer target was not restored");
     const auto saved = nativeOwned.size();
     Get(f.renderer).items.clear(); threw = false;
-    try { f.Render(); } catch (...) { threw = true; }
-    Check(threw && nativeOwned.size() == saved, "Missing materials allocated extra render targets");
+    Obj missing = nullptr;
+    try { missing = f.Render(); } catch (...) { threw = true; }
+    Check(!threw && !missing && nativeOwned.size() == saved, "Missing materials yield no texture for the frame, no exception and no extra render targets");
 }
 void PropertyBlockFailureIsIsolated() {
     Fixture f;

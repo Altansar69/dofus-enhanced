@@ -270,8 +270,12 @@ std::vector<Draw> Collect(const std::vector<Obj>& renderers) {
         if (!renderer) throw std::runtime_error("Glow renderer unavailable");
         api.Invoke(methods.sharedMaterials, renderer, {resources->materialList.get()});
         const int count = api.Value<int>(api.Call(resources->materialList.get(), "get_Count"));
-        if (count <= 0 || count > 32 || draws.size() + static_cast<size_t>(count) > MaxDraws)
-            throw std::runtime_error("Glow source exceeds bounded material budget");
+        // A renderer without shared materials (seen right after a zaap, while
+        // the next map loads) or with an implausible count is left out of this
+        // frame; reaching the draw budget ends the collection. Neither disables
+        // the glow for the rest of the session.
+        if (count <= 0 || count > 32) continue;
+        if (draws.size() + static_cast<size_t>(count) > MaxDraws) break;
         for (int i = 0; i < count; ++i) {
             Ref material(api.Call(resources->materialList.get(), "get_Item", {&i}));
             if (!material.get()) throw std::runtime_error("Glow material unavailable");
@@ -419,6 +423,7 @@ Obj RenderGlow(size_t slotIndex, Obj camera, const std::vector<Obj>& renderers, 
     if (!Valid(cameraRect) || !Finite(view) || !Finite(projection)) return nullptr;
     EnsureResources();
     auto draws = Collect(renderers);
+    if (draws.empty()) return nullptr; // Nothing drawable this frame: no texture, target skipped.
     auto decorDraws = coverage ? Collect(coverage->renderers) : std::vector<Draw>{};
     auto& slot = resources->slots[slotIndex];
     Resize(slot, rectangle);

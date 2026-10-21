@@ -15,10 +15,12 @@ constexpr const char* Figma="Core.UILogic.Components.Figma";
 constexpr size_t Rows=6;
 // FigmaIcons used by the panel: pin (window and positions), text (notes),
 // chat (messages), plus, floppy, trash, zaap, copy, playerStanding, lines, edit.
-constexpr int IconPin=225,IconText=305,IconChat=78,IconPlus=230,IconSave=148,IconTrash=316,IconZaap=336,IconCopy=99,IconPlayer=229,IconList=185,IconEdit=124,IconPrevious=44,IconNext=45;
+constexpr int IconPin=225,IconText=305,IconChat=78,IconPlus=230,IconSave=148,IconTrash=316,IconZaap=336,IconCopy=99,IconPlayer=229,IconList=185,IconEdit=124,IconPrevious=44,IconNext=45,IconSend=262,IconChannel=193;
 struct State {
     Ref root,window,header,dragger,dependencies,cached,compositor,closeButton;
-    Ref title,body,x,y,world,coordinates,status,save,remove,add,travel,prepare,copy,current,previous,next,reload,count,useRow,useDivider;
+    Ref title,body,x,y,world,coordinates,status,save,remove,add,travel,prepare,copy,current,previous,next,reload,count,useRow,useDivider,send,channelButton,channelRow;
+    int channelChoice=0; // Messages: notebook::Channels value shown on the channel button.
+    Ref worldDropdown; int worldChoice=1; std::vector<notebook::World> worlds; // Positions: native dropdown of the game's worlds.
     std::array<Ref,3> tabs;
     std::array<Ref,4> inputEvents;
     std::array<Ref,Rows> rows;
@@ -161,6 +163,31 @@ bool Current() {
 }
 std::string Coordinates(const notebook::Entry& entry) {return "["+std::to_string(entry.x)+","+std::to_string(entry.y)+"]";}
 void Status(const std::string& text) {Text(state.status.get(),text);}
+void ChannelLabel() {Text(state.channelButton.get(),std::string("Canal : ")+notebook::ChannelName(state.channelChoice));}
+std::string WorldLabel(int id) {
+    for(const auto& world:state.worlds)if(world.id==id)return std::to_string(id)+" : "+world.name;
+    return std::to_string(id)+" : monde inconnu";
+}
+void AddWorldItem(int id) {
+    Ref label(api.string_new(WorldLabel(id).c_str()));int choice=0,none=0,item=id;
+    api.Call(state.worldDropdown.get(),"AddListElementBasic",{label.get(),nullptr,&choice,&none,&none,&item});
+}
+// Selects a world in the native dropdown; an id the game does not list (older
+// entry) gets its own item so the entry stays editable.
+void SelectWorld(int id) {
+    bool known=false;for(const auto& world:state.worlds)known=known||world.id==id;
+    if(!known){state.worlds.push_back({id,"monde inconnu"});AddWorldItem(id);}
+    int item=id;api.Call(state.worldDropdown.get(),"SelectItemIdWithoutNotify",{&item});
+    Text(state.worldDropdown.get(),WorldLabel(id),"set_choiceText");state.worldChoice=id;
+}
+// The native dropdown selects on its own clicks; the panel reads the choice each frame.
+void PollWorld() {
+    if(!state.worldDropdown.get())return;
+    Ref selected(api.Call(state.worldDropdown.get(),"get_selectedElement"));
+    if(!selected.get())return;
+    const int id=*static_cast<int*>(api.FieldAddress(selected.get(),"id"));
+    if(id!=state.worldChoice){state.worldChoice=id;Text(state.worldDropdown.get(),WorldLabel(id),"set_choiceText");}
+}
 int KindIcon(notebook::Kind kind) { return kind==notebook::Kind::Position?IconPin:kind==notebook::Kind::Note?IconText:IconChat; }
 void ShowRows() {
     state.visible.clear();
@@ -183,13 +210,19 @@ void ShowRows() {
 }
 void Fill(notebook::Entry entry) {
     entry.kind=state.kind;state.editing=std::move(entry);state.captured=state.editing;state.confirmDelete=state.confirmDiscard=false;
+    state.channelChoice=state.editing.channel;ChannelLabel();
     Text(state.remove.get(),"Supprimer");
     Text(state.title.get(),state.editing.title);Text(state.body.get(),state.editing.body);
-    Text(state.x.get(),std::to_string(state.editing.x));Text(state.y.get(),std::to_string(state.editing.y));Text(state.world.get(),std::to_string(state.editing.world));
+    Text(state.x.get(),std::to_string(state.editing.x));Text(state.y.get(),std::to_string(state.editing.y));SelectWorld(state.editing.world);
     const bool position=state.kind==notebook::Kind::Position;
     Enum(state.coordinates.get(),"display",position?0:1);
     Enum(state.travel.get(),"display",position?0:1);Enum(state.body.get(),"display",position?1:0);
     Enum(state.prepare.get(),"display",state.kind==notebook::Kind::Message?0:1);
+    // The « Utiliser » separator heads the actions that use the entry; a note
+    // only has Copier, so the separator is not shown there.
+    Enum(state.useDivider.get(),"display",state.kind==notebook::Kind::Note?1:0);
+    Enum(state.send.get(),"display",state.kind==notebook::Kind::Message?0:1);
+    Enum(state.channelRow.get(),"display",state.kind==notebook::Kind::Message?0:1);
     bool multiline=state.kind==notebook::Kind::Note;api.Call(state.body.get(),"set_isMultiline",{&multiline});
     int max=multiline?8000:300;api.Call(state.body.get(),"set_maxLength",{&max});Pixels(state.body.get(),"height",multiline?160.f:36.f);
     Text(state.body.get(),state.kind==notebook::Kind::Note?"Écris ta note ici…":"Message à préparer dans le chat","set_placeholderText");
@@ -197,8 +230,8 @@ void Fill(notebook::Entry entry) {
     for(size_t i=0;i<3;++i){bool on=static_cast<size_t>(state.kind)==i;api.Call(state.tabs[i].get(),"SetValueWithoutNotify",{&on});}
 }
 bool Dirty() {
-    return Read(state.title.get())!=state.editing.title || Read(state.body.get())!=state.editing.body ||
-        (state.kind==notebook::Kind::Position&&(Read(state.x.get())!=std::to_string(state.editing.x)||Read(state.y.get())!=std::to_string(state.editing.y)||Read(state.world.get())!=std::to_string(state.editing.world)));
+    return Read(state.title.get())!=state.editing.title || Read(state.body.get())!=state.editing.body || state.channelChoice!=state.editing.channel ||
+        (state.kind==notebook::Kind::Position&&(Read(state.x.get())!=std::to_string(state.editing.x)||Read(state.y.get())!=std::to_string(state.editing.y)||state.worldChoice!=state.editing.world));
 }
 bool CanDiscard() {
     if(!Dirty()||state.confirmDiscard){state.confirmDiscard=false;return true;}
@@ -206,9 +239,10 @@ bool CanDiscard() {
 }
 notebook::Entry Editor() {
     auto entry=state.editing;entry.title=Read(state.title.get());entry.body=Read(state.body.get());entry.kind=state.kind;
+    entry.channel=state.kind==notebook::Kind::Message?state.channelChoice:0;
     if(state.kind==notebook::Kind::Position){
-        if(!notebook::Coordinate(Read(state.x.get()),entry.x)||!notebook::Coordinate(Read(state.y.get()),entry.y)||
-            !notebook::Coordinate(Read(state.world.get()),entry.world)||entry.world<0)throw std::runtime_error("Renseigne des coordonnées entières et un monde valide.");
+        if(!notebook::Coordinate(Read(state.x.get()),entry.x)||!notebook::Coordinate(Read(state.y.get()),entry.y))throw std::runtime_error("Renseigne des coordonnées entières.");
+        entry.world=state.worldChoice;if(entry.world<0)throw std::runtime_error("Choisis un monde dans la liste.");
         entry.map=entry.x==state.captured.x&&entry.y==state.captured.y&&entry.world==state.captured.world?state.captured.map:0;
     }
     return entry;
@@ -234,7 +268,7 @@ bool Action(Obj owner) {
     int row=-1;
     for(size_t i=0;i<Rows;++i)if(owner&&owner==state.rows[i].get())row=static_cast<int>(i);
     const bool own=owner&&(row>=0||owner==state.save.get()||owner==state.remove.get()||owner==state.add.get()||owner==state.travel.get()||
-        owner==state.prepare.get()||owner==state.copy.get()||owner==state.current.get()||owner==state.closeButton.get()||owner==state.previous.get()||owner==state.next.get()||owner==state.reload.get());
+        owner==state.prepare.get()||owner==state.copy.get()||owner==state.current.get()||owner==state.send.get()||owner==state.channelButton.get()||owner==state.closeButton.get()||owner==state.previous.get()||owner==state.next.get()||owner==state.reload.get());
     if(!own)return false;
     try {
         if(!wanted||!Current()||!api.Value<bool>(api.Call(owner,"get_enabledInHierarchy")))return true;
@@ -251,11 +285,13 @@ bool Action(Obj owner) {
         else if(owner==state.next.get()&&state.offset+Rows<state.visible.size()){state.offset+=Rows;ShowRows();}
         else if(owner==state.reload.get()){if(!CanDiscard())return true;Reload();Fill({});ShowRows();Status("Carnet rechargé.");}
         else if(owner==state.current.get()){
-            const auto position=notebook::CurrentPosition();Text(state.x.get(),std::to_string(position.x));Text(state.y.get(),std::to_string(position.y));Text(state.world.get(),std::to_string(position.world));
+            const auto position=notebook::CurrentPosition();Text(state.x.get(),std::to_string(position.x));Text(state.y.get(),std::to_string(position.y));SelectWorld(position.world);
             state.captured=position;Status("Position actuelle renseignée. Clique sur Enregistrer pour la conserver.");
         }
         else if(owner==state.travel.get()){const auto entry=Editor();notebook::Travel(entry);Status("Trajet demandé vers "+Coordinates(entry)+".");}
         else if(owner==state.prepare.get()){const auto entry=Editor();notebook::PrepareMessage(state.kind==notebook::Kind::Position?Coordinates(entry):entry.body);Status("Ajouté au brouillon du chat. À toi de l’envoyer.");}
+        else if(owner==state.channelButton.get()){state.channelChoice=notebook::NextChannel(state.channelChoice);ChannelLabel();Status(std::string("Canal d’envoi : ")+notebook::ChannelName(state.channelChoice)+". Enregistre l’entrée pour le conserver.");}
+        else if(owner==state.send.get()){const auto entry=Editor();notebook::SendChatMessage(entry.body,entry.channel);Status(std::string("Message envoyé dans le chat (canal ")+notebook::ChannelName(entry.channel)+").");}
         else if(owner==state.copy.get()){const auto entry=Editor();notebook::Copy(state.kind==notebook::Kind::Position?Coordinates(entry):entry.body);Status("Copié dans le presse-papiers.");}
     }catch(const std::exception& error){Status(error.what());Log("NOTEBOOK_ACTION_ERROR operation_failed");}
     return true;
@@ -321,15 +357,27 @@ void Create(Obj root) {
     state.coordinates.reset(Row(editor.get()));
     state.x.reset(Input(state.coordinates.get(),"X","0",5));Pixels(state.x.get(),"width",64);Float(state.x.get(),"flexGrow",0);Pixels(state.x.get(),"marginRight",6);
     state.y.reset(Input(state.coordinates.get(),"Y","0",5));Pixels(state.y.get(),"width",64);Float(state.y.get(),"flexGrow",0);Pixels(state.y.get(),"marginRight",6);
-    state.world.reset(Input(state.coordinates.get(),"Monde (1 : Amakna)","1",4));Pixels(state.world.get(),"width",72);Float(state.world.get(),"flexGrow",0);Pixels(state.world.get(),"marginRight",8);
+    // Native dropdown of the game's worlds (replaces the numeric world field).
+    state.worlds=notebook::Worlds();
+    state.worldDropdown.reset(api.New(api.Class("Core.dll",Figma,"Dropdown")));
+    int textType=0,small=0;api.Call(state.worldDropdown.get(),"set_dropdownType",{&textType});api.Call(state.worldDropdown.get(),"set_dropdownSize",{&small});
+    *static_cast<bool*>(api.FieldAddress(state.worldDropdown.get(),"closeOnSelection"))=true;
+    Text(state.worldDropdown.get(),"Monde de la position","set_tooltip");
+    Pixels(state.worldDropdown.get(),"width",170);Float(state.worldDropdown.get(),"flexGrow",0);Float(state.worldDropdown.get(),"flexShrink",0);Pixels(state.worldDropdown.get(),"marginRight",8);
+    for(const auto& world:state.worlds)AddWorldItem(world.id);
+    Add(state.coordinates.get(),state.worldDropdown.get());
     state.current.reset(Button(state.coordinates.get(),"Ma position",IconPlayer,2,0,"Reprendre les coordonnées de la carte où tu te trouves."));Pixels(state.current.get(),"marginBottom",0);
     state.body.reset(Input(editor.get(),"","",8000));Pixels(state.body.get(),"marginBottom",8);
+    // Messages: the chat channel the entry is sent to (kept with the entry).
+    state.channelRow.reset(Row(editor.get()));
+    state.channelButton.reset(Button(state.channelRow.get(),"Canal : actuel",IconChannel,2,0,"Canal du chat où ce message est envoyé. Clique pour passer au suivant ; « actuel » garde le canal en cours du chat."));
     Ref actions(Row(editor.get()));
     state.save.reset(Button(actions.get(),"Enregistrer",IconSave,0,0,"Conserver cette entrée dans le carnet."));
     state.remove.reset(Button(actions.get(),"Supprimer",IconTrash,2,1,"Supprimer cette entrée (confirmation au second clic)."));
     state.useDivider.reset(Divider(editor.get(),"Utiliser"));
     state.useRow.reset(Row(editor.get()));Pixels(state.useRow.get(),"marginBottom",0);
     state.travel.reset(Button(state.useRow.get(),"Voyager",IconZaap,1,0,"Lancer le trajet vers cette position : zaaps, bateaux puis /travel."));
+    state.send.reset(Button(state.useRow.get(),"Envoyer",IconSend,1,0,"Envoyer ce message dans le chat, sur le canal choisi (ou le canal en cours du chat)."));
     state.prepare.reset(Button(state.useRow.get(),"Préparer dans le chat",IconChat,1,0,"Placer ce message dans le brouillon du chat, sans l’envoyer."));
     state.copy.reset(Button(state.useRow.get(),"Copier",IconCopy,2,0,"Copier dans le presse-papiers."));Pixels(state.copy.get(),"marginRight",0);
     Ref footer(Row(content.get()));Pixels(footer.get(),"marginTop",6);Pixels(footer.get(),"marginBottom",0);
@@ -360,6 +408,10 @@ void InstallNotebookPanel(){
     api.FindVerified(divider,"set_orientation",1,0x170C160);api.FindVerified(divider,"set_inlineText",1,0x170C0C0);
     auto listElement=api.Class("Core.dll",Figma,"ListElementBase");
     api.FindVerified(listElement,"set_icon",1,0x1733BD0);api.FindVerified(listElement,"set_isActivated",1,0x1733BF0);
+    auto dropdown=api.Class("Core.dll",Figma,"Dropdown");
+    api.FindVerified(dropdown,".ctor",0,0x17282C0);api.FindVerified(dropdown,"set_dropdownType",1,0x1728730);api.FindVerified(dropdown,"set_dropdownSize",1,0x1728620);
+    api.FindVerified(dropdown,"AddListElementBasic",6,0x1724840);api.FindVerified(dropdown,"SelectItemIdWithoutNotify",1,0x17265B0);
+    api.FindVerified(dropdown,"get_selectedElement",0,0x155DB30);api.FindVerified(dropdown,"set_choiceText",1,0x1728550);
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15BFB50);
     notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);nativeClick::AddHandler(Action);
     toolsUi::Register("notebook","Carnet personnel",IconPin,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;});installed=true;
@@ -409,5 +461,5 @@ void TickNotebookPanel(){
         try{Create(root.get());}catch(...){Log("NOTEBOOK_PANEL_CREATE_ERROR native_panel_unavailable");RestoreNotebookPanel();}
         return;
     }
-    try{PollTabs();}catch(const std::exception& error){Log(std::string("NOTEBOOK_TAB_ERROR ")+error.what());}
+    try{PollTabs();PollWorld();}catch(const std::exception& error){Log(std::string("NOTEBOOK_TAB_ERROR ")+error.what());}
 }

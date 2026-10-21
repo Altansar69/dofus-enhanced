@@ -4,14 +4,16 @@
 #include "notebook-panel.hpp"
 #include "notebook-native.hpp"
 
-int travels=0,prepares=0,copies=0;
-std::string prepared;
+int travels=0,prepares=0,copies=0,sends=0,sentChannel=-1;
+std::string prepared,sent;
 notebook::Entry travelled;
 namespace notebook {
 void InstallNative() {}
 Entry CurrentPosition(){Entry result;result.x=-25;result.y=36;result.world=1;result.map=987;return result;}
 void Travel(const Entry& entry){++travels;travelled=entry;}
 void PrepareMessage(const std::string& text){++prepares;prepared=text;}
+void SendChatMessage(const std::string& text,int channel){++sends;sent=text;sentChannel=channel;}
+std::vector<World> Worlds(){return {{1,"Monde des Douze"},{2,"Incarnam"},{3,"Srambad"}};}
 void Copy(const std::string&){++copies;}
 }
 namespace soul {
@@ -37,8 +39,10 @@ std::vector<Obj> Inputs(Obj root){
 }
 // Native rows arrive through the ListElement action hook, native buttons
 // through the ExtendedClickable up-event hook, tabs toggle themselves.
+int clicks=0;
 void Click(Obj object){
-    Check(!!object,"Missing notebook action");
+    ++clicks;
+    if(!object)throw std::runtime_error("Missing notebook action at click #"+std::to_string(clicks));
     if(Get(object).type->name=="DofusButtonCustom"){Check(!!clickHook,"Native button hook installed");clickHook(Get(object).fields.at("m_clickable"),Make("PointerUpEvent"),Vec2{},0,nullptr);}
     else actionHook(object,nullptr);
 }
@@ -64,11 +68,11 @@ int main(){
         soul::Panel{}.Install(Equip,Save,HideModule);nativeClick::Install();toolsUi::Install();InstallNotebookPanel();TickNotebookPanel();
         Check(Get(middle).children.empty(),"No panel until explicit open");
         OpenNotebookPanel();TickNotebookPanel();auto window=latestWindow;auto inputs=Inputs(window);
-        Check(inputs.size()==5&&Get(window).fields["parent"]==middle,"Native window with title, xyz and body");
+        Check(inputs.size()==4&&Get(window).fields["parent"]==middle,"Native window with title, x, y and body (the world is a dropdown)");
         Check(Get(window).enums["set_headerShowCloseButton"]==1&&Get(window).enums["SetHeaderSize"]==0,"The window shows its native close button and keeps the full header while the setting is off");
         Check(Count(window,"DofusTab")==3&&TabOn(window,"Positions")&&!TabOn(window,"Notes")&&!TabOn(window,"Messages"),"Three native tabs with Positions selected");
         Check(Get(FindType(window,"DofusTab","Notes")).enums["set_fontCase"]==1&&Get(FindType(window,"DofusTab","Notes")).enums["set_size"]==1,"Tabs use the game's capitalised medium style");
-        Check(Count(window,"DofusButtonCustom")==12&&Count(window,"SectionHeader")==2&&Count(window,"Divider")==2&&Count(window,"ListElementBasic")==6,"Native buttons, two titled sections, dividers and six list rows");
+        Check(Count(window,"DofusButtonCustom")==14&&Count(window,"SectionHeader")==2&&Count(window,"Divider")==2&&Count(window,"ListElementBasic")==9,"Native buttons, two titled sections, dividers, six list rows and three world items");
         Check(!FindText(window,"Fermer")&&FindText(window,"Nouvelle entrée")&&FindText(window,"Ma position")&&FindText(window,"Actualiser"),"No custom close row; native action buttons");
         Check(Get(FindText(window,"Enregistrer")).enums["set_mainStyle"]==0&&Get(FindText(window,"Supprimer")).enums["set_status"]==1&&Get(FindText(window,"Enregistrer")).enums["set_icon"]==148,"Primary save, negative delete, floppy icon");
         Check(FindText(window,"Mes entrées")&&FindText(window,"Détail")&&FindText(window,"Aucune entrée"),"Section titles and an empty-list counter");
@@ -76,25 +80,38 @@ int main(){
         OpenNotebookPanel();TickNotebookPanel();Check(window==latestWindow,"Open must reuse window");
         Get(inputs[0]).text="Mon zaap <b>littéral</b>";Click(FindText(window,"Ma position"));
         Check(Get(inputs[1]).text=="-25"&&Get(inputs[2]).text=="36","Current position captured");
+        auto worldList=FindType(window,"Dropdown","1 : Monde des Douze");
+        Check(worldList&&Count(worldList,"ListElementBasic")==3&&Get(worldList).closeOnSelection,"The world is a native dropdown of the game's worlds, set from the current map");
         Click(FindText(window,"Enregistrer"));
         const auto path=notebook::DataPath(owner.settingsPath);
         auto data=notebook::Read(path);Check(data.entries.size()==1&&data.entries[0].map==987,"Position saved with map identity");
+        Get(worldList).fields["selected"]=FindText(worldList,"2 : Incarnam");TickNotebookPanel();
+        Check(Get(worldList).text=="2 : Incarnam","A dropdown choice is read back each frame");
+        Click(FindText(window,"Enregistrer"));data=notebook::Read(path);
+        Check(data.entries[0].world==2&&data.entries[0].map==0,"World change saved; the captured map identity no longer applies");
         Check(!travels&&!prepares,"Saving never travels or sends/prepares");
         auto row=FindText(window,"[-25,36]  Mon zaap <b>littéral</b>");
         Check(row&&Get(Get(row).fields["m_textLabel"]).enums["set_enableRichText"]==0,"User text displayed literally");
         Check(Get(row).enums["set_listElementStyle"]==0&&Get(row).enums["set_icon"]==225&&Get(row).enums["set_isActivated"]==1&&FindText(window,"1 entrée"),"Choice row with the position icon, activated for the saved entry");
         Click(row);Click(FindText(window,"Voyager"));Check(travels==1&&travelled.x==-25,"Explicit travel only");
-        ClickTab(window,"Notes");Check(Get(inputs[4]).enums["set_isMultiline"]==1&&TabOn(window,"Notes")&&!TabOn(window,"Positions"),"Notes use native multiline input and the tab switches");
-        Get(inputs[0]).text="Plan";Get(inputs[4]).text="Ligne un\nLigne deux";
+        ClickTab(window,"Notes");Check(Get(inputs[3]).enums["set_isMultiline"]==1&&TabOn(window,"Notes")&&!TabOn(window,"Positions"),"Notes use native multiline input and the tab switches");
+        Get(inputs[0]).text="Plan";Get(inputs[3]).text="Ligne un\nLigne deux";
         ClickTab(window,"Messages");Check(Get(inputs[0]).text=="Plan"&&!TabOn(window,"Messages")&&TabOn(window,"Notes"),"Unsaved tab change is refused and the tab snaps back without destroying text");
         Click(FindText(window,"Enregistrer"));Check(notebook::Read(path).entries.size()==2,"Multiline note saved");
         ClickTab(window,"Messages");Check(TabOn(window,"Messages"),"After saving the tab change goes through");
-        Get(inputs[0]).text="Salut";Get(inputs[4]).text="Bonjour groupe";
+        Get(inputs[0]).text="Salut";Get(inputs[3]).text="Bonjour groupe";
         Click(FindText(window,"Enregistrer"));Click(FindText(window,"Préparer dans le chat"));
         Check(prepares==1&&prepared=="Bonjour groupe","Only explicit prepare action touches draft");
+        auto channel=FindText(window,"Canal : actuel");
+        Check(!sends&&channel&&Get(channel).type->name=="DofusButtonCustom","Nothing is sent without the explicit button; a message starts on the chat's current channel");
+        Click(channel);Check(Get(channel).text=="Canal : Général","The channel button cycles to the first game channel");
+        Click(channel);Click(channel);Check(Get(channel).text=="Canal : Guilde","The channel button cycles through the game's channels");
+        Click(FindText(window,"Envoyer"));Check(sends==1&&sent=="Bonjour groupe"&&sentChannel==4,"Explicit send carries the chosen channel");
+        Click(FindText(window,"Enregistrer"));Check(notebook::Read(path).entries.back().channel==4,"The channel is saved with the message");
+        Check(FindText(window,"Enregistré dans le carnet.")!=nullptr,"Saving with a channel reports success and keeps the entry selected");
         Click(FindText(window,"Supprimer"));Check(notebook::Read(path).entries.size()==3,"First delete requires confirmation");
         Click(FindText(window,"Confirmer la suppression"));Check(notebook::Read(path).entries.size()==2,"Confirmed delete");
-        Get(inputs[0]).text="Brouillon";Get(inputs[4]).text="À garder";
+        Get(inputs[0]).text="Brouillon";Get(inputs[3]).text="À garder";
         const auto ups=buttonUps;
         Click(CloseButton(window));TickNotebookPanel();Check(Panel(window)&&buttonUps==ups+1,"Unsaved close through the native close button does not lose the draft; the game's own handling still ran");
         Click(CloseButton(window));TickNotebookPanel();Check(!Panel(window),"Second close explicitly discards");

@@ -39,7 +39,8 @@ static std::filesystem::path logPath;
 static std::vector<void*> hookTargets;
 using UpdateFn = void(*)(Obj, Method);
 static UpdateFn originalUpdate;
-static ULONGLONG nextPump = 0;
+static ULONGLONG nextPump = 0, nextRestore = 0;
+static unsigned restoreFailures = 0;
 static std::unordered_map<Obj, ULONGLONG> nextDiscovery;
 
 void Log(const std::string& message) {
@@ -298,9 +299,16 @@ static void UpdateHook(Obj self, Method method) {
         // Keep the current compositor callback until transient owned-UI
         // detachment failures have drained; the worker then disables hooks.
         if (self == module->compositor.get() && !module->stopCompleted.load()) {
-            if (module->ui->CleanupPending()) {
-                try { module->ui->Restore(); }
-                catch (const std::exception& error) { Log(std::string("UI_RESTORE_ERROR ") + error.what()); }
+            if (module->ui->CleanupPending() && now >= nextRestore) {
+                // Bounded: after a logout the game has already torn the options
+                // page down and every retry throws. Retry twice a second for ten
+                // seconds, log the first failures only, then drop the page.
+                nextRestore = now + 500;
+                try { module->ui->Restore(); restoreFailures = 0; }
+                catch (const std::exception& error) {
+                    if (++restoreFailures <= 3) Log(std::string("UI_RESTORE_ERROR ") + error.what());
+                    if (restoreFailures >= 20) { Log("UI_RESTORE_ABANDONED options page already destroyed by the game"); module->ui->Abandon(); }
+                }
             }
             TickMonsterGlow();
             if (resourceMap::RenderCleanupPending()) resourceMap::RestoreRender();

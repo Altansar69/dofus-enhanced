@@ -105,6 +105,7 @@ Document LoadUnchecked(const std::filesystem::path& path) {
             (item.at("map").is_number_unsigned() && item.at("map").get<uint64_t>() > static_cast<uint64_t>(INT64_MAX)))
             throw std::runtime_error("Carte du carnet invalide.");
         entry.map = item.at("map").get<int64_t>();
+        entry.channel = item.contains("channel") ? Integer(item.at("channel")) : 0; // Absent before 1.4.0.
         if (!entry.id || entry.id >= result.nextId || !entry.version || entry.version == UINT64_MAX || !ids.insert(entry.id).second)
             throw std::runtime_error("Entrée du carnet invalide.");
         Validate(entry); result.entries.push_back(std::move(entry));
@@ -120,7 +121,7 @@ void Write(const std::filesystem::path& path, const Document& data) {
     for (const auto& entry : data.entries)
         json["entries"].push_back({{"id", entry.id}, {"version", entry.version}, {"kind", Name(entry.kind)},
             {"title", entry.title}, {"body", entry.body}, {"x", entry.x}, {"y", entry.y},
-            {"world", entry.world}, {"map", entry.map}});
+            {"world", entry.world}, {"map", entry.map}, {"channel", entry.channel}});
     const auto bytes = json.dump(2);
     if (bytes.size() > MaxBytes) throw std::runtime_error("Le carnet est trop volumineux.");
     static std::atomic_uint64_t counter{0};
@@ -160,6 +161,29 @@ void Validate(const Entry& entry) {
     if (entry.x < -1000 || entry.x > 1000 || entry.y < -1000 || entry.y > 1000 ||
         entry.world < 0 || entry.world > 10000 || entry.map < 0)
         throw std::runtime_error("Coordonnées du carnet invalides.");
+    if (!ValidChannel(entry.channel) || (entry.channel && entry.kind != Kind::Message))
+        throw std::runtime_error("Canal du carnet invalide.");
+}
+bool ValidChannel(int channel) {
+    for (const auto known : Channels) if (known == channel) return true;
+    return false;
+}
+int NextChannel(int channel) {
+    const auto count = sizeof(Channels) / sizeof(Channels[0]);
+    for (size_t i = 0; i < count; ++i) if (Channels[i] == channel) return Channels[(i + 1) % count];
+    return Channels[0];
+}
+const char* ChannelName(int channel) {
+    switch (channel) {
+    case 1: return "Général";
+    case 2: return "Équipe";
+    case 4: return "Guilde";
+    case 8: return "Alliance";
+    case 16: return "Groupe";
+    case 32: return "Commerce";
+    case 64: return "Recrutement";
+    default: return "actuel";
+    }
 }
 Document Read(const std::filesystem::path& path) { return Load(Checked(path)); }
 Entry Save(const std::filesystem::path& input, Entry entry) {

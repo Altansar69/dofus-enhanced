@@ -6,8 +6,10 @@
 namespace notebook {
 namespace {
 using namespace managed;
-Method currentMap{}, mapInfo{}, subarea{}, world{}, inputGetter{}, lengthValid{}, append{};
+Method currentMap{}, mapInfo{}, subarea{}, world{}, inputGetter{}, lengthValid{}, append{}, trySend{}, worldById{}, worldName{};
 Klass characterClass{}, windowsClass{}, chatClass{}, inputClass{}, bindingClass{};
+// System.ReadOnlySpan<char>: a managed char pointer and a length, passed by value.
+struct CharSpan { const wchar_t* data; int32_t length; };
 void Ready() {
     if (!module || !module->ready || !module->servicesReady || module->stopped || module->stopRequested)
         throw std::runtime_error("Personnage indisponible.");
@@ -33,9 +35,40 @@ void InstallNative() {
     mapInfo = api.FindVerified(info, "GetMapInformationById", 1, 0x7C4200);
     subarea = api.FindVerified(info, "get_subArea", 0, 0x7C44B0);
     world = api.FindVerified(api.Class(image, space, "SubAreaData"), "get_worldmapId", 0, 0x7D1040);
+    auto worldClass = api.Class(image, space, "WorldMapData");
+    worldById = api.FindVerified(worldClass, "GetWorldMapById", 1, 0x7D3D50);
+    worldName = api.FindVerified(worldClass, "get_name", 0, 0x7D3DE0);
     inputGetter = api.FindVerified(bindingClass, "get_ti_chatInput", 0, 0x2EB8FD0);
     lengthValid = api.FindVerified(chatClass, "IsTextLengthValid", 1, 0x2D92630);
     append = api.FindVerified(chatClass, "AppendTextToInputAndFocus", 1, 0x2D8E010);
+    // The channel ChatView's own SendToGuild/Party/TeamShortcut set before
+    // validating the input, read back by TrySendMessage.
+    Field(chatClass, "m_sendingChannel", 0x1EC);
+    trySend = api.FindVerified(chatClass, "TrySendMessage", 1, 0x2D9D300);
+}
+namespace {
+// The live chat view and its input, as the user sees them; throws otherwise.
+struct Chat { Ref compositor, service, view, input; };
+Chat OpenChat(const char* closed) {
+    Chat chat;
+    chat.compositor.reset(module->compositor.get()); chat.service.reset(module->FindService("fqw"));
+    if (!chat.service.get() || api.object_get_class(chat.service.get()) != windowsClass) throw std::runtime_error("Chat indisponible.");
+    chat.view.reset(api.Field(chat.service.get(), "dyvx"));
+    if (!chat.view.get() || api.object_get_class(chat.view.get()) != chatClass) throw std::runtime_error("Chat indisponible.");
+    Ref binding(api.Field(chat.view.get(), "dzyi"));
+    if (!binding.get() || api.object_get_class(binding.get()) != bindingClass) throw std::runtime_error("Chat indisponible.");
+    chat.input.reset(api.Invoke(inputGetter, api.object_unbox(binding.get())));
+    if (!chat.input.get() || api.object_get_class(chat.input.get()) != inputClass || !api.Call(chat.input.get(), "get_panel") ||
+        !api.Value<bool>(api.Call(chat.input.get(), "get_enabledInHierarchy")))
+        throw std::runtime_error(closed);
+    return chat;
+}
+void SameChat(const Chat& chat) {
+    Ready();
+    if (module->compositor.get() != chat.compositor.get() || module->FindService("fqw") != chat.service.get() ||
+        api.Field(chat.service.get(), "dyvx") != chat.view.get() || !api.Call(chat.input.get(), "get_panel"))
+        throw std::runtime_error("Le chat a changé. Réessaie.");
+}
 }
 Entry CurrentPosition() {
     Ready();
@@ -60,6 +93,22 @@ Entry CurrentPosition() {
         throw std::runtime_error("La carte a changé. Réessaie.");
     return result;
 }
+std::vector<World> Worlds() {
+    Ready();
+    std::vector<World> result;
+    // World map ids are small; the game's lookup returns nothing for unused ids.
+    for (int id = 1; id <= 64 && result.size() < 32; ++id) {
+        Ref data;
+        try { data.reset(api.Invoke(worldById, nullptr, {&id})); } catch (const std::exception&) { continue; }
+        if (!data.get()) continue;
+        Ref name(api.Invoke(worldName, data.get()));
+        const auto text = api.String(name.get());
+        if (text.empty()) continue;
+        result.push_back({id, text});
+    }
+    if (result.empty()) result.push_back({1, "Monde des Douze"});
+    return result;
+}
 void Travel(const Entry& entry) {
     Ready();
     if (module->InCombat()) throw std::runtime_error("Trajet indisponible pendant un combat.");
@@ -69,25 +118,37 @@ void Travel(const Entry& entry) {
 void PrepareMessage(const std::string& text) {
     Ready();
     Entry checked; checked.kind = Kind::Message; checked.title = "Message"; checked.body = text; Validate(checked);
-    Ref compositor(module->compositor.get()), service(module->FindService("fqw"));
-    if (!service.get() || api.object_get_class(service.get()) != windowsClass) throw std::runtime_error("Chat indisponible.");
-    Ref view(api.Field(service.get(), "dyvx"));
-    if (!view.get() || api.object_get_class(view.get()) != chatClass) throw std::runtime_error("Chat indisponible.");
-    Ref binding(api.Field(view.get(), "dzyi"));
-    if (!binding.get() || api.object_get_class(binding.get()) != bindingClass) throw std::runtime_error("Chat indisponible.");
-    Ref input(api.Invoke(inputGetter, api.object_unbox(binding.get())));
-    if (!input.get() || api.object_get_class(input.get()) != inputClass || !api.Call(input.get(), "get_panel") ||
-        !api.Value<bool>(api.Call(input.get(), "get_enabledInHierarchy")))
-        throw std::runtime_error("Ouvre le chat pour préparer le message.");
+    auto chat = OpenChat("Ouvre le chat pour préparer le message.");
     Ref message(api.string_new(text.c_str()));
-    if (!api.Value<bool>(api.Invoke(lengthValid, view.get(), {message.get()})))
+    if (!api.Value<bool>(api.Invoke(lengthValid, chat.view.get(), {message.get()})))
         throw std::runtime_error("Le brouillon du chat est trop long pour ajouter ce message.");
+    SameChat(chat);
+    // Native append/focus only. The user sends their draft themselves.
+    api.Invoke(append, chat.view.get(), {message.get()});
+}
+void SendChatMessage(const std::string& text, int channel) {
     Ready();
-    if (module->compositor.get() != compositor.get() || module->FindService("fqw") != service.get() ||
-        api.Field(service.get(), "dyvx") != view.get() || !api.Call(input.get(), "get_panel"))
-        throw std::runtime_error("Le chat a changé. Réessaie.");
-    // Native append/focus only. The user explicitly sends their draft themselves.
-    api.Invoke(append, view.get(), {message.get()});
+    if (!ValidChannel(channel)) throw std::runtime_error("Canal invalide.");
+    Entry checked; checked.kind = Kind::Message; checked.title = "Message"; checked.body = text; checked.channel = channel; Validate(checked);
+    auto chat = OpenChat("Ouvre le chat pour envoyer le message.");
+    Ref message(api.string_new(text.c_str()));
+    if (!api.Value<bool>(api.Invoke(lengthValid, chat.view.get(), {message.get()})))
+        throw std::runtime_error("Message trop long pour le chat.");
+    SameChat(chat);
+    // ChatView.TrySendMessage is what Enter does in the chat input: channel
+    // shortcuts, commands, receiver, history and the request itself are the
+    // game's. The chosen channel goes through m_sendingChannel exactly like the
+    // view's own SendToGuildShortcut, and the previous value is put back.
+    auto* sending = static_cast<int*>(api.FieldAddress(chat.view.get(), "m_sendingChannel"));
+    if (!sending) throw std::runtime_error("Chat indisponible.");
+    const int previous = *sending;
+    if (channel) *sending = channel;
+    CharSpan span{api.string_chars(message.get()), api.string_length(message.get())};
+    bool accepted = false;
+    try { accepted = api.Value<bool>(api.Invoke(trySend, chat.view.get(), {&span})); }
+    catch (...) { *sending = previous; throw; }
+    *sending = previous;
+    if (!accepted) throw std::runtime_error("Le chat n’a pas accepté ce message.");
 }
 void Copy(const std::string& text) {
     if (text.empty()) throw std::runtime_error("Aucun texte à copier.");

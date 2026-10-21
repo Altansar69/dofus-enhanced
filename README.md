@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.3.1** (révision r96).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.4.0** (révision r97).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -78,13 +78,18 @@ Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
 **Notes** et **Messages**, deux sections **Mes entrées** (liste à l’icône de
 l’onglet, entrée courante surlignée, pagination et compteur) et **Détail**
 (titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
-**Ma position**, puis **Voyager**, **Préparer dans le chat** et **Copier** selon
-l’onglet), et une ligne d’état avec **Actualiser**.
+**Ma position**, puis **Voyager**, **Envoyer**, **Préparer dans le chat** et
+**Copier** selon l’onglet), et une ligne d’état avec **Actualiser**.
 Un brouillon modifié demande une confirmation avant d’être abandonné.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
-coordonnées saisies. Le trajet se lance au clic. Un message enregistré est ajouté
-au brouillon du chat ; son envoi reste manuel.
+coordonnées saisies ; le monde se choisit dans une liste déroulante native
+alimentée par les mondes du jeu. Le trajet se lance au clic. Un message s’envoie dans le chat
+par **Envoyer**, par la fonction d’envoi du jeu elle-même (celle de la touche
+Entrée), sur le canal choisi avec le bouton **Canal** : actuel (celui du chat),
+Général, Équipe, Guilde, Alliance, Groupe, Commerce ou Recrutement. Ce canal est
+enregistré avec le message. **Préparer dans le chat** place le texte dans le
+brouillon sans l’envoyer.
 
 Le carnet est enregistré localement à côté des préférences partagées, hors des
 dossiers de révision. Une modification concurrente de la même entrée est signalée
@@ -155,10 +160,10 @@ sont disponibles, avec leur icône et leur niveau.
 Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
 des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
 pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Chaque ressource d’une case est un repère natif du jeu (image de l’objet et
-pastille de quantité). Les repères d’une même case rejoignent le groupe de
-position natif, comme les indices du jeu : pastille de nombre, étalement au
-survol et repli sont ceux de Dofus.
+Chaque repère est dessiné par le mod avec l’image de l’objet (catalogue du jeu)
+et sa pastille de quantité. Plusieurs ressources sur une même case s’empilent
+avec un léger décalage, centrées sur la case ; le survol de la souris les étale
+côte à côte, puis elles se replient quand le curseur s’éloigne.
 Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
 Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les

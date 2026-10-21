@@ -1,4 +1,24 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 96 — VERSION 1.3.1
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 97 — VERSION 1.4.0
+
+R97 — VERSION 1.4.0 : ICÔNES DES RESSOURCES, ENVOI DANS LE CHAT, SURBRILLANCE TOLÉRANTE
+- Ressources sur les cartes : retour du rendu de la 1.0.0 (icône de l’objet
+  dessinée par le mod, pastille de quantité, empilement par case et étalement
+  au survol de la souris). Le repère natif introduit en 1.1.0 n’affichait pas
+  l’image et son groupe ne s’étalait pas.
+- Carnet, onglet Messages : bouton Envoyer (fonction d’envoi du jeu, celle de
+  la touche Entrée) et bouton Canal pour choisir, par message, le canal :
+  actuel (celui du chat), Général, Équipe, Guilde, Alliance, Groupe, Commerce,
+  Recrutement. Le canal est enregistré avec le message. Le séparateur
+  « Utiliser » n’apparaît plus dans l’onglet Notes (seul Copier y figure).
+- Carnet, onglet Positions : le monde se choisit dans une liste déroulante
+  native (mondes du jeu, avec leur nom) au lieu d’un numéro à saisir.
+- Surbrillance : un objet sans matériau au moment de la capture (juste après
+  un zaap) est ignoré pour cette image au lieu de couper la surbrillance
+  jusqu’à réactivation de l’option.
+- Arrêt du mod après une déconnexion : la restauration de la page d’options
+  n’est plus retentée à chaque image avec une erreur journalisée ; dix
+  secondes d’essais puis abandon de la page déjà détruite par le jeu.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R96 — VERSION 1.3.1 : CARTE SANS ANIMATION, CARNET RÉPARÉ
 - Carte et mini-carte : les glissements ajoutés en 1.2.0 et 1.3.0 (zoom à la

@@ -30,5 +30,7 @@ struct OptionsUi {
     void Sync();
     void Restore();
     bool CleanupPending() const { return !pages.empty(); }
+    // Drop pages the game already tore down (logout): nothing left to restore.
+    void Abandon() { pages.clear(); pendingPage.reset(); stableList.reset(); }
     bool KeepResidentHook(void* target) const;
 };

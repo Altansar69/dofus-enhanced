@@ -21,11 +21,18 @@ int main() {
         auto first=notebook::Save(path,position);
         notebook::Entry note;note.kind=notebook::Kind::Note;note.title="Stratégie";note.body="Étourdi\nDeuxième ligne <b>littérale</b>";
         auto second=notebook::Save(path,note);
-        notebook::Entry message;message.kind=notebook::Kind::Message;message.title="Recrutement";message.body="Bonjour !";
+        notebook::Entry message;message.kind=notebook::Kind::Message;message.title="Recrutement";message.body="Bonjour !";message.channel=64;
         auto third=notebook::Save(path,message);
         Check(first.id&&second.id!=first.id&&third.id!=second.id,"IDs are unique");
         const auto data=notebook::Read(path);
         Check(data.entries.size()==3&&data.entries[1]==second,"UTF8 multiline survives reload");
+        Check(data.entries[2].channel==64,"The chat channel persists with the message");
+        {auto bad=message;bad.channel=3;Reject([&]{notebook::Save(path,bad);},"Unknown chat channel rejected");}
+        {auto bad=note;bad.channel=4;Reject([&]{notebook::Save(path,bad);},"Only messages carry a channel");}
+        Check(notebook::ValidChannel(0)&&notebook::ValidChannel(64)&&!notebook::ValidChannel(5)&&notebook::NextChannel(0)==1&&notebook::NextChannel(64)==0&&
+            std::string(notebook::ChannelName(4))=="Guilde"&&std::string(notebook::ChannelName(0))=="actuel","Channel cycle and names");
+        {const auto legacy=root/"legacy.json";{std::ofstream file(legacy,std::ios::binary);file<<R"({"schema":1,"nextId":2,"entries":[{"id":1,"version":1,"kind":"message","title":"t","body":"b","x":0,"y":0,"world":1,"map":0}]})";}
+            Check(notebook::Read(legacy).entries.at(0).channel==0,"Entries saved before 1.4.0 load on the current channel");}
         auto stale=first;first.title="Nouveau titre";first=notebook::Save(path,first);
         stale.title="Écriture périmée";Reject([&]{notebook::Save(path,stale);},"Stale edit must conflict");
         Reject([&]{notebook::Delete(path,stale.id,stale.version);},"Stale delete must conflict");
