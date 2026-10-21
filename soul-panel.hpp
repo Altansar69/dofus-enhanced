@@ -21,6 +21,9 @@ struct PanelView {
 // native UIDocument root; it performs no input or session discovery.
 managed::Obj GetUiRoot();
 bool PanelCleanupPending();
+// The soul panel's native window while it is shown (null otherwise), so the
+// shared header-size setting can be applied without the panel knowing it.
+managed::Obj PanelWindow();
 bool HandlePanelMenuCallback(managed::Obj callback, managed::Obj view);
 // Shared native ListElement action hook. Adds each handler once at install;
 // handlers return false for foreign controls. Null does not clear other panels.

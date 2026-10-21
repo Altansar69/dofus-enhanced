@@ -68,6 +68,11 @@ void Add(Obj parent,Obj child){Detach(child);Insert(parent,static_cast<int>(Get(
 Obj Panel(Obj value){while(value){if(Get(value).fields["panel"])return Get(value).fields["panel"];value=Get(value).fields["parent"];}return nullptr;}
 void OriginalEnable(Obj owner,Method){++nativeEnable;Get(owner).enabled=true;}
 void OriginalDisable(Obj owner,Method){++nativeDisable;Get(owner).enabled=false;}
+}
+// The shared native button hook is faked: the test routes clicks to the registered handler.
+namespace nativeClick{bool(*handler)(managed::Obj)=nullptr;void AddHandler(bool(*h)(managed::Obj)){handler=h;}}
+namespace fake{
+using namespace managed;
 void NativeToggle(Obj tab,bool value){
     Get(tab).value=value;Get(Get(tab).fields.at("m_checkbox")).styles["display"]=0;
 }
@@ -356,7 +361,8 @@ Obj FindUnder(Obj root,const char* type,const char* text=nullptr){
     return nullptr;
 }
 Obj MiniDrawer(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="VisualElement"&&Get(child).fields["tooltip"])return child;return nullptr;}
-Obj MiniCenter(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="CheckboxCustom")return child;return nullptr;}
+Obj MiniCenter(){for(auto child:Get(miniRoot).children)if(Get(child).owned&&Get(child).type->name=="VisualElement"&&FindUnder(child,"DofusButtonCustom"))return child;return nullptr;}
+void ClickCenter(Obj center){auto button=FindUnder(center,"DofusButtonCustom");Check(button&&nativeClick::handler&&nativeClick::handler(button),"The native button click reaches the mini-map center handler");}
 void CheckPickable(Obj element){Check(Get(element).notifications==0,"Native button subtree stays pickable for hover, cursor and tooltip");for(auto child:Get(element).children)CheckPickable(child);}
 void MiniMapSelectionAndLifetime(){
     Fixture f;
@@ -372,7 +378,7 @@ void MiniMapSelectionAndLifetime(){
     Check(tabs.size()==6,"Six compact profession buttons");
     Check(Get(drawer).styles["display"]!=0,"Disabled mini-map resources hide the whole picker");
     auto center=MiniCenter();
-    Check(center&&cursorTargets.contains(center)&&Get(center).fields["tooltip"]&&!FindUnder(drawer,"CheckboxCustom","Centrer"),"Mini-map has a reachable centering button beside the drawer");
+    Check(center&&!cursorTargets.contains(center)&&Get(center).fields["tooltip"]&&!FindUnder(drawer,"CheckboxCustom","Centrer"),"Mini-map has a centering button beside the drawer; its native component owns the hover cursor");
     Check(Get(center).styles["left"]==8&&Get(center).styles["top"]==252&&Get(center).styles["width"]==40&&Get(center).styles["height"]==40,"Center button sits in the bottom-left corner, clear of the header and the drawer");
     Check(Get(center).text.empty()&&!Get(center).fields["m_rightLabel"],"Center button shows no caption");
     auto nativeButton=FindUnder(center,"DofusButtonCustom");
@@ -380,15 +386,16 @@ void MiniMapSelectionAndLifetime(){
     CheckPickable(nativeButton);
     Check(Get(nativeButton).fields["tooltip"]&&Get(Get(nativeButton).fields["tooltip"]).text=="Recentrer la mini-carte sur mon personnage","Native button carries the hover tooltip");
     const auto unchanged=f.state.settings;
-    NativeToggle(center,true);resourceMap::TickUi();
+    ClickCenter(center);resourceMap::TickUi();
     Check(centerRequests==1&&!Get(center).value&&f.state.settings==unchanged&&changes==0,"Center is a one-shot action even with resources disabled and nothing selected");
+    Check(!nativeClick::handler(Make("DofusButtonCustom",true)),"Foreign native buttons are not ours");
     resourceMap::TickUi();Check(centerRequests==1,"Idle ticks do not center repeatedly");
-    NativeToggle(center,true);resourceMap::TickUi();Check(centerRequests==2,"Each new activation can center again");
+    ClickCenter(center);resourceMap::TickUi();Check(centerRequests==2,"Each new activation can center again");
     f.state.settings.miniMapCenterButton=false;resourceMap::TickUi();
     Check(Get(center).styles["display"]!=0&&Get(center).fields["parent"]==miniRoot,"The option hides the center button without rebuilding the picker");
-    NativeToggle(center,true);resourceMap::TickUi();Check(centerRequests==2&&!Get(center).value,"A hidden center button never centers");
+    ClickCenter(center);resourceMap::TickUi();Check(centerRequests==2&&!Get(center).value,"A hidden center button never centers");
     f.state.settings.miniMapCenterButton=true;resourceMap::TickUi();Check(Get(center).styles["display"]==0,"Re-enabling the option shows the button again");
-    Check(Get(Get(center).fields.at("m_checkbox")).styles["visibility"]!=0,"Center must never show a checkbox square");
+    Check(Get(center).type->name=="VisualElement"&&Get(nativeButton).fields["tooltip"],"Center is a plain host around the native button, which carries the tooltip");
     // Native map wheel/move callbacks are on MiniMapContent. A UI event on
     // our controls bubbles to MiniHost without entering that map subtree.
     for(auto control:{tabs[0],scroll,center}){
@@ -449,7 +456,7 @@ void MiniMapSelectionAndLifetime(){
     Check(Get(drawer).styles["width"]==184&&Get(scroll).styles["height"]==48,"Small mini-map stays usable after resize");
     Check(Get(center).styles["top"]==152&&Get(center).styles["left"]==8,"Center button follows the mini-map height");
     const auto previous=miniRoot;
-    NativeToggle(center,true);
+    ClickCenter(center);
     miniRoot=nullptr;resourceMap::TickUi();
     Check(centerRequests==2,"Closing the mini-map discards its pending center request");
     Check(!Get(drawer).fields["parent"]&&!Get(center).fields["parent"]&&Get(previous).children==std::vector<Obj>{miniMapRoot,foreign},"Hidden mini-map detaches only owned resources and its button");
@@ -542,5 +549,5 @@ int main(){
         fake::MiniMapIdentityChanges();std::cout<<"mini-map identity replacement and reparenting passed\n";
         fake::Check(fake::handles.empty(),"Managed references leaked after fixture destruction");
         std::cout<<"Resource map UI production orchestration tests passed\n";return 0;
-    }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}
+    }catch(const std::exception& error){std::cerr<<error.what()<<'\n';for(const auto& line:fake::logs)std::cerr<<line<<'\n';return 1;}
 }

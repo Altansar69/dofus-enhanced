@@ -1,6 +1,7 @@
 #include "notebook-panel.hpp"
 #include "notebook-data.hpp"
 #include "notebook-native.hpp"
+#include "native-click.hpp"
 #include "soul-panel.hpp"
 #include "tools-ui.hpp"
 #include "module.hpp"
@@ -11,10 +12,13 @@ using namespace managed;
 constexpr const char* Ui="UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace="UnityEngine.UIElements";
 constexpr const char* Figma="Core.UILogic.Components.Figma";
-constexpr size_t Rows=5;
+constexpr size_t Rows=6;
+// FigmaIcons used by the panel: pin (window and positions), text (notes),
+// chat (messages), plus, floppy, trash, zaap, copy, playerStanding, lines, edit.
+constexpr int IconPin=225,IconText=305,IconChat=78,IconPlus=230,IconSave=148,IconTrash=316,IconZaap=336,IconCopy=99,IconPlayer=229,IconList=185,IconEdit=124,IconPrevious=44,IconNext=45;
 struct State {
-    Ref root,window,header,dragger,dependencies,cached,compositor;
-    Ref title,body,x,y,world,coordinates,status,save,remove,add,travel,prepare,copy,current,close,previous,next,reload;
+    Ref root,window,header,dragger,dependencies,cached,compositor,closeButton;
+    Ref title,body,x,y,world,coordinates,status,save,remove,add,travel,prepare,copy,current,previous,next,reload,count,useRow,useDivider;
     std::array<Ref,3> tabs;
     std::array<Ref,4> inputEvents;
     std::array<Ref,Rows> rows;
@@ -59,26 +63,69 @@ void Text(Obj element, const std::string& text, const char* setter = "set_text")
 }
 void Enabled(Obj element, bool enabled) { api.Call(element,"SetEnabled",{&enabled}); }
 void Add(Obj parent, Obj child) { api.Call(parent,"Add",{child}); }
-Obj Label(Obj parent, const std::string& text) {
+void Color(Obj element,const char* property,float r,float g,float b) {
+    float a=1;Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
+    Ref box(Style(element,property));api.Call(box.get(),"set_value",{api.object_unbox(color.get())});WriteStyle(element,property,box.get());
+}
+Obj Label(Obj parent, const std::string& text, bool muted=false) {
     Ref label(api.New(api.Class(Ui,UiSpace,"Label")));
     bool rich=false;api.Call(label.get(),"set_enableRichText",{&rich});
-    Enum(label.get(),"whiteSpace",0); Pixels(label.get(),"fontSize",14); Pixels(label.get(),"marginBottom",6);
-    float r=.9f,g=.9f,b=.9f,a=1;
-    Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
-    Ref box(Style(label.get(),"color")); api.Call(box.get(),"set_value",{api.object_unbox(color.get())}); WriteStyle(label.get(),"color",box.get());
+    Enum(label.get(),"whiteSpace",0); Pixels(label.get(),"fontSize",muted?12.f:13.f); Pixels(label.get(),"marginBottom",muted?0.f:4.f);
+    for(auto p:{"paddingLeft","paddingRight"})Pixels(label.get(),p,0);
+    if(muted)Color(label.get(),"color",.72f,.72f,.68f); else Color(label.get(),"color",.9f,.9f,.9f);
     Text(label.get(),text); Add(parent,label.get()); return label.get();
 }
 Obj Row(Obj parent) {
     Ref row(api.New(api.Class(Ui,UiSpace,"VisualElement")));
-    Enum(row.get(),"flexDirection",2); Pixels(row.get(),"marginBottom",6); Add(parent,row.get()); return row.get();
+    Enum(row.get(),"flexDirection",2); Enum(row.get(),"alignItems",2); Pixels(row.get(),"marginBottom",6); Add(parent,row.get()); return row.get();
 }
-Obj Button(Obj parent, const std::string& text) {
-    Ref button(api.New(api.Class("Core.dll",Figma,"ListElementBasic")));
-    Ref label(api.Field(button.get(),"m_textLabel"));
+// The game's own button component (same as its window and toolbar buttons):
+// native hover, pressed and disabled states, icon and caption.
+Obj Button(Obj parent, const std::string& text, int icon, int style, int status=0, const char* tooltip=nullptr) {
+    Ref button(api.New(api.Class("Core.dll",Figma,"DofusButtonCustom")));
+    int size=0; api.Call(button.get(),"set_size",{&size});
+    api.Call(button.get(),"set_mainStyle",{&style});
+    if(status)api.Call(button.get(),"set_status",{&status});
+    if(icon)api.Call(button.get(),"set_icon",{&icon});
+    if(!text.empty())Text(button.get(),text);
+    if(tooltip)Text(button.get(),tooltip,"set_tooltip");
+    Pixels(button.get(),"marginRight",6); Pixels(button.get(),"marginBottom",4);
+    Add(parent,button.get()); return button.get();
+}
+// Native list rows (choice style) for the entries: hover and activated states.
+Obj ListRow(Obj parent) {
+    Ref row(api.New(api.Class("Core.dll",Figma,"ListElementBasic")));
+    Ref label(api.Field(row.get(),"m_textLabel"));
     bool rich=false;api.Call(label.get(),"set_enableRichText",{&rich});
-    int style=1; api.Call(button.get(),"set_listElementStyle",{&style});
-    Pixels(button.get(),"minHeight",34); Pixels(button.get(),"marginRight",4); Pixels(button.get(),"minWidth",0);
-    Text(button.get(),text); Add(parent,button.get()); return button.get();
+    int style=0; api.Call(row.get(),"set_listElementStyle",{&style});
+    Pixels(row.get(),"minHeight",36); Pixels(row.get(),"minWidth",0); Pixels(row.get(),"marginBottom",2);
+    Enum(row.get(),"display",1);
+    Add(parent,row.get()); return row.get();
+}
+Obj Tab(Obj parent, const char* text) {
+    Ref tab(api.New(api.Class("Core.dll",Figma,"DofusTab")));
+    int size=1,caps=1; api.Call(tab.get(),"set_size",{&size}); api.Call(tab.get(),"set_fontCase",{&caps});
+    Text(tab.get(),text); Float(tab.get(),"flexGrow",1); Pixels(tab.get(),"minWidth",0);
+    Add(parent,tab.get()); return tab.get();
+}
+Obj Divider(Obj parent, const char* inlineText=nullptr) {
+    Ref divider(api.New(api.Class("Core.dll",Figma,"Divider")));
+    int simple=0,horizontal=0; api.Call(divider.get(),"set_componentStyle",{&simple}); api.Call(divider.get(),"set_orientation",{&horizontal});
+    if(inlineText)Text(divider.get(),inlineText,"set_inlineText");
+    Pixels(divider.get(),"marginTop",4); Pixels(divider.get(),"marginBottom",8);
+    Add(parent,divider.get()); return divider.get();
+}
+// Native titled section (the same SectionHeader as the map's resource
+// drawer), locked open; returns its content container.
+Obj Section(Obj parent, const char* title, int icon, Obj* header=nullptr) {
+    bool subContent=true,folderButton=true,no=false,hasIcon=true,open=true,locked=false;
+    Ref section(api.New(api.Class("Core.dll",Figma,"SectionHeader"),{&subContent,&folderButton,&no,&hasIcon,&no}));
+    Text(section.get(),title,"set_title"); api.Call(section.get(),"set_icon",{&icon});
+    api.Call(section.get(),"set_isOpen",{&open}); api.Call(section.get(),"set_canBeOpened",{&locked});
+    Ref content(api.New(api.Class(Ui,UiSpace,"VisualElement")));
+    for(auto p:{"paddingLeft","paddingRight"})Pixels(content.get(),p,4); Pixels(content.get(),"paddingTop",8);
+    api.Call(section.get(),"AddSubContent",{content.get()});
+    Add(parent,section.get()); if(header)*header=section.get(); return content.get();
 }
 Obj Input(Obj parent, const char* hint, const char* value, int maxLength) {
     Ref input(api.New(api.Class("Core.dll",Figma,"TextInput")));
@@ -86,22 +133,6 @@ Obj Input(Obj parent, const char* hint, const char* value, int maxLength) {
     api.Call(input.get(),"set_maxLength",{&maxLength}); Text(input.get(),value);
     Pixels(input.get(),"minWidth",0); Pixels(input.get(),"minHeight",32); Float(input.get(),"flexGrow",1);
     Add(parent,input.get()); return input.get();
-}
-void Color(Obj element,const char* property,float r,float g,float b) {
-    float a=1;Ref color(api.New(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Color"),{&r,&g,&b,&a}));
-    Ref box(Style(element,property));api.Call(box.get(),"set_value",{api.object_unbox(color.get())});WriteStyle(element,property,box.get());
-}
-Obj Section(Obj parent,const char* title) {
-    Ref card(api.New(api.Class(Ui,UiSpace,"VisualElement")));Add(parent,card.get());
-    for(auto p:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(card.get(),p,12);
-    Pixels(card.get(),"marginBottom",10);Color(card.get(),"backgroundColor",.13f,.14f,.12f);
-    for(auto p:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})Pixels(card.get(),p,6);
-    Ref heading(Label(card.get(),title));Color(heading.get(),"color",.77f,.87f,.35f);Enum(heading.get(),"unityFontStyleAndWeight",1);Pixels(heading.get(),"marginBottom",10);
-    return card.get();
-}
-void Select(Obj button,bool selected) {
-    Color(button,"backgroundColor",selected?.26f:.16f,selected?.33f:.17f,selected?.13f:.15f);
-    Ref label(api.Field(button,"m_textLabel"));Color(label.get(),"color",selected?.83f:.92f,selected?.95f:.92f,selected?.43f:.90f);
 }
 std::string Read(Obj input) { return api.String(api.Call(input,"get_text")); }
 Obj Root() {
@@ -128,15 +159,24 @@ bool Current() {
 }
 std::string Coordinates(const notebook::Entry& entry) {return "["+std::to_string(entry.x)+","+std::to_string(entry.y)+"]";}
 void Status(const std::string& text) {Text(state.status.get(),text);}
+int KindIcon(notebook::Kind kind) { return kind==notebook::Kind::Position?IconPin:kind==notebook::Kind::Note?IconText:IconChat; }
 void ShowRows() {
     state.visible.clear();
     for(const auto& entry:state.document.entries) if(entry.kind==state.kind)state.visible.push_back(entry);
     if(state.offset>=state.visible.size())state.offset=state.visible.empty()?0:((state.visible.size()-1)/Rows)*Rows;
+    const int icon=KindIcon(state.kind);
     for(size_t i=0;i<Rows;++i){
         const auto index=state.offset+i;const bool show=index<state.visible.size();
         Enum(state.rows[i].get(),"display",show?0:1);
-        if(show){const auto& entry=state.visible[index];Text(state.rows[i].get(),(entry.kind==notebook::Kind::Position?Coordinates(entry)+"  ":"")+entry.title);}
+        if(show){
+            const auto& entry=state.visible[index];
+            Text(state.rows[i].get(),(entry.kind==notebook::Kind::Position?Coordinates(entry)+"  ":"")+entry.title);
+            api.Call(state.rows[i].get(),"set_icon",{const_cast<int*>(&icon)});
+            bool activated=entry.id!=0&&entry.id==state.editing.id;api.Call(state.rows[i].get(),"set_isActivated",{&activated});
+        }
     }
+    const auto total=state.visible.size();
+    Text(state.count.get(),total==0?std::string("Aucune entrée"):total==1?std::string("1 entrée"):std::to_string(total)+" entrées");
     Enabled(state.previous.get(),state.offset>0);Enabled(state.next.get(),state.offset+Rows<state.visible.size());
 }
 void Fill(notebook::Entry entry) {
@@ -145,14 +185,14 @@ void Fill(notebook::Entry entry) {
     Text(state.title.get(),state.editing.title);Text(state.body.get(),state.editing.body);
     Text(state.x.get(),std::to_string(state.editing.x));Text(state.y.get(),std::to_string(state.editing.y));Text(state.world.get(),std::to_string(state.editing.world));
     const bool position=state.kind==notebook::Kind::Position;
-    Enum(state.coordinates.get(),"display",position?0:1);Enum(state.current.get(),"display",position?0:1);
+    Enum(state.coordinates.get(),"display",position?0:1);
     Enum(state.travel.get(),"display",position?0:1);Enum(state.body.get(),"display",position?1:0);
-    Enum(state.prepare.get(),"display",state.kind==notebook::Kind::Note?1:0);
+    Enum(state.prepare.get(),"display",state.kind==notebook::Kind::Message?0:1);
     bool multiline=state.kind==notebook::Kind::Note;api.Call(state.body.get(),"set_isMultiline",{&multiline});
-    int max=multiline?8000:300;api.Call(state.body.get(),"set_maxLength",{&max});Pixels(state.body.get(),"height",multiline?140.f:36.f);
+    int max=multiline?8000:300;api.Call(state.body.get(),"set_maxLength",{&max});Pixels(state.body.get(),"height",multiline?160.f:36.f);
+    Text(state.body.get(),state.kind==notebook::Kind::Note?"Écris ta note ici…":"Message à préparer dans le chat","set_placeholderText");
     Enabled(state.remove.get(),state.editing.id!=0&&state.readable);Enabled(state.save.get(),state.readable);
-    const char* names[]={"Positions","Notes","Messages"};
-    for(size_t i=0;i<3;++i){Text(state.tabs[i].get(),names[i]);Select(state.tabs[i].get(),static_cast<size_t>(state.kind)==i);}
+    for(size_t i=0;i<3;++i){bool on=static_cast<size_t>(state.kind)==i;api.Call(state.tabs[i].get(),"SetValueWithoutNotify",{&on});}
 }
 bool Dirty() {
     return Read(state.title.get())!=state.editing.title || Read(state.body.get())!=state.editing.body ||
@@ -175,20 +215,31 @@ void Reload() {
     try {state.document=notebook::Read(state.path);state.readable=true;ShowRows();}
     catch(...){state.readable=false;Enabled(state.save.get(),false);Enabled(state.remove.get(),false);throw;}
 }
+void SwitchTab(size_t tab) {
+    state.kind=static_cast<notebook::Kind>(tab);state.offset=0;Fill({});ShowRows();
+    Status(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche.");
+}
+// The native tabs toggle themselves on click; the panel follows their state
+// each frame and refuses a change while an edit is unsaved.
+void PollTabs() {
+    for(size_t i=0;i<3;++i){
+        if(static_cast<size_t>(state.kind)==i||!api.Value<bool>(api.Call(state.tabs[i].get(),"get_isOn")))continue;
+        if(!CanDiscard()){bool off=false;api.Call(state.tabs[i].get(),"SetValueWithoutNotify",{&off});return;}
+        SwitchTab(i);return;
+    }
+}
 bool Action(Obj owner) {
-    int tab=-1,row=-1;
-    for(int i=0;i<3;++i)if(owner&&owner==state.tabs[i].get())tab=i;
+    int row=-1;
     for(size_t i=0;i<Rows;++i)if(owner&&owner==state.rows[i].get())row=static_cast<int>(i);
-    const bool own=owner&&(tab>=0||row>=0||owner==state.save.get()||owner==state.remove.get()||owner==state.add.get()||owner==state.travel.get()||
-        owner==state.prepare.get()||owner==state.copy.get()||owner==state.current.get()||owner==state.close.get()||owner==state.previous.get()||owner==state.next.get()||owner==state.reload.get());
+    const bool own=owner&&(row>=0||owner==state.save.get()||owner==state.remove.get()||owner==state.add.get()||owner==state.travel.get()||
+        owner==state.prepare.get()||owner==state.copy.get()||owner==state.current.get()||owner==state.closeButton.get()||owner==state.previous.get()||owner==state.next.get()||owner==state.reload.get());
     if(!own)return false;
     try {
         if(!wanted||!Current()||!api.Value<bool>(api.Call(owner,"get_enabledInHierarchy")))return true;
         if(owner!=state.remove.get()){state.confirmDelete=false;Text(state.remove.get(),"Supprimer");}
-        if(owner==state.close.get()){if(CanDiscard())wanted=false;return true;}
-        if(tab>=0){if(!CanDiscard())return true;state.kind=static_cast<notebook::Kind>(tab);state.offset=0;Fill({});ShowRows();Status(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche.");}
-        else if(row>=0&&state.offset+row<state.visible.size()){if(!CanDiscard())return true;Fill(state.visible[state.offset+row]);Status("Entrée sélectionnée. Clique sur Enregistrer après modification.");}
-        else if(owner==state.add.get()){if(!CanDiscard())return true;Fill({});Status("Nouvelle entrée. Renseigne un titre puis enregistre.");}
+        if(owner==state.closeButton.get()){if(CanDiscard())wanted=false;return true;}
+        if(row>=0&&state.offset+row<state.visible.size()){if(!CanDiscard())return true;Fill(state.visible[state.offset+row]);ShowRows();Status("Entrée sélectionnée. Clique sur Enregistrer après modification.");}
+        else if(owner==state.add.get()){if(!CanDiscard())return true;Fill({});ShowRows();Status("Nouvelle entrée. Renseigne un titre puis enregistre.");}
         else if(owner==state.save.get()){auto saved=notebook::Save(state.path,Editor());Reload();Fill(saved);ShowRows();Status("Enregistré dans le carnet.");}
         else if(owner==state.remove.get()&&state.editing.id){
             if(!state.confirmDelete){state.confirmDelete=true;Text(state.remove.get(),"Confirmer la suppression");Status("Reclique sur Supprimer pour confirmer.");}
@@ -196,7 +247,7 @@ bool Action(Obj owner) {
         }
         else if(owner==state.previous.get()&&state.offset>=Rows){state.offset-=Rows;ShowRows();}
         else if(owner==state.next.get()&&state.offset+Rows<state.visible.size()){state.offset+=Rows;ShowRows();}
-        else if(owner==state.reload.get()){if(!CanDiscard())return true;Reload();Fill({});Status("Carnet rechargé.");}
+        else if(owner==state.reload.get()){if(!CanDiscard())return true;Reload();Fill({});ShowRows();Status("Carnet rechargé.");}
         else if(owner==state.current.get()){
             const auto position=notebook::CurrentPosition();Text(state.x.get(),std::to_string(position.x));Text(state.y.get(),std::to_string(position.y));Text(state.world.get(),std::to_string(position.world));
             state.captured=position;Status("Position actuelle renseignée. Clique sur Enregistrer pour la conserver.");
@@ -223,15 +274,19 @@ void Create(Obj root) {
         throw std::runtime_error("Notebook native session mismatch");
     state.window.reset(api.New(api.Class("Core.dll","Core.UILogic.Components","MagneticDragWindow")));
     Text(state.window.get(),"","set_name"); Text(state.window.get(),"Carnet personnel","set_headerTitle");
-    bool yes=true,no=false; int icon=225,size=1;
+    bool yes=true,no=false; int icon=IconPin,size=1;
     api.Call(state.window.get(),"set_headerIcon",{&icon}); api.Call(state.window.get(),"set_headerSize",{&size});
-    api.Call(state.window.get(),"set_headerShowCloseButton",{&no});
+    // The window's own close button; the game invokes no close callback of
+    // its own for a window it does not manage, the panel handles the click.
+    api.Call(state.window.get(),"set_headerShowCloseButton",{&yes});
     for(const auto* setter:{"set_verticalResizable","set_horizontalResizable","set_cornerResizable"})
         api.Call(state.window.get(),setter,{&no});
     api.Call(state.window.get(),"set_hasBackground",{&yes});
     Enum(state.window.get(),"position",1); Float(state.window.get(),"flexGrow",0);
-    Pixels(state.window.get(),"width",680); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
+    Pixels(state.window.get(),"width",660); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
     state.header.reset(api.Call(state.window.get(),"get_headerWidget"));
+    state.closeButton.reset(api.Field(state.header.get(),"closeButton"));
+    if(!state.closeButton.get()) throw std::runtime_error("Notebook native close button unavailable");
     toolsUi::AttachHeader("notebook",state.window.get());
     Ref draggers(api.Field(state.window.get(),"m_registeredElementDraggers"));
     state.dragger.reset(api.Call(draggers.get(),"get_Item",{state.header.get()}));
@@ -241,32 +296,46 @@ void Create(Obj root) {
     api.Call(state.window.get(),"Init",{state.dependencies.get()});
     Ref content(toolsUi::ScrollBody(state.window.get(),root));
     Float(content.get(),"flexGrow",0);
-    for(const auto* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"}) Pixels(content.get(),property,8);
-    Ref tabs(Row(content.get()));
+    for(const auto* property:{"paddingLeft","paddingRight","paddingTop","paddingBottom"}) Pixels(content.get(),property,10);
+    // Native tab bar.
+    Ref tabs(Row(content.get())); Pixels(tabs.get(),"marginBottom",0);
     const char* names[]={"Positions","Notes","Messages"};
-    for(size_t i=0;i<3;++i){state.tabs[i].reset(Button(tabs.get(),names[i]));Float(state.tabs[i].get(),"flexGrow",1);}
-    Ref columns(Row(content.get()));Enum(columns.get(),"flexWrap",1);
-    Ref library(Section(columns.get(),"Mes entrées"));Pixels(library.get(),"width",230);Float(library.get(),"flexShrink",0);Pixels(library.get(),"marginRight",12);
-    state.add.reset(Button(library.get(),"+ Nouvelle entrée"));Pixels(state.add.get(),"marginBottom",8);
-    for(auto& row:state.rows){row.reset(Button(library.get(),""));Enum(row.get(),"display",1);Pixels(row.get(),"height",40);}
-    Ref paging(Row(library.get()));state.previous.reset(Button(paging.get(),"←"));state.next.reset(Button(paging.get(),"→"));
-    state.reload.reset(Button(library.get(),"Actualiser la liste"));
-    Ref editor(Section(columns.get(),"Détail de l’entrée"));Float(editor.get(),"flexGrow",1);Pixels(editor.get(),"minWidth",280);
-    Label(editor.get(),"Titre");state.title.reset(Input(editor.get(),"Nom de l’entrée","",80));Pixels(state.title.get(),"marginBottom",10);
+    for(size_t i=0;i<3;++i)state.tabs[i].reset(Tab(tabs.get(),names[i]));
+    Divider(content.get());
+    // Two columns: the entries, then the editor.
+    Ref columns(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Enum(columns.get(),"flexDirection",2); Add(content.get(),columns.get());
+    Ref library(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Pixels(library.get(),"width",250); Float(library.get(),"flexShrink",0); Pixels(library.get(),"marginRight",12); Add(columns.get(),library.get());
+    Ref entries(Section(library.get(),"Mes entrées",IconList));
+    state.add.reset(Button(entries.get(),"Nouvelle entrée",IconPlus,1,0,"Commencer une nouvelle entrée dans cet onglet."));
+    Pixels(state.add.get(),"marginBottom",8);
+    for(auto& row:state.rows)row.reset(ListRow(entries.get()));
+    Ref paging(Row(entries.get()));Pixels(paging.get(),"marginTop",4);
+    state.previous.reset(Button(paging.get(),"",IconPrevious,2,0,"Entrées précédentes"));
+    state.count.reset(Label(paging.get(),"",true));Float(state.count.get(),"flexGrow",1);Enum(state.count.get(),"unityTextAlign",4);
+    state.next.reset(Button(paging.get(),"",IconNext,2,0,"Entrées suivantes"));Pixels(state.next.get(),"marginRight",0);
+    Ref editorColumn(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(editorColumn.get(),"flexGrow",1); Pixels(editorColumn.get(),"minWidth",300); Add(columns.get(),editorColumn.get());
+    Ref editor(Section(editorColumn.get(),"Détail",IconEdit));
+    state.title.reset(Input(editor.get(),"Titre de l’entrée","",80));Pixels(state.title.get(),"marginBottom",8);
     state.coordinates.reset(Row(editor.get()));
-    Label(state.coordinates.get(),"X");state.x.reset(Input(state.coordinates.get(),"X","0",5));Pixels(state.x.get(),"width",60);
-    Label(state.coordinates.get(),"Y");state.y.reset(Input(state.coordinates.get(),"Y","0",5));Pixels(state.y.get(),"width",60);
-    Label(state.coordinates.get(),"Monde");state.world.reset(Input(state.coordinates.get(),"Monde (1 : Amakna)","1",4));Pixels(state.world.get(),"width",60);
-    state.current.reset(Button(editor.get(),"Utiliser ma position actuelle"));
-    state.body.reset(Input(editor.get(),"Écris ta note ou ton message ici…","",8000));
-    Ref edit(Row(editor.get()));Pixels(edit.get(),"marginTop",12);state.save.reset(Button(edit.get(),"Enregistrer"));Select(state.save.get(),true);state.remove.reset(Button(edit.get(),"Supprimer"));
-    Label(editor.get(),"Utiliser cette entrée");
-    state.travel.reset(Button(editor.get(),"Voyager"));state.prepare.reset(Button(editor.get(),"Préparer dans le chat"));state.copy.reset(Button(editor.get(),"Copier"));
-    state.status.reset(Label(content.get(),"Le carnet est vide. Clique sur « Nouvelle entrée » pour commencer."));Pixels(state.status.get(),"maxWidth",640);
-    state.close.reset(Button(content.get(),"Fermer"));
+    state.x.reset(Input(state.coordinates.get(),"X","0",5));Pixels(state.x.get(),"width",64);Float(state.x.get(),"flexGrow",0);Pixels(state.x.get(),"marginRight",6);
+    state.y.reset(Input(state.coordinates.get(),"Y","0",5));Pixels(state.y.get(),"width",64);Float(state.y.get(),"flexGrow",0);Pixels(state.y.get(),"marginRight",6);
+    state.world.reset(Input(state.coordinates.get(),"Monde (1 : Amakna)","1",4));Pixels(state.world.get(),"width",72);Float(state.world.get(),"flexGrow",0);Pixels(state.world.get(),"marginRight",8);
+    state.current.reset(Button(state.coordinates.get(),"Ma position",IconPlayer,2,0,"Reprendre les coordonnées de la carte où tu te trouves."));Pixels(state.current.get(),"marginBottom",0);
+    state.body.reset(Input(editor.get(),"","",8000));Pixels(state.body.get(),"marginBottom",8);
+    Ref actions(Row(editor.get()));
+    state.save.reset(Button(actions.get(),"Enregistrer",IconSave,0,0,"Conserver cette entrée dans le carnet."));
+    state.remove.reset(Button(actions.get(),"Supprimer",IconTrash,2,1,"Supprimer cette entrée (confirmation au second clic)."));
+    state.useDivider.reset(Divider(editor.get(),"Utiliser"));
+    state.useRow.reset(Row(editor.get()));Pixels(state.useRow.get(),"marginBottom",0);
+    state.travel.reset(Button(state.useRow.get(),"Voyager",IconZaap,1,0,"Lancer le trajet vers cette position : zaaps, bateaux puis /travel."));
+    state.prepare.reset(Button(state.useRow.get(),"Préparer dans le chat",IconChat,1,0,"Placer ce message dans le brouillon du chat, sans l’envoyer."));
+    state.copy.reset(Button(state.useRow.get(),"Copier",IconCopy,2,0,"Copier dans le presse-papiers."));Pixels(state.copy.get(),"marginRight",0);
+    Ref footer(Row(content.get()));Pixels(footer.get(),"marginTop",6);Pixels(footer.get(),"marginBottom",0);
+    state.status.reset(Label(footer.get(),"Le carnet est vide. Clique sur « Nouvelle entrée » pour commencer.",true));Float(state.status.get(),"flexGrow",1);Float(state.status.get(),"flexShrink",1);Pixels(state.status.get(),"marginRight",8);
+    state.reload.reset(Button(footer.get(),"Actualiser",0,2,0,"Relire le fichier du carnet."));Pixels(state.reload.get(),"marginRight",0);Pixels(state.reload.get(),"marginBottom",0);
     state.path=notebook::DataPath(module->settingsPath);
     Fill({});
-    try {Reload();}catch(...){Status("Carnet illisible. Le fichier est conservé ; utilise Recharger après correction.");}
+    try {Reload();}catch(...){Status("Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.");}
     Add(root,state.window.get());Log("NOTEBOOK_PANEL_OPEN native=true");
 }
 }
@@ -275,8 +344,23 @@ void InstallNotebookPanel(){
     api.FindVerified(inputClass,"set_isMultiline",1,0x178E150);
     api.FindVerified(api.Class(Ui,UiSpace,"TextElement"),"set_enableRichText",1,0x564B1E0);
     unsubscribe=api.FindVerified(api.Class("Core.dll","Core.Engine.Inputs.Events","InputCustomEvent"),"UnSubscribe",1,0x20FF620);
-    notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);
-    toolsUi::Register("notebook","Carnet personnel",225,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;});installed=true;
+    auto tab=api.Class("Core.dll",Figma,"DofusTab");
+    api.FindVerified(tab,".ctor",0,0x1712DC0);api.FindVerified(tab,"set_text",1,0x17136F0);api.FindVerified(tab,"set_size",1,0x1713550);
+    api.FindVerified(tab,"set_fontCase",1,0x1712FC0);api.FindVerified(tab,"get_isOn",0,0x1712F50);api.FindVerified(tab,"SetValueWithoutNotify",1,0x1711970);
+    auto button=api.Class("Core.dll",Figma,"DofusButtonCustom");
+    api.FindVerified(button,".ctor",0,0x170D6F0);api.FindVerified(button,"set_icon",1,0x170DFE0);api.FindVerified(button,"set_text",1,0x170E5F0);
+    api.FindVerified(button,"set_mainStyle",1,0x170E210);api.FindVerified(button,"set_size",1,0x170E330);api.FindVerified(button,"set_status",1,0x170E400);
+    auto section=api.Class("Core.dll",Figma,"SectionHeader");
+    api.FindVerified(section,".ctor",5,0x1745F00);api.FindVerified(section,"set_title",1,0x17467B0);api.FindVerified(section,"set_icon",1,0x1746200);
+    api.FindVerified(section,"set_isOpen",1,0x17462F0);api.FindVerified(section,"set_canBeOpened",1,0x1746090);api.FindVerified(section,"AddSubContent",1,0x1744360);
+    auto divider=api.Class("Core.dll",Figma,"Divider");
+    api.FindVerified(divider,".ctor",0,0x170BC10);api.FindVerified(divider,"set_componentStyle",1,0x170BDC0);
+    api.FindVerified(divider,"set_orientation",1,0x170C160);api.FindVerified(divider,"set_inlineText",1,0x170C0C0);
+    auto listElement=api.Class("Core.dll",Figma,"ListElementBase");
+    api.FindVerified(listElement,"set_icon",1,0x1733BD0);api.FindVerified(listElement,"set_isActivated",1,0x1733BF0);
+    api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15BFB50);
+    notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);nativeClick::AddHandler(Action);
+    toolsUi::Register("notebook","Carnet personnel",IconPin,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;});installed=true;
 }
 void OpenNotebookPanel(){if(!installed||!Session())return;wanted=true;if(Current())api.Call(state.window.get(),"BringToFront");}
 void RestoreNotebookPanel() {
@@ -321,5 +405,7 @@ void TickNotebookPanel(){
     if(!state.window.get()){
         Ref root(Root());if(!root.get()||!api.Call(root.get(),"get_panel"))return;
         try{Create(root.get());}catch(...){Log("NOTEBOOK_PANEL_CREATE_ERROR native_panel_unavailable");RestoreNotebookPanel();}
+        return;
     }
+    try{PollTabs();}catch(const std::exception& error){Log(std::string("NOTEBOOK_TAB_ERROR ")+error.what());}
 }

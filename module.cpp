@@ -23,6 +23,7 @@
 #include "treasure-launch.hpp"
 #include "treasure-hunt.hpp"
 #include "map-motion.hpp"
+#include "native-click.hpp"
 #include "notebook-panel.hpp"
 #include "tools-ui.hpp"
 #include "jobs-xp-panel.hpp"
@@ -363,6 +364,7 @@ static DWORD WINAPI Worker(void*) {
         InstallDisplayShortcut();
         InstallContextDisplayMenu();
         InstallSoulHelper();
+        nativeClick::Install();
         toolsUi::Install();
         InstallTreasurePanel();
         treasure::InstallHunt();

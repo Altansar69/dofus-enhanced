@@ -721,6 +721,7 @@ void Panel::Hide() {
     state.hiding = false;
 }
 bool PanelCleanupPending() { return detail::state.cleanupPending; }
+managed::Obj PanelWindow() { using namespace detail; return state.hiding || state.cleanupPending ? nullptr : state.window.get(); }
 bool HandlePanelMenuCallback(managed::Obj callback, managed::Obj view) {
     using namespace detail;
     for (const auto& handlers : auxiliaryMenus) { try { if (handlers.second(callback, view)) return true; } catch (...) { Log("AUXILIARY_MENU_CALLBACK_ERROR"); return true; } }

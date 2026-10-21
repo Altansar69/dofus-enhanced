@@ -8,7 +8,7 @@ add_subdirectory(third_party/minhook EXCLUDE_FROM_ALL)
 add_library(DofusMiniatures SHARED module.cpp runtime.cpp features.cpp animations.cpp movement.cpp movement-dispatch.cpp movement-waits.cpp push-movement.cpp throw-movement.cpp jump-movement.cpp instant-waits.cpp script-waits.cpp combat-cleanup.cpp options-ui.cpp settings.cpp common.cpp autoload.cpp size-measurements.cpp display-shortcut.cpp context-display.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32)
 target_sources(DofusMiniatures PRIVATE treasure-launch.cpp treasure-data.cpp treasure-http.cpp treasure-hunt.cpp)
-target_sources(DofusMiniatures PRIVATE tools-ui.cpp notebook-data.cpp notebook-panel.cpp notebook-native.cpp
+target_sources(DofusMiniatures PRIVATE tools-ui.cpp notebook-data.cpp notebook-panel.cpp notebook-native.cpp native-click.cpp
   jobs-xp-data.cpp jobs-xp-http.cpp jobs-xp-panel.cpp)
 target_link_libraries(DofusMiniatures PRIVATE winhttp normaliz)
 target_sources(DofusMiniatures PRIVATE startup-options.cpp)
@@ -271,7 +271,7 @@ endif()
 add_test(NAME ToolsUiTests COMMAND ToolsUiTests)
 
 add_executable(NotebookDataTests notebook-data-tests.cpp notebook-data.cpp)
-add_executable(NotebookPanelTests notebook-panel-tests.cpp notebook-panel.cpp notebook-data.cpp soul-panel.cpp tools-ui.cpp)
+add_executable(NotebookPanelTests notebook-panel-tests.cpp notebook-panel.cpp notebook-data.cpp soul-panel.cpp tools-ui.cpp native-click.cpp)
 add_executable(NotebookNativeTests notebook-native-tests.cpp notebook-native.cpp notebook-data.cpp)
 target_link_libraries(NotebookNativeTests PRIVATE user32)
 add_executable(JobsXpDataTests jobs-xp-data-tests.cpp jobs-xp-data.cpp jobs-xp-http.cpp)

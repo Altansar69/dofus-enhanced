@@ -48,10 +48,17 @@ bool globalDragging = false;
 Obj itemSlot = nullptr, itemBound = nullptr; bool bindSuccess = true;
 Obj spellSlot = nullptr, spellBound = nullptr; bool spellEnabled = false;
 int equips = 0, saves = 0, savedX = 0, savedY = 0, nativeActions = 0, nativeUps = 0, globalWrites = 0;
+int buttonUps = 0, nativeSubMenus = 0, nativeAllHeaders = 0;
+Obj widgetService = nullptr;
 uint64_t savedGeneration = 0;
 int layoutSaves = 0;
 using ActionFn = void(*)(Obj, Method);
 using DragFn = void(*)(Obj, Obj, Method);
+struct Vec2 { float x, y; };
+using UpFn = void(*)(Obj, Obj, Vec2, int, Method);
+using SubMenuFn = Obj(*)(Obj, Method);
+using AllFn = void(*)(Obj, bool, Method);
+UpFn clickHook = nullptr; SubMenuFn subMenuHook = nullptr; AllFn allHeadersHook = nullptr;
 using FlagFn = void(*)(bool, Method);
 ActionFn actionHook = nullptr;
 ActionFn notifyHook = nullptr;
@@ -107,6 +114,11 @@ bool Enabled(Obj element) {
 }
 void DragFlag(bool value, Method) { globalDragging = value; ++globalWrites; }
 void OriginalAction(Obj, Method) { ++nativeActions; }
+void OriginalButtonUp(Obj, Obj, Vec2, int, Method) { ++buttonUps; }
+Obj OriginalSubMenu(Obj, Method) { ++nativeSubMenus; auto menu=Make("DofusContextualMenu"); Get(menu).fields["menuItems"]=Make("List"); return menu; }
+void OriginalAllHeaders(Obj, bool, Method) { ++nativeAllHeaders; }
+// The game's button component carries its own ExtendedClickable manipulator.
+Obj NativeButton() { auto button=Element("DofusButtonCustom"); auto clickable=Make("ExtendedClickable"); Get(clickable).fields["target"]=button; Get(button).fields["m_clickable"]=clickable; return button; }
 void OriginalNotify(Obj owner, Method) { Get(owner).hasBeenDragged=false; }
 void OriginalDown(Obj owner, Obj, Method) {
     auto& dragger=Get(owner);
@@ -238,7 +250,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
         const std::string prefix="UnityEngine.UIElements.IStyle.";
         Check(m.name.starts_with(prefix),"Inline styles require explicit IStyle method");
         auto operation=m.name.substr(prefix.size()); auto property=operation.substr(4);
-        const bool enumStyle=property=="position"||property=="whiteSpace"||property=="display"||property=="flexDirection";
+        const bool enumStyle=property=="position"||property=="whiteSpace"||property=="display"||property=="flexDirection"||property=="alignItems"||property=="justifyContent"||property=="unityTextAlign"||property=="flexWrap"||property=="unityFontStyleAndWeight";
         if(operation.starts_with("get_")) {
             auto box=Make(property=="color"?"StyleColor":enumStyle?"StyleEnum":property=="flexGrow"||property=="flexShrink"?"StyleFloat":"StyleLength");
             if(enumStyle) std::memcpy(Get(box).value.data(),&owner.enums[property],sizeof(int));
@@ -268,14 +280,15 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="set_name") { obj.name=Get(args.at(0)).text;return nullptr; }
     if(m.name=="set_headerTitle") { obj.text=Get(args.at(0)).text;return nullptr; }
     if(m.name=="set_headerIcon") { const int icon=*static_cast<int*>(args.at(0));Check(icon==(notebookFixture?225:treasureFixture?317:128),"Use the native panel icon in the window title");obj.enums[m.name]=icon;return nullptr; }
-    if(m.name=="set_headerShowCloseButton"||m.name=="set_verticalResizable"||m.name=="set_horizontalResizable"||m.name=="set_cornerResizable") {
+    if(m.name=="set_headerShowCloseButton") { Check(*static_cast<bool*>(args[0])==notebookFixture,"Only the notebook shows the native close button");obj.enums[m.name]=*static_cast<bool*>(args[0])?1:0;return nullptr; }
+    if(m.name=="set_verticalResizable"||m.name=="set_horizontalResizable"||m.name=="set_cornerResizable") {
         Check(!*static_cast<bool*>(args[0]),"Native compact widget must not expose resize/close controls");obj.enums[m.name]=0;return nullptr;
     }
     if(m.name=="set_hasBackground") { Check(*static_cast<bool*>(args[0]),"Use native themed background");return nullptr; }
     if(m.name=="set_headerSize") { Check(*static_cast<int*>(args[0])==1,"Native large header retains its readable 24px title");return nullptr; }
     if(m.name=="set_dragPosition") { Check(*static_cast<int*>(args[0])==0,"Cleanup disables native drag handlers");obj.movable=false;return nullptr; }
     if(m.name=="set_isUILocked") {obj.movable=!*static_cast<bool*>(args[0]);return nullptr;}
-    if(m.name=="set_listElementStyle") { Check(*static_cast<int*>(args.at(0))==1,"Action style is 1");return nullptr; }
+    if(m.name=="set_listElementStyle") { const int style=*static_cast<int*>(args.at(0));Check(style==0||style==1,"Choice or action list style");obj.enums[m.name]=style;return nullptr; }
     if(m.name=="get_headerWidget") return obj.fields.at("header");
     if(m.name=="get_contentContainer") return obj.fields.at("content");
     if(m.name=="get_panel") return Panel(self);
@@ -288,6 +301,14 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(m.name=="SetEnabled") { obj.enabled=*static_cast<bool*>(args.at(0));return nullptr; }
     if(m.name=="Add") { Add(self,args.at(0));return nullptr; }
     if(m.name=="RemoveFromHierarchy") { Detach(self);return nullptr; }
+    if(m.name=="set_icon"||m.name=="set_mainStyle"||m.name=="set_size"||m.name=="set_status"||m.name=="set_fontCase"||m.name=="set_componentStyle"||m.name=="set_orientation") {obj.enums[m.name]=*static_cast<int*>(args.at(0));return nullptr;}
+    if(m.name=="set_isActivated"||m.name=="set_canBeOpened"||m.name=="set_isOpen"||m.name=="SetHeaderSize") {obj.enums[m.name]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
+    if(m.name=="set_inlineText"||m.name=="set_title") {obj.text=Get(args.at(0)).text;return nullptr;}
+    if(m.name=="AddSubContent") {Add(obj.fields.at("content"),args.at(0));return nullptr;}
+    if(m.name=="get_isOn") return Box(obj.enums["isOn"]!=0);
+    if(m.name=="SetValueWithoutNotify") {obj.enums["isOn"]=*static_cast<bool*>(args.at(0))?1:0;return nullptr;}
+    if(m.name=="get_active"||m.name=="ContainsPointer") return Box(true);
+    if(m.name=="get_target") return obj.fields.at("target");
     throw std::runtime_error("Unexpected instance call "+obj.type->name+"."+m.name);
 }
 }
@@ -312,7 +333,8 @@ Obj Api::New(Klass klass,std::initializer_list<void*> arguments) const {
     if(name=="Length") { Check(args.size()==2,"Length argc");auto box=Make(name);std::memcpy(Get(box).value.data(),args[0],4);std::memcpy(Get(box).value.data()+4,args[1],4);return box; }
     if(name=="Color") { Check(args.size()==4,"Color argc");auto box=Make(name);for(size_t i=0;i<4;++i)std::memcpy(Get(box).value.data()+i*4,args[i],4);return box; }
     if(name=="ScrollView") {auto scroll=Element(name),content=Element("ScrollContent");Add(scroll,content);Get(scroll).fields["content"]=content;return scroll;}
-    if(name=="Label"||name=="ListElementBasic"||name=="VisualElement"||name=="TextInput") {Check(args.empty(),"Native element ctor argc");auto obj=Element(name);if(name=="ListElementBasic"){latestAction=obj;auto label=Element("DofusLabel");Get(obj).fields["m_textLabel"]=label;Add(obj,label);}return obj;}
+    if(name=="Label"||name=="ListElementBasic"||name=="VisualElement"||name=="TextInput"||name=="DofusTab"||name=="Divider"||name=="DofusButtonCustom") {Check(args.empty(),"Native element ctor argc");auto obj=name=="DofusButtonCustom"?NativeButton():Element(name);if(name=="ListElementBasic"){latestAction=obj;auto label=Element("DofusLabel");Get(obj).fields["m_textLabel"]=label;Add(obj,label);}return obj;}
+    if(name=="SectionHeader") {Check(args.size()==5&&*static_cast<bool*>(args[0])&&*static_cast<bool*>(args[1])&&!*static_cast<bool*>(args[2])&&*static_cast<bool*>(args[3])&&!*static_cast<bool*>(args[4]),"Native section header ctor ABI");auto section=Element(name);auto content=Element("SectionContent");Add(section,content);Get(section).fields["content"]=content;return section;}
     if(name=="DofusContextualMenuManipulator") {
         Check(args.size()==4&&args[0]==contextService&&!args[1]&&*static_cast<int*>(args[2])==0&&!*static_cast<bool*>(args[3]),"Native left-click menu constructor with null fallback");
         return Make(name);
@@ -320,7 +342,7 @@ Obj Api::New(Klass klass,std::initializer_list<void*> arguments) const {
     Check(name=="MagneticDragWindow"&&args.empty(),"Native magnetic widget ctor ABI");
     auto window=Element(name);latestWindow=window;Get(window).name="native-default";Get(window).movable=true;
     auto header=Element("HeaderWidget"),content=Element("Content"),dragger=Make("ElementDraggerWithBounds");
-    auto rightButton=Element("DofusButtonCustom");Get(header).fields["rightButton"]=rightButton;Add(header,rightButton);
+    auto rightButton=NativeButton(),closeButton=NativeButton();Get(header).fields["rightButton"]=rightButton;Add(header,rightButton);Get(header).fields["closeButton"]=closeButton;Add(header,closeButton);
     Get(window).fields["header"]=header;Get(window).fields["content"]=content;Get(window).fields["m_movableManipulator"]=dragger;
     Get(dragger).fields["header"]=header;Get(dragger).fields["window"]=window;Add(window,header);Add(window,content);
     auto dict=Make("Dictionary");Get(dict).fields["header"]=header;Get(dict).fields["dragger"]=dragger;
@@ -363,7 +385,14 @@ void* Api::Native(Method method,uintptr_t rva) const {
         {0x741A60,{"ydh",0}}, {0x11E7EC0,{"ydj",0}}, {0x11E7E80,{"ydl",0}},
         {0x68D2D0,{"get_Target",0}}, {0x20FF620,{"UnSubscribe",1}}, {0x16714A0,{"RemoveSnapPreview",0}},
         {0x1734630,{".ctor",0}}, {0x1734700,{"set_listElementStyle",1}},
-        {0x57A9FD0,{"HasMouseCapture",1}}, {0x57AA140,{"ReleaseMouse",1}}
+        {0x57A9FD0,{"HasMouseCapture",1}}, {0x57AA140,{"ReleaseMouse",1}},
+        {0x15B27B0,{"SetHeaderSize",1}},{0x17D9B00,{"CreateHeaderSubMenu",0}},{0x17DDDD0,{"SetAllHeaderState",1}},
+        {0x172B6A0,{"ProcessUpEvent",3}},{0x752840,{"get_active",0}},{0x5590600,{"ContainsPointer",1}},{0x30D6960,{"get_target",0}},{0x55F5EF0,{"get_enabledInHierarchy",0}},
+        {0x1712DC0,{".ctor",0}},{0x17136F0,{"set_text",1}},{0x1713550,{"set_size",1}},{0x1712FC0,{"set_fontCase",1}},{0x1712F50,{"get_isOn",0}},{0x1711970,{"SetValueWithoutNotify",1}},
+        {0x170D6F0,{".ctor",0}},{0x170DFE0,{"set_icon",1}},{0x170E5F0,{"set_text",1}},{0x170E210,{"set_mainStyle",1}},{0x170E330,{"set_size",1}},{0x170E400,{"set_status",1}},
+        {0x1745F00,{".ctor",5}},{0x17467B0,{"set_title",1}},{0x1746200,{"set_icon",1}},{0x17462F0,{"set_isOpen",1}},{0x1746090,{"set_canBeOpened",1}},{0x1744360,{"AddSubContent",1}},
+        {0x170BC10,{".ctor",0}},{0x170BDC0,{"set_componentStyle",1}},{0x170C160,{"set_orientation",1}},{0x170C0C0,{"set_inlineText",1}},
+        {0x1733BD0,{"set_icon",1}},{0x1733BF0,{"set_isActivated",1}}
     };
     const auto& contract=expected.at(rva);
     fake::Check(m.name==contract.first&&m.count==contract.second,"Native metadata contract mismatch");
@@ -372,9 +401,11 @@ void* Api::Native(Method method,uintptr_t rva) const {
 }
 Module* module = nullptr;
 Module::Module(std::filesystem::path): features(nullptr),ui(nullptr) {}
+void Module::Change(Settings value,bool) {settings=std::move(value);}
 managed::Obj Module::FindService(const char* name) const {
     if(std::string(name)=="fpz")return fake::contextService;
     if(std::string(name)=="fqp")return fake::Get(fake::nativeRoot).fields.at("layersService");
+    if(std::string(name)=="frm")return fake::widgetService;
     fake::Check(std::string(name)=="fpt","Panel only requests native widget dependencies");return fake::dependencies;
 }
 void Log(const std::string& message) {fake::logs.push_back(message);}
@@ -397,6 +428,9 @@ void AddHook(managed::Method m,uintptr_t rva,void* replacement,void** original) 
         fake::Check(method.name=="OnMouseDown"&&method.count==1,"Drag-down hook ABI");
         fake::downHook=reinterpret_cast<fake::DragFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalDown);return;
     }
+    if(rva==0x172B6A0) {fake::Check(method.name=="ProcessUpEvent"&&method.count==3,"Native button click hook ABI");fake::clickHook=reinterpret_cast<fake::UpFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalButtonUp);return;}
+    if(rva==0x17D9B00) {fake::Check(method.name=="CreateHeaderSubMenu"&&method.count==0,"Header sub-menu hook ABI");fake::subMenuHook=reinterpret_cast<fake::SubMenuFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalSubMenu);return;}
+    if(rva==0x17DDDD0) {fake::Check(method.name=="SetAllHeaderState"&&method.count==1,"All headers hook ABI");fake::allHeadersHook=reinterpret_cast<fake::AllFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalAllHeaders);return;}
     fake::Check(rva==0x16709C0&&method.name=="OnMouseUp"&&method.count==1,"Drag hook ABI");
     fake::upHook=reinterpret_cast<fake::DragFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalUp);
 }

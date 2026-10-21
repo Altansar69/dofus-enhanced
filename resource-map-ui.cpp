@@ -3,6 +3,7 @@
 #include "resource-map-policy.hpp"
 #include "resource-map-icons.hpp"
 #include "resource-map-render.hpp"
+#include "native-click.hpp"
 #include "module.hpp"
 #include <algorithm>
 #include <array>
@@ -19,7 +20,8 @@ constexpr const char* UiNamespace="UnityEngine.UIElements";
 constexpr const char* Figma="Core.UILogic.Components.Figma";
 constexpr size_t MaxRows=128;
 // Mini-map centering control: the native button component and icon of the
-// full map's btn_player, hosted by a square polled CheckboxCustom.
+// full map's btn_player in a square host; its click is observed through the
+// shared native button hook and consumed by the next UI tick.
 constexpr float CenterSize=40;
 constexpr int PlayerIcon=228; // FigmaIcons.player
 struct Rect {float x,y,width,height;};
@@ -39,10 +41,10 @@ struct State {
     Ref owner,root,mapRoot,panel,scroll,content,resources,master,compositor,character,cartography;
     std::vector<Row> rows;
     std::vector<int> selection;
-    Ref toolbar,center;
+    Ref toolbar,center,centerButton;
     std::vector<Ref> tabs,groups,cursorTargets;
     int activeJob=-1;
-    bool enabled=true,attached=false,mini=false,cleaning=false,shown=true,centerShown=true;
+    bool enabled=true,attached=false,mini=false,cleaning=false,shown=true,centerShown=true,centerRequested=false;
     float height=-1,width=-1,left=-1,top=-1,centerLeft=-1,centerTop=-1;
 };
 std::unique_ptr<State> owned,miniOwned;
@@ -214,22 +216,19 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         api.Call(next->resources.get(),"Add",{next->scroll.get()});
         Style(next->scroll.get(),"backgroundColor",Color{.105f,.115f,.12f,1});
         Rounded(next->scroll.get(),8);
-        next->center.reset(Checkbox("",false));
-        HideCheckboxSquare(next->center.get());
-        if(auto label=api.Field(next->center.get(),"m_rightLabel"))Style(label,"display",1);
+        next->center.reset(Element());
         Style(next->center.get(),"position",1);
         Pixels(next->center.get(),"width",CenterSize);Pixels(next->center.get(),"height",CenterSize);
         for(auto side:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(next->center.get(),side,0);
         Style(next->center.get(),"alignItems",2);Style(next->center.get(),"justifyContent",1);
         Text(next->center.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
-        // Same native component and icon as btn_player on the full map. The
-        // button stays pickable so its native hover state, cursor and tooltip
-        // work; without an action of its own, the click bubbles to the polled
-        // checkbox around it.
+        // Same native component and icon as btn_player on the full map: native
+        // hover state, cursor and tooltip. Its clickable stops pointer
+        // propagation, so the click is reported by nativeClick (CenterClick).
         Ref button(api.object_new(buttonClass));api.Invoke(buttonCtor,button.get());
         int player=PlayerIcon;api.Invoke(buttonIcon,button.get(),{&player});
         Text(button.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
-        api.Call(next->center.get(),"Add",{button.get()});
+        api.Call(next->center.get(),"Add",{button.get()});next->centerButton.reset(button.get());
     }else{
         Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
         Rounded(next->resources.get(),8);
@@ -303,11 +302,7 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         int64_t hand=2097152;int normal=0;
         api.Invoke(enableCursor,nullptr,{tab.get(),&hand,&normal});
     }
-    if(target->center.get()){
-        target->cursorTargets.emplace_back(target->center.get());
-        int64_t hand=2097152;int normal=0;
-        api.Invoke(enableCursor,nullptr,{target->center.get(),&hand,&normal});
-    }
+    // The centering button's native component carries its own hover cursor.
     Log("RESOURCE_MAP_UI_READY view="+std::string(mini?"mini":"full")+" rows="+std::to_string(target->rows.size()));
 }
 void Sync(State& state){
@@ -357,6 +352,12 @@ void DisableHook(Obj owner,Method method){
     catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_DISABLE_ERROR ")+error.what());}
     originalDisable(owner,method);
 }
+}
+// Native click on the mini-map's centering button: remembered for the next
+// UI tick, which validates the surface before centering.
+bool CenterClick(Obj owner){
+    if(!miniOwned||!owner||owner!=miniOwned->centerButton.get())return false;
+    miniOwned->centerRequested=true;return true;
 }
 void InstallUi(){
     if(installed)return;
@@ -410,6 +411,7 @@ void InstallUi(){
     bringToFront=api.FindVerified(api.Class(UiAssembly,UiNamespace,"VisualElement"),"BringToFront",0,0x55E08E0);
     AddHook(api.Find(native,"OnEnable",0),0x1BAEA20,reinterpret_cast<void*>(EnableHook),reinterpret_cast<void**>(&originalEnable));
     AddHook(api.Find(native,"OnDisable",0),0x1BAE560,reinterpret_cast<void*>(DisableHook),reinterpret_cast<void**>(&originalDisable));
+    nativeClick::AddHandler(CenterClick);
     installed=true;
 }
 void TickUi(){
@@ -431,8 +433,8 @@ void TickUi(){
         if(!miniOwned&&surface.root.get())Attach(miniOwned,nullptr,&surface);
         if(miniOwned){
             if(!Layout(*miniOwned,&surface)){Detach(miniOwned);return;}
-            if(api.Value<bool>(api.Invoke(checkboxValue,miniOwned->center.get()))){
-                bool off=false;api.Invoke(checkboxSet,miniOwned->center.get(),{&off});
+            if(miniOwned->centerRequested){
+                miniOwned->centerRequested=false;
                 if(module->settings.miniMapCenterButton)CenterMiniMap(surface);
             }
             PollTabs(*miniOwned);Poll(*miniOwned);ApplyVisibility(*miniOwned);

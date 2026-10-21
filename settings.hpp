@@ -24,6 +24,7 @@ struct Settings {
     bool resourceMapEnabled = true;
     bool resourceMiniMapEnabled = true;
     bool miniMapCenterButton = true;
+    bool smallHeaderSoul = false, smallHeaderTreasure = false, smallHeaderNotebook = false; // "Réduire les titres des modules"
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
     static bool ValidResourceSelection(const std::vector<int>& items) {

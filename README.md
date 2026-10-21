@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.2.0** (révision r94).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.3.0** (révision r95).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -51,6 +51,10 @@ et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, en haut à droite.
 Un second clic ou **⋯ → Masquer le module** ferme le panneau.
 Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
+Son entrée **Réduire les titres des modules** propose en revanche les trois
+panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet) à la suite des modules
+du jeu ; le choix est conservé entre les lancements et **Tout réduire** /
+**Tout agrandir** les suivent.
 La fenêtre utilise les contrôles et le déplacement natifs de Dofus.
 À l’ouverture, le départ reprend la carte où tu te trouves et, si une chasse est
 en cours, sa direction et son indice sont lus dans le jeu (**Étape en cours**
@@ -66,8 +70,16 @@ Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 ## Carnet
 
 Cliquer sur le bouton **Carnet personnel**, dans la même barre, à côté de **Capture d’âme**.
-Un second clic ou **⋯ → Masquer le module** ferme le carnet.
-Le menu ⋯ des modules ne le liste plus non plus.
+Un second clic, **⋯ → Masquer le module** ou le bouton de fermeture de la barre
+de titre ferme le carnet (une modification non enregistrée demande un second
+clic). Le menu ⋯ des modules ne le liste plus non plus, sauf dans **Réduire les
+titres des modules**.
+Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
+**Notes** et **Messages**, deux sections **Mes entrées** (liste à l’icône de
+l’onglet, entrée courante surlignée, pagination et compteur) et **Détail**
+(titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
+**Ma position**, puis **Voyager**, **Préparer dans le chat** et **Copier** selon
+l’onglet), et une ligne d’état avec **Actualiser**.
 Un brouillon modifié demande une confirmation avant d’être abandonné.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
@@ -132,13 +144,17 @@ sélectionnée. Décocher l’affichage d’une carte, dans son volet ou dans le
 options, masque aussi le volet de sélection de cette carte jusqu’à réactivation
 par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
 bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
-carte, avec son survol et son infobulle natifs. Le recentrage, sur la grande
-carte comme sur la mini-carte, glisse pendant deux secondes jusqu’au
-personnage ; si la carte est plus dézoomée que l’échelle de départ du monde, le
-zoom revient à cette échelle pendant le glissement. Un glissement de la souris
-ou un coup de molette l’interrompt. Le zoom à la molette est lui aussi lissé sur
-quelques images au lieu de sauter d’un cran. L’option **Bouton de recentrage sur
-la mini-carte** permet de masquer le bouton.
+carte, avec son survol et son infobulle natifs ; son clic est lu directement sur
+le composant du jeu. Le recentrage, sur la grande carte comme sur la mini-carte,
+se fait d’abord dans l’état du jeu (zoom ramené à l’échelle de départ du monde si
+la carte est plus dézoomée, puis déplacement natif sur ta case), et seule
+l’image glisse pendant deux secondes jusqu’à cet état. Le zoom à la molette
+fonctionne de même : chaque cran est appliqué d’un coup par le jeu, puis l’image
+rejoint le nouveau niveau en un cinquième de seconde, le point sous la souris
+restant fixe ; aucun recalcul natif par image, donc pas de saccade. Un
+glissement de la souris, un autre déplacement du jeu ou un arrêt du mod ramène
+l’image sur l’état du jeu. L’option **Bouton de recentrage sur la mini-carte**
+permet de masquer le bouton.
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
@@ -158,7 +174,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La 1.2.0 (r94) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La 1.3.0 (r95) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
@@ -191,7 +207,7 @@ des métadonnées du jeu.
 
 MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r94 ne le lance pas et ne dépend pas de son moteur.
+chargeurs, mais le panneau natif r95 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
 `third_party/nlohmann` et `LISEZ-MOI.txt`.
 
