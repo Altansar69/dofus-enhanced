@@ -1,4 +1,16 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 102 — VERSION 1.7.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 103 — VERSION 1.7.1
+
+R103 — VERSION 1.7.1 : REPÈRES DU MOD AVEC ÉTALEMENT ANIMÉ
+- Ressources sur les cartes : le regroupement natif de la 1.7.0 ne
+  fonctionne pas en jeu (pas de séparation, taille incorrecte, lenteur à
+  l’apparition) ; il est abandonné. Retour au rendu de la 1.5.2 (icône et
+  pastille dessinées par le mod, pile par case, total de la case sur la
+  pastille du dessus quand la pile est fermée, quantités par ressource une
+  fois ouverte), avec un glissement animé d’un sixième de seconde à
+  l’ouverture et à la fermeture de la pile au survol de la souris.
+- Les éléments du jeu posés sur la même case (foreuse, indice) ne sont pas
+  déplacés par le mod : ils gardent leur comportement natif.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R102 — VERSION 1.7.0 : SÉPARATION NATIVE DES RESSOURCES, AVEC LES ÉLÉMENTS DU JEU
 - Ressources sur les cartes : retour au regroupement natif du jeu, corrigé.

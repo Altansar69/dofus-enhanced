@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.7.0** (révision r102).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.7.1** (révision r103).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -171,16 +171,14 @@ sont disponibles, avec leur icône et leur niveau.
 Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
 des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
 pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Chaque ressource d’une case est un repère natif du jeu, dimensionné par son
-constructeur, dans lequel le mod dessine l’image de l’objet (catalogue du jeu)
-et sa pastille de quantité. Les repères d’une même case rejoignent le groupe de
-position du jeu, celui de ses propres indices : pastille de nombre, étalement
-animé au survol de la souris et repli sont ceux de Dofus, et la pile s’étale
-avec les éléments du jeu présents sur la case (une foreuse, un indice). Quand le
-groupe ne contient que des ressources du mod, sa pastille affiche le total de la
-case (3 cuivre et 11 fer donnent 14) et les quantités par ressource
-n’apparaissent qu’une fois le groupe étalé ; avec un élément du jeu dans le
-groupe, la pastille de nombre du jeu est laissée telle quelle.
+Chaque repère est dessiné par le mod avec l’image de l’objet (catalogue du jeu)
+et sa pastille de quantité. Plusieurs ressources sur une même case s’empilent
+avec un léger décalage, centrées sur la case : la pastille du dessus affiche
+alors le total de la case (3 cuivre et 11 fer donnent 14). Au survol de la
+souris, la pile glisse en un sixième de seconde vers une grille côte à côte où
+chaque ressource montre sa propre quantité, puis glisse de même vers la pile
+quand le curseur s’éloigne. Les éléments du jeu posés sur la même case (une
+foreuse, un indice) ne sont pas déplacés par le mod.
 Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
 Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les
