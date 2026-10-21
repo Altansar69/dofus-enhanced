@@ -1,4 +1,16 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 99 — VERSION 1.5.1
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 100 — VERSION 1.5.2
+
+R100 — VERSION 1.5.2 : REPÈRES DE RESSOURCES RÉPARÉS, TOTAL PAR CASE
+- Ressources sur les cartes : retour au rendu de la 1.4.0 (icône et pastille
+  dessinées par le mod, pile par case, étalement au survol). Le repère natif
+  de la 1.5.0 n’a pas de taille tant que le jeu n’a pas chargé sa propre
+  image : l’icône dessinée dedans restait invisible et le groupe natif
+  s’effondrait (un seul minerai : son nombre sans l’image ; deux minerais :
+  plus rien).
+- Quantités : empilées, la pastille du dessus affiche le total de la case
+  (3 cuivre + 11 fer = 14) et les autres sont masquées ; une fois la pile
+  étalée au survol, chaque ressource montre sa propre quantité.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R99 — VERSION 1.5.1 : STATUT « SAC » STABLE DANS L’HÔTEL DE VENTE
 - Chat, archimonstres : l’indication « Sac : en sac / pas en sac » ne retombe
