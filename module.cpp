@@ -26,6 +26,8 @@
 #include "notebook-panel.hpp"
 #include "tools-ui.hpp"
 #include "jobs-xp-panel.hpp"
+#include "metamob-sync.hpp"
+#include "capture-detect.hpp"
 #include <MinHook.h>
 #include <fstream>
 #include <mutex>
@@ -86,7 +88,11 @@ static Obj Service(Obj dictionary, const char* name, bool diagnostic = true) {
     return nullptr;
 }
 Module::Module(std::filesystem::path path) : folder(std::move(path)), settingsPath(ReleaseSettingsPath(folder)), settings(Settings::Read(settingsPath, &autoLoadPreferenceRead)),
-    features(std::make_unique<Features>()), ui(std::make_unique<OptionsUi>()) {}
+    features(std::make_unique<Features>()), ui(std::make_unique<OptionsUi>()) {
+    // Known only when the file holds the line; both copies then agree.
+    try { sharedMetamobSync = Settings::ReadMetamobSync(settingsPath); } catch (...) {}
+    if (sharedMetamobSync) settings.metamobSync = *sharedMetamobSync;
+}
 bool Module::InCombat() const {
     return servicesReady && fight.get() && Read<bool>(fight.get(), 0xB0);
 }
@@ -150,6 +156,7 @@ void Module::Change(Settings next, bool save) {
     if (!Settings::ValidAnimationMode(next.animationMode)) throw std::runtime_error("Invalid animation mode");
     if (!Settings::ValidMonsterGlowMode(next.monsterGlowMode)) throw std::runtime_error("Invalid monster glow mode");
     if (!Settings::ValidResourceSelection(next.resourceMapItems)) throw std::runtime_error("Invalid resource map selection");
+    const bool withMetamobSync = !save || KeepSharedMetamobSync(next);
     if (next.mode > 0) next.preferredMode = next.mode;
     if (next.roleplayMode > 0) next.preferredRoleplayMode = next.roleplayMode;
     if (next.autoLoad != settings.autoLoad) ConfigureAutoLoad(next.autoLoad, folder, ModulePath(nullptr));
@@ -163,10 +170,40 @@ void Module::Change(Settings next, bool save) {
     }
     features->Refresh(ActiveDisplayMode(settings, combat) != 0);
     ui->Sync();
-    if (save) settings.Save(settingsPath);
+    if (save) SaveSettings(withMetamobSync);
     Log("SETTINGS combat=" + std::to_string(settings.mode) + " roleplay=" + std::to_string(settings.roleplayMode) +
         " animations=" + std::to_string(settings.animationMode) + " autoLoad=" + std::to_string(settings.autoLoad) +
         " sizing=reduce percent=60 minimum=50");
+}
+// metamobSync is shared by every game client of this installation (one per
+// character): a save keeps the file's value unless this client changed it
+// since it last read or wrote it, so an older in-memory copy never reverts
+// another client's choice. A file written by an older revision keeps ours, if
+// this client has one: a client started after an older revision dropped the
+// line leaves it out rather than write its default as every client's choice.
+// Returns whether the save writes the line.
+bool Module::KeepSharedMetamobSync(Settings& next) const {
+    if (next.metamobSync != sharedMetamobSync.value_or(false)) return true; // changed here
+    std::optional<bool> shared;
+    try { shared = Settings::ReadMetamobSync(settingsPath); } catch (...) {}
+    if (shared) next.metamobSync = *shared;
+    return shared.has_value() || sharedMetamobSync.has_value();
+}
+void Module::SaveSettings(bool withMetamobSync) {
+    settings.Save(settingsPath, withMetamobSync);
+    if (withMetamobSync) sharedMetamobSync = settings.metamobSync;
+}
+// Another client's tick or untick reaches this one within 2 s: capture
+// detection, the sync (settings.metamobSync) and the checkbox follow the file.
+void Module::FollowSharedSettings() {
+    std::optional<bool> shared;
+    try { shared = Settings::ReadMetamobSync(settingsPath); } catch (...) { return; }
+    if (!shared || *shared == sharedMetamobSync) return; // unchanged, or written by an older revision
+    sharedMetamobSync = *shared;
+    if (settings.metamobSync == *shared) return;
+    settings.metamobSync = *shared;
+    Log(std::string("SETTINGS_SHARED metamobSync=") + (*shared ? "1" : "0"));
+    ui->Sync();
 }
 void Module::Pump(Obj source) {
     if (stopped) return;
@@ -202,13 +239,14 @@ void Module::Pump(Obj source) {
     }
     if (GetTickCount64() >= nextAutoLoadCheck) {
         nextAutoLoadCheck = GetTickCount64() + 2000;
+        FollowSharedSettings();
         try {
             const bool registered = AutoLoadEnabled(folder, ModulePath(nullptr));
             if (registered != settings.autoLoad) { settings.autoLoad = registered; changed = true; }
         } catch (const std::exception& error) { Log(std::string("AUTOLOAD_STATUS_ERROR ") + error.what()); }
     }
     if (changed) {
-        settings.Save(settingsPath);
+        SaveSettings(KeepSharedMetamobSync(settings));
         ui->Sync();
     }
     const auto startupStage = [&](const char* name, const auto& action) {
@@ -230,6 +268,8 @@ void Module::Pump(Obj source) {
     startupStage("spouse-party-widget", [] { TickSpousePartyWidget(); });
     startupStage("chat-links", [] { TickChatTpLinks(); });
     startupStage("chat-travel", [] { TickChatTravel(); });
+    startupStage("capture-detect", [] { TickCaptureDetect(); });
+    startupStage("metamob-sync", [&] { metamob::TickSync(settings.metamobSync); });
     startupStage("map-travel", [] { TickMapTravel(); });
     startupStage("resource-map-render", [] { resourceMap::PumpRender(GetTickCount64()); });
     startupStage("resource-map-ui", [] { resourceMap::TickUi(); });
@@ -249,7 +289,7 @@ void Module::Pump(Obj source) {
             }
             // Persist both success and refusal so a disabled/failed setup is
             // never re-enabled automatically on a later launch.
-            try { settings.Save(settingsPath); }
+            try { SaveSettings(KeepSharedMetamobSync(settings)); }
             catch (const std::exception& error) { Log(std::string("SETTINGS_DEFAULT_SAVE_ERROR ") + error.what()); }
             ui->Sync();
         }
@@ -262,6 +302,8 @@ void Module::Stop() {
     RestoreMapPreload();
     RestoreMapTravel();
     RestoreChatTravel();
+    RestoreCaptureDetect();
+    metamob::RestoreSync();
     RestoreChatTpLinks();
     RestoreSoulGroupMenu();
     RestoreSpousePartyMenu();
@@ -409,6 +451,10 @@ static DWORD WINAPI Worker(void*) {
         InstallSpousePartyMenu();
         InstallSpousePartyWidget();
         InstallChatTravel();
+        // Metamob capture sync: optional, the rest of the mod runs without it.
+        metamob::InstallSync(module->settingsPath, metamob::SendWinHttp, PostChatNotice);
+        module->ui->metamob = {metamob::SubmitKey, metamob::ForgetStoredKey, metamob::KeyStored, PostChatNotice};
+        InstallCaptureDetect(metamob::EnqueueCapture); // never throws: CAPTURE_DETECT_DISABLED disables only this
         InstallMapTravel();
         resourceMap::InstallUi();
         resourceMap::InstallRender();

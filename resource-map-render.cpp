@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <tuple>
+#include <unordered_map>
 
 namespace resourceMap {
 namespace {
@@ -37,8 +38,8 @@ struct Marker {
     double zoom = 0, hintScale = 0; // Placement arguments last given to the native marker.
     // Cell summary for the native position group: total quantity shown on the
     // group's own count badge while collapsed; per-resource badges while spread.
-    bool grouped = false, interior = false;
-    int total = 0, labelDisplay = -1, members = 0; // members: our markers in the cell
+    bool interior = false;
+    int total = 0, labelDisplay = -1;
 };
 struct View {
     Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer, groupLayer;
@@ -328,46 +329,43 @@ void UpdateLabel(Marker& marker,const Frame& f,const Count& count) {
     }
     if(marker.content!=quantity){SetText(marker.label.get(),quantity);marker.content=quantity;}
 }
-// Native position groups (the game's own stack/spread of same-cell hints): the
-// group's count badge shows the cell's total quantity while it is collapsed and
-// the per-resource badges only while it is spread. The game rewrites the badge
-// with its member count on its own refreshes, so this runs every pump, once
-// per grouped cell.
+// Native position groups (the game's own stack/spread of same-cell hints).
+// A stacked cell (two members or more, ours or the game's own: a drill, a
+// clue, an attitude) shows the cell's total resource quantity on the group's
+// count badge while it is collapsed, and the per-resource badges only once it
+// is spread; a lone marker keeps its own badge. The game rewrites the group
+// badge with its member count on its own refreshes, so this runs every pump,
+// once per cell.
 void SyncGroups(View& v) {
-    struct CellState { int x, y; bool expanded; bool found; };
+    struct CellState { bool stacked, expanded, found; };
     std::vector<CellState> cells;
+    std::unordered_map<int64_t,size_t> index;
+    const auto cellKey=[](int x,int y){return (int64_t(x)<<32)^int64_t(uint32_t(y));};
     for(auto& m:v.markers) {
-        if(!m.native.get()||!m.label.get()||!m.grouped)continue;
-        if(std::any_of(cells.begin(),cells.end(),[&](const CellState& c){return c.x==m.x&&c.y==m.y;}))continue;
-        CellState state{m.x,m.y,false,false};
+        if(!m.native.get()||!m.label.get()||!index.emplace(cellKey(m.x,m.y),cells.size()).second)continue;
+        CellState state{false,false,false};
         Vec2 key{float(m.x),float(m.y)};
         Ref group(api.Invoke(methods.group,v.manager.get(),{&key}));
         if(group.get()) {
             state.found=true;
             state.expanded=*static_cast<bool*>(api.FieldAddress(group.get(),"<dtwx>k__BackingField"));
-            // The group's own count badge shows the cell's total quantity only
-            // while every member is one of ours; with one of the game's own
-            // hints in the group (a drill, a clue) its member count stays.
             Ref members(api.Field(group.get(),"<dtww>k__BackingField"));
-            const int memberCount=members.get()?api.Value<int>(api.Call(members.get(),"get_Count")):0;
-            if(memberCount==m.members) {
+            state.stacked=members.get()&&api.Value<int>(api.Call(members.get(),"get_Count"))>1;
+            if(state.stacked) {
                 Ref badge(api.Field(group.get(),"dtwz"));
                 const auto text=std::to_string(m.total)+(m.interior?"*":"");
                 if(badge.get()&&api.String(api.Call(badge.get(),"get_text"))!=text)SetText(badge.get(),text);
             }
         }
-        // A native reset (the map's own Display) empties the manager's groups:
-        // the next pass recreates the markers of that cell.
-        else v.cached=false;
+        // A native reset (the map's own Display) empties the manager's groups
+        // and disposes the markers: the next pass recreates those of the cell.
+        else if(MarkerRegistered(v,m)!=m.native.get()) v.cached=false;
         cells.push_back(state);
     }
     for(auto& m:v.markers) {
         if(!m.native.get()||!m.label.get())continue;
-        int display=0;
-        if(m.grouped) {
-            auto cell=std::find_if(cells.begin(),cells.end(),[&](const CellState& c){return c.x==m.x&&c.y==m.y;});
-            display=cell!=cells.end()&&cell->found&&!cell->expanded?1:0;
-        }
+        const auto& cell=cells[index.at(cellKey(m.x,m.y))];
+        const int display=cell.found&&cell.stacked&&!cell.expanded?1:0;
         if(m.labelDisplay!=display){Style(m.label.get(),"display",display);m.labelDisplay=display;}
     }
 }
@@ -426,7 +424,7 @@ bool Render(View& v,const Frame& f) {
             // markers like the game's own refresh does for its hints.
             else if(marker.zoom!=f.zoom||marker.hintScale!=f.hintScale)Place(v,marker,f);
             UpdateLabel(marker,f,count); marker.used=true;
-            marker.grouped=cell.counts.size()>1; marker.total=total; marker.interior=interior; marker.members=int(cell.counts.size());
+            marker.total=total; marker.interior=interior;
             ++markerCount;
         }
         if(partial)break;

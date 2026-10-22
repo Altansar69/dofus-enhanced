@@ -50,6 +50,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "smallHeaderTreasure" && (value == 0 || value == 1)) settings.smallHeaderTreasure = value != 0;
             else if (key == "smallHeaderNotebook" && (value == 0 || value == 1)) settings.smallHeaderNotebook = value != 0;
             else if (key == "notebookCompact" && (value == 0 || value == 1)) settings.notebookCompact = value != 0;
+            else if (key == "metamobSync" && (value == 0 || value == 1)) settings.metamobSync = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
             else if (key == "fastMapTransitions" && (value == 0 || value == 1)) settings.fastMapTransitions = value != 0;
@@ -77,7 +78,17 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     if (!resourceMiniMapRead) settings.resourceMiniMapEnabled = settings.resourceMapEnabled;
     return settings;
 }
-void Settings::Save(const std::filesystem::path& path) const {
+std::optional<bool> Settings::ReadMetamobSync(const std::filesystem::path& path) {
+    std::ifstream file(path);
+    std::optional<bool> value;
+    for (std::string line; std::getline(file, line);) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line == "metamobSync=0") value = false;
+        else if (line == "metamobSync=1") value = true;
+    }
+    return value;
+}
+void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) const {
     if (mode < 0 || mode > 2) throw std::runtime_error("Invalid display mode");
     if (!ValidAnimationMode(animationMode)) throw std::runtime_error("Invalid animation mode");
     if (!ValidMonsterGlowMode(monsterGlowMode)) throw std::runtime_error("Invalid monster glow mode");
@@ -117,8 +128,9 @@ void Settings::Save(const std::filesystem::path& path) const {
              << "\nresourceMiniMapEnabled=" << (resourceMiniMapEnabled ? 1 : 0)
              << "\nminiMapCenterButton=" << (miniMapCenterButton ? 1 : 0)
              << "\nsmallHeaderSoul=" << (smallHeaderSoul ? 1 : 0) << "\nsmallHeaderTreasure=" << (smallHeaderTreasure ? 1 : 0) << "\nsmallHeaderNotebook=" << (smallHeaderNotebook ? 1 : 0)
-             << "\nnotebookCompact=" << (notebookCompact ? 1 : 0)
-             << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
+             << "\nnotebookCompact=" << (notebookCompact ? 1 : 0);
+        if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
+        file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';
         file.flush();
         if (!file) throw std::runtime_error("Cannot save settings");

@@ -11,3 +11,5 @@ __pycache__/
 *.pyc
 /.vs/
 offline-test-data/
+# Metamob personal key (DPAPI) and sync state: local only, never committed.
+DofusMiniatures-metamob*

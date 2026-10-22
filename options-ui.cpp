@@ -12,19 +12,33 @@ using namespace managed;
 namespace {
 constexpr int ModCategory = 0x4D4F44;
 constexpr int GeneralCategory = ModCategory + 1;
+constexpr int MetamobCategory = ModCategory + 2;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
+constexpr const char* Figma = "Core.UILogic.Components.Figma";
+constexpr const char* UiModule = "UnityEngine.UIElementsModule.dll";
+constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr const char* Modes[] = {"Normal", "Créatures", "Miniatures"};
 Klass generalClass = nullptr;
 using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
 EnableFn originalEnable = nullptr;
 InitFn originalInit = nullptr;
+// TextButtonOptionElement.<Init>b__3_0(VisualElement), the click, and Init(TextButtonOption).
 using TextButtonFn = void(*)(Obj, Obj, Method);
-TextButtonFn originalTextButton = nullptr;
-Method textButtonModelGetter = nullptr, openUrl = nullptr;
+TextButtonFn originalTextButton = nullptr, originalTextButtonInit = nullptr;
+Method textButtonModelGetter = nullptr, openUrl = nullptr, setPassword = nullptr;
 constexpr const char* ProjectUrl = "https://github.com/Altansar69/dofus-miniatures";
+// Metamob rows. The key never goes to Settings, a log, a notice or an exception.
+constexpr int IconSave = 148, IconTrash = 316; // FigmaIcons.floppy, FigmaIcons.trash
+constexpr int KeyMaxLength = 256;
+constexpr ULONGLONG ForgetConfirmMs = 5000, KeyFieldRefreshMs = 1000, KeyFieldLogMs = 10000;
+constexpr size_t MaxKeyFields = 8; // pooled views showing the key row at once (normally one)
+constexpr const char* KeyHint = "Colle ici ta clé API Metamob";
+constexpr const char* StoredKeyHint = "Clé enregistrée (masquée) : colle une nouvelle clé pour la remplacer";
+constexpr const char* PasteKeyFirst = "Metamob : colle d’abord ta clé dans le champ.";
+constexpr const char* ConfirmForget = "Metamob : reclique sur Supprimer pour oublier ta clé.";
 
 template<class T> T& FieldValue(Obj owner, const char* name) {
     return *static_cast<T*>(api.FieldAddress(owner, name));
@@ -69,7 +83,7 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return source.get() && api.Value<bool>(api.Call(source.get(), "IsLoaded"));
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) &&
-        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource);
+        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -92,6 +106,7 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.resourcesSource.get(), settings.resourceMapEnabled, notify);
     SetSource(ui.resourcesMiniSource.get(), settings.resourceMiniMapEnabled, notify);
     SetSource(ui.miniCenterSource.get(), settings.miniMapCenterButton, notify);
+    SetSource(ui.metamobSyncSource.get(), settings.metamobSync, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -117,6 +132,17 @@ Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* d
 Obj MakeBoolOption(Obj source, Obj container, Obj tooltip, const char* title, const char* description) {
     Ref option(api.New(api.Class("Core.dll", Elements, "BoolOption"), {tooltip, source, container}));
     Describe(option.get(), title, description);
+    return option.get();
+}
+// Owned text-button rows have no delegate (null callback): TextButtonHook knows
+// them by their unique description reference, kept as marker.
+Obj MakeTextButtonOption(Obj tooltip, const char* title, const char* description, const char* button, int icon, Ref& marker) {
+    Ref option(api.New(api.Class("Core.dll", Config, "TextButtonOption"), {nullptr, tooltip}));
+    Describe(option.get(), title, description);
+    SetTextField(option.get(), "buttonText", button);
+    if (icon) FieldValue<int>(option.get(), "icon") = icon; // ButtonOption.icon, shown by TextButtonOptionElement.Init
+    marker.reset(api.Call(option.get(), "get_description"));
+    if (!marker.get()) throw std::runtime_error("Owned option identity unavailable");
     return option.get();
 }
 
@@ -151,6 +177,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.resourcesSource.reset(api.New(booleanType, {&defaults.resourceMapEnabled, &readOnly}));
     prepared.resourcesMiniSource.reset(api.New(booleanType, {&defaults.resourceMiniMapEnabled, &readOnly}));
     prepared.miniCenterSource.reset(api.New(booleanType, {&defaults.miniMapCenterButton, &readOnly}));
+    prepared.metamobSyncSource.reset(api.New(booleanType, {&defaults.metamobSync, &readOnly}));
     if (!ModelsLoaded(prepared)) return false;
     // Native reset uses constructor defaults, independently of persisted values.
     ApplySettings(prepared, module->settings, false);
@@ -197,18 +224,29 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
     prepared.miniCenterOption.reset(MakeBoolOption(prepared.miniCenterSource.get(), current.get(), tooltip.get(), "Bouton de recentrage sur la mini-carte",
         "Affiche en bas à gauche de la mini-carte le bouton qui la ramène sur ton personnage, avec le même aspect que le bouton joueur de la grande carte. Décocher le masque."));
-    // Last row: credits. The native text button has no owned delegate; its
-    // click is recognised by the unique description reference in TextButtonHook.
-    prepared.creditsOption.reset(api.New(api.Class("Core.dll", Config, "TextButtonOption"), {nullptr, tooltip.get()}));
+    // Last row of « Général »: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
         " (révision " + ModVersion + ", Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
-    Describe(prepared.creditsOption.get(), creditsTitle.c_str(), creditsText.c_str());
-    SetTextField(prepared.creditsOption.get(), "buttonText", "Ouvrir GitHub");
-    prepared.creditsMarker.reset(api.Call(prepared.creditsOption.get(), "get_description"));
-    if (!prepared.creditsMarker.get()) throw std::runtime_error("Credits option identity unavailable");
+    prepared.creditsOption.reset(MakeTextButtonOption(tooltip.get(), creditsTitle.c_str(), creditsText.c_str(), "Ouvrir GitHub", 0, prepared.creditsMarker));
+    // Section « Metamob »: the sync preference, then two owned text buttons. The
+    // key itself stays in the capture sync, reached through ui.metamob only.
+    prepared.metamobSyncOption.reset(MakeBoolOption(prepared.metamobSyncSource.get(), current.get(), tooltip.get(), "Synchroniser les captures avec Metamob",
+        "Après chaque capture d’un archimonstre ou d’un boss (pierre d’âme remplie en combat), ajoute 1 à ce monstre dans ta quête Ocre sur Metamob, sans rien modifier d’autre. Nécessite ta clé API personnelle (metamob.fr › Paramètres › Clé API). Désactivé par défaut."));
+    prepared.metamobKeyOption.reset(MakeTextButtonOption(tooltip.get(), "Clé API Metamob",
+        "Colle ta clé dans le champ masqué puis clique sur Enregistrer. Elle est vérifiée auprès de Metamob, chiffrée pour ton compte Windows et gardée uniquement sur ce PC ; elle n’est jamais affichée, journalisée ni incluse dans les mises à jour.",
+        "Enregistrer", IconSave, prepared.metamobKeyMarker));
+    prepared.metamobForgetOption.reset(MakeTextButtonOption(tooltip.get(), "Oublier la clé Metamob",
+        "Efface la clé enregistrée sur ce PC : clique sur Supprimer, puis une seconde fois dans les 5 secondes. Les captures ne sont plus synchronisées tant qu’aucune nouvelle clé n’est enregistrée. La clé reste valable sur Metamob : régénère-la sur le site pour la révoquer.",
+        "Supprimer", IconTrash, prepared.metamobForgetMarker));
     ui.creditsOption = std::move(prepared.creditsOption);
     ui.creditsMarker = std::move(prepared.creditsMarker);
+    ui.metamobSyncSource = std::move(prepared.metamobSyncSource);
+    ui.metamobSyncOption = std::move(prepared.metamobSyncOption);
+    ui.metamobKeyOption = std::move(prepared.metamobKeyOption);
+    ui.metamobKeyMarker = std::move(prepared.metamobKeyMarker);
+    ui.metamobForgetOption = std::move(prepared.metamobForgetOption);
+    ui.metamobForgetMarker = std::move(prepared.metamobForgetMarker);
     ui.resourcesMiniSource = std::move(prepared.resourcesMiniSource);
     ui.resourcesMiniOption = std::move(prepared.resourcesMiniOption);
     ui.miniCenterSource = std::move(prepared.miniCenterSource);
@@ -281,13 +319,163 @@ void UiError(const std::exception& error) {
 bool Active() {
     return module && module->ready.load() && !module->stopped && !module->stopRequested.load();
 }
+// Metamob key field. Fixed codes only: a managed exception text can carry the
+// typed key, so what() is never logged here and a failure never stops the mod.
+void KeyFieldError(OptionsUi& ui, const char* step) noexcept {
+    try {
+        const auto now = GetTickCount64();
+        if (now < ui.nextKeyFieldLog) return;
+        ui.nextKeyFieldLog = now + KeyFieldLogMs;
+        Log(std::string("METAMOB_KEY_FIELD_ERROR step=") + step);
+    } catch (...) {}
+}
+// Plaintext copies of the key held here are overwritten before release (a
+// resize within the capacity never reallocates and zeroes the stale bytes).
+void Wipe(std::string& text) noexcept {
+    text.resize(text.capacity());
+    SecureZeroMemory(text.data(), text.size());
+    text.clear();
+}
+bool KeyStored(OptionsUi& ui) noexcept {
+    try { return ui.metamob.keyStored && ui.metamob.keyStored(); }
+    catch (...) { KeyFieldError(ui, "stored"); return false; }
+}
+void KeyHintText(Obj input, bool stored) {
+    Ref hint(api.string_new(stored ? StoredKeyHint : KeyHint));
+    api.Call(input, "set_placeholderText", {hint.get()});
+}
+std::vector<OptionsUi::KeyField>::iterator FindKeyField(OptionsUi& ui, Obj element) {
+    return std::find_if(ui.keyFields.begin(), ui.keyFields.end(),
+        [element](const OptionsUi::KeyField& field) { return field.element.get() == element; });
+}
+// Emptied, then detached; its references go even when the view is already gone.
+void DropKeyField(OptionsUi& ui, std::vector<OptionsUi::KeyField>::iterator field) noexcept {
+    try {
+        Ref empty(api.string_new(""));
+        api.Call(field->input.get(), "set_text", {empty.get()});
+        api.Call(field->input.get(), "RemoveFromHierarchy");
+    } catch (...) { KeyFieldError(ui, "remove"); }
+    ui.keyFields.erase(field);
+}
+void DropKeyFields(OptionsUi& ui) noexcept {
+    while (!ui.keyFields.empty()) DropKeyField(ui, ui.keyFields.begin());
+}
+// Inline style, as the notebook's inputs: the field takes the free width
+// between the row label and the row button.
+void WriteStyle(Obj element, const char* property, void* value) {
+    Ref style(api.Call(element, "get_style"));
+    Ref box(api.Call(style.get(), (std::string("UnityEngine.UIElements.IStyle.get_") + property).c_str()));
+    if (!box.get() || !api.class_is_valuetype(api.object_get_class(box.get()))) throw std::runtime_error("Key field style unavailable");
+    api.Call(box.get(), "set_value", {value});
+    api.Call(style.get(), (std::string("UnityEngine.UIElements.IStyle.set_") + property).c_str(), {api.object_unbox(box.get())});
+}
+void Pixels(Obj element, const char* property, float value) {
+    int pixel = 0; // LengthUnit.Pixel
+    Ref length(api.New(api.Class(UiModule, UiSpace, "Length"), {&value, &pixel}));
+    WriteStyle(element, property, api.object_unbox(length.get()));
+}
+// The game's own TextInput in password mode, complete before it is placed: a
+// failure never leaves a half-built field in the row.
+Obj NewKeyInput(bool stored) {
+    Ref input(api.New(api.Class("Core.dll", Figma, "TextInput")));
+    bool masked = true;
+    api.Invoke(setPassword, input.get(), {&masked});
+    int maxLength = KeyMaxLength;
+    api.Call(input.get(), "set_maxLength", {&maxLength});
+    KeyHintText(input.get(), stored);
+    float grow = 1.f;
+    WriteStyle(input.get(), "flexGrow", &grow);
+    Pixels(input.get(), "minWidth", 0.f); Pixels(input.get(), "minHeight", 32.f);
+    Pixels(input.get(), "marginLeft", 12.f); Pixels(input.get(), "marginRight", 8.f);
+    return input.get();
+}
+Obj RowButton(Obj element) {
+    auto rowBinding = api.Class("Core.dll", "Core.UI.Bindings", "TextButtonOptionElementBinding");
+    return api.Invoke(api.Find(rowBinding, "get_btn_button", 0), api.FieldAddress(element, "m_binding"));
+}
+// After TextButtonOptionElement.Init: exactly one owned field, just before the
+// button, in a view showing the key row (or a search clone of it); none in any
+// other view, since the game pools these views for every text-button row.
+void BindKeyField(OptionsUi& ui, Obj element, Obj option) noexcept {
+    try {
+        auto field = FindKeyField(ui, element);
+        const bool key = Active() && option && ui.metamobKeyMarker.get() &&
+            api.Call(option, "get_description") == ui.metamobKeyMarker.get();
+        if (!key) { if (field != ui.keyFields.end()) DropKeyField(ui, field); return; }
+        Ref button(RowButton(element));
+        Ref row(button.get() ? api.Call(button.get(), "get_parent") : nullptr);
+        if (!row.get()) throw std::runtime_error("Key row layout unavailable");
+        const bool stored = KeyStored(ui);
+        if (field != ui.keyFields.end()) {
+            if (api.Call(field->input.get(), "get_parent") == row.get()) {
+                if (field->stored != stored) { KeyHintText(field->input.get(), stored); field->stored = stored; }
+                return;
+            }
+            DropKeyField(ui, field); // taken out of the row by the game: placed again below
+        }
+        if (ui.keyFields.size() >= MaxKeyFields) DropKeyField(ui, ui.keyFields.begin());
+        ui.keyFields.reserve(ui.keyFields.size() + 1); // the push_back below cannot fail once inserted
+        OptionsUi::KeyField owned;
+        owned.input.reset(NewKeyInput(stored));
+        owned.element.reset(element);
+        owned.stored = stored;
+        int index = api.Value<int>(api.Call(row.get(), "IndexOf", {button.get()}));
+        if (index < 0) throw std::runtime_error("Key row button detached");
+        api.Call(row.get(), "Insert", {&index, owned.input.get()});
+        ui.keyFields.push_back(std::move(owned));
+    } catch (...) { KeyFieldError(ui, "bind"); }
+}
+// A key saved or forgotten while its row is shown: the hint follows within a second.
+void RefreshKeyFields(OptionsUi& ui) noexcept {
+    try {
+        const auto now = GetTickCount64();
+        if (ui.keyFields.empty() || now < ui.nextKeyFieldRefresh) return;
+        ui.nextKeyFieldRefresh = now + KeyFieldRefreshMs;
+        const bool stored = KeyStored(ui);
+        for (auto& field : ui.keyFields)
+            if (field.stored != stored) { KeyHintText(field.input.get(), stored); field.stored = stored; }
+    } catch (...) { KeyFieldError(ui, "refresh"); }
+}
+// « Enregistrer »: the field is read once and emptied at once; the capture sync
+// then verifies, stores and wipes the text.
+void SaveKeyClick(OptionsUi& ui, Obj element) noexcept {
+    std::string key;
+    try {
+        const auto field = FindKeyField(ui, element);
+        if (field != ui.keyFields.end()) {
+            key = api.String(api.Call(field->input.get(), "get_text"));
+            Ref empty(api.string_new(""));
+            api.Call(field->input.get(), "set_text", {empty.get()});
+        }
+        if (key.empty()) { if (ui.metamob.notice) ui.metamob.notice(PasteKeyFirst); }
+        else if (ui.metamob.submitKey) ui.metamob.submitKey(std::move(key));
+    } catch (...) { KeyFieldError(ui, "save"); }
+    Wipe(key);
+}
+// « Supprimer »: a first click asks for confirmation, a second one within five
+// seconds forgets the stored key.
+void ForgetKeyClick(OptionsUi& ui) noexcept {
+    try {
+        const auto now = GetTickCount64();
+        if (ui.forgetDeadline && now < ui.forgetDeadline) {
+            ui.forgetDeadline = 0;
+            if (ui.metamob.forgetKey) ui.metamob.forgetKey();
+        } else {
+            ui.forgetDeadline = now + ForgetConfirmMs;
+            if (ui.metamob.notice) ui.metamob.notice(ConfirmForget);
+        }
+    } catch (...) { KeyFieldError(ui, "forget"); }
+}
 void TextButtonHook(Obj self, Obj element, Method method) {
+    const auto ui = module ? module->ui.get() : nullptr;
+    Obj description = nullptr;
     try {
         Ref option(api.Invoke(textButtonModelGetter, self));
         // Native search/display uses MemberwiseClone: the unique description
-        // reference identifies our credits row even when the model is cloned.
-        if (module && module->ui && module->ui->creditsMarker.get() && option.get() &&
-            api.Call(option.get(), "get_description") == module->ui->creditsMarker.get()) {
+        // reference identifies our rows even when the model is cloned. The
+        // credits and Metamob markers are set and released together.
+        if (ui && ui->creditsMarker.get() && option.get()) description = api.Call(option.get(), "get_description");
+        if (description && description == ui->creditsMarker.get()) {
             if (Active()) { Ref url(api.string_new(ProjectUrl)); api.Invoke(openUrl, nullptr, {url.get()}); }
             return;
         }
@@ -296,7 +484,16 @@ void TextButtonHook(Obj self, Obj element, Method method) {
         Log(std::string("CREDITS_LINK_ERROR ") + error.what());
         return;
     }
+    // Metamob rows: their own handling, which never throws, never the native action.
+    if (description && description == ui->metamobKeyMarker.get()) { if (Active()) SaveKeyClick(*ui, self); return; }
+    if (description && description == ui->metamobForgetMarker.get()) { if (Active()) ForgetKeyClick(*ui); return; }
     originalTextButton(self, element, method);
+}
+// The game pools row views and re-Inits them with any model: after the native
+// Init, the view gets or loses the masked key field.
+void TextButtonInitHook(Obj self, Obj option, Method method) {
+    originalTextButtonInit(self, option, method);
+    if (module && module->ui) BindKeyField(*module->ui, self, option);
 }
 void EnableHook(Obj self, Method method) {
     originalEnable(self, method);
@@ -325,6 +522,22 @@ void OptionsUi::Install() {
     openUrl = api.FindVerified(api.Class("UnityEngine.CoreModule.dll", "UnityEngine", "Application"), "OpenURL", 1, 0x53ACA50);
     AddHook(api.Find(textButton, "<Init>b__3_0", 1), 0x2D88800,
             reinterpret_cast<void*>(TextButtonHook), reinterpret_cast<void**>(&originalTextButton));
+    // Metamob key row: the game's masked TextInput, kept in the row view.
+    AddHook(api.FindVerified(textButton, "Init", 1, 0x2D885A0), 0x2D885A0,
+            reinterpret_cast<void*>(TextButtonInitHook), reinterpret_cast<void**>(&originalTextButtonInit));
+    auto inputClass = api.Class("Core.dll", Figma, "TextInput");
+    api.FindVerified(inputClass, ".ctor", 0, 0x178DC90);
+    api.FindVerified(inputClass, "get_text", 0, 0x178DDA0);
+    api.FindVerified(inputClass, "set_text", 1, 0x178EC50);
+    api.FindVerified(inputClass, "set_placeholderText", 1, 0x178EAA0);
+    api.FindVerified(inputClass, "set_maxLength", 1, 0x178E9B0);
+    setPassword = api.FindVerified(inputClass, "set_isPassword", 1, 0x178E8F0);
+    auto elementClass = api.Class(UiModule, UiSpace, "VisualElement");
+    api.FindVerified(elementClass, "get_parent", 0, 0x55F7180);
+    api.FindVerified(elementClass, "IndexOf", 1, 0x55E55B0);
+    api.FindVerified(elementClass, "Insert", 2, 0x55E5710);
+    api.FindVerified(elementClass, "RemoveFromHierarchy", 0, 0x55E7BD0);
+    api.FindVerified(elementClass, "get_style", 0, 0x55F74A0);
 }
 void OptionsUi::CapturePage(Obj page) {
     pendingPage.reset(page);
@@ -365,7 +578,15 @@ bool OptionsUi::Attach(Obj page) {
     api.Call(options, "Add", {resourcesMiniOption.get()});
     api.Call(options, "Add", {miniCenterOption.get()});
     api.Call(options, "Add", {creditsOption.get()});
-    api.Call(api.Field(category.get(), "subcategories"), "Add", {general.get()});
+    // Second section, so that the seventeen « Général » rows stay as they were.
+    Ref metamobSection(MakeCategory("Metamob", MetamobCategory, true));
+    auto metamobRows = api.Field(metamobSection.get(), "options");
+    api.Call(metamobRows, "Add", {metamobSyncOption.get()});
+    api.Call(metamobRows, "Add", {metamobKeyOption.get()});
+    api.Call(metamobRows, "Add", {metamobForgetOption.get()});
+    auto sections = api.Field(category.get(), "subcategories");
+    api.Call(sections, "Add", {general.get()});
+    api.Call(sections, "Add", {metamobSection.get()});
     Page owned;
     owned.owner.reset(page);
     owned.category = std::move(category);
@@ -377,6 +598,7 @@ bool OptionsUi::Attach(Obj page) {
 }
 void OptionsUi::Tick() {
     if (!module || !module->servicesReady || module->stopped) return;
+    RefreshKeyFields(*this);
     const auto page = pendingPage.get();
     if (page) {
         const bool attached = std::any_of(pages.begin(), pages.end(), [page](const Page& item) {
@@ -420,6 +642,7 @@ void OptionsUi::Tick() {
     next.resourceMapEnabled = api.Value<bool>(api.Call(resourcesSource.get(), "get_property"));
     next.resourceMiniMapEnabled = api.Value<bool>(api.Call(resourcesMiniSource.get(), "get_property"));
     next.miniMapCenterButton = api.Value<bool>(api.Call(miniCenterSource.get(), "get_property"));
+    next.metamobSync = api.Value<bool>(api.Call(metamobSyncSource.get(), "get_property"));
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
         !Settings::ValidAnimationMode(next.animationMode) || !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
         Sync(); return;
@@ -442,6 +665,9 @@ void OptionsUi::Sync() {
     ApplySettings(*this, module->settings, true);
 }
 void OptionsUi::Restore() {
+    // Owned key fields first: no pooled view may keep one once the hooks stop.
+    DropKeyFields(*this);
+    forgetDeadline = 0;
     pendingPage.reset();
     stableList.reset();
     std::exception_ptr failure;
@@ -449,7 +675,7 @@ void OptionsUi::Restore() {
         try {
             auto categories = api.Field(it->owner.get(), "m_options");
             int selected = SelectedCategory(it->owner.get());
-            if (selected == ModCategory || selected == GeneralCategory)
+            if (selected == ModCategory || selected == GeneralCategory || selected == MetamobCategory)
                 selected = GameCategory;
             api.Call(categories, "Remove", {it->category.get()});
             // Retry rebuilding even when removal succeeded on an earlier pump.
@@ -486,10 +712,16 @@ void OptionsUi::Restore() {
     resourcesMiniSource.reset(); resourcesMiniOption.reset();
     miniCenterSource.reset(); miniCenterOption.reset();
     creditsOption.reset(); creditsMarker.reset();
+    metamobSyncSource.reset(); metamobSyncOption.reset();
+    metamobKeyOption.reset(); metamobKeyMarker.reset(); metamobForgetOption.reset(); metamobForgetMarker.reset();
     spouseSource.reset();
     spouseOption.reset();
     transitionsSource.reset();
     transitionsOption.reset();
     container.reset();
+}
+void OptionsUi::Abandon() {
+    DropKeyFields(*this);
+    pages.clear(); pendingPage.reset(); stableList.reset();
 }
 bool OptionsUi::KeepResidentHook(void*) const { return false; }

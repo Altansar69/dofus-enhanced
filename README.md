@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.8.1** (révision r105).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.9.0** (révision r106).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -42,7 +42,7 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**. La version chargée (x.y.z et
-révision) figure dans la ligne de crédits en fin d’options, avec l’auteur Altansar
+révision) figure dans la ligne de crédits en fin de la section Général, avec l’auteur Altansar
 et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 étiquette `rN` pour le vérificateur de mises à jour.
 
@@ -181,9 +181,10 @@ deux cartes et l’image de l’objet chargée par le jeu depuis son catalogue. 
 quantités en gras occupent une petite pastille dorée claire dans le coin
 inférieur droit, proportionnelle au repère. Les ressources d’une même case
 rejoignent le groupe de position du jeu de cette case, avec ses éléments
-(foreuse, indice) : la pastille de nombre native affiche le total de la case
-quand le groupe ne contient que des ressources du mod (3 cuivre et 11 fer
-donnent 14), et le compte du jeu sinon ; au survol de la souris, le groupe
+(foreuse, indice, attitude) : dès que la case empile plusieurs éléments, la
+pastille de nombre native affiche le total des ressources de la case (3 cuivre
+et 11 fer donnent 14, même avec une foreuse ou une attitude du jeu dans la
+pile) ; au survol de la souris, le groupe
 s’étale avec l’animation native de Dofus, foreuse comprise, chaque ressource
 montrant alors sa propre quantité, puis se replie quand le curseur s’éloigne.
 Les repères apparaissent par lots de 32 par image pour ne pas figer le jeu.
@@ -200,6 +201,47 @@ n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu r
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
+
+## Metamob
+
+**Options → Dofus Enhanced → Metamob** synchronise les captures avec ta quête
+Ocre sur [metamob.fr](https://www.metamob.fr) :
+
+1. Sur Metamob, **Paramètres → Clé API → Générer une clé**, puis copie-la.
+2. Colle-la dans le champ masqué **Clé API Metamob** et clique sur **Enregistrer**.
+   Le mod la vérifie auprès de Metamob et indique dans le chat le compte reconnu.
+3. Coche **Synchroniser les captures avec Metamob**.
+
+Après chaque combat où ton personnage obtient l’âme d’un archimonstre ou d’un
+boss, le mod ajoute 1 à ce monstre dans ta quête Ocre Dofus Unity, sans rien
+modifier d’autre, et l’écrit dans le chat (« Metamob : +1 « Tofumanchou
+l’Empereur » (2 → 3). »). Il lit le rapport de fin de combat du jeu : seul le
+butin du personnage de ce client compte, donc avec un client par personnage
+chaque capture est comptée une fois. Les achats, échanges, la banque et le
+courrier ne sont jamais comptés. Metamob n’accepte que des quantités absolues :
+le mod relit la quantité juste avant d’écrire, et un envoi interrompu est
+vérifié avant d’être renvoyé, pour ne jamais compter deux fois. Avec plusieurs
+quêtes Ocre sur le compte, indique le nom du personnage dans « Personnage à
+contacter » de la bonne quête.
+
+La case vaut pour tous tes clients ouverts : cochée ou décochée dans l’un, elle
+suit dans les autres en deux secondes. Décocher abandonne aussi les captures en
+attente, sans rien envoyer. Le jeu doit être en français, en anglais ou en
+espagnol, les langues des noms Metamob. Une âme de salle de donjon (Tynrils,
+Gelées, Rats…) compte pour le boss dont c’est l’âme ; les autres boss de la salle
+se mettent à jour à la main sur Metamob.
+
+Les clients ouverts sur ce PC écrivent un même monstre l’un après l’autre. Avec
+la même clé sur un autre PC (ou une autre session Windows), rien ne les
+coordonne : deux captures du même monstre faites au même moment des deux côtés
+peuvent n’en compter qu’une. Ne coche la synchro que sur un seul PC, et
+redémarre les clients encore ouverts avec une ancienne version avant de la cocher.
+
+La clé est personnelle (CGU de Metamob) : aucune clé n’est incluse dans le mod.
+Elle est chiffrée pour ton compte Windows dans `DofusMiniatures-metamob.key`, à
+côté des réglages, et n’est jamais affichée, journalisée ni publiée.
+**Oublier la clé Metamob** la supprime. Les captures faites pendant que Metamob
+est injoignable sont renvoyées automatiquement pendant la session.
 
 ## Compilation et publication
 
@@ -227,7 +269,8 @@ des métadonnées du jeu.
 
 ## Dépendances
 
-MinHook est un sous-module, sous sa licence d’origine. Le SDK WebView2 inclut
+MinHook est un sous-module, sous sa licence d’origine (BSD à deux clauses, reproduite
+à la fin de `LISEZ-MOI.txt`). Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
 chargeurs, mais le panneau natif r95 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans

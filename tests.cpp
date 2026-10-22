@@ -53,8 +53,22 @@ int main() {
         Require(defaults.resourceMapEnabled && defaults.resourceMiniMapEnabled && defaults.resourceMapItems.empty(), "No resource annotations before a selection");
         Require(!defaults.smallHeaderSoul && !defaults.smallHeaderTreasure && !defaults.smallHeaderNotebook, "Panel headers start at the native size");
         Require(!defaults.notebookCompact, "The notebook starts in its full layout");
+        Require(!defaults.metamobSync, "Metamob capture sync starts disabled");
+        // metamobSync is shared state between the game clients: read straight from the file.
+        Require(!Settings::ReadMetamobSync(folder / "absent.ini"), "No shared sync value without a settings file");
+        {
+            auto shared = defaults; shared.metamobSync = true; shared.Save(path);
+            Require(Settings::ReadMetamobSync(path) == std::optional<bool>(true), "The shared sync value reads back on");
+            shared.metamobSync = false; shared.Save(path);
+            Require(Settings::ReadMetamobSync(path) == std::optional<bool>(false), "The shared sync value reads back off");
+            { std::ofstream older(path, std::ios::trunc); older << "mode=1" << std::endl << "autoLoad=1" << std::endl; }
+            Require(!Settings::ReadMetamobSync(path), "A file written by an older revision has no shared sync value");
+            defaults.Save(path, false);
+            Require(!Settings::ReadMetamobSync(path) && Settings::Read(path) == defaults,
+                "A client that has not seen the shared sync value leaves its line out and saves the rest");
+        }
         for(bool full:{false,true})for(bool mini:{false,true}){
-            auto maps=defaults;maps.resourceMapEnabled=full;maps.resourceMiniMapEnabled=mini;maps.resourceMapItems={303,421};maps.smallHeaderNotebook=true;maps.smallHeaderSoul=mini;maps.smallHeaderTreasure=full;maps.notebookCompact=full;
+            auto maps=defaults;maps.resourceMapEnabled=full;maps.resourceMiniMapEnabled=mini;maps.resourceMapItems={303,421};maps.smallHeaderNotebook=true;maps.smallHeaderSoul=mini;maps.smallHeaderTreasure=full;maps.notebookCompact=full;maps.metamobSync=mini;
             maps.Save(path);
             Require(Settings::Read(path)==maps,"Map visibility flags persist independently without losing the shared selection");
             {std::ofstream file(path,std::ios::app);file<<"resourceMiniMapEnabled=7\n";}

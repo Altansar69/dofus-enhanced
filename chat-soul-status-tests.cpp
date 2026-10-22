@@ -31,7 +31,12 @@ Obj Item(int id,int type=327,int quantity=1,int position=63) {
 }
 Obj FullStone(int monster) {
     auto mask=Item(7010,85);auto item=Get(mask).fields["item"],effects=Make("List"),effect=Make("EffectInstanceDice");
-    Set(effect,"effectId",623);Set(effect,"value",monster);Get(effects).items={effect};Get(item).fields["myt"]=effects;return mask;
+    Set(effect,"actionId",623);Set(effect,"value",monster);Get(effects).items={effect};Get(item).fields["myt"]=effects;return mask;
+}
+// Eliocalypse items share type 220 with heroic stones and carry other effects.
+Obj OtherEffectItem() {
+    auto mask=Item(21983,220);auto item=Get(mask).fields["item"],effects=Make("List"),effect=Make("EffectInstanceDice");
+    Set(effect,"actionId",1);Set(effect,"value",5);Get(effects).items={effect};Get(item).fields["myt"]=effects;return mask;
 }
 void Items(std::vector<Obj> items) { Get(content).items=std::move(items);Get(Get(content).fields["_version"]).scalar++; }
 void PumpFresh() { chat_souls::state.nextScan=0;chat_souls::state.nextQuest=0;TickChatSoulStatus(true); }
@@ -121,7 +126,7 @@ int main() {
             ChatSoulDetail(147,ChatSoulPart::Ocre).find("reste à valider")!=std::string::npos,
             "Inventory and quest details must be distinct and limited to the hovered state");
 
-        Items({FullStone(2468),Item(33684,327,1,1),Item(33682,327,1,31)});PumpFresh();FinishScan();
+        Items({OtherEffectItem(),FullStone(2468),Item(33684,327,1,1),Item(33682,327,1,31)});PumpFresh();FinishScan();
         Check(Has(2468,"Âme en sac")&&Has(147,"Pas en sac")&&Has(928,"Âme en sac"),"Legacy effects, quantity and supported inventory positions must be respected");
         Check(CombinedCaption(147,true).find("<color=#F18C8C>Pas en sac</color>")!=std::string::npos&&
             CombinedCaption(928,true).find("<color=#8DDB91>Âme en sac</color>")!=std::string::npos,

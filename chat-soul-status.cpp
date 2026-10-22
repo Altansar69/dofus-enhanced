@@ -83,7 +83,9 @@ void ReadItem(Obj mask) {
     for (int i = 0, count = Count(effects.get(),128); i < count; ++i) {
         Ref effect(api.Call(effects.get(),"get_Item",{&i}));
         if (!effect.get()) throw std::runtime_error("Missing soul stone effect");
-        if (Field<int>(effect.get(),"effectId") != 623) continue;
+        // EffectInstanceData has no effectId: the effect kind is actionId (UInt16),
+        // 623 = CharacterSummonMonsters, one per monster in a legacy full stone.
+        if (Field<uint16_t>(effect.get(),"actionId") != 623) continue;
         if (!api.class_is_assignable_from(state.integerClass,api.object_get_class(effect.get())))
             throw std::runtime_error("Unsupported soul identity effect");
         const int monster = Field<int>(effect.get(),"value"); // Effect623 parameter2 (#3) is the monster ID.

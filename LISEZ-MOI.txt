@@ -1,4 +1,36 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 105 — VERSION 1.8.1
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 106 — VERSION 1.9.0
+
+R106 — VERSION 1.9.0 : SYNCHRO METAMOB DES CAPTURES
+- Options › Dofus Enhanced › Metamob : après chaque combat où ton personnage
+  obtient l’âme d’un archimonstre ou d’un boss, le mod ajoute 1 à ce monstre
+  dans ta quête Ocre sur metamob.fr, sans rien modifier d’autre, et l’écrit dans
+  le chat. Il lit le rapport de fin de combat du jeu : seul le butin du
+  personnage de ce client compte ; achats, échanges, banque et courrier ne sont
+  jamais comptés. Quantité relue juste avant l’écriture ; un envoi interrompu
+  est vérifié avant d’être renvoyé, jamais compté deux fois. Les clients de ce
+  PC écrivent l’un après l’autre ; avec la même clé sur un autre PC, rien ne
+  les coordonne : ne synchronise que depuis un seul PC.
+- Clé API personnelle : à générer sur Metamob (Paramètres › Clé API), à coller
+  dans le champ masqué « Clé API Metamob » puis Enregistrer. Elle est vérifiée
+  auprès de Metamob, chiffrée pour ton compte Windows à côté des réglages,
+  jamais affichée, journalisée ni publiée. « Oublier la clé Metamob » la
+  supprime. Synchronisation désactivée par défaut ; la case vaut pour tous les
+  clients ouverts (suivie en 2 s) et la décocher abandonne les captures en
+  attente sans rien envoyer. Jeu en français, anglais ou espagnol (langues des
+  noms Metamob). Une âme de salle de donjon (Tynrils, Gelées…) compte pour le
+  boss dont c’est l’âme ; les autres boss de la salle se notent à la main.
+- Ressources sur les cartes : quand une case empile des ressources et un
+  élément du jeu (foreuse, indice, attitude), la pastille du groupe affiche
+  maintenant le total des ressources de la case (6 fer et 12 cuivre avec une
+  attitude : 18) au lieu du nombre d’éléments du jeu (3). Une ressource seule
+  empilée avec un élément du jeu montre aussi sa quantité sur la pastille.
+- Chat, archimonstres : la ligne « Sac » ne tombe plus en erreur quand le sac
+  contient une ancienne pierre d’âme pleine ou un objet Eliocalypse (le mod
+  lisait un champ d’effet qui n’existe pas).
+- La licence de MinHook, intégrée au mod, figure désormais à la fin de ce
+  fichier ; la section Sources pointe vers le dépôt GitHub.
+- Validation hors jeu ; synchro à confirmer sur une vraie capture (journal :
+  CAPTURE_REPORT, CAPTURE_SOUL et les lignes METAMOB_…).
 
 R105 — VERSION 1.8.1 : DISPOSITION DU CARNET PAR CHOIX À PUCE, SANS DISPARITION
 - Carnet personnel : le menu ⋯ de la fenêtre liste les deux dispositions,
@@ -1679,15 +1711,16 @@ d’équipement automatique optionnelle pendant le placement. Une mise à jour d
 bloque le chargement jusqu’à nouvelle vérification.
 
 SOURCES
-sources/ contient le C++ et MinHook avec sa licence. Recompiler avec Visual Studio
-C++ x64, CMake et Ninja : sources/build.ps1, puis ctest --test-dir sources/build
+Le code source (C++, avec MinHook et nlohmann/json) est publié sur
+https://github.com/Altansar69/dofus-miniatures. Recompiler avec Visual Studio
+C++ x64, CMake et Ninja : build.ps1, puis ctest --test-dir build
 --output-on-failure. Les binaires propriétaires de Dofus ne sont pas fournis.
 
-Version ciblée : 3.7.11.11
+Version ciblée : 3.7.12.12
 GameAssembly.dll SHA256 :
-e08da74cfcac126a4d0929bf76d79b7c4f45b902ece082041b55d2715db9bf13
+70b3861ded2ffa4a963bb6eaac8ff3c470c2f062e641601628c95f60411e8663
 global-metadata.dat SHA256 :
-b04b4cee266b0a9f0aa6023b15e389e3c0dec6f054947288d8511416dbcf8a36
+ba1efbad5a8ecca48775fc20293f17e9dece72cc6134c4e7ecdd8071e7c67db6
 
 
 NLOHMANN/JSON 3.12.0 — LICENCE MIT
@@ -1712,3 +1745,87 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+MINHOOK — LICENCE BSD À DEUX CLAUSES (bibliothèque liée dans DofusMiniatures.dll)
+MinHook - The Minimalistic API Hooking Library for x64/x86
+Copyright (C) 2009-2017 Tsuda Kageyu.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER
+OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+================================================================================
+Portions of this software are Copyright (c) 2008-2009, Vyacheslav Patkov.
+================================================================================
+Hacker Disassembler Engine 32 C
+Copyright (c) 2008-2009, Vyacheslav Patkov.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-------------------------------------------------------------------------------
+Hacker Disassembler Engine 64 C
+Copyright (c) 2008-2009, Vyacheslav Patkov.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+
+ 1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE REGENTS OR
+CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

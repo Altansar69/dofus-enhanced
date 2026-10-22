@@ -320,10 +320,21 @@ void GroupTotalsAndSpread(){Fixture f;f.Tick();
     Get(shared).expanded=false;f.Tick();
     for(auto m:sharedMarkers)Check(Display(MarkerLabel(m))==1,"Collapsing hides the per-resource badges again");
     const auto settled=writes;f.Tick();Check(writes==settled,"A settled group causes no writes");
-    // One of the game's own hints (a drill) shares the cell: its group count stays the game's.
+    // One of the game's own hints (a drill, an attitude) shares the cell: the
+    // collapsed badge still shows the resource total, never the member count.
     Get(shared).strings["drill"]=Make("fgm",true);Get(Get(shared).refs["dtwz"]).text="3";f.Tick();
-    Check(Get(Get(shared).refs["dtwz"]).text=="3","With a game hint in the group, the game's own member count badge is left alone");
-    Get(shared).strings.erase("drill");f.Tick();Check(Get(Get(shared).refs["dtwz"]).text=="6","Our total returns once the group is ours again");
+    Check(Get(Get(shared).refs["dtwz"]).text=="6","With a game hint in the group, the collapsed badge still shows the cell's resource total");
+    for(auto m:sharedMarkers)Check(Display(MarkerLabel(m))==1,"Per-resource badges stay hidden in a collapsed mixed group");
+    Get(shared).expanded=true;f.Tick();for(auto m:sharedMarkers)Check(Display(MarkerLabel(m))==0,"A spread mixed group shows the per-resource badges");
+    Get(shared).expanded=false;Get(shared).strings.erase("drill");f.Tick();Check(Get(Get(shared).refs["dtwz"]).text=="6","The total stays once the game hint leaves");
+    // A lone resource stacked with a game hint: its quantity on the group
+    // badge, its own badge only once the stack is spread.
+    const auto lone=Get(MarkerLabel(singleMarkers.front())).text;
+    Get(single).strings["attitude"]=Make("fgm",true);Get(Get(single).refs["dtwz"]).text="2";f.Tick();
+    Check(Get(Get(single).refs["dtwz"]).text==lone&&Display(MarkerLabel(singleMarkers.front()))==1,"A lone resource stacked with a game hint shows its quantity on the group badge");
+    Get(single).expanded=true;f.Tick();Check(Display(MarkerLabel(singleMarkers.front()))==0,"Its own badge shows once the game spreads the stack");
+    Get(single).expanded=false;Get(single).strings.erase("attitude");f.Tick();
+    Check(Display(MarkerLabel(singleMarkers.front()))==0,"Alone again, the resource keeps its own badge");
     // The game's own map reset (Display) empties its groups and disposes the markers of the active groups.
     const auto created=creates;
     for(auto m:LiveMarkers(f.full)){auto group=Group(Get(m).refs["manager"],Get(Get(m).refs["group"]).text);Get(group).strings.erase(Get(Get(m).refs["id"]).text);Get(m).refs["cluster"]=nullptr;}

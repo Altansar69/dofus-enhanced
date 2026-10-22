@@ -11,6 +11,10 @@ struct Module {
     std::filesystem::path settingsPath;
     bool autoLoadPreferenceRead = false;
     Settings settings;
+    // metamobSync as this client last read or wrote it in the shared settings
+    // file; nullopt while it has seen no metamobSync line there (an older
+    // revision wrote the file last, before this client started).
+    std::optional<bool> sharedMetamobSync;
     managed::Ref compositor, creatures, cached, fight, creatureOption, roleplayOption, spellEffectsOption;
     bool originalCreatureMode = false;
     bool originalRoleplayMode = false;
@@ -32,6 +36,9 @@ struct Module {
     void Discover(managed::Obj compositor);
     void Pump(managed::Obj compositor);
     void Change(Settings next, bool save = true);
+    bool KeepSharedMetamobSync(Settings& next) const;
+    void SaveSettings(bool withMetamobSync);
+    void FollowSharedSettings();
     void Stop();
 };
 extern Module* module;

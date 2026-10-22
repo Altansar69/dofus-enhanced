@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 inline constexpr int SimpleReducedPercent = 60;
@@ -26,6 +27,7 @@ struct Settings {
     bool miniMapCenterButton = true;
     bool smallHeaderSoul = false, smallHeaderTreasure = false, smallHeaderNotebook = false; // "Réduire les titres des modules"
     bool notebookCompact = false; // Carnet : version compacte (liste et actions seulement), choisie dans le menu ⋯ du panneau
+    bool metamobSync = false; // Metamob : +1 dans la quête Metamob après chaque capture d'archimonstre ou de boss (la clé n'est jamais ici)
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
     static bool ValidResourceSelection(const std::vector<int>& items) {
@@ -41,6 +43,12 @@ struct Settings {
     static bool ValidAnimationMode(int value) { return value >= 0 && value <= 3; }
     static bool ValidMonsterGlowMode(int value) { return value >= 0 && value <= 3; }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
-    void Save(const std::filesystem::path& path) const;
+    // metamobSync as the shared file holds it now; nullopt when the file is
+    // unreadable or was last written by a revision that does not know it.
+    static std::optional<bool> ReadMetamobSync(const std::filesystem::path& path);
+    // withMetamobSync false leaves the metamobSync line out, as an older
+    // revision does: a client that has never seen the shared value there does
+    // not write its default over the other clients' choice.
+    void Save(const std::filesystem::path& path, bool withMetamobSync = true) const;
     bool operator==(const Settings&) const = default;
 };

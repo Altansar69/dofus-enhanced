@@ -37,7 +37,7 @@ Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(path), settingsPath(path / "settings.ini") {}
 managed::Obj Module::FindService(const char*) const { return fake::inventory; }
 void Module::Change(Settings next,bool save) { settings=next;if(save)settings.Save(settingsPath); }
-void Settings::Save(const std::filesystem::path&) const { ++fake::saves; }
+void Settings::Save(const std::filesystem::path&, bool) const { ++fake::saves; }
 void Log(const std::string&) {}
 namespace soul {
 void InstallCombat() {}

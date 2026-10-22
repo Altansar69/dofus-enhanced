@@ -7,6 +7,7 @@
 // Ends the journey but keeps the passive trip watch (defined below).
 void EndJourney();
 namespace {
+void PostNotice(const std::string& message);
 using namespace managed;
 using chat_travel::Phase;
 chat_travel::Journey journey;
@@ -61,17 +62,19 @@ int64_t Map() {
     Ref location(api.Invoke(currentMap,character.get()));
     return location.get()?*static_cast<int64_t*>(api.FieldAddress(location.get(),"m_mapId")):0;
 }
-void Notice(const std::string& message) {
+void Notice(const std::string& message) { PostChatNotice("TP : "+message); }
+void PostNotice(const std::string& message) {
     // Feed the native local chat history. This is not a chat send request and
     // has no sender, recipient or network action.
     if(!module||!module->servicesReady||module->stopped||module->stopRequested)return;
+    if(!noticeCtor||!noticeConvert||!noticeDisplay||!noticeClass||!chatClass)return;
     const auto now=GetTickCount64();
     if(message==lastNotice&&now-lastNoticeAt<2000)return;
     lastNotice=message;lastNoticeAt=now;
     try {
         Ref chat(module->FindService("ham"));
         if(!chat.get()||api.object_get_class(chat.get())!=chatClass)return;
-        Ref text(api.string_new(("TP : "+message).c_str())),action(api.object_new(noticeClass));
+        Ref text(api.string_new(message.c_str())),action(api.object_new(noticeClass));
         unsigned channel=0x200,flags=4;int zero=0;int64_t zero64=0;
         api.Invoke(noticeCtor,action.get(),{&channel,text.get(),&zero64,&zero64,&zero64,nullptr,nullptr,&zero,&zero64,&zero64,nullptr,&flags});
         Ref rendered(api.Invoke(noticeConvert,nullptr,{action.get()}));
@@ -432,6 +435,7 @@ void TickChatTravelPlanning() {
 }
 void EndJourney() { chat_route::Clear(); journey.Clear(); freshList.reset(); freshSource=-1; character.reset(); teleports.reset(); cached.reset(); compositor.reset(); cartography.reset(); routeService.reset(); quotedMap=targetMap=0; quotedCost=-1; quoteReceived=false;directPlan=false;teleportOnly=havenbagDeparture=false;nextPlanningSlice=0; }
 void RestoreChatTravel() { EndJourney(); watch=Watch{}; }
+void PostChatNotice(const std::string& text) { PostNotice(text); }
 void InstallChatTravel() {
     chat_route::Install();
     const auto verify=[](const char* type,const char* name,int argc,uintptr_t rva) { return api.FindVerified(api.Class("Core.dll","",type),name,argc,rva); };
