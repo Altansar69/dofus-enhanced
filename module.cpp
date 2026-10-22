@@ -453,7 +453,7 @@ static DWORD WINAPI Worker(void*) {
         InstallChatTravel();
         // Metamob capture sync: optional, the rest of the mod runs without it.
         metamob::InstallSync(module->settingsPath, metamob::SendWinHttp, PostChatNotice);
-        module->ui->metamob = {metamob::SubmitKey, metamob::ForgetStoredKey, metamob::KeyStored, PostChatNotice};
+        module->ui->metamob = {metamob::SubmitKey, metamob::ForgetStoredKey, metamob::StoredKeyStatus, metamob::CheckStoredKey, PostChatNotice};
         InstallCaptureDetect(metamob::EnqueueCapture); // never throws: CAPTURE_DETECT_DISABLED disables only this
         InstallMapTravel();
         resourceMap::InstallUi();

@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.9.2** (révision r108).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.10.0** (révision r109).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -45,8 +45,8 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence et animations,
-Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chargement et mises à jour
-et À propos. La version chargée (x.y.z et
+Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chat, Chargement et
+mises à jour et À propos. La version chargée (x.y.z et
 révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
 et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 étiquette `rN` pour le vérificateur de mises à jour.
@@ -207,16 +207,52 @@ n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu r
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
 
+## Trajets et chat
+
+Le bouton TP du chat, le double-clic sur la grande carte ou la mini-carte et
+l’entrée « Voyager jusqu’à cette position » de leur clic droit lancent le trajet
+du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu. Ctrl +
+double-clic, le menu d’un point de repère et `/travel` gardent l’autopilote du jeu.
+**Options → Dofus Enhanced → Déplacements → Remplacer l’autopilote du jeu**,
+décoché, rend le double-clic et cette entrée à l’autopilote du jeu.
+
+**Options → Dofus Enhanced → Chat** affiche ou masque séparément, à côté des
+positions et des archimonstres ou boss de L’éternelle moisson partagés dans le
+chat, le bouton TP, « Âme en sac » et l’avancement Ocre. Tout est affiché par
+défaut ; sans TP, les coordonnées écrites [x,y] restent du texte.
+
 ## Metamob
 
 Dans **Options → Dofus Enhanced → Pierre d’âme**, sous l’alerte et l’équipement
-automatique, trois lignes synchronisent les captures avec ta quête Ocre sur
+automatique, deux lignes synchronisent les captures avec ta quête Ocre sur
 [metamob.fr](https://www.metamob.fr) :
 
 1. Sur Metamob, **Paramètres → Clé API → Générer une clé**, puis copie-la.
-2. Colle-la dans le champ masqué **Clé API Metamob** et clique sur **Enregistrer**.
-   Le mod la vérifie auprès de Metamob et indique dans le chat le compte reconnu.
+2. Colle-la dans le champ masqué **Clé API Metamob** : le bouton **Enregistrer**
+   apparaît dès le premier caractère. Le mod vérifie la clé auprès de Metamob et
+   indique dans le chat le compte reconnu.
 3. Coche **Synchroniser les captures avec Metamob**.
+
+Une fois la clé enregistrée, la ligne n’a plus de champ modifiable : des étoiles
+fixes (jamais la clé ni sa longueur), un bouton d’état et une petite corbeille.
+Le bouton d’état dit ce que le mod sait de la clé, et un clic l’explique dans le
+chat :
+
+- **Clé valide** : Metamob l’a acceptée pendant cette session (à l’enregistrement,
+  lors d’une synchronisation ou de la vérification ci-dessous) ;
+- **Vérification…** : une clé enregistrée lors d’une session précédente ou par un
+  autre client ; le mod la vérifie une fois, sans message dans le chat, quand la
+  ligne s’affiche ;
+- **Clé non vérifiée** : Metamob n’a pas pu la confirmer (injoignable) ; un clic
+  relance la vérification, après une courte pause ;
+- **Clé refusée** (révoquée ou régénérée sur Metamob) ou **Clé illisible**
+  (chiffrée pour un autre compte Windows, ou abîmée) : supprime-la avec la
+  corbeille, puis enregistre une clé valide.
+
+La corbeille reste toujours disponible et demande « Voulez-vous supprimer la clé
+Metamob ? » : **Oui** la supprime de ce PC et rend le champ vide, **Non** (ou dix
+secondes sans réponse) la garde. Pour changer de clé, supprime l’ancienne puis
+colle la nouvelle.
 
 Après chaque combat où ton personnage obtient l’âme d’un archimonstre ou d’un
 boss, le mod ajoute 1 à ce monstre dans ta quête Ocre Dofus Unity, sans rien
@@ -245,9 +281,10 @@ redémarre les clients encore ouverts avec une ancienne version avant de la coch
 
 La clé est personnelle (CGU de Metamob) : aucune clé n’est incluse dans le mod.
 Elle est chiffrée pour ton compte Windows dans `DofusMiniatures-metamob.key`, à
-côté des réglages, et n’est jamais affichée, journalisée ni publiée.
-**Oublier la clé Metamob** la supprime. Les captures faites pendant que Metamob
-est injoignable sont renvoyées automatiquement pendant la session.
+côté des réglages, et n’est jamais affichée, journalisée ni publiée. Supprimée
+avec la corbeille, elle reste valable sur Metamob : régénère-la sur le site pour
+la révoquer. Les captures faites pendant que Metamob est injoignable sont
+renvoyées automatiquement pendant la session.
 
 ## Compilation et publication
 

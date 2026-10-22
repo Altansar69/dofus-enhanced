@@ -377,6 +377,39 @@ void MapTravelTests() {
     run([](Fixture& f){bag=true;StartHavenbagZaap(104);RestoreChatTravel();f.Receive();TickChatTravel();Check(!teleported,"Late response after cancellation is inert");});
     run([](Fixture& f){bag=true;Get(Get(interaction).items[0]).fields["dhav"]=nullptr;StartHavenbagZaap(104);TickChatTravel();Check(!interacted&&!teleported,"No enabled Havenbag zaap means no interaction or departure");f.Receive();TickChatTravel();Check(!teleported,"Unsolicited list cannot replace a missing interaction");});
     run([](Fixture& f){bag=true;Get(Get(destinations).items.back()).numbers["dsol"]=0;Get(Get(localCharacter).fields["money"]).numbers["dcjl"]=0;StartHavenbagZaap(104);f.Receive();TickChatTravel();Check(teleported==1&&teleportCost==0,"A fresh free native destination is allowed");});
+    // « Remplacer l’autopilote du jeu »: on by default, so every scenario above is the
+    // option's default behaviour. Off, the three hooked travel entries are the game's
+    // own again on both map views, in or out of the Havre-Sac: original handler with
+    // its own arguments, no planner, quote, zaap or route. Switching it back on
+    // applies to the very next action, without a restart.
+    run([](Fixture& f){Check(f.owner.settings.mapTravelPlanner,"The mod's travel replaces the game's autopilot by default");});
+    for(const char* type:{"CartographyBannerView","CartographyMapView"}) for(int bagged=0;bagged<2;++bagged)run([type,bagged](Fixture& f){
+        bag=bagged==1;auto owner=f.MapOwner(14,type);f.owner.settings.mapTravelPlanner=false;
+        mapWalkHook(owner,{-10.8f,11.9f},14,true,nullptr);
+        Check(nativeWalks==1&&nativeCoordinates.x==-10.8f&&nativeCoordinates.y==11.9f&&nativeWorld==14&&nativeImmediate,
+            "Option off: the right-click travel entry reaches the game's handler with all its arguments");
+        mapAutoHook(owner,{7.5f,8.5f},nullptr);
+        Check(nativeAutos==1&&nativeCoordinates.x==7.5f&&nativeCoordinates.y==8.5f,"Option off: the native auto-travel call reaches the game's handler");
+        Get(owner).fields["dugt"]=Box<float>(gameTime-0.3f);mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);
+        Check(nativeMouseDowns==1&&!stoppedEvents,"Option off: the double-click reaches the game's own handler and autopilot, event untouched");
+        TickChatTravel();TickChatTravel();
+        Check(!quotes&&!interacted&&!teleported&&!walked&&!entered&&!routeTicks&&notices.empty(),"Option off never starts the mod's travel");
+        Check(std::none_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("MAP_TRAVEL_ROUTE")!=std::string::npos;}),"Option off: no mod route is attempted");
+        f.owner.settings.mapTravelPlanner=true;mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);
+        Check(nativeMouseDowns==1&&stoppedEvents==1&&(bagged?interacted==1&&!quotes:quotes==1&&requestedQuote==104),
+            "Switched back on, the very next double-click is the mod's travel again, without a restart");});
+    for(int action=0;action<2;++action)run([action](Fixture& f){auto owner=f.MapOwner();f.owner.settings.mapTravelPlanner=false;
+        if(action)mapAutoHook(owner,{10,10},nullptr);else mapWalkHook(owner,{10,10},1,true,nullptr);
+        Check(nativeWalks==1-action&&nativeAutos==action&&!quotes&&!interacted,"Option off: each travel entry is the game's");
+        f.owner.settings.mapTravelPlanner=true;
+        if(action)mapAutoHook(owner,{10,10},nullptr);else mapWalkHook(owner,{10,10},1,true,nullptr);
+        Check(nativeWalks==1-action&&nativeAutos==action&&quotes==1&&requestedQuote==104,"Switched back on, the same entry is the mod's travel again at once");});
+    run([](Fixture& f){bag=true;resolvedMaps={104};f.owner.settings.mapTravelPlanner=false;auto menu=f.MapMenu(f.MapOwner());
+        auto& rows=Get(Get(menu).fields["rows"]).items;
+        Check(rows.size()==3&&!nativeMenus&&Get(rows.back()).text=="Se téléporter à ce zaap (Havre-Sac)"&&Get(rows.back()).numbers["icon"]==304,
+            "Option off keeps the Havre-Sac zaap row of the map menu");
+        Check(HandleMapTravelCallback(Get(rows.back()).fields["callback"],lastView)&&interacted==1&&!teleported,"Option off keeps the Havre-Sac zaap click");
+        f.Receive();TickChatTravel();Check(teleported==1&&teleportMap==104&&!walked&&!quotes,"Option off: the chosen Havre-Sac zaap still departs on its fresh list");});
 }
 int main(){using namespace fake;try{
     Initialize();InstallChatTravel();InstallMapTravel();InstallSoulGroupMenu();soul::InstallSpell();
@@ -490,5 +523,5 @@ int main(){using namespace fake;try{
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
       auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(999);Get(services["fjs"]).fields["dsjs"]=d;
       routePendingNative=true;TickChatTravel();Sleep(1050);TickChatTravel();Check(walked==1,"Never replace a different native destination");}
-    std::cout<<"PASS: production TP orchestration, confirmed arrival then native onward travel, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
+    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, confirmed arrival then native onward travel, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

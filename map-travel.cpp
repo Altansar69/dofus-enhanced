@@ -33,6 +33,13 @@ bool Available() {
     return installed && module && module->ready && module->servicesReady &&
         !module->stopped && !module->stopRequested && !module->InCombat();
 }
+// « Remplacer l’autopilote du jeu » (Settings::mapTravelPlanner, on by default),
+// read on every action: switching it applies to the next click, no restart.
+// Off, the three travel entries hooked below (WalkHook, AutoHook,
+// MouseDownHook) stay entirely the game's: original handler and arguments, no
+// planner. Checked first, so nothing else is read then. The Havre-Sac zaap rows
+// of the right-click menu (MenuHook) do not depend on it.
+bool Replacing() { return module && module->settings.mapTravelPlanner && Available(); }
 bool InHavenbag() {
     if (!Available()) return false;
     const auto character=module->FindService("fng");
@@ -130,15 +137,23 @@ void RouteFromMap(Obj owner,Point coordinates,int world,const char* entry) {
         " y="+std::to_string(target.y)+" world="+std::to_string(target.world));
     StartChatTravel(target);
 }
+// fhw.betn: the right-click entry « Voyager jusqu'à cette position (double
+// clic) » (ui.mountTrip.travel) that fhw.betr adds, when the game allows its
+// autopilot, to the menus of the full map (fhw.bedm) and of the mini-map
+// (CartographyBannerView.bedm). That entry's callback (fhw.fhp) is its only
+// caller. The same entry in a flag's menu (MapFlagMenuMaker.AutoTrip) and the
+// /travel command call esg.zhy directly: they always stay the game's.
 void WalkHook(Obj owner,Point coordinates,int world,bool immediate,Method method) {
     try {
-        if (!Available()) { originalWalk(owner,coordinates,world,immediate,method); return; }
+        if (!Replacing()) { originalWalk(owner,coordinates,world,immediate,method); return; }
         RouteFromMap(owner,coordinates,world,"destination");
     } catch (const std::exception& e) { Log(std::string("MAP_TRAVEL_ROUTE_ERROR ")+e.what()); }
 }
+// fhw.beuf has no caller in this build: the same code as the console branch of
+// the double-click, which fhw.beud inlines. Kept as before, the game's when off.
 void AutoHook(Obj owner,Point coordinates,Method method) {
     try {
-        if (!Available()) { originalAuto(owner,coordinates,method); return; }
+        if (!Replacing()) { originalAuto(owner,coordinates,method); return; }
         if (OwnerCurrent(owner)) RouteFromMap(owner,coordinates,World(owner),"double-click");
     } catch (const std::exception& e) { Log(std::string("MAP_TRAVEL_ROUTE_ERROR ")+e.what()); }
 }
@@ -150,13 +165,14 @@ bool DoubleClick(Obj owner) {
 }
 void MouseDownHook(Obj owner,Obj event,Method method) {
     // The double-click travel is inlined in the map view's mouse-down handler
-    // (fhw.beuf is never called by the game), so the interception happens here:
-    // the game's own detection, then the TP planner instead of its autopilot.
-    // Ctrl + double-click keeps the game's direct autopilot; single clicks,
-    // drags and right clicks reach the native handler untouched.
+    // (fhw.beuf is never called by the game), the same for the full map and the
+    // mini-map, so the interception happens here: the game's own detection,
+    // then the TP planner instead of its autopilot. Ctrl + double-click keeps
+    // the game's direct autopilot; single clicks, drags and right clicks reach
+    // the native handler untouched, and every click does with the option off.
     bool intercept=false; Point mouse{};
     try {
-        intercept=Available() && event && OwnerCurrent(owner) && api.Value<int>(api.Call(event,"get_button"))==0 &&
+        intercept=Replacing() && event && OwnerCurrent(owner) && api.Value<int>(api.Call(event,"get_button"))==0 &&
             !api.Value<bool>(api.Call(event,"get_ctrlKey")) && DoubleClick(owner);
         if (intercept) mouse=api.Value<Point>(api.Call(event,"get_mousePosition"));
     } catch (const std::exception& e) { Log(std::string("MAP_TRAVEL_ROUTE_ERROR ")+e.what()); intercept=false; }

@@ -17,8 +17,9 @@ void Log(const std::string& text);
 // The game thread queues captures and key operations; one detached worker at a
 // time takes the whole state ("book"), runs Work (key operations then one sync
 // cycle, plain C++ only: no IL2CPP call), and hands it back to TickSync, which
-// posts its notices. Logs carry fixed codes and numbers only: never the key, a
-// header, a body, the username, a slug or a character name.
+// posts its notices and keeps what it learnt of the stored key for the options'
+// key row. Logs carry fixed codes and numbers only: never the key, a header, a
+// body, the username, a slug or a character name.
 namespace metamob {
 namespace {
 // Visible texts: local chat notices, prefix included.
@@ -27,8 +28,8 @@ constexpr char KeyInvalid[] = "Metamob : clé invalide (lettres, chiffres et sym
     KeyUnverified[] = "Metamob : clé enregistrée ; Metamob est injoignable pour la vérifier.",
     KeyNotStored[] = "Metamob : impossible d’enregistrer la clé sur ce PC.",
     KeyForgotten[] = "Metamob : clé oubliée.", KeyNotForgotten[] = "Metamob : impossible d’oublier la clé sur ce PC.",
-    KeyRefused[] = "Metamob : clé refusée (révoquée ou régénérée ?). Enregistre une nouvelle clé dans les options.",
-    KeyUnreadable[] = "Metamob : clé illisible sur ce compte Windows, enregistre-la à nouveau.";
+    KeyRefused[] = "Metamob : clé refusée (révoquée ou régénérée ?). Supprime-la avec la corbeille dans les options, puis enregistre une nouvelle clé.",
+    KeyUnreadable[] = "Metamob : clé illisible sur ce compte Windows. Supprime-la avec la corbeille dans les options, puis enregistre-la à nouveau.";
 std::string Quoted(const std::string& name) { return "« " + name + " »"; }
 std::string Number(int value) { return std::to_string(value); }
 std::string SavedText(const std::string& user) { return "Metamob : clé enregistrée pour le compte " + Quoted(user) + "."; }
@@ -151,6 +152,27 @@ bool Announced(const std::string& slug, int64_t id) {
     CloseHandle(event);
     return true;
 }
+// The key file as seen: absent, or its size and dates (never its content). A
+// status learnt with one key file holds for that file only.
+struct KeyFile {
+    bool present = false;
+    uint64_t size = 0, created = 0, written = 0;
+    bool operator==(const KeyFile&) const = default;
+};
+// nullopt: a Windows error other than a missing file, nothing to conclude.
+std::optional<KeyFile> Identity(const std::filesystem::path& path) {
+    WIN32_FILE_ATTRIBUTE_DATA data{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &data)) {
+        const auto error = GetLastError();
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND) return KeyFile{};
+        return std::nullopt;
+    }
+    const auto ticks = [](const FILETIME& time) { return (static_cast<uint64_t>(time.dwHighDateTime) << 32) | time.dwLowDateTime; };
+    return KeyFile{true, (static_cast<uint64_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow, ticks(data.ftCreationTime),
+        ticks(data.ftLastWriteTime)};
+}
+// What is known of one key file: its status for the key row.
+struct Known { KeyFile file; KeyStatus status = KeyStatus::None; };
 // Everything a cycle reads and updates. The game thread owns it while no worker runs.
 struct Book {
     std::vector<Group> groups;
@@ -193,18 +215,28 @@ struct Job {
     Book book;
     std::optional<Secret> submit;   // a key to verify with GET /me, then store
     bool forget = false, cycle = false, submitting = false;
+    std::optional<KeyFile> check;   // the key row's check of this key file (CheckStoredKey)
+    bool told = false;              // that check told the key's status (read once the worker has ended)
     std::filesystem::path keyPath;
     Transport transport;
     std::atomic_bool cancelled{false}, done{false};
     // Asked by the game thread, read by the cycle only, never by the transport: a
     // request under way ends normally, so a write Metamob has applied is confirmed.
     std::atomic_bool off{false},    // the sync was turned off: nothing more is written
-        forgetting{false};          // « Supprimer » confirmed: nothing more is sent with the key
+        forgetting{false};          // the trash then « Oui »: nothing more is sent with the key
     std::mutex lock;
     std::vector<std::string> notices; // taken by TickSync, posted on the game thread
+    std::optional<Known> found;       // the stored key's status learnt last, taken by TickSync like the notices
     void Post(std::string text) {
         std::lock_guard<std::mutex> guard(lock);
         if (notices.size() < MaxNotices) notices.push_back(std::move(text));
+    }
+    // What an answer or a load told of the stored key, for the key file read
+    // before it (not read: nothing can be tied to it). The latest one counts.
+    void Found(KeyStatus status, const std::optional<KeyFile>& file) {
+        if (!file) return;
+        std::lock_guard<std::mutex> guard(lock);
+        found = Known{*file, status};
     }
 };
 // The game thread asked the cycle to end early: the sync turned off (no write
@@ -235,10 +267,15 @@ struct Session {
     Job& job;
     Book& book;
     const Secret& key;
+    std::optional<KeyFile> file;       // read before the key: what the answers tell holds for it
     int requests = 0, done = 0;
-    bool rediscovered = false, askQuestsAgain = false;
+    bool rediscovered = false, askQuestsAgain = false, accepted = false;
     std::vector<std::string> problems; // quest choice notices already given in this cycle
 };
+// A 2xx answer to the stored key: Metamob accepts it (told to the key row once per cycle).
+void Accepted(Session& s) {
+    if (!std::exchange(s.accepted, true)) s.job.Found(KeyStatus::Verified, s.file);
+}
 // Metamob's own refusal of the key is JSON ({"message":...}); a 401/403 page that
 // is not (a Cloudflare challenge, a filtering proxy) says nothing about the key.
 bool KeyRefusal(const Response& response) { return (response.status == 401 || response.status == 403) && response.json; }
@@ -255,6 +292,7 @@ bool KeyRefusal(const Response& response) { return (response.status == 401 || re
 // key is tried again every 10 min (refused again: no new notice).
 [[noreturn]] void Refuse(Session& s) {
     if (!s.book.refused) { s.job.Post(KeyRefused); Log("METAMOB_KEY_REFUSED"); }
+    s.job.Found(KeyStatus::Refused, s.file); // until Metamob accepts it again or another key is saved
     s.book.refused = true;
     s.book.refusedKey = Fingerprint(s.key);
     s.book.notBefore = timing.now() + PauseCheckMs;
@@ -277,7 +315,7 @@ std::string Get(Session& s, std::string path, const char* route, bool questPath)
     ++s.requests;
     auto response = Send(s.job, s.key, "GET", std::move(path), route);
     if (s.job.cancelled.load()) throw Halt{};
-    if (response.status >= 200 && response.status < 300 && response.json) return std::move(response.body);
+    if (response.status >= 200 && response.status < 300 && response.json) { Accepted(s); return std::move(response.body); }
     if (KeyRefusal(response)) Refuse(s);
     if (response.status == 429) Limit(s, response);
     if (response.status == 404 && questPath) throw QuestGone{};
@@ -410,6 +448,7 @@ void Write(Session& s, bool resend = true) {
         QuantityBody(flight.target));
     if (s.job.cancelled.load()) throw Halt{};
     if (response.status >= 200 && response.status < 300 && response.json) {
+        Accepted(s);
         std::optional<QuantityUpdate> update;
         try { update = ParseQuantityUpdate(response.body); } catch (...) {}
         if (update && update->monsterId == flight.id) {
@@ -534,10 +573,12 @@ void Abandon(Job& job) {
 }
 void Cycle(Job& job) {
     auto& book = job.book;
+    const auto file = Identity(job.keyPath); // read first: a key saved meanwhile is never taken for the one loaded
     std::optional<Secret> key;
     try { key = LoadKey(job.keyPath); }
     catch (...) {
         // Another Windows account or PC, a corrupt file: the captures cannot be sent.
+        job.Found(KeyStatus::Unreadable, file);
         job.Post(KeyUnreadable);
         Log("METAMOB_KEY_UNREADABLE pending=" + std::to_string(Units(book)));
         book.groups.clear(); book.flights.clear();
@@ -549,7 +590,7 @@ void Cycle(Job& job) {
         else if (timing.now() < book.retryRefused) { book.notBefore = timing.now() + PauseCheckMs; return; }
         // else the same key is tried again: refused at its first request, it pauses without a new notice
     }
-    Session s{job, book, *key};
+    Session s{job, book, *key, file};
     try {
         while (!book.flights.empty() || !book.groups.empty()) {
             // The request budget spent: the next job goes on at once. Turned off or
@@ -576,7 +617,7 @@ void Submit(Job& job) {
     const Secret key = std::move(*job.submit);
     job.submit.reset();
     const auto response = Send(job, key, "GET", "/me", "/me");
-    if (job.cancelled.load() || job.forgetting.load()) return; // stopped, or « Supprimer » confirmed since: not stored
+    if (job.cancelled.load() || job.forgetting.load()) return; // stopped, or « Oui » confirmed since: not stored
     if (KeyRefusal(response)) { job.Post(KeyRejected); Log("METAMOB_KEY_REJECTED"); return; }
     std::optional<std::string> user;
     if (response.status >= 200 && response.status < 300 && response.json) {
@@ -584,30 +625,61 @@ void Submit(Job& job) {
     }
     try { StoreKey(job.keyPath, key); }
     catch (...) { job.Post(KeyNotStored); Log("METAMOB_KEY_STORE_FAILED"); return; }
+    job.Found(user ? KeyStatus::Verified : KeyStatus::Unverified, Identity(job.keyPath)); // the file just written
     Log(user ? "METAMOB_KEY_SAVED verified=1" : "METAMOB_KEY_SAVED verified=0");
     job.Post(user ? SavedText(*user) : std::string(KeyUnverified));
     Fresh(job.book);
     if (response.status == 429)
         job.book.notBefore = timing.now() + 1000 * static_cast<uint64_t>(RetryAfterSeconds(response.retryAfter, timing.epoch()).value_or(DefaultRetryAfter));
 }
-// Options › « Supprimer » (second click): the key file goes, and so do the
+// Options › the key row's trash, then « Oui »: the key file goes, and so do the
 // captures that can no longer be sent.
 void Forget(Job& job) {
     try { ForgetKey(job.keyPath); }
     catch (...) { job.Post(KeyNotForgotten); Log("METAMOB_KEY_FORGET_FAILED"); return; }
     Log("METAMOB_KEY_FORGOTTEN");
+    job.Found(KeyStatus::None, KeyFile{});
     job.Post(KeyForgotten);
     Abandon(job);
     job.book = Book{};
+}
+// Options › the key row shows a key not checked in this session, or « Clé non
+// vérifiée » clicked: GET /v1/me with the stored key, silent. Only the row's
+// status changes; without a clear answer the next request waits 30 s (or the
+// Retry-After given).
+void Check(Job& job) {
+    if (Identity(job.keyPath) != job.check) return; // replaced or forgotten since it was asked: told apart by the game thread
+    std::optional<Secret> key;
+    try { key = LoadKey(job.keyPath); }
+    catch (...) { Log("METAMOB_KEY_CHECKED status=unreadable"); job.Found(KeyStatus::Unreadable, job.check); job.told = true; return; }
+    if (!key) return; // forgotten meanwhile, here or by another client
+    const auto response = Send(job, *key, "GET", "/me", "/me");
+    if (job.cancelled.load() || job.forgetting.load()) return; // stopped, or « Oui » confirmed since: nothing learnt
+    auto status = KeyRefusal(response) ? KeyStatus::Refused : KeyStatus::Unverified;
+    if (response.status >= 200 && response.status < 300 && response.json) {
+        try { static_cast<void>(ParseMe(response.body)); status = KeyStatus::Verified; } catch (...) {}
+    }
+    if (status == KeyStatus::Unverified) {
+        const int seconds = response.status == 429 ? RetryAfterSeconds(response.retryAfter, timing.epoch()).value_or(DefaultRetryAfter) : 0;
+        job.book.notBefore = std::max(job.book.notBefore, timing.now() + (seconds > 0 ? 1000 * static_cast<uint64_t>(seconds) : BackoffMs));
+    }
+    Log(std::string("METAMOB_KEY_CHECKED status=") +
+        (status == KeyStatus::Verified ? "verified" : status == KeyStatus::Refused ? "refused" : "unverified"));
+    job.Found(status, job.check);
+    job.told = true;
 }
 // The synchronous core: what one worker does, in the order the user asked.
 void Work(Job& job) noexcept {
     try {
         // A confirmed forget is done even by a stopped job: one local file, no request.
         if (job.forget) Forget(job);
+        // The key row's check, before a key typed meanwhile replaces that key file.
+        if (job.check && !job.cancelled.load() && !job.forgetting.load()) Check(job);
         // A key typed before a forget confirmed while this job runs is never sent nor stored.
         if (job.submit && !job.cancelled.load() && !job.forgetting.load()) Submit(job);
-        if (job.cycle && !job.cancelled.load() && !Ending(job) && Units(job.book) > 0) Cycle(job);
+        // A pause set just before (a failed check, a rate-limited key) holds the
+        // captures too: Collect gives them back, Start sends them once it ends.
+        if (job.cycle && !job.cancelled.load() && !Ending(job) && Units(job.book) > 0 && timing.now() >= job.book.notBefore) Cycle(job);
     } catch (...) {
         try { Log("METAMOB_WORKER_ERROR"); } catch (...) {}
     }
@@ -631,6 +703,10 @@ struct State {
     std::vector<Group> inbox;
     std::optional<Secret> submit;
     bool forget = false;
+    // The key row's status: the key file as last seen here and what the workers
+    // told of it (never in the book, which a running worker holds).
+    Known known;
+    bool check = false;     // a check the key row asked for, not given to a worker yet
     std::vector<std::string> outbox;
     uint64_t lastCapture = 0, nextError = 0;
     int jobUnits = 0;
@@ -656,6 +732,22 @@ void Cancel() noexcept {
 
 void Post(std::string text) { if (state.outbox.size() < MaxNotices) state.outbox.push_back(std::move(text)); }
 int Pending() { return Units(state.book) + Count(state.inbox) + state.jobUnits; }
+// « Oui » confirmed, until the worker that deletes the key file (first of all)
+// has been taken back: no key for the key row meanwhile, then the key file as
+// it is, a new key saved right after included.
+bool Forgetting() { return state.forget || (state.job && state.job->forget); }
+// The key file seen now. Another one than the known one (saved, replaced or
+// forgotten, here or by another client) is a key not checked yet, or none.
+void Track(const KeyFile& file) {
+    if (file == state.known.file) return;
+    state.known = Known{file, file.present ? KeyStatus::Saved : KeyStatus::None};
+    state.check = false;
+}
+// What a worker learnt holds for the key file it read, if that file is still there.
+void Learn(const Known& found) {
+    if (const auto file = Identity(state.keyPath)) Track(*file);
+    if (found.file == state.known.file) state.known.status = found.status;
+}
 void Error(const char* code) noexcept {
     try {
         const auto now = timing.now();
@@ -685,17 +777,26 @@ void Discard(bool inbox) {
 void Collect() {
     if (!state.job) return;
     const bool finished = state.job->done.load(); // read first: no notice posted before it is missed
+    std::optional<Known> found;
     {
         std::lock_guard<std::mutex> guard(state.job->lock);
         for (auto& text : state.job->notices) Post(std::move(text));
         state.job->notices.clear();
+        found.swap(state.job->found);
     }
+    if (found) Learn(*found);
     if (!finished) return;
     const auto job = std::move(state.job);
     state.job.reset();
     if (activeJob == job) activeJob.reset();
     state.book = std::move(job->book);
     state.jobUnits = 0;
+    // A check that told nothing of its key file (an unexpected failure): not
+    // verified. Every check thus leaves its key file out of Saved: never twice.
+    // One that told something, Saved again since, was asked once more
+    // (« Clé non vérifiée » clicked meanwhile): that request stands.
+    if (job->check && !job->told && *job->check == state.known.file && state.known.status == KeyStatus::Saved)
+        state.known.status = KeyStatus::Unverified;
     if (job->off.load()) Discard(false); // turned off while it ran: nothing of it is resumed
 }
 void Start(bool enabled) {
@@ -703,7 +804,10 @@ void Start(bool enabled) {
     state.inbox.clear();
     const auto now = timing.now();
     const bool due = enabled && Units(state.book) > 0 && (now < state.lastCapture || now - state.lastCapture >= DebounceMs) && now >= state.book.notBefore;
-    if (!due && !state.submit && !state.forget) return;
+    // The key row's check: dropped once its key file's status is known, never before a pause ends.
+    if (state.known.status != KeyStatus::Saved) state.check = false;
+    const bool check = state.check && now >= state.book.notBefore;
+    if (!due && !check && !state.submit && !state.forget) return;
     if (activeJob && !activeJob->done.load()) return;
     auto job = std::make_shared<Job>();
     job->book = std::move(state.book);
@@ -713,6 +817,7 @@ void Start(bool enabled) {
     state.submit.reset();
     job->forget = std::exchange(state.forget, false);
     job->cycle = due;
+    if (check) { job->check = state.known.file; state.check = false; }
     job->keyPath = state.keyPath;
     job->transport = state.transport;
     state.jobUnits = Units(job->book);
@@ -726,6 +831,7 @@ void Start(bool enabled) {
         state.book.notBefore = now + BusyMs;
         state.submit = std::move(job->submit);
         state.forget = state.forget || job->forget;
+        state.check = state.check || job->check.has_value();
         state.job.reset(); activeJob.reset(); state.jobUnits = 0;
         throw;
     }
@@ -740,6 +846,7 @@ void InstallSync(const std::filesystem::path& settingsPath, Transport transport,
         state.transport = std::move(transport);
         state.notice = std::move(notice);
         state.installed = static_cast<bool>(state.transport);
+        if (const auto file = Identity(state.keyPath)) Track(*file); // a key file there: Saved until checked
         Log(state.installed ? "METAMOB_SYNC_READY" : "METAMOB_SYNC_UNAVAILABLE");
     } catch (...) {
         state.installed = false;
@@ -811,11 +918,28 @@ void ForgetStoredKey() {
         if (!state.installed) return;
         state.submit.reset(); // a key not verified yet is dropped as well
         state.forget = true;
+        state.check = false;  // and a check not started yet
         if (state.job) state.job->forgetting.store(true); // a running cycle sends nothing more with that key
     } catch (...) { Error("METAMOB_KEY_ERROR"); }
 }
 bool KeyStored() {
     try { return state.installed && HasKey(state.keyPath); } catch (...) { return false; }
+}
+KeyStatus StoredKeyStatus() {
+    try {
+        if (!state.installed || Forgetting()) return KeyStatus::None;
+        if (const auto file = Identity(state.keyPath)) Track(*file); // a Windows error: what is known stays
+        return state.known.status;
+    } catch (...) { return KeyStatus::None; }
+}
+void CheckStoredKey(bool again) {
+    try {
+        if (!state.installed || Forgetting()) return;
+        // « Clé non vérifiée » clicked: that key file is checked once more, shown Saved meanwhile.
+        if (again && state.known.status == KeyStatus::Unverified) state.known.status = KeyStatus::Saved;
+        // Once per key file and session: a check, answered or not, leaves its file out of Saved (Learn, Collect).
+        if (state.known.status == KeyStatus::Saved) state.check = true;
+    } catch (...) { Error("METAMOB_KEY_ERROR"); }
 }
 // Nothing of the game is held: Restore has nothing to wait for.
 bool SyncCleanupPending() { return false; }

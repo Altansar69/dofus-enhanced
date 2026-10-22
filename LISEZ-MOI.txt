@@ -1,4 +1,33 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 108 — VERSION 1.9.2
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 109 — VERSION 1.10.0
+
+R109 — VERSION 1.10.0 : CLÉ METAMOB, OPTIONS DU CHAT ET DE L’AUTOPILOTE
+- Clé API Metamob (bloc Pierre d’âme), une seule ligne. Sans clé,
+  « Enregistrer » n’apparaît qu’une fois un caractère saisi. Avec une clé
+  enregistrée : des étoiles non modifiables (jamais la clé), un bouton
+  d’état et une corbeille. Le bouton n’affiche « Clé valide » que si
+  Metamob a accepté la clé pendant la session ; sinon « Vérification… »
+  (clé d’une session précédente ou d’un autre client, vérifiée une fois
+  sans message quand la ligne s’affiche), « Clé non vérifiée » (Metamob
+  injoignable ; un clic relance la vérification), « Clé refusée » ou
+  « Clé illisible ». Un clic sur le bouton l’explique dans le chat. La
+  corbeille reste toujours disponible et demande dans la ligne
+  « Voulez-vous supprimer la clé Metamob ? » (Oui / Non, 10 s) ; Oui
+  supprime la clé et rend le champ vide. Les messages « clé refusée » et
+  « clé illisible » renvoient vers cette corbeille. La ligne « Oublier la
+  clé Metamob » disparaît.
+- Nouveau bloc Chat : « Bouton TP dans le chat », « Âme en sac dans le
+  chat » et « Avancement Ocre dans le chat » affichent ou masquent chaque
+  ajout à côté des positions et des archimonstres ou boss de L’éternelle
+  moisson partagés. Tout reste affiché par défaut ; sans TP, les
+  coordonnées écrites [x,y] restent du texte.
+- Déplacements › « Remplacer l’autopilote du jeu » (coché par défaut) : le
+  double-clic sur la grande carte ou la mini-carte et l’entrée « Voyager
+  jusqu’à cette position » de leur clic droit lancent le trajet du mod
+  (zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu). Décoché,
+  ils lancent directement l’autopilote du jeu. Ctrl + double-clic, le menu
+  d’un point de repère et /travel gardent toujours l’autopilote du jeu.
+- Les réglages et la clé enregistrée ne changent pas.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R108 — VERSION 1.9.2 : METAMOB DANS LE BLOC PIERRE D’ÂME
 - Les trois lignes Metamob (synchroniser les captures, clé API, oublier la

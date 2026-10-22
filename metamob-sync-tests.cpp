@@ -68,6 +68,7 @@ std::mutex scriptLock;
 std::deque<Exchange> script;
 std::vector<Call> calls;
 std::string surprise, keyNow = FakeKey;
+std::string failingLog; // a log line starting with it throws: an unexpected failure inside the worker
 std::function<Response(const Request&, const std::atomic_bool&)> intercept; // replaces the script (blocking requests)
 std::atomic_bool entered{false};
 
@@ -219,8 +220,8 @@ const std::string KeyInvalid = "Metamob : clé invalide (lettres, chiffres et sy
     KeyRejected = "Metamob : clé refusée par Metamob, rien n’a été enregistré.",
     KeyUnverified = "Metamob : clé enregistrée ; Metamob est injoignable pour la vérifier.",
     KeyNotStored = "Metamob : impossible d’enregistrer la clé sur ce PC.", KeyForgotten = "Metamob : clé oubliée.",
-    KeyRefused = "Metamob : clé refusée (révoquée ou régénérée ?). Enregistre une nouvelle clé dans les options.",
-    KeyUnreadable = "Metamob : clé illisible sur ce compte Windows, enregistre-la à nouveau.",
+    KeyRefused = "Metamob : clé refusée (révoquée ou régénérée ?). Supprime-la avec la corbeille dans les options, puis enregistre une nouvelle clé.",
+    KeyUnreadable = "Metamob : clé illisible sur ce compte Windows. Supprime-la avec la corbeille dans les options, puis enregistre-la à nouveau.",
     SavedUser = "Metamob : clé enregistrée pour le compte « Zyxwvut99 ».",
     NoQuest = "Metamob : aucune quête Ocre Dofus Unity sur ton compte, rien n’a été modifié.",
     SeveralQuests = "Metamob : plusieurs quêtes Ocre sur ton compte ; indique le nom de ce personnage dans « Personnage à contacter » de la bonne quête.";
@@ -1250,9 +1251,10 @@ void Robustness() {
     RestoreSync();
     Check(Logged("METAMOB_SYNC_STOP pending=500"), "500 captures pending at Restore");
     // Restored: everything is inert.
-    Check(!KeyStored(), "No key known after Restore");
+    Check(!KeyStored() && StoredKeyStatus() == KeyStatus::None, "No key known after Restore");
     SubmitKey(FakeKey);
     ForgetStoredKey();
+    CheckStoredKey(true);
     EnqueueCapture(Captured(Tofu));
     Tick(5000);
     Check(Sent() == 0 && notices.empty(), "Inert after Restore");
@@ -1427,10 +1429,12 @@ std::optional<Response> heldReply;  // its reply instead of the model's
 std::atomic_bool holding{false}, letGo{false};
 std::atomic<int> holdAfter{0};        // matches of holdAt let through before the one held
 std::atomic_bool losePatches{false};  // every write sent, never applied nor answered
+std::atomic_bool meLost{false};       // GET /me sent, never answered (Metamob unreachable)
 Response ModelAnswer(const Request& request) {
     const std::vector<Row> rows{Mob, Tofu, Tiwa};
     const auto list = "/quests/" + Slug + "/monsters";
     std::lock_guard<std::mutex> guard(modelLock);
+    if (request.method == "GET" && request.path == "/me") return meLost.load() ? Lost(12029, false) : Json(MeBody(User));
     if (request.method == "GET" && request.path == "/quests") return Json("{\"data\":[" + Quest(Slug, Character.c_str(), "ocre", 1) + "]}");
     if (request.method == "GET" && request.path == list + "?limit=200&offset=0") {
         std::vector<Row> page;
@@ -1467,7 +1471,7 @@ void Gate(const Path& settings, const std::string& hold, std::optional<Response>
         stock = {{Mob.id, Mob.quantity}, {Tofu.id, Tofu.quantity}, {Tiwa.id, Tiwa.quantity}};
         requested.clear();
     }
-    holdAt = hold; heldReply = std::move(reply); holding = false; letGo = false; holdAfter = 0; losePatches = false;
+    holdAt = hold; heldReply = std::move(reply); holding = false; letGo = false; holdAfter = 0; losePatches = false; meLost = false;
     intercept = Gated;
 }
 size_t Requested(const std::string& prefix = {}) {
@@ -1568,7 +1572,7 @@ void StopAfterUnsettled() {
     Finish("stop after a write left unsettled");
 }
 
-// « Supprimer » confirmed while a cycle runs: no request starts after it, a write
+// « Oui » confirmed while a cycle runs: no request starts after it, a write
 // whose answer is on its way is still confirmed, then the key goes and what is
 // left is said unsynchronised.
 void ForgetWhileSending() {
@@ -1655,7 +1659,7 @@ void ForgetWhileSending() {
     // Confirmed while a key typed before is being checked: that key is never stored.
     Begin(Folder("forget-submit"), true);
     intercept = [](const Request& request, const std::atomic_bool&) {
-        if (request.path == "/me") ForgetStoredKey(); // « Supprimer » confirmed meanwhile
+        if (request.path == "/me") ForgetStoredKey(); // « Oui » confirmed meanwhile
         return Json(MeBody(User));
     };
     SubmitKey(OtherKey);
@@ -1679,6 +1683,360 @@ void ForgetWhileSending() {
     Said({KeyForgotten, ForgetUnsure(Tofu)}, "The unsettled write is named when the key goes");
     Check(!FlightAnnounced(Slug, Tofu) && !KeyStored(), "Forgotten, no longer announced");
     Finish("forget with a write unsettled");
+}
+
+// The key row as the options show it (OptionsUi reads the status, then asks for
+// a check while a Saved key is shown).
+void RowShown() { if (StoredKeyStatus() == KeyStatus::Saved) CheckStoredKey(false); }
+// Another game client of this PC saves a key: a later write time than the file it replaces.
+void AnotherClientSaves(const Path& settings, const std::string& key) {
+    Sleep(40); // past the resolution of file times
+    StoreKey(KeyPath(settings), Secret(key));
+}
+
+// The key row's status follows what the capture sync learnt of the key file,
+// never more: saved verified or not, a refused new key leaving the saved one as
+// it was, forgotten (none at once, before the worker deletes the file), a failed
+// forget, a key file there at start, another client's key saved, replaced or
+// forgotten.
+void KeyStatusFollowsTheKey() {
+    const auto settings = Folder("status");
+    const auto file = KeyPath(settings);
+    Begin(settings, false);
+    Check(StoredKeyStatus() == KeyStatus::None, "No key file: none");
+    Expect("GET", "/me", Json(MeBody(User)));
+    SubmitKey(FakeKey);
+    Check(StoredKeyStatus() == KeyStatus::None, "A key being checked is not stored yet");
+    Tick();
+    Said({SavedUser}, "A verified key");
+    Check(StoredKeyStatus() == KeyStatus::Verified, "Saved with its account named: valid");
+    keyNow = OtherKey;
+    Expect("GET", "/me", Html(503));
+    SubmitKey(OtherKey);
+    Tick();
+    Said({KeyUnverified}, "A key saved while Metamob is unreachable");
+    Check(StoredKeyStatus() == KeyStatus::Unverified && LoadKey(file)->value() == OtherKey, "Saved without its check: not verified");
+    Expect("GET", "/me", Status(401));
+    SubmitKey(OtherKey);
+    Tick();
+    Said({KeyRejected}, "A refused key");
+    Check(StoredKeyStatus() == KeyStatus::Unverified && LoadKey(file)->value() == OtherKey, "A refused new key leaves the saved one as it was");
+    ForgetStoredKey();
+    Check(StoredKeyStatus() == KeyStatus::None && KeyStored(), "Forgotten: none at once, before the file is deleted");
+    Tick();
+    Said({KeyForgotten}, "Forgotten");
+    Check(StoredKeyStatus() == KeyStatus::None && !KeyStored(), "Deleted: none");
+    // A forget that fails (a folder in place of the key file): that file again, as it was known.
+    std::filesystem::create_directory(file);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Something in place of the key file: not checked yet");
+    ForgetStoredKey();
+    Check(StoredKeyStatus() == KeyStatus::None, "None while the forget runs");
+    Tick();
+    Said({"Metamob : impossible d’oublier la clé sur ce PC."}, "Forget refused");
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Not deleted: shown again as it was");
+    std::filesystem::remove(file);
+    Check(StoredKeyStatus() == KeyStatus::None, "Removed: none");
+    Finish("key status of saved and forgotten keys");
+
+    // The next session with a key file: Saved, never checked unless the key row
+    // shows it. Another client's key saved, replaced, forgotten: not checked yet, then none.
+    Begin(settings, true);
+    InstallSync(settings, Scripted, Noted);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "A key file there at start: not checked yet");
+    Tick(60000);
+    Check(StoredKeyStatus() == KeyStatus::Saved && Sent() == 0, "Not checked unless the key row shows it");
+    Expect("GET", "/me", Json(MeBody(User)));
+    RowShown();
+    Tick();
+    Check(StoredKeyStatus() == KeyStatus::Verified && notices.empty(), "Checked once shown: valid, silently");
+    AnotherClientSaves(settings, OtherKey);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Replaced by another client: not checked yet");
+    ForgetKey(file);
+    Check(StoredKeyStatus() == KeyStatus::None, "Forgotten by another client: none");
+    AnotherClientSaves(settings, FakeKey);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Saved again by another client: not checked yet");
+    Finish("key status at start and from other clients");
+}
+
+// A capture cycle tells the key row what Metamob answered the stored key: a 2xx
+// makes it valid, its refusal refused until it accepts the key again, a page
+// that is not Metamob's nothing, an unreadable file unreadable.
+void KeyStatusFromCycles() {
+    const auto settings = Folder("status-cycle");
+    Begin(settings, true);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "A key file not checked yet");
+    ExpectFirst(Tofu, 2, 3);
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({Added(Tofu, 2, 3)}, "A capture sent");
+    Check(StoredKeyStatus() == KeyStatus::Verified, "Answered with the stored key: valid");
+    Expect("GET", StepPath(Slug, Mob.step), Status(401));
+    EnqueueCapture(Captured(Mob));
+    Tick(2000);
+    Said({KeyRefused}, "Refused");
+    Check(StoredKeyStatus() == KeyStatus::Refused, "Refused by Metamob: refused");
+    RowShown();
+    for (int i = 0; i < 19; ++i) Tick(30000);
+    Check(StoredKeyStatus() == KeyStatus::Refused && Sent() == 6, "Refused during the pause, never checked by the key row");
+    ExpectStep(Slug, Mob, 0);
+    ExpectWrite(Slug, Mob, 1, Written(Mob, 1));
+    Tick(30000);
+    Said({Added(Mob, 0, 1)}, "Accepted again 10 min later");
+    Check(StoredKeyStatus() == KeyStatus::Verified, "Accepted again: valid");
+    Expect("GET", StepPath(Slug, Tiwa.step), Html(401));
+    EnqueueCapture(Captured(Tiwa));
+    Tick(2000);
+    Check(StoredKeyStatus() == KeyStatus::Verified && notices.empty(), "A 401 page that is not Metamob's says nothing of the key");
+    {
+        std::ofstream output(KeyPath(settings), std::ios::binary);
+        output << "DEMK1\n" << Marker;
+    }
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Another key file: not checked yet");
+    Tick(30000);
+    Said({KeyUnreadable}, "An unreadable key");
+    Check(StoredKeyStatus() == KeyStatus::Unreadable, "Unreadable");
+    Finish("key status from cycles");
+}
+
+// The key row shows a key not checked in this session: one silent GET /v1/me,
+// the sync on or off. Once per key file and session; « Clé non vérifiée »
+// clicked checks it once more, after the pause of a failed check (30 s, or its
+// Retry-After). Nothing is said in the chat; an answer about a key file
+// replaced meanwhile is not taken for the new one.
+void SilentCheck() {
+    const auto settings = Folder("check");
+    const auto file = KeyPath(settings);
+    Begin(settings, true);
+    syncOn = false;
+    Expect("GET", "/me", Json(MeBody(User)));
+    RowShown();
+    RowShown();
+    Tick();
+    Check(StoredKeyStatus() == KeyStatus::Verified && notices.empty() && Sent() == 1, "Checked once, silently, the sync off: valid");
+    Check(Logged("METAMOB_HTTP method=GET route=/me status=200") && Logged("METAMOB_KEY_CHECKED status=verified"), "Check logs");
+    for (int i = 0; i < 5; ++i) { RowShown(); CheckStoredKey(false); CheckStoredKey(true); Tick(60000); }
+    Check(Sent() == 1 && notices.empty(), "Never twice for one key file; a valid key is not checked again on request");
+    AnotherClientSaves(settings, OtherKey);
+    keyNow = OtherKey;
+    Expect("GET", "/me", Status(401));
+    RowShown();
+    Tick();
+    Check(StoredKeyStatus() == KeyStatus::Refused && notices.empty() && Sent() == 2, "Refused by Metamob: refused, silently");
+    for (int i = 0; i < 3; ++i) { RowShown(); CheckStoredKey(true); Tick(60000); }
+    Check(Sent() == 2 && Logged("METAMOB_KEY_CHECKED status=refused"), "A refused key is not checked again");
+    // Unreachable: not verified; checked again only when asked, 30 s after the failure.
+    AnotherClientSaves(settings, FakeKey);
+    keyNow = FakeKey;
+    Expect("GET", "/me", Lost(12029, false));
+    RowShown();
+    Tick();
+    const auto failed = LastAt();
+    Check(StoredKeyStatus() == KeyStatus::Unverified && notices.empty() && Sent() == 3, "Unreachable: not verified, silently");
+    RowShown();
+    Tick(10000);
+    Check(Sent() == 3, "Not checked again by itself");
+    CheckStoredKey(true);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "« Clé non vérifiée » clicked: being checked again");
+    CheckStoredKey(true);
+    RowShown();
+    TickAt(failed + 29999);
+    Check(Sent() == 3 && StoredKeyStatus() == KeyStatus::Saved, "Not before 30 s after the failed check, asked once however often");
+    Expect("GET", "/me", Json(MeBody(User)));
+    TickAt(failed + 30000);
+    Check(StoredKeyStatus() == KeyStatus::Verified && notices.empty() && Sent() == 4, "Checked once more on request: valid");
+    // Rate limited: not verified, checked again after its Retry-After only.
+    AnotherClientSaves(settings, OtherKey);
+    keyNow = OtherKey;
+    Expect("GET", "/me", Status(429, "120"));
+    RowShown();
+    Tick();
+    const auto limited = LastAt();
+    Check(StoredKeyStatus() == KeyStatus::Unverified && notices.empty() && Sent() == 5, "Rate limited: not verified");
+    CheckStoredKey(true);
+    TickAt(limited + 119999);
+    Check(Sent() == 5, "Not before its Retry-After");
+    Expect("GET", "/me", Json(MeBody(User)));
+    TickAt(limited + 120000);
+    Check(StoredKeyStatus() == KeyStatus::Verified && Sent() == 6, "Checked after its Retry-After: valid");
+    // An unreadable key file: unreadable, nothing sent nor said.
+    {
+        std::ofstream output(file, std::ios::binary);
+        output << "DEMK1\n" << Marker;
+    }
+    RowShown();
+    Tick();
+    Check(StoredKeyStatus() == KeyStatus::Unreadable && Sent() == 6 && notices.empty() && Logged("METAMOB_KEY_CHECKED status=unreadable"),
+        "Unreadable: nothing sent nor said");
+    // Replaced by another client while it is checked: the answer about the old
+    // key is not taken for the new one, which is checked in turn.
+    AnotherClientSaves(settings, FakeKey);
+    bool swapped = false;
+    intercept = [&](const Request& request, const std::atomic_bool&) {
+        if (request.path == "/me" && !swapped) { swapped = true; AnotherClientSaves(settings, OtherKey); }
+        return Json(MeBody(User));
+    };
+    RowShown();
+    Tick();
+    Check(swapped && StoredKeyStatus() == KeyStatus::Saved, "An answer about a replaced key file is not taken for the new one");
+    RowShown();
+    Tick();
+    Check(StoredKeyStatus() == KeyStatus::Verified, "The new key file is checked in turn");
+    intercept = nullptr;
+    // A check that fails unexpectedly (its log line throws here): not verified,
+    // never « Vérification… » for good.
+    AnotherClientSaves(settings, FakeKey);
+    keyNow = FakeKey;
+    Expect("GET", "/me", Json(MeBody(User)));
+    failingLog = "METAMOB_KEY_CHECKED";
+    RowShown();
+    Tick();
+    failingLog.clear();
+    Check(StoredKeyStatus() == KeyStatus::Unverified && Logged("METAMOB_WORKER_ERROR") && notices.empty(), "A check that told nothing: not verified");
+    // Forgotten while a check waits for its pause: never sent.
+    AnotherClientSaves(settings, FakeKey);
+    keyNow = FakeKey;
+    Expect("GET", "/me", Lost(12029, false));
+    RowShown();
+    Tick();
+    const auto sent = Sent();
+    Check(StoredKeyStatus() == KeyStatus::Unverified, "Unreachable again");
+    CheckStoredKey(true);
+    ForgetStoredKey();
+    Check(StoredKeyStatus() == KeyStatus::None, "Forgotten: none at once");
+    Tick(30000);
+    Said({KeyForgotten}, "Forgotten while a check waits");
+    Check(Sent() == sent && StoredKeyStatus() == KeyStatus::None, "A check waiting when the key is forgotten is never sent");
+    Finish("silent check");
+}
+
+// A failed check holds the captures of its own worker too: with Metamob rate
+// limiting or unreachable, the cycle that was due with the key row's check waits
+// for the check's pause (its Retry-After, or 30 s), then sends them.
+void CheckHoldsTheCycle() {
+    for (const bool limited : {true, false}) {
+        Begin(Folder(limited ? "check-hold-429" : "check-hold-lost"), true);
+        Expect("GET", "/quests", Status(429, "60"));
+        EnqueueCapture(Captured(Tofu));
+        Tick(2000);
+        const auto paused = LastAt();
+        RowShown();
+        Check(StoredKeyStatus() == KeyStatus::Saved && Sent() == 1, "Rate limited: the capture and the key row's check wait");
+        Expect("GET", "/me", limited ? Status(429, "60") : Lost(12029, false));
+        TickAt(paused + 60000); // both due again: one worker, the check first
+        const auto checked = LastAt();
+        Check(Sent() == 2 && StoredKeyStatus() == KeyStatus::Unverified && notices.empty(), "The check fails: not verified, the cycle not sent");
+        const uint64_t hold = limited ? 60000 : 30000;
+        TickAt(checked + hold - 1);
+        Check(Sent() == 2, "Nothing sent before the check's pause ends");
+        ExpectFirst(Tofu, 2, 3);
+        TickAt(checked + hold);
+        Said({Added(Tofu, 2, 3)}, "The capture sent once the check's pause ends");
+        Check(StoredKeyStatus() == KeyStatus::Verified, "and the key valid from that cycle");
+        Finish(limited ? "a rate-limited check holds the cycle" : "an unreachable check holds the cycle");
+    }
+}
+
+// The key row shown while a cycle runs with that key: the cycle's answers tell
+// its status, and the check asked for meanwhile is never sent.
+void CheckSkippedOnceKnown() {
+    Gate(Folder("check-known"), "GET /quests");
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Await([] { return holding.load(); }, 5000, "the cycle's first read");
+    RowShown();
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Shown while the cycle waits for Metamob: not checked yet");
+    letGo = true;
+    AwaitWorker("the cycle's end");
+    Said({Added(Tofu, 2, 3)}, "The capture written");
+    AwaitWorker("anything started after it");
+    Check(StoredKeyStatus() == KeyStatus::Verified && Requested("GET /me") == 0, "Valid from the cycle's answers: the check is never sent");
+    Finish("check skipped once the status is known");
+}
+
+// « Oui » while the check is on its way: nothing is learnt from its answer.
+void CheckWhileForgetting() {
+    const auto settings = Folder("check-forget");
+    Gate(settings, "GET /me");
+    RowShown();
+    Tick();
+    Await([] { return holding.load(); }, 5000, "the key row's check");
+    ForgetStoredKey();
+    Check(StoredKeyStatus() == KeyStatus::None, "None at once");
+    letGo = true;
+    Await([] { return Noticed(KeyForgotten) && !metamob::testing::WorkerRunning(); }, 10000, "the forget");
+    Tick();
+    Said({KeyForgotten}, "Forgotten while checked");
+    Check(StoredKeyStatus() == KeyStatus::None && !KeyStored() && Requested("GET /me") == 1 && LoggedCount("METAMOB_KEY_CHECKED") == 0,
+        "Nothing learnt from the answer, the key gone");
+    Finish("check while forgetting");
+}
+
+// « Clé non vérifiée » clicked while the worker of that check still runs (here
+// on a key typed meanwhile, which Metamob refuses): the click is not undone when
+// that worker ends, its check told the status. The key is checked once more
+// after the failed check's pause.
+void RecheckWhileTheWorkerRuns() {
+    const auto settings = Folder("recheck-running");
+    Gate(settings, "GET /me", Status(401));
+    holdAfter = 1; // the key row's check goes through, the typed key's check is held
+    meLost = true; // Metamob unreachable for that first check
+    RowShown();
+    SubmitKey(OtherKey);
+    Tick(); // one worker: the check, then the typed key
+    Await([] { return holding.load(); }, 5000, "the typed key's check");
+    Await([] { return StoredKeyStatus() == KeyStatus::Unverified; }, 5000, "the check's answer, the worker still running");
+    CheckStoredKey(true);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "« Clé non vérifiée » clicked: being checked again");
+    meLost = false;
+    letGo = true;
+    AwaitWorker("the typed key refused");
+    Said({KeyRejected}, "The typed key refused, nothing stored");
+    Check(StoredKeyStatus() == KeyStatus::Saved && Requested("GET /me") == 2, "The click is not undone when that worker ends");
+    Tick(30000);
+    AwaitWorker("the check asked by the click");
+    Check(StoredKeyStatus() == KeyStatus::Verified && Requested("GET /me") == 3 && notices.empty(), "Checked once more: valid");
+    Finish("a check asked again while its worker runs");
+}
+
+// « Oui » while a cycle runs, then a new key saved at once: one worker deletes
+// the old key file then stores the new key, the file barely missing. The key
+// row says none until that worker is done, never waiting to see the file
+// missing, then follows the file: the new key, valid.
+void ForgetThenNewKey() {
+    auto settings = Folder("forget-new");
+    Gate(settings, "GET " + StepPath(Slug, Tofu.step));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Await([] { return holding.load(); }, 5000, "the worker's read");
+    ForgetStoredKey();
+    SubmitKey(OtherKey);
+    Check(StoredKeyStatus() == KeyStatus::None && KeyStored(), "Forgotten, a new key typed: none while the old file waits");
+    letGo = true; // the key row is not read again before the old file is deleted and the new key stored
+    Await([] { return Noticed(SavedUser) && !metamob::testing::WorkerRunning(); }, 10000, "the forget then the new key");
+    Tick();
+    Said({KeyForgotten, NoKey("Tofumanchou l'Empereur"), SavedUser}, "Forgotten, then the new key saved");
+    Check(StoredKeyStatus() == KeyStatus::Verified && LoadKey(KeyPath(settings))->value() == OtherKey, "The new key at once, valid");
+    Finish("a new key right after a forget");
+    // The same, the key row read while the new key is checked: none, the old file deleted.
+    settings = Folder("forget-new-seen");
+    Gate(settings, "GET " + StepPath(Slug, Tofu.step));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Await([] { return holding.load(); }, 5000, "the worker's read");
+    ForgetStoredKey();
+    SubmitKey(OtherKey);
+    letGo = true;
+    const auto end = GetTickCount64() + 10000;
+    while (metamob::testing::WorkerRunning()) { Check(GetTickCount64() < end, "the cycle's end"); Sleep(5); }
+    holdAt = "GET /me"; holding = false; letGo = false; // the next worker's check of the new key is held
+    Await([] { return holding.load(); }, 5000, "the new key's check");
+    Check(StoredKeyStatus() == KeyStatus::None && !KeyStored(), "The old file deleted, the new key not stored yet: none");
+    letGo = true;
+    Await([] { return Noticed(SavedUser) && !metamob::testing::WorkerRunning(); }, 10000, "the new key");
+    Tick();
+    Said({KeyForgotten, NoKey("Tofumanchou l'Empereur"), SavedUser}, "Forgotten, then the new key saved, watched");
+    Check(StoredKeyStatus() == KeyStatus::Verified && LoadKey(KeyPath(settings))->value() == OtherKey, "The new key once stored, valid");
+    Finish("a new key right after a forget, watched");
 }
 
 // The real wrapper: a detached worker and the real clock, end to end.
@@ -1725,9 +2083,12 @@ void WipedCopies() {
     Tick();
     EnqueueCapture(Captured(Tofu));
     Tick(2000); // one cycle: the key loaded from the file, sent, released
+    InstallSync(settings, Scripted, Noted); // the next session: that key not checked yet
+    RowShown();
+    Tick(); // the key row's silent check: the key loaded from the file, sent, released
     Check(heapprobe::Disarm() == 0, "A heap block was released with a plaintext copy of the key");
     Said({SavedUser, NoQuest}, "A key saved then used while the heap is watched");
-    Check(LoadKey(KeyPath(settings))->value() == FakeKey, "The watched key is stored");
+    Check(LoadKey(KeyPath(settings))->value() == FakeKey && StoredKeyStatus() == KeyStatus::Verified, "The watched key is stored, then checked");
     Finish("wiped copies");
 }
 
@@ -1750,6 +2111,7 @@ void Log(const std::string& text) {
     std::lock_guard<std::mutex> guard(logLock);
     logs.push_back(text);
     allLogs.push_back(text);
+    if (!failingLog.empty() && text.rfind(failingLog, 0) == 0) throw std::runtime_error("Synthetic log failure");
 }
 
 int main() {
@@ -1788,6 +2150,14 @@ int main() {
         StopWhileUnsettled();
         StopAfterUnsettled();
         ForgetWhileSending();
+        KeyStatusFollowsTheKey();
+        KeyStatusFromCycles();
+        SilentCheck();
+        CheckHoldsTheCycle();
+        CheckSkippedOnceKnown();
+        CheckWhileForgetting();
+        RecheckWhileTheWorkerRuns();
+        ForgetThenNewKey();
         Threaded();
         NoPrivateData();
         std::filesystem::remove_all(root);
@@ -1795,7 +2165,8 @@ int main() {
             "absolute write, 30 cap, unmatched names, 401 pause and its 10 min retry, proxy 401/403 pages, 404 rediscovery, Retry-After, "
             "backoff, unknown outcomes settled under the sender lock and announced to sibling clients (only that monster waits), "
             "resends never +n, unsettled writes given up as unconfirmed, sync toggle off, forget during a cycle and at Stop, no write "
-            "left announced after a Stop, sender lock, worker thread, key copies wiped, no private data in logs or notices\n";
+            "left announced after a Stop, sender lock, worker thread, key copies wiped, no private data in logs or notices; the key row's "
+            "status (valid, not verified, refused, unreadable) tied to the key file, none while a forget runs, one silent check per key file (its pause holds its worker's captures; asked again on request, never undone)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

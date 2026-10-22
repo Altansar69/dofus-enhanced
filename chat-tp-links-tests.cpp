@@ -37,7 +37,7 @@ int questOpens = 0;
 bool questFailure = false;
 std::vector<std::string> logs;
 std::map<std::pair<int,ChatSoulPart>,std::string> soulCaptions, richSoulCaptions;
-bool soulReaderNeeded = false;
+bool soulReaderNeeded = false, inventoryReader = false, questReader = false;
 ChatTpTarget clicked;
 using BindFn = void(*)(Obj,Obj,int,Method);
 using TextFn = void(*)(Obj,Obj,Method);
@@ -469,6 +469,121 @@ void OcreJournalClick() {
     RestoreChatTpLinks();soulCaptions.clear();richSoulCaptions.clear();
 }
 
+// « Chat » options: each part follows its own option, live, on new and shown
+// messages; all three unchecked give back the native text and read no status.
+void OptionalParts() {
+    auto& settings=module->settings;
+    const auto baseline=handles.size();const auto travels=clicks,nativeClicks=originalClicks;
+    const auto pump=[](int count){for(int i=0;i<count;++i)TickChatTpLinks();};
+    const auto shown=[](Obj label){return Get(Get(label).fields["text"]).text;};
+    auto view=Make("ChatView"),binding=Make("ChatItemBinding");Get(view).fields["binding"]=binding;
+    const auto bind=[&](Obj input){
+        auto label=MakeLabel(input);Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};
+        bindHook(view,Make("Row"),0,nullptr);return label;
+    };
+    SetSoul(147,"Âme en sac","Ocre à faire","<color=#8DDB91>Âme en sac</color>","<color=#F18C8C>Ocre à faire</color>");
+    auto source=Result();Link(source,MonsterGroup(7,8,1,"option-group",147));Text(source,Str(" et "));
+    Link(source,Map(3,4,1,"option-map"));Text(source,Str(" puis [5,6]"));
+    auto input=Build(source);auto label=bind(input);auto manip=Get(label).fields["manip"];pump(1);
+    auto tp=TpManagers(label),info=InfoManagers(label);
+    Check(tp.size()==3&&info.size()==2&&shown(label).find("<link=plain-[5,6]>")!=std::string::npos&&inventoryReader&&questReader,
+        "All options: the group, the map link and plain coordinates get TP; the group gets bag and Ocre");
+
+    // TP unchecked: inert at once, gone within a pump, plain coordinates text again.
+    settings.chatTravelLinks=false;const auto rolloutsBefore=rollouts;Get(manip).fields["m_hoveredHyperlinkManager"]=tp[0];
+    clickHook(tp[0],{},nullptr);
+    Check(clicks==travels&&tooltipHook(tp[0],{},nullptr)==nullptr,"A TP whose option was just unchecked is inert until it leaves");
+    pump(1);
+    Check(TpManagers(label).empty()&&InfoManagers(label)==info&&rollouts==rolloutsBefore+1,
+        "Unchecked TP leaves within a pump, closing its hover; bag and Ocre keep their identities");
+    Check(shown(label).find(" puis [5,6]")!=std::string::npos&&shown(label).find("plain-")==std::string::npos&&SeparatorCount(shown(label))==2,
+        "Without TP, plain coordinates are text again and only the bag and Ocre separators remain");
+    const auto opens=questOpens;clickHook(info[1],{},nullptr);clickHook(info[0],{},nullptr);clickHook(tp[1],{},nullptr);
+    Check(questOpens==opens+1&&clicks==travels&&originalClicks==nativeClicks&&tooltipHook(tp[1],{},nullptr)==nullptr&&
+        Get(tooltipHook(info[0],{},nullptr)).text=="Inventory detail: Âme en sac","Bag and Ocre keep hover and click; removed TP stays inert");
+    const auto parsed=parses;auto typed=bind(Str("rejoins-moi en [9,9]"));pump(1);
+    Check(parses==parsed&&TpManagers(typed).empty()&&shown(typed)=="rejoins-moi en [9,9]","Without TP a new message keeps its plain coordinates");
+
+    // TP checked again: back on shown messages, including the one received meanwhile.
+    settings.chatTravelLinks=true;pump(1);tp=TpManagers(label);
+    Check(tp.size()==3&&InfoManagers(label)==info&&shown(label).find("<link=plain-[5,6]>")!=std::string::npos&&TpManagers(typed).size()==1,
+        "Checked again, TP returns on shown messages and converts their plain coordinates");
+    clickHook(tp[2],{},nullptr);
+    Check(clicks==travels+1&&clicked==ChatTpTarget{5,6,1}&&
+        Get(tooltipHook(TpManagers(typed)[0],{},nullptr)).text=="TP vers le zaap le plus proche, puis trajet vers [9,9].","Restored TP travels and explains its journey");
+
+    // Ocre status unchecked alone: the bag stays, only the quest reader stops.
+    const auto bag=info[0];settings.chatOcreStatus=false;pump(1);
+    auto noOcre=bind(Build(source));
+    Check(InfoManagers(label).size()==1&&InfoManagers(label)[0]==bag&&TpManagers(label)==tp&&inventoryReader&&!questReader&&
+        InfoManagers(noOcre).size()==1&&Get(InfoManagers(noOcre)[0]).text.find("sac")!=std::string::npos,
+        "Unchecked Ocre status leaves shown and new messages, keeps the bag and stops only the quest reader");
+    settings.chatOcreStatus=true;pump(2);info=InfoManagers(label);
+    const auto reopened=questOpens;clickHook(info[1],{},nullptr);
+    Check(info.size()==2&&info[0]==bag&&questReader&&questOpens==reopened+1,"Checked again, the Ocre status returns and opens the quest");
+
+    // Bag status unchecked: its reader stops at once; a new archmonster gets Ocre only.
+    settings.chatSoulInventory=false;pump(1);
+    Check(InfoManagers(label).size()==1&&InfoManagers(label)[0]==info[1]&&TpManagers(label)==tp&&!inventoryReader&&questReader,
+        "Unchecked bag status leaves alone and stops only the inventory reader");
+    auto group=Result();Link(group,MonsterGroup(1,2,1,"option-new",147));
+    auto groupInput=Build(group);auto ocreOnly=bind(groupInput);
+    Check(TpManagers(ocreOnly).size()==1&&InfoManagers(ocreOnly).size()==1&&Get(InfoManagers(ocreOnly)[0]).text.find("Ocre")!=std::string::npos,
+        "A new archmonster message gets TP and Ocre, never the unchecked bag status");
+
+    // Both statuses unchecked: no status area, no inventory or quest reading.
+    settings.chatOcreStatus=false;pump(1);
+    Check(InfoManagers(label).empty()&&InfoManagers(ocreOnly).empty()&&TpManagers(label)==tp&&TpManagers(ocreOnly).size()==1&&
+        !soulReaderNeeded&&!inventoryReader&&!questReader,"Both statuses unchecked: TickChatSoulStatus gets needed=false and the statuses leave");
+
+    // All three unchecked: shown messages return to their native text.
+    settings.chatTravelLinks=false;pump(1);
+    Check(shown(label)==Get(input).text&&shown(typed)=="rejoins-moi en [9,9]"&&shown(ocreOnly)==Get(groupInput).text&&
+        TpManagers(label).empty()&&TpManagers(typed).empty()&&TpManagers(ocreOnly).empty()&&!soulReaderNeeded,
+        "All three unchecked: shown messages return to their native text and nothing is read");
+    clickHook(tp[0],{},nullptr);Check(clicks==travels+1&&originalClicks==nativeClicks,"Removed TP stays inert");
+    auto later=Result();Link(later,MonsterGroup(2,3,1,"option-later",147));Text(later,Str(" ou [7,7]"));
+    const auto parsedOff=parses;auto laterInput=Build(later);auto quiet=bind(laterInput);pump(3);
+    Check(parses==parsedOff&&shown(quiet)==Get(laterInput).text&&TpManagers(quiet).empty()&&InfoManagers(quiet).empty()&&!soulReaderNeeded,
+        "All three unchecked: a new message keeps its native text, without conversion or reading");
+
+    // All checked again: every shown message is enhanced again within a pump or two.
+    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=true;pump(2);
+    Check(TpManagers(label).size()==3&&InfoManagers(label).size()==2&&TpManagers(typed).size()==1&&InfoManagers(ocreOnly).size()==2&&
+        TpManagers(quiet).size()==2&&InfoManagers(quiet).size()==2&&inventoryReader&&questReader,
+        "Checked again, shown messages are enhanced again, those received while all were unchecked included");
+    clickHook(TpManagers(quiet)[1],{},nullptr);Check(clicks==travels+2&&clicked==ChatTpTarget{7,7,1},"Re-enhanced plain coordinates travel");
+    RestoreChatTpLinks();
+    Check(shown(label)==Get(input).text&&shown(quiet)==Get(laterInput).text&&shown(typed)=="rejoins-moi en [9,9]"&&handles.size()==baseline,
+        "Cleanup restores native texts, plain coordinates included, and releases every reference");
+    soulCaptions.clear();richSoulCaptions.clear();
+}
+
+// A text the native decoder rejects leaves the label: neither an option change
+// nor a cleanup may bring the previous message back into that row.
+void RejectedTextForgets() {
+    auto source=Result();Link(source,Map(1,1,1,"rejected-map"));
+    auto label=MakeLabel(Build(source)),view=Make("ChatView"),binding=Make("ChatItemBinding");
+    Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};Get(view).fields["binding"]=binding;
+    bindHook(view,Make("Row"),0,nullptr);auto manip=Get(label).fields["manip"];
+    Check(TpManagers(label).size()==1,"The rejected-text fixture starts with its TP");
+    decodeFails=true;Invoke(MethodOf("set_m_targetText"),manip,{Str("message illisible")});decodeFails=false;
+    module->settings.chatTravelLinks=false;for(int i=0;i<3;++i)TickChatTpLinks();
+    module->settings.chatTravelLinks=true;for(int i=0;i<3;++i)TickChatTpLinks();
+    Check(Get(Get(label).fields["text"]).text=="message illisible","An option change must not restore a previous message over a rejected one");
+    RestoreChatTpLinks();
+    Check(Get(Get(label).fields["text"]).text=="message illisible","Cleanup must not restore a previous message over a rejected one");
+    // An option refresh decodes through the manipulator's current element:
+    // once it targets another row, this label's text must not land there.
+    auto moved=Result();Link(moved,Map(2,2,1,"moved-map"));
+    label=MakeLabel(Build(moved));auto other=MakeLabel(Str("autre ligne"));
+    Get(binding).fields={{"content",label},{"subContent",other}};bindHook(view,Make("Row"),0,nullptr);
+    manip=Get(label).fields["manip"];Get(manip).fields["m_textElementTarget"]=other;
+    module->settings.chatTravelLinks=false;for(int i=0;i<3;++i)TickChatTpLinks();module->settings.chatTravelLinks=true;
+    Check(Get(Get(other).fields["text"]).text=="autre ligne","A refresh must never write a label's text into another row");
+    Get(manip).fields["m_textElementTarget"]=label;RestoreChatTpLinks();
+}
+
 }
 namespace managed {
 Api api;uintptr_t gameBase=0;
@@ -497,7 +612,7 @@ std::string ChatSoulCaption(int monster,ChatSoulPart part,bool colorStatus){
     auto it=captions.find({monster,part});return it==captions.end()?std::string{}:it->second;
 }
 std::string ChatSoulDetail(int monster,ChatSoulPart part){return std::string(part==ChatSoulPart::Inventory?"Inventory detail: ":"Ocre detail: ")+ChatSoulCaption(monster,part);}
-void TickChatSoulStatus(bool needed){fake::soulReaderNeeded=needed;}
+void TickChatSoulStatus(bool inventory,bool quest){fake::soulReaderNeeded=inventory||quest;fake::inventoryReader=inventory;fake::questReader=quest;}
 void RestoreChatSoulStatus(){fake::soulReaderNeeded=false;}
 void AddHook(managed::Method,uintptr_t rva,void* hook,void** original){
     using namespace fake;
@@ -515,9 +630,9 @@ int main(int argc,char** argv){
         InstallChatTpLinks(fake::OnClick);
         if(fallback)fake::Check(!fake::logs.empty()&&fake::logs.back().starts_with("CHAT_TP_COLOR_FALLBACK "),
             "Unavailable cosmetic layout must preserve chat TP with a diagnostic instead of aborting module startup");
-        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::clicks=0;fake::Run();
+        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::OptionalParts();fake::RejectedTextForgets();fake::clicks=0;fake::Run();
         fake::Check(fake::nullableAllocations==0,"Nullable<Color> must never be allocated or boxed");
         module=nullptr;
-        std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover and cleanup retries\n";return 0;
+        std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover, optional TP/bag/Ocre parts and cleanup retries\n";return 0;
     }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
 }

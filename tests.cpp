@@ -54,6 +54,15 @@ int main() {
         Require(!defaults.smallHeaderSoul && !defaults.smallHeaderTreasure && !defaults.smallHeaderNotebook, "Panel headers start at the native size");
         Require(!defaults.notebookCompact, "The notebook starts in its full layout");
         Require(!defaults.metamobSync, "Metamob capture sync starts disabled");
+        Require(defaults.chatTravelLinks && defaults.chatSoulInventory && defaults.chatOcreStatus && defaults.mapTravelPlanner,
+            "Chat additions and the mod's map travel start enabled, as they were before they had options");
+        for (int mask = 0; mask < 16; ++mask) {
+            auto flags = defaults;
+            flags.chatTravelLinks = (mask & 1) != 0; flags.chatSoulInventory = (mask & 2) != 0;
+            flags.chatOcreStatus = (mask & 4) != 0; flags.mapTravelPlanner = (mask & 8) != 0;
+            flags.Save(path);
+            Require(Settings::Read(path) == flags, "Chat and map travel choices persist independently");
+        }
         // metamobSync is shared state between the game clients: read straight from the file.
         Require(!Settings::ReadMetamobSync(folder / "absent.ini"), "No shared sync value without a settings file");
         {

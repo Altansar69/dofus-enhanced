@@ -24,10 +24,18 @@ struct NullableColor {
 };
 static_assert(sizeof(NullableColor) == 20 && offsetof(NullableColor, value) == 4);
 enum class LinkPart { Travel, Inventory, Ocre };
+constexpr LinkPart LinkParts[] = {LinkPart::Travel, LinkPart::Inventory, LinkPart::Ocre};
 struct Link { Ref manager; ChatTpTarget target; std::string sourceId; int monster = 0; std::string caption; LinkPart part; };
+// A native position the parts follow: map link, shared monster group, or
+// plain coordinates converted for TP.
+struct Source { std::string id; ChatTpTarget target; int monster = 0; };
 struct Label {
+    // clean holds the native content: no part, plain coordinates still text.
     Ref element, manipulator, clean, enhanced, rendered, cached;
     std::vector<Link> links;
+    std::vector<Source> sources;
+    bool coordinates = false; // The clean text holds plain coordinates TP can convert.
+    std::string signature; // Signature (below) when enhanced was built.
 };
 struct State {
     bool installed = false, restoring = false, failed = false;
@@ -81,6 +89,13 @@ thread_local Label* decoding = nullptr;
 bool Active() {
     return state.installed && !state.failed && !state.restoring && module && module->ready.load() &&
         module->servicesReady && !module->stopped && !module->stopRequested.load();
+}
+// « Chat » options of the mod's tab, read live: a disabled part is never
+// appended, and one already shown leaves on the label's next refresh.
+bool Enabled(LinkPart part) {
+    const auto& settings = module->settings;
+    return part == LinkPart::Travel ? settings.chatTravelLinks :
+        part == LinkPart::Inventory ? settings.chatSoulInventory : settings.chatOcreStatus;
 }
 bool Owned(Obj manager) {
     return manager && std::any_of(state.labels.begin(),state.labels.end(),[&](const auto& label) {
@@ -166,8 +181,9 @@ void TextHook(Obj manipulator, Obj text, Method method) {
 struct Token { int type; int padding; Obj text; Obj manager; };
 static_assert(sizeof(Token) == 24);
 struct Piece { Ref text, manager; };
-bool ReadPieces(Obj result, Obj service, Method decodeMethod, std::vector<Piece>& pieces,
-    std::set<std::string>& ids, bool parseText) {
+// Native content of a decode result: this module's links, current or left in
+// serialized text by an earlier revision, are dropped with their separators.
+bool ReadPieces(Obj result, std::vector<Piece>& pieces, std::set<std::string>& ids) {
     Ref sequence(api.Call(result,"get_m_sequence"));
     const int count = api.Value<int>(api.Call(sequence.get(),"get_Count"));
     if (count < 0 || count > 2048) return false;
@@ -188,33 +204,43 @@ bool ReadPieces(Obj result, Obj service, Method decodeMethod, std::vector<Piece>
             }
             continue;
         }
-        if (token.type == 0) {
-            const auto text = parseText ? api.String(token.text) : std::string{};
-            const auto spans = ChatCoordinateSpans(text);
-            if (spans.empty()) pieces.push_back({Ref(token.text),{}});
-            else {
-                size_t offset = 0;
-                auto literal = [&](size_t end) {
-                    if (end > offset) pieces.push_back({Ref(api.string_new(text.substr(offset,end-offset).c_str())),{}});
-                };
-                for (const auto span : spans) {
-                    literal(span.start);
-                    Ref candidate(api.string_new(text.substr(span.start,span.length).c_str())); Obj parsed = nullptr;
-                    // The native helper also strips malformed brackets; only
-                    // exact signed-integer coordinate pairs may enter it.
-                    if (!api.Value<bool>(api.Invoke(state.parseMapLinks,nullptr,{candidate.get(),&parsed})) || !parsed) return false;
-                    Ref parsedText(parsed); Obj decoded = nullptr;
-                    if (!originalDecode(service,parsedText.get(),&decoded,nullptr,decodeMethod) || !decoded) return false;
-                    Ref nested(decoded);
-                    if (!ReadPieces(nested.get(),service,decodeMethod,pieces,ids,false)) return false;
-                    offset = span.start + span.length;
-                }
-                literal(text.size());
-            }
-        } else if (token.type == 1 && token.manager) {
+        if (token.type == 0) pieces.push_back({Ref(token.text),{}});
+        else if (token.type == 1 && token.manager) {
             pieces.push_back({{},Ref(token.manager)});
             ids.insert(api.String(api.Call(token.manager,"get_id")));
         } else return false;
+        if (pieces.size() > 4096) return false;
+    }
+    return true;
+}
+// Plain coordinates become native map links, for TP only; without TP they stay
+// text. Only plain text tokens go through the native coordinate parser;
+// item/spell/URL and existing map hyperlink payloads are left intact.
+bool Convert(std::vector<Piece>& clean, std::vector<Piece>& pieces, std::set<std::string>& ids,
+    Obj service, Method decodeMethod, bool& coordinates) {
+    const bool travel = Enabled(LinkPart::Travel);
+    for (auto& piece : clean) {
+        const auto text = piece.manager.get() || !piece.text.get() ? std::string{} : api.String(piece.text.get());
+        const auto spans = ChatCoordinateSpans(text);
+        coordinates = coordinates || !spans.empty();
+        if (spans.empty() || !travel) { pieces.push_back(std::move(piece)); continue; }
+        size_t offset = 0;
+        auto literal = [&](size_t end) {
+            if (end > offset) pieces.push_back({Ref(api.string_new(text.substr(offset,end-offset).c_str())),{}});
+        };
+        for (const auto span : spans) {
+            literal(span.start);
+            Ref candidate(api.string_new(text.substr(span.start,span.length).c_str())); Obj parsed = nullptr;
+            // The native helper also strips malformed brackets; only
+            // exact signed-integer coordinate pairs may enter it.
+            if (!api.Value<bool>(api.Invoke(state.parseMapLinks,nullptr,{candidate.get(),&parsed})) || !parsed) return false;
+            Ref parsedText(parsed); Obj decoded = nullptr;
+            if (!originalDecode(service,parsedText.get(),&decoded,nullptr,decodeMethod) || !decoded) return false;
+            Ref nested(decoded);
+            if (!ReadPieces(nested.get(),pieces,ids)) return false;
+            offset = span.start + span.length;
+        }
+        literal(text.size());
         if (pieces.size() > 4096) return false;
     }
     return true;
@@ -238,10 +264,24 @@ std::string Caption(int monster, LinkPart part) {
     // Scope status colors to their own native hover area; TP keeps its cyan.
     return status.empty() ? std::string{} : "<color=#D7CFB8>" + status + "</color>";
 }
-bool StatusChanged(const Label& label) {
-    for (const auto& link : label.links)
-        if (link.part != LinkPart::Travel && link.caption != Caption(link.monster, link.part)) return true;
-    return false;
+// What a label shows for the options and statuses of now: TP's conversion of
+// plain coordinates, then each enabled part's caption for every source.
+std::string Signature(const Label& label) {
+    std::string signature(label.coordinates && Enabled(LinkPart::Travel) ? "P" : "-");
+    for (const auto& source : label.sources) for (const auto part : LinkParts) {
+        if (Enabled(part)) signature += Caption(source.monster, part);
+        signature += '\x1F';
+    }
+    return signature;
+}
+// A status or a « Chat » option changed since the label was built.
+bool Stale(const Label& label) { return Signature(label) != label.signature; }
+// The label shows a text this module did not build: drop what belonged to its
+// previous text, so neither a refresh nor a cleanup can bring that text back.
+void Forget(Label& label) {
+    try { ClearOwnedHover(label); } catch (const std::exception& e) { Log(std::string("CHAT_TP_HOVER_ERROR ") + e.what()); }
+    label.clean.reset(); label.enhanced.reset(); label.rendered.reset();
+    label.links.clear(); label.sources.clear(); label.coordinates = false; label.signature.clear();
 }
 Obj NewLink(Obj source, ChatTpTarget target, const std::string& caption) {
     int count = 6;
@@ -261,7 +301,7 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
     try {
         if (output && decoding && Active() && decoding->rendered.get() && decoding->enhanced.get() &&
             service==api.Field(decoding->manipulator.get(),"m_hyperlinkService") &&
-            api.String(input)==api.String(decoding->rendered.get()) && !StatusChanged(*decoding)) {
+            api.String(input)==api.String(decoding->rendered.get()) && !Stale(*decoding)) {
             // BuildText emits hashed link IDs resolved through the previous result.
             // Keep the result and owned managers together on an unchanged refresh.
             *output=decoding->enhanced.get();
@@ -271,25 +311,36 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
         }
     } catch (const std::exception& e) { Log(std::string("CHAT_TP_REUSE_ERROR ")+e.what()); }
     const bool success = originalDecode(service,input,output,previous,method);
-    if (!success || !output || !*output || !decoding || !Active()) return success;
+    if (!decoding || !Active()) return success;
     auto& label = *decoding;
+    bool own = false;
+    // An unusable text: a new one drops the label's previous content; this
+    // module's own text keeps its working links until the next change.
+    const auto settle = [&] { if (own) label.signature = Signature(label); else Forget(label); };
     try {
         if (service != api.Field(label.manipulator.get(),"m_hyperlinkService")) return success;
-        Ref result(*output);
-        std::vector<Piece> pieces;
+        // A refresh decodes the text this module rendered: rebuild it from the
+        // retained native content, where converted coordinates are still text.
+        // Native decoding resolves those links to the same managers anyway.
+        own = label.clean.get() && label.rendered.get() && api.String(input) == api.String(label.rendered.get());
+        if (!success || !output || !*output) { settle(); return success; }
+        Ref result(own ? label.clean.get() : *output);
+        std::vector<Piece> original, pieces;
         std::set<std::string> ids;
-        // Only plain text tokens go through the native coordinate parser;
-        // item/spell/URL and existing map hyperlink payloads are left intact.
-        if (!ReadPieces(result.get(),service,method,pieces,ids,true)) return success;
-        Ref clean(api.New(state.resultClass)), enhanced(api.New(state.resultClass)), separator(api.string_new(Separator.data()));
+        if (!ReadPieces(result.get(),original,ids)) { settle(); return success; }
+        Ref clean(own ? label.clean.get() : api.New(state.resultClass));
+        if (!own) for (const auto& piece : original)
+            api.Invoke(piece.manager.get() ? state.addLink : state.addText,clean.get(),
+                {piece.manager.get() ? piece.manager.get() : piece.text.get()});
+        bool coordinates = false;
+        if (!Convert(original,pieces,ids,service,method,coordinates)) { settle(); return success; }
+        Ref enhanced(api.New(state.resultClass)), separator(api.string_new(Separator.data()));
         std::vector<Link> links;
-        size_t targets = 0;
+        std::vector<Source> sources;
         for (const auto& piece : pieces) {
             const auto append = piece.manager.get() ? state.addLink : state.addText;
-            auto value = piece.manager.get() ? piece.manager.get() : piece.text.get();
-            api.Invoke(append,clean.get(),{value});
-            api.Invoke(append,enhanced.get(),{value});
-            if (!piece.manager.get() || targets >= MaxTargets) continue;
+            api.Invoke(append,enhanced.get(),{piece.manager.get() ? piece.manager.get() : piece.text.get()});
+            if (!piece.manager.get() || sources.size() >= MaxTargets) continue;
             const auto kind = api.object_get_class(piece.manager.get());
             // A shared monster group's displayed coordinates are a distinct
             // native hyperlink. Preserve that manager/tooltip and append TP.
@@ -304,9 +355,9 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
                 Ref data(api.Call(piece.manager.get(),"get_m_dataContext"));
                 monster = api.Value<int>(api.Call(data.get(),"get_leaderId"));
             }
-            ++targets;
-            for (const auto part : {LinkPart::Travel, LinkPart::Inventory, LinkPart::Ocre}) {
-                const auto caption = Caption(monster, part);
+            sources.push_back({sourceId,target,monster});
+            for (const auto part : LinkParts) {
+                const auto caption = Enabled(part) ? Caption(monster, part) : std::string{};
                 if (caption.empty()) continue;
                 Ref manager;
                 for (const auto& existing:label.links) {
@@ -331,12 +382,18 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
         label.enhanced = std::move(enhanced);
         label.rendered = std::move(rendered);
         label.links = std::move(links);
+        label.sources = std::move(sources);
+        label.coordinates = coordinates;
+        label.signature = Signature(label);
         *output = label.enhanced.get();
         // Native TryDecodeText returns early when BuildText equals the input;
         // it would otherwise leave different managers bound to identical text.
         api.gc_wbarrier_set_field(label.manipulator.get(),
             static_cast<Obj*>(api.FieldAddress(label.manipulator.get(),"m_hyperlinkResult")),*output);
-    } catch (const std::exception& e) { Log(std::string("CHAT_TP_DECODE_ERROR ") + e.what()); }
+    } catch (const std::exception& e) {
+        Log(std::string("CHAT_TP_DECODE_ERROR ") + e.what());
+        try { settle(); } catch (const std::exception& retry) { Log(std::string("CHAT_TP_DECODE_ERROR ") + retry.what()); }
+    }
     return success;
 }
 void OpenOcreQuest(Obj manager, Vec2 position) {
@@ -361,7 +418,8 @@ void ClickHook(Obj manager, Vec2 position, Method method) {
         if (link.manager.get() != manager) continue;
         if (link.part == LinkPart::Inventory) return;
         try {
-            if (Active() && label->cached.get() == module->cached.get() && label->element.get() &&
+            // A part whose option was just unchecked stays inert until it leaves.
+            if (Active() && Enabled(link.part) && label->cached.get() == module->cached.get() && label->element.get() &&
                 api.Call(label->element.get(),"get_panel")) {
                 if (link.part == LinkPart::Ocre) OpenOcreQuest(manager,position);
                 else if (state.clicked) {
@@ -380,7 +438,7 @@ Obj TooltipHook(Obj manager, Vec2 mousePosition, Method method) {
     try {
         for (const auto& label : state.labels) for (const auto& link : label->links) {
             if (link.manager.get() != manager) continue;
-            if (!Active() || label->cached.get() != module->cached.get() ||
+            if (!Active() || !Enabled(link.part) || label->cached.get() != module->cached.get() ||
                 !api.Call(label->element.get(),"get_panel")) return nullptr;
             const auto target=link.target;
             auto text=link.part != LinkPart::Travel ? ChatSoulDetail(link.monster,SoulPart(link.part)) :
@@ -467,16 +525,27 @@ void TickChatTpLinks() {
         ++i;
     }
     state.restoring = false;
-    const bool needed = std::any_of(state.labels.begin(),state.labels.end(),[](const auto& label) {
-        return std::any_of(label->links.begin(),label->links.end(),[](const Link& link) { return link.monster > 0; });
-    });
-    TickChatSoulStatus(needed);
+    // Each status reader runs only while a label shows its enabled part: with
+    // both unchecked, no inventory or quest data is read at all.
+    const auto shown = [](LinkPart part) {
+        return Enabled(part) && std::any_of(state.labels.begin(),state.labels.end(),[&](const auto& label) {
+            return std::any_of(label->links.begin(),label->links.end(),[&](const Link& link) { return link.part == part; });
+        });
+    };
+    TickChatSoulStatus(shown(LinkPart::Inventory),shown(LinkPart::Ocre));
     // Native text rebuild updates row wrapping as well as the clickable managers.
     // Bound changes per pump; unchanged captions retain their original identities.
+    // A status or « Chat » option change adds or removes parts and converts or
+    // restores plain coordinates; all three unchecked leave the native text.
     int refreshed = 0;
     for (size_t i = 0; i < state.labels.size() && refreshed < 4; ++i) {
         auto& label = *state.labels[i];
-        if (!StatusChanged(label) || !label.rendered.get() || !label.manipulator.get()) continue;
+        if (!label.rendered.get() || !label.manipulator.get() || !Stale(label)) continue;
+        try {
+            // TextHook decodes for the manipulator's current element: never
+            // rebuild this text into another row.
+            if (api.Field(label.manipulator.get(),"m_textElementTarget") != label.element.get()) continue;
+        } catch (const std::exception& e) { Log(std::string("CHAT_TP_REFRESH_ERROR ") + e.what()); continue; }
         Ref text(label.rendered.get()), manipulator(label.manipulator.get());
         TextHook(manipulator.get(),text.get(),nullptr); ++refreshed;
     }

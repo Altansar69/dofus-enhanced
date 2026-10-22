@@ -39,8 +39,8 @@ Obj OtherEffectItem() {
     Set(effect,"actionId",1);Set(effect,"value",5);Get(effects).items={effect};Get(item).fields["myt"]=effects;return mask;
 }
 void Items(std::vector<Obj> items) { Get(content).items=std::move(items);Get(Get(content).fields["_version"]).scalar++; }
-void PumpFresh() { chat_souls::state.nextScan=0;chat_souls::state.nextQuest=0;TickChatSoulStatus(true); }
-void FinishScan() { for(int i=0;i<100 && chat_souls::state.iterator.get();++i)TickChatSoulStatus(true);Check(!chat_souls::state.iterator.get(),"Scan did not finish"); }
+void PumpFresh() { chat_souls::state.nextScan=0;chat_souls::state.nextQuest=0;TickChatSoulStatus(true,true); }
+void FinishScan() { for(int i=0;i<100 && chat_souls::state.iterator.get();++i)TickChatSoulStatus(true,true);Check(!chat_souls::state.iterator.get(),"Scan did not finish"); }
 std::string CombinedCaption(int monster,bool colored=false) {
     const auto inventoryCaption=ChatSoulCaption(monster,ChatSoulPart::Inventory,colored);
     const auto ocreCaption=ChatSoulCaption(monster,ChatSoulPart::Ocre,colored);
@@ -110,6 +110,22 @@ int main() {
             "Absent soul must be red independently of green validated Ocre objective");
         Check(Has(2477,"Âme en sac")&&Has(2477,"Ocre à faire"),"Future archmonster objective must use exact ID and separate possession");
         Check(Has(2468,"Pas en sac"),"One archmonster must not count as a different archmonster");
+        // Each reader follows its own chat status: a hidden bag status scans
+        // nothing and forgets possession; a hidden Ocre status reads no quest.
+        // The objective flips before the call, so only a real quest read shows it.
+        moves=0;chat_souls::state.nextScan=0;chat_souls::state.nextQuest=0;Get(objectives).flags[2267]=true;TickChatSoulStatus(false,true);
+        Check(moves==0&&!chat_souls::state.iterator.get()&&!chat_souls::state.service.get()&&Has(147,"Sac : ?")&&Has(147,"Ocre validé"),
+            "Hidden bag status must stop the inventory scan while the Ocre status is still read");
+        Get(objectives).flags[2267]=false;chat_souls::state.nextQuest=0;TickChatSoulStatus(false,true);
+        Check(Has(147,"Ocre à faire"),"The Ocre status keeps following fresh quest reads while the bag is hidden");
+        fail="bczk";chat_souls::state.nextScan=0;chat_souls::state.nextQuest=0;TickChatSoulStatus(true,false);fail.clear();
+        Check(moves>0&&!chat_souls::state.quests.get()&&chat_souls::state.questReason!="read-failed"&&Has(147,"Ocre : ?"),
+            "Hidden Ocre status must not read the quest while the bag is scanned");
+        for(int i=0;i<100&&chat_souls::state.iterator.get();++i)TickChatSoulStatus(true,false);
+        Check(Has(147,"Âme en sac")&&Has(147,"Ocre : ?"),"Bag scan alone restores possession without quest progress");
+        TickChatSoulStatus(false,false);
+        Check(handles.size()==baseline&&Has(147,"Sac : ?")&&Has(147,"Ocre : ?"),"Both statuses hidden: no reader keeps a root or a status");
+        PumpFresh();FinishScan();Check(Has(147,"Âme en sac")&&Has(147,"Ocre à faire"),"Both readers resume from scratch");
         for (const auto part : {ChatSoulPart::Inventory, ChatSoulPart::Ocre}) {
             Check(ChatSoulCaption(999999,part).empty() && ChatSoulCaption(999999,part,true).empty(),
                 "Monsters outside Ocre must have neither bag nor quest badges");
@@ -157,27 +173,27 @@ int main() {
         fail="TryGetValue";PumpFresh();fail.clear();Check(Has(147,"Ocre : ?"),"Failed quest read must clear not-started state");
         PumpFresh();FinishScan();Check(Has(147,"Ocre non commencée"),"Received snapshot must recover after read failure");
         owner.cached.reset(Make("OtherCharacter"));Check(Has(147,"Ocre : ?"),"Character change must invalidate not-started status immediately");
-        Get(finished).flags.clear();quests=nullptr;TickChatSoulStatus(true);Check(Has(147,"Ocre : ?"),"Lost quest service must clear stale positive status");
+        Get(finished).flags.clear();quests=nullptr;TickChatSoulStatus(true,true);Check(Has(147,"Ocre : ?"),"Lost quest service must clear stale positive status");
 
         std::vector<Obj> many(400,Item(50000,1));many.back()=Item(33684);Items(std::move(many));
         RestoreChatSoulStatus();moves=0;PumpFresh();
         Check(moves<=128 && chat_souls::state.iterator.get() && Has(147,"Sac : ?"),"Large inventory scan must yield without publishing a false absence");
-        Get(Get(content).fields["_version"]).scalar++;TickChatSoulStatus(true);
+        Get(Get(content).fields["_version"]).scalar++;TickChatSoulStatus(true,true);
         Check(!chat_souls::state.iterator.get()&&Has(147,"Sac : ?"),"Mutation invalidates the partial snapshot and releases iterator");
         PumpFresh();FinishScan();Check(Has(147,"Âme en sac"),"Stable subsequent scan must recover");
         fail="get_Current";PumpFresh();fail.clear();Check(Has(147,"Âme en sac"),"A read failure keeps the last complete scan (never a false absence) and is retried");
         PumpFresh();FinishScan();Check(Has(147,"Âme en sac"),"Read failure must remain recoverable");
         // Marketplace: the game refreshes the inventory content faster than a
         // scan completes; every interrupted scan keeps the last complete result.
-        for(int i=0;i<3;++i){PumpFresh();Get(Get(content).fields["_version"]).scalar++;TickChatSoulStatus(true);Check(!chat_souls::state.iterator.get()&&Has(147,"Âme en sac"),"Interrupted scans keep the last complete result instead of falling back to unknown");}
+        for(int i=0;i<3;++i){PumpFresh();Get(Get(content).fields["_version"]).scalar++;TickChatSoulStatus(true,true);Check(!chat_souls::state.iterator.get()&&Has(147,"Âme en sac"),"Interrupted scans keep the last complete result instead of falling back to unknown");}
         PumpFresh();FinishScan();Check(Has(147,"Âme en sac"),"Scans resume after the interruptions");
         owner.cached.reset(Make("NextCharacter"));Check(Has(147,"Sac : ?"),"Character change invalidates cached possession immediately");
         Items({});PumpFresh();FinishScan();Check(Has(147,"Pas en sac"),"Next character must not inherit previous inventory");
-        service=nullptr;TickChatSoulStatus(true);Check(Has(147,"Sac : ?"),"Unavailable inventory service is unknown");
-        owner.stopped=true;TickChatSoulStatus(true);RestoreChatSoulStatus();
+        service=nullptr;TickChatSoulStatus(true,true);Check(Has(147,"Sac : ?"),"Unavailable inventory service is unknown");
+        owner.stopped=true;TickChatSoulStatus(true,true);RestoreChatSoulStatus();
         Check(handles.size()==baseline && disposed>0,"Cleanup must release all reader roots and iterators");
         owner.cached.reset();owner.compositor.reset();Check(handles.empty(),"Fixture GC roots leaked");module=nullptr;
-        std::cout<<"PASS: read-only soul inventory, exact identity, legacy effects, independent Ocre states, bounded scanning, mutation and session cleanup\n";
+        std::cout<<"PASS: read-only soul inventory, exact identity, legacy effects, independent Ocre states, per-status readers, bounded scanning, mutation and session cleanup\n";
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

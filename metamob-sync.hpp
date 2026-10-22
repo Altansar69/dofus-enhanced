@@ -18,6 +18,13 @@ struct Capture {
     int quantity = 1;           // souls of this monster in the character's loot (1..30)
 };
 using Notice = std::function<void(const std::string&)>;
+// The stored key as the options' key row tells it. None: no key file (or one
+// being forgotten); Saved: a key file not checked with Metamob in this session
+// yet (at start, or saved or replaced by another client); Verified: Metamob
+// accepted it; Unverified: saved or checked while Metamob could not confirm it;
+// Refused: Metamob refused it (until it accepts it again or another key is
+// saved); Unreadable: it cannot be decrypted on this Windows account.
+enum class KeyStatus { None, Saved, Verified, Unverified, Refused, Unreadable };
 // Game-thread API. Never throws and never blocks: requests, DPAPI and files run
 // on one worker thread at a time; notices ("Metamob : ...") are posted from
 // TickSync on the game thread.
@@ -35,9 +42,18 @@ void EnqueueCapture(Capture capture);
 // Options: verify the key with GET /v1/me, then store it (refused keys are not
 // stored); the text is wiped once used.
 void SubmitKey(std::string key);
-// Options, "Supprimer" confirmed: the key file goes, and a running cycle sends
+// Options, the trash then "Oui": the key file goes, and a running cycle sends
 // nothing more with that key (a request under way still ends normally).
 void ForgetStoredKey();
 bool KeyStored();
+// The key row's status, on the game thread: what the workers reported for the
+// key file, tied to that file's size and dates (read at each call; the key is
+// never decrypted here). Another key file than the one known (saved, replaced
+// or forgotten, here or by another client) is Saved, or None.
+KeyStatus StoredKeyStatus();
+// The key row shows a Saved key: one GET /v1/me with it, silent, once per key
+// file and session, never before a pause ends (backoff, Retry-After). again:
+// « Clé non vérifiée » clicked, an Unverified key is checked once more.
+void CheckStoredKey(bool again);
 bool SyncCleanupPending();
 }

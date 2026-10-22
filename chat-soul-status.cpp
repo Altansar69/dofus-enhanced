@@ -182,6 +182,12 @@ void ReadQuest(uint64_t now) {
     state.progress = std::move(progress);
     QuestReason(reason);
 }
+// A hidden status reads nothing; shown again, it starts from unknown.
+void ForgetInventory() {
+    try { CancelScan(); } catch (const std::exception& e) { Error("cleanup",e); }
+    state.service.reset(); state.owned.clear(); state.inventoryKnown = false; state.nextScan = 0;
+}
+void ForgetQuest() { state.quests.reset(); state.progress.clear(); state.nextQuest = 0; }
 const Goal* FindGoal(int monster) {
     const auto it = std::lower_bound(OcreGoals.begin(),OcreGoals.end(),monster,
         [](const Goal& row,int id) { return row.monster < id; });
@@ -200,21 +206,23 @@ Progress Quest(int monster) {
     return SameSession() && found != state.progress.end() ? found->second : Progress::Unknown;
 }
 }
-void TickChatSoulStatus(bool needed) {
+void TickChatSoulStatus(bool inventory, bool quest) {
     using namespace chat_souls;
-    if (!needed || !Active()) { RestoreChatSoulStatus(); return; }
+    if ((!inventory && !quest) || !Active()) { RestoreChatSoulStatus(); return; }
     if (!SameSession()) {
         RestoreChatSoulStatus(); state.owner = module; state.cached.reset(module->cached.get()); state.compositor.reset(module->compositor.get());
     }
     const auto now = GetTickCount64();
     try { Install(); } catch (const std::exception& e) { Error("metadata",e); return; }
-    try { ScanInventory(now); } catch (const std::exception& e) {
+    if (!inventory) ForgetInventory();
+    else try { ScanInventory(now); } catch (const std::exception& e) {
         // An interrupted scan (content changed, owner replaced) keeps the last
         // complete result and retries soon; only a service change forgets it.
         state.nextScan = now + 1000;
         try { CancelScan(); } catch (...) {} Error("inventory",e);
     }
-    try { ReadQuest(now); } catch (const std::exception& e) { state.progress.clear(); QuestReason("read-failed"); Error("quest",e); }
+    if (!quest) ForgetQuest();
+    else try { ReadQuest(now); } catch (const std::exception& e) { state.progress.clear(); QuestReason("read-failed"); Error("quest",e); }
 }
 void RestoreChatSoulStatus() {
     using namespace chat_souls;

@@ -18,9 +18,9 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The seven native sections of the mod, in display order: section i has the id
+// The eight native sections of the mod, in display order: section i has the id
 // ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
-enum SectionIndex : size_t { DisplaySection, GlowSection, MapsSection, TravelSection, SoulSection, LoadingSection, AboutSection, SectionCount };
+enum SectionIndex : size_t { DisplaySection, GlowSection, MapsSection, TravelSection, SoulSection, ChatSection, LoadingSection, AboutSection, SectionCount };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows.
 constexpr int DisplayId = SectionId(DisplaySection), SoulId = SectionId(SoulSection);
@@ -38,6 +38,7 @@ struct Object {
     bool boolean = false, defaultBoolean = false, loaded = true;
     Choice choice;
     std::map<std::string, float> styles; // inline style of an owned element
+    std::map<std::string, int> enumStyles; // inline StyleEnum values (display, flexDirection, alignItems, whiteSpace)
     float number = 0;                    // StyleBox / Length value
 };
 std::map<std::string, std::unique_ptr<Class>> classes;
@@ -63,14 +64,30 @@ TextButtonFn textInitHook = nullptr; // TextButtonOptionElement.Init(TextButtonO
 // The Metamob rows reach the capture sync through MetamobHooks fakes only. The
 // key below is fake and no fragment of it may reach a log or a notice.
 constexpr const char* FakeKey = "TEST-KEY-0123456789-NOT-REAL";
-bool fakeKeyStored = false, failKeyInsert = false, failKeyRemove = false, failTextRead = false;
-unsigned keyForgets = 0, textReads = 0, nativeTextInits = 0, inputsCreated = 0;
+// The fake capture sync's key status: fakeStatus for a key file there
+// (fakeKeyStored), None without one or while a forget runs (fakeForgetting).
+bool fakeKeyStored = false, fakeForgetting = false, failKeyInsert = false, failKeyRemove = false, failTextRead = false;
+metamob::KeyStatus fakeStatus = metamob::KeyStatus::Verified;
+std::vector<bool> keyChecks; // checkKey calls: false the silent check of a key shown, true « Clé non vérifiée » clicked
+// keyCopies: characters of a field copied out (api.String on a get_text result); lengthReads: lengths only.
+unsigned keyForgets = 0, keyCopies = 0, lengthReads = 0, nativeTextInits = 0, inputsCreated = 0;
 std::vector<std::string> submittedKeys, notices;
 std::vector<uintptr_t> verifiedRvas;
+bool (*clickHandler)(Obj) = nullptr; // nativeClick handler registered by the options UI
 const std::string SyncDescription = "Après chaque capture d’un archimonstre ou d’un boss (pierre d’âme remplie en combat), ajoute 1 à ce monstre dans ta quête Ocre sur Metamob, sans rien modifier d’autre. Nécessite ta clé API personnelle (metamob.fr › Paramètres › Clé API). Désactivé par défaut.";
-const std::string KeyDescription = "Colle ta clé dans le champ masqué puis clique sur Enregistrer. Elle est vérifiée auprès de Metamob, chiffrée pour ton compte Windows et gardée uniquement sur ce PC ; elle n’est jamais affichée, journalisée ni incluse dans les mises à jour.";
-const std::string KeyHint = "Colle ici ta clé API Metamob", StoredKeyHint = "Clé enregistrée (masquée) : colle une nouvelle clé pour la remplacer";
-const std::string PasteKeyFirst = "Metamob : colle d’abord ta clé dans le champ.", ConfirmForget = "Metamob : reclique sur Supprimer pour oublier ta clé.";
+const std::string KeyDescription = "Colle ta clé dans le champ masqué puis clique sur Enregistrer. Elle est vérifiée auprès de Metamob, chiffrée pour ton compte Windows et gardée uniquement sur ce PC ; elle n’est jamais affichée, journalisée ni incluse dans les mises à jour. Une fois enregistrée, elle reste masquée et la corbeille la supprime de ce PC, après confirmation. Elle reste valable sur Metamob : régénère-la sur le site pour la révoquer.";
+const std::string KeyHint = "Colle ici ta clé API Metamob", KeyStars = "************", ValidKey = "Clé valide";
+const std::string ConfirmQuestion = "Voulez-vous supprimer la clé Metamob ?";
+const std::string PasteKeyFirst = "Metamob : colle d’abord ta clé dans le champ.";
+const std::string ValidKeyNotice = "Metamob : une clé valide est enregistrée sur ce PC. Pour en changer, supprime-la avec la corbeille puis colle la nouvelle.";
+// The other statuses of a saved key: captions and click notices.
+const std::string CheckingKey = "Vérification…", UnverifiedKey = "Clé non vérifiée", RefusedKey = "Clé refusée", UnreadableKey = "Clé illisible";
+const std::string CheckingNotice = "Metamob : vérification de la clé enregistrée en cours.",
+    UnverifiedNotice = "Metamob : la clé enregistrée n’a pas pu être vérifiée auprès de Metamob ; nouvelle vérification en cours.",
+    RefusedNotice = "Metamob : clé refusée par Metamob (révoquée ou régénérée ?). Supprime-la avec la corbeille, puis enregistre une nouvelle clé.",
+    UnreadableNotice = "Metamob : clé illisible sur ce compte Windows. Supprime-la avec la corbeille, puis enregistre-la à nouveau.";
+// The native Enregistrer button's own display in the fake row views, put back exactly whenever it is shown.
+constexpr int NativeDisplay = 7;
 
 void Check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
@@ -177,7 +194,7 @@ void InitializeApi() {
     api.class_is_assignable_from = [](Klass expected, Klass actual) { return expected == actual; };
     api.class_is_valuetype = [](Klass type) {
         const auto& name = static_cast<Class*>(type)->name;
-        return name == "Choice" || name == "StyleBox" || name == "Length";
+        return name == "Choice" || name == "StyleBox" || name == "StyleEnum" || name == "Length";
     };
     api.object_get_class = [](Obj object) -> Klass { return Get(object).klass; };
     api.object_unbox = [](Obj object) -> void* {
@@ -186,8 +203,11 @@ void InitializeApi() {
         if (value.klass->name == "Boolean") return &value.boolean;
         if (value.klass->name == "Choice") return &value.choice;
         if (value.klass->name == "StyleBox" || value.klass->name == "Length") return &value.number;
+        if (value.klass->name == "StyleEnum") return &value.integer;
         throw std::runtime_error("Unexpected boxed type");
     };
+    // il2cpp_string_length: the length only, no character copied.
+    api.string_length = [](Obj object) -> int32_t { ++lengthReads; return static_cast<int32_t>(Get(object).text.size()); };
     api.method_get_param = [](Method method, uint32_t index) -> const void* {
         const auto& value = *static_cast<const MethodInfo*>(method);
         Check(index == 0, "Unexpected method parameter index");
@@ -221,16 +241,21 @@ struct Fixture {
         treasureOpens = notebookOpens = foreignButtonClicks = 0; openedUrls.clear();
         changes = 0;
         sourceModels = optionModels = uiHooks = 0;
-        fakeKeyStored = failKeyInsert = failKeyRemove = failTextRead = false;
-        keyForgets = textReads = nativeTextInits = inputsCreated = 0;
-        submittedKeys.clear(); notices.clear(); verifiedRvas.clear();
+        fakeKeyStored = fakeForgetting = failKeyInsert = failKeyRemove = failTextRead = false;
+        fakeStatus = metamob::KeyStatus::Verified;
+        keyForgets = keyCopies = lengthReads = nativeTextInits = inputsCreated = 0;
+        submittedKeys.clear(); notices.clear(); verifiedRvas.clear(); keyChecks.clear();
         state.servicesReady = true;
         state.ready.store(true);
         state.settings = Config(2, 1);
         state.ui = std::make_unique<OptionsUi>();
         state.ui->metamob.submitKey = [](std::string key) { submittedKeys.push_back(std::move(key)); };
-        state.ui->metamob.forgetKey = [] { ++keyForgets; };
-        state.ui->metamob.keyStored = [] { return fakeKeyStored; };
+        state.ui->metamob.forgetKey = [] { ++keyForgets; fakeForgetting = true; };
+        state.ui->metamob.keyStatus = [] { return fakeKeyStored && !fakeForgetting ? fakeStatus : metamob::KeyStatus::None; };
+        state.ui->metamob.checkKey = [](bool again) {
+            keyChecks.push_back(again);
+            if (again && fakeStatus == metamob::KeyStatus::Unverified) fakeStatus = metamob::KeyStatus::Saved; // as the capture sync does
+        };
         state.ui->metamob.notice = [](const std::string& text) { notices.push_back(text); };
         state.ui->Install();
         container = Make("Container");
@@ -287,7 +312,15 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
         {0x178E8F0, "TextInput", "set_isPassword", 1},
         {0x55F7180, "VisualElement", "get_parent", 0}, {0x55E55B0, "VisualElement", "IndexOf", 1},
         {0x55E5710, "VisualElement", "Insert", 2}, {0x55E7BD0, "VisualElement", "RemoveFromHierarchy", 0},
-        {0x55F74A0, "VisualElement", "get_style", 0}};
+        {0x55F74A0, "VisualElement", "get_style", 0}, {0x55F50B0, "VisualElement", ".ctor", 0}, {0x55DFAD0, "VisualElement", "Add", 1},
+        {0x1721860, "DofusVisualElement", "SetEnabled", 1},
+        {0x55D1270, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_display", 0}, {0x55D37F0, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_display", 1},
+        {0x55D13C0, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_flexDirection", 0}, {0x55D3A80, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_flexDirection", 1},
+        {0x55D0C60, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_alignItems", 0}, {0x55D2870, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_alignItems", 1},
+        {0x55D26B0, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_whiteSpace", 0}, {0x55D6370, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_whiteSpace", 1},
+        {0x170D6F0, "DofusButtonCustom", ".ctor", 0}, {0x170E330, "DofusButtonCustom", "set_size", 1}, {0x170E210, "DofusButtonCustom", "set_mainStyle", 1},
+        {0x170E400, "DofusButtonCustom", "set_status", 1}, {0x170DFE0, "DofusButtonCustom", "set_icon", 1}, {0x170E5F0, "DofusButtonCustom", "set_text", 1},
+        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1}};
     const auto& owner = static_cast<fake::Class*>(klass)->name;
     fake::Check(std::any_of(std::begin(contracts), std::end(contracts), [&](const Contract& contract) {
         return contract.rva == rva && owner == contract.owner && std::string(name) == contract.method && argc == contract.argc;
@@ -324,6 +357,11 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
             auto tuple = Make("Choice");
             Get(tuple).choice = *static_cast<Choice*>(arguments[0]);
             value.items.push_back(tuple);
+        } else if (value.klass->name == "VisualElement") { // the key row's owned container
+            const auto child = static_cast<Obj>(arguments[0]);
+            Check(!Get(child).refs["parent"], "Owned control added twice");
+            value.items.push_back(child);
+            Get(child).refs["parent"] = self;
         } else value.items.push_back(arguments[0]);
         return nullptr;
     }
@@ -399,12 +437,21 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
     if (name == "set_maxLength") { value.integers["maxLength"] = *static_cast<int*>(arguments[0]); return nullptr; }
     if (name == "set_placeholderText") { value.refs["placeholder"] = arguments[0]; return nullptr; }
     if (name == "get_text") {
-        ++textReads;
+        Check(value.klass->name == "TextInput", "Only a field is read");
         const auto typed = value.refs["text"] ? Get(value.refs["text"]).text : std::string{};
         // A managed exception text can quote the field: it must never be logged.
         if (failTextRead) throw std::runtime_error("Synthetic managed exception: " + typed);
-        return fake::String(typed);
+        const auto text = fake::String(typed);
+        Get(text).booleans["typed"] = true; // its characters are the field's: see Api::String
+        return text;
     }
+    // The game's DofusButtonCustom (size, style, status, icon) and DofusVisualElement.SetEnabled.
+    if (name == "set_size" || name == "set_mainStyle" || name == "set_status" || name == "set_icon") {
+        Check(value.klass->name == "DofusButtonCustom", "Button setters on the game's button only");
+        value.integers[name.substr(4)] = *static_cast<int*>(arguments[0]);
+        return nullptr;
+    }
+    if (name == "SetEnabled") { value.booleans["enabled"] = *static_cast<bool*>(arguments[0]); return nullptr; }
     if (name == "get_style") {
         auto& style = value.refs["style"];
         if (!style) { style = Make("InlineStyle"); Get(style).refs["owner"] = self; }
@@ -414,12 +461,19 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
     if (value.klass->name == "InlineStyle" && name.rfind(stylePrefix, 0) == 0) {
         auto& owner = Get(value.refs.at("owner"));
         const auto operation = name.substr(stylePrefix.size()), property = operation.substr(4);
-        if (operation.rfind("get_", 0) == 0) { const auto box = Make("StyleBox"); Get(box).number = owner.styles[property]; return box; }
+        // StyleEnum properties hold an int, the others (StyleFloat, StyleLength) a float.
+        const bool enumeration = property == "display" || property == "flexDirection" || property == "alignItems" || property == "whiteSpace";
+        if (operation.rfind("get_", 0) == 0) {
+            if (enumeration) { const auto box = Make("StyleEnum"); Get(box).integer = owner.enumStyles[property]; return box; }
+            const auto box = Make("StyleBox"); Get(box).number = owner.styles[property]; return box;
+        }
         Check(operation.rfind("set_", 0) == 0, "Unexpected inline style method");
-        owner.styles[property] = *static_cast<float*>(arguments[0]);
+        if (enumeration) owner.enumStyles[property] = *static_cast<int*>(arguments[0]);
+        else owner.styles[property] = *static_cast<float*>(arguments[0]);
         return nullptr;
     }
     if (value.klass->name == "StyleBox" && name == "set_value") { value.number = *static_cast<float*>(arguments[0]); return nullptr; }
+    if (value.klass->name == "StyleEnum" && name == "set_value") { value.integer = *static_cast<int*>(arguments[0]); return nullptr; }
     throw std::runtime_error("Unmodelled managed call: " + value.klass->name + "." + name);
 }
 Obj Api::New(Klass klass, std::initializer_list<void*> args) const {
@@ -473,7 +527,16 @@ void* Api::FieldAddress(Obj self, const char* fieldName) const {
     if (name == "dzyi" || name == "m_binding") return value.refs.at(name); // Inline binding is its own fake object.
     return &value.refs[name];
 }
-std::string Api::String(Obj self) const { return self ? fake::Get(self).text : std::string{}; }
+std::string Api::String(Obj self) const {
+    if (!self) return {};
+    const auto& value = fake::Get(self);
+    if (value.booleans.count("typed") && !value.text.empty()) ++fake::keyCopies; // characters of a field, copied out
+    return value.text;
+}
+}
+// The game's click on owned DofusButtonCustom buttons (native-click.cpp is not linked here).
+namespace nativeClick {
+void AddHandler(bool (*handler)(managed::Obj)) { fake::clickHandler = handler; }
 }
 
 Module* module = nullptr;
@@ -512,8 +575,9 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
     return {ui.modeSource.get(), ui.roleplayModeSource.get(), ui.animationSource.get(),
         ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(),
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(),
-        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(),
+        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
+        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
 }
 // Expected row: model, private source (none for a text button), label, native
@@ -541,14 +605,18 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.miniCenterOption, ui.miniCenterSource, "Bouton de recentrage sur la mini-carte", true)}},
         {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
-            CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true)}},
+            CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true),
+            CheckRow(ui.travelPlannerOption, ui.travelPlannerSource, "Remplacer l’autopilote du jeu", true)}},
         {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
             CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true),
             CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
-            ButtonRow(ui.metamobKeyOption, "Clé API Metamob"), ButtonRow(ui.metamobForgetOption, "Oublier la clé Metamob")}},
+            ButtonRow(ui.metamobKeyOption, "Clé API Metamob")}},
+        {"Chat", {CheckRow(ui.chatTravelOption, ui.chatTravelSource, "Bouton TP dans le chat", true),
+            CheckRow(ui.chatSoulOption, ui.chatSoulSource, "Âme en sac dans le chat", true),
+            CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true)}},
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.9.2 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.10.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -585,21 +653,58 @@ RowView MakeRowView() {
     view.button = Make("DofusButtonCustom");
     Get(view.row).items = {view.label, view.button};
     Get(view.label).refs["parent"] = Get(view.button).refs["parent"] = view.row;
+    Get(view.button).enumStyles["display"] = NativeDisplay;
     const auto binding = Make("TextButtonOptionElementBinding");
     Get(binding).refs["button"] = view.button;
     Get(view.element).refs["m_binding"] = binding;
     return view;
 }
-std::vector<Obj> Inputs(const RowView& view) {
-    std::vector<Obj> inputs;
+// The key row's owned container in a view (between its label and its native
+// button), and its seven controls in order.
+Obj Slot(const RowView& view) {
     for (const auto child : Get(view.row).items)
-        if (Get(child).klass->name == "TextInput") inputs.push_back(child);
-    return inputs;
+        if (Get(child).klass->name == "VisualElement") return child;
+    return nullptr;
+}
+struct KeyControls { Obj input, stars, indicator, trash, question, yes, no; };
+KeyControls Controls(const RowView& view) {
+    const auto slot = Slot(view);
+    Check(slot != nullptr, "The view shows the key row's controls");
+    const auto& items = Get(slot).items;
+    Check(items.size() == 7, "The key row holds exactly its seven controls");
+    for (const auto item : items) Check(Get(item).refs.at("parent") == slot, "Each control sits in the key row's container");
+    return {items[0], items[1], items[2], items[3], items[4], items[5], items[6]};
 }
 std::string Placeholder(Obj input) { return Text(Get(input).refs["placeholder"]); }
 std::string Typed(Obj input) { return Text(Get(input).refs["text"]); }
+std::string Caption(Obj control) { return Text(Get(control).refs["text"]); }
 void Paste(Obj input, const std::string& typed) { Get(input).refs["text"] = String(typed); }
 void Click(const RowView& view) { textButtonHook(view.element, Make("Visual"), nullptr); }
+// The game's click on a button (see nativeClick): true when the options UI owns it.
+bool Press(Obj button) { Check(clickHandler != nullptr, "The key row's buttons use the game's click"); return clickHandler(button); }
+bool Displayed(Obj element) {
+    const auto& styles = Get(element).enumStyles;
+    const auto found = styles.find("display");
+    return found == styles.end() || found->second != 1;
+}
+bool SaveShown(const RowView& view) { return Get(view.button).enumStyles.at("display") == NativeDisplay; }
+bool SaveHidden(const RowView& view) { return Get(view.button).enumStyles.at("display") == 1; }
+// Exactly what each state shows in a view of the key row.
+void CheckEditable(const RowView& view, bool save, const char* message) {
+    const auto c = Controls(view);
+    Check(Displayed(c.input) && !Displayed(c.stars) && !Displayed(c.indicator) && !Displayed(c.trash) && !Displayed(c.question) &&
+        !Displayed(c.yes) && !Displayed(c.no) && (save ? SaveShown(view) : SaveHidden(view)), message);
+}
+void CheckSaved(const RowView& view, const char* message) {
+    const auto c = Controls(view);
+    Check(!Displayed(c.input) && Typed(c.input).empty() && Displayed(c.stars) && Typed(c.stars) == KeyStars && Displayed(c.indicator) &&
+        Displayed(c.trash) && !Displayed(c.question) && !Displayed(c.yes) && !Displayed(c.no) && SaveHidden(view), message);
+}
+void CheckQuestion(const RowView& view, const char* message) {
+    const auto c = Controls(view);
+    Check(!Displayed(c.input) && Typed(c.input).empty() && !Displayed(c.stars) && !Displayed(c.indicator) && !Displayed(c.trash) &&
+        Displayed(c.question) && Displayed(c.yes) && Displayed(c.no) && SaveHidden(view), message);
+}
 // Any five consecutive characters of the fake key count as a leak.
 bool Leaks(const std::string& text) {
     const std::string key = FakeKey;
@@ -612,14 +717,16 @@ void CheckNoKeyTrace() {
     for (const auto& line : notices) Check(!Leaks(line), "A fragment of the Metamob key reached a chat notice");
 }
 bool Logged(size_t from, const std::string& line) { return std::find(logs.begin() + static_cast<std::ptrdiff_t>(from), logs.end(), line) != logs.end(); }
+// Tick with the key file read again (at most once a second otherwise).
+void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.9.2" && std::string(ModVersion) == "r108",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.10.0" && std::string(ModVersion) == "r109",
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its seven native sections, from Apparence et animations to À propos, and no row of its own");
+        "Mod must hold its eight native sections, from Apparence et animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -646,31 +753,32 @@ void CheckLayout(Fixture& f) {
     }
     Check(shownSources == AllSources(f.Ui()), "Every private source must be shown once, by its own row");
     // « Pierre d’âme », after the two soul rows: the Metamob sync preference,
-    // then the key and forget text buttons.
+    // then the key row, an owned text button (no forget row any more: the
+    // saved key's trash replaces it).
     const auto& soul = Rows(Section(parent, SoulSection));
-    const auto sync = soul.at(2), key = soul.at(3), forget = soul.at(4);
+    const auto sync = soul.at(2), key = soul.at(3);
+    Check(soul.size() == 4, "Pierre d’âme: Alerte, Équiper automatiquement, Synchroniser les captures avec Metamob, Clé API Metamob");
     Check(Description(sync) == SyncDescription, "The sync row must say what it changes, what it needs and its default");
-    Check(Description(key) == KeyDescription, "The key row must explain the masked field, the check and the storage");
-    Check(Description(forget).find("5 secondes") != std::string::npos, "The forget row must explain its confirmation");
-    Check(ButtonText(key) == "Enregistrer" && Get(key).integers.at("icon") == 148 && ButtonText(forget) == "Supprimer" && Get(forget).integers.at("icon") == 316,
-        "The key rows use native floppy and trash buttons");
-    Check(!Get(key).refs.at("source") && !Get(forget).refs.at("source"), "The key rows have no source: a native reset never reaches the key");
-    Check(f.Ui().metamobKeyMarker.get() == Get(key).refs.at("description") && f.Ui().metamobForgetMarker.get() == Get(forget).refs.at("description") &&
-        f.Ui().metamobKeyMarker.get() != f.Ui().metamobForgetMarker.get() && f.Ui().metamobKeyMarker.get() != f.Ui().creditsMarker.get(),
+    Check(Description(key) == KeyDescription, "The key row must explain the masked field, the check, the storage and the trash");
+    Check(ButtonText(key) == "Enregistrer" && Get(key).integers.at("icon") == 148, "The key row uses the native floppy button");
+    Check(!Get(key).refs.at("source"), "The key row has no source: a native reset never reaches the key");
+    Check(f.Ui().metamobKeyMarker.get() == Get(key).refs.at("description") && f.Ui().metamobKeyMarker.get() != f.Ui().creditsMarker.get(),
         "Each owned text-button row is known by its own description reference");
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.9.2") != std::string::npos && description.find("Altansar") != std::string::npos &&
-        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r108") != std::string::npos,
+    Check(Label(credits).find("1.10.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r109") != std::string::npos,
         "Credits must name the version, the author, the project page and the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 17 && optionModels == 20,
-        "The UI must create seventeen private sources and twenty rows");
+    Check(sourceModels == 21 && optionModels == 23,
+        "The UI must create twenty-one private sources and twenty-three rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
-    for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}})
-        Check(std::find(verifiedRvas.begin(), verifiedRvas.end(), rva) != verifiedRvas.end(), "The view Init and the masked field calls must be exact verified contracts");
+    for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
+        uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
+        Check(std::find(verifiedRvas.begin(), verifiedRvas.end(), rva) != verifiedRvas.end(), "The view Init and the key row's calls must be exact verified contracts");
+    Check(clickHandler != nullptr, "The key row's buttons are handled through the game's click");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
     if (!displayed.empty()) {
         const auto clone = displayed.back();
@@ -816,7 +924,7 @@ void RegistrationAndValues() {
     for (auto source : AllSources(f.Ui())) Check(!source, "Restore retained a source reference");
     for (auto option : AllOptions(f.Ui())) Check(!option, "Restore retained an option reference");
     Check(f.Ui().pages.empty() && !f.Ui().container.get(), "Restore retained owned category/container references");
-    Check(!f.Ui().metamobKeyMarker.get() && !f.Ui().metamobForgetMarker.get() && f.Ui().keyFields.empty(), "Restore retained a Metamob row reference");
+    Check(!f.Ui().metamobKeyMarker.get() && f.Ui().keyFields.empty(), "Restore retained a Metamob row reference");
 }
 
 void AnimationModeValuesAndDefaults() {
@@ -980,6 +1088,8 @@ Settings AwayFromDefaults() {
     settings.soulReminder = settings.soulAutoEquip = false;
     settings.autoLoad = settings.githubUpdates = false;
     settings.metamobSync = true;
+    settings.mapTravelPlanner = false;
+    settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = false;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -994,9 +1104,13 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.miniMapCenterButton = defaults.miniMapCenterButton;
     } else if (index == TravelSection) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
+        settings.mapTravelPlanner = defaults.mapTravelPlanner;
     } else if (index == SoulSection) {
         settings.soulReminder = defaults.soulReminder; settings.soulAutoEquip = defaults.soulAutoEquip;
         settings.metamobSync = defaults.metamobSync;
+    } else if (index == ChatSection) {
+        settings.chatTravelLinks = defaults.chatTravelLinks; settings.chatSoulInventory = defaults.chatSoulInventory;
+        settings.chatOcreStatus = defaults.chatOcreStatus;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
     }
@@ -1174,161 +1288,327 @@ void CreditsLinkOpensProject() {
     Check(openedUrls.size() == 1 && foreignButtonClicks == 2, "After restore the stale element runs the native action");
 }
 
-// Row views are pooled: the masked field follows the key row from view to view.
-void MetamobKeyFieldFollowsPooledViews() {
+// Row views are pooled: the key row's controls follow the key row from view
+// to view, always in the current state, and leave a view recycled for another row.
+void MetamobKeyRowFollowsPooledViews() {
     Fixture f;
     initHook(f.page, false, true, SoulId, nullptr);
     const auto keyModel = f.Ui().metamobKeyOption.get();
     auto view = MakeRowView();
     textInitHook(view.element, keyModel, nullptr);
-    const auto inputs = Inputs(view);
     Check(nativeTextInits == 1 && Get(view.element).refs.at("option") == keyModel, "The view's native Init runs first, unchanged");
-    Check(inputs.size() == 1 && inputsCreated == 1 && Get(view.row).items == std::vector<Obj>({view.label, inputs[0], view.button}),
-        "One owned input sits between the row label and its button");
-    const auto field = inputs[0];
-    Check(Get(field).booleans.at("isPassword") && Get(field).integers.at("maxLength") == 256 && Placeholder(field) == KeyHint,
-        "The key field is the native masked input, bounded, with the empty-key hint");
-    Check(Get(field).styles.at("flexGrow") == 1.f && Get(field).styles.at("minWidth") == 0.f && Get(field).styles.at("minHeight") == 32.f,
-        "The key field takes the free width of the row, like the notebook inputs");
+    const auto slot = Slot(view);
+    Check(slot && Get(view.row).items == std::vector<Obj>({view.label, slot, view.button}) && Get(slot).refs.at("parent") == view.row,
+        "One owned container sits between the row label and its button");
+    Check(Get(slot).enumStyles.at("flexDirection") == 2 && Get(slot).enumStyles.at("alignItems") == 2 &&
+        Get(slot).styles.at("flexGrow") == 1.f && Get(slot).styles.at("minWidth") == 0.f,
+        "The container takes the free width of the row, its controls side by side and centred");
+    const auto c = Controls(view);
+    Check(Get(c.input).klass->name == "TextInput" && Get(c.input).booleans.at("isPassword") && Get(c.input).integers.at("maxLength") == 256 &&
+        Placeholder(c.input) == KeyHint && Get(c.input).styles.at("flexGrow") == 1.f && Get(c.input).styles.at("minHeight") == 32.f,
+        "No key saved: the native masked input, bounded, with the key hint, taking the free width");
+    CheckEditable(view, false, "Nothing typed: the masked field without Enregistrer");
+    Check(inputsCreated == 2 && f.Ui().keyFields.size() == 1, "One masked field and one stars field per view");
     // Re-Init of the same view, also with the native search clone of the row:
-    // still one field and no new GC reference.
+    // the same controls and no new GC reference.
     const auto references = handles.size();
     const auto clone = Make("TextButtonOption");
     Get(clone).refs["description"] = Get(keyModel).refs.at("description");
     for (const auto model : {keyModel, clone, keyModel}) textInitHook(view.element, model, nullptr);
-    Check(Inputs(view) == inputs && inputsCreated == 1 && f.Ui().keyFields.size() == 1 && handles.size() == references,
-        "Re-Init keeps exactly one field without new references");
-    // A key saved meanwhile: a second view shows the stored-key hint, Tick updates the first.
+    Check(Slot(view) == slot && inputsCreated == 2 && f.Ui().keyFields.size() == 1 && handles.size() == references,
+        "Re-Init keeps exactly one set of controls without new references");
+    // A key saved meanwhile: a view bound now (a search clone) reads it, and
+    // every view of the row shows it at once.
     fakeKeyStored = true;
     auto second = MakeRowView();
     textInitHook(second.element, clone, nullptr);
-    Check(Inputs(second).size() == 1 && Placeholder(Inputs(second)[0]) == StoredKeyHint && f.Ui().keyFields.size() == 2,
-        "A search clone of the key row gets its own field with the stored-key hint");
-    f.Ui().nextKeyFieldRefresh = 0;
-    f.Ui().Tick();
-    Check(Placeholder(field) == StoredKeyHint, "A key saved while the row is shown changes its hint");
+    CheckSaved(second, "A search clone of the key row shows the saved key");
+    CheckSaved(view, "Every view of the row follows at once");
+    Check(f.Ui().keyFields.size() == 2 && Slot(second) != slot, "Each view has its own controls");
     fakeKeyStored = false;
     f.Ui().Tick();
-    Check(Placeholder(field) == StoredKeyHint, "The hint refresh runs at most once a second");
-    f.Ui().nextKeyFieldRefresh = 0;
+    CheckSaved(view, "The key file is read at most once a second");
+    Refresh(f);
+    CheckEditable(view, false, "A forgotten key brings the empty field back");
+    CheckEditable(second, false, "In every view");
+    // The view recycled for another row loses its controls, its field emptied
+    // first and its native button shown as it was.
+    Paste(c.input, FakeKey);
     f.Ui().Tick();
-    Check(Placeholder(field) == KeyHint && Placeholder(Inputs(second)[0]) == KeyHint, "A forgotten key brings the empty-key hint back");
-    // The view recycled for another row loses the field, emptied first.
-    Paste(field, FakeKey);
+    CheckEditable(view, true, "A typed key shows Enregistrer");
     textInitHook(view.element, f.Ui().creditsOption.get(), nullptr);
-    Check(Inputs(view).empty() && Get(view.row).items == std::vector<Obj>({view.label, view.button}) &&
-        Typed(field).empty() && !Get(field).refs.at("parent") && f.Ui().keyFields.size() == 1,
-        "A view recycled for another row loses the field, emptied first");
+    Check(!Slot(view) && Get(view.row).items == std::vector<Obj>({view.label, view.button}) && Typed(c.input).empty() &&
+        !Get(slot).refs.at("parent") && f.Ui().keyFields.size() == 1 && SaveShown(view),
+        "A view recycled for another row loses the controls, emptied first, its button as it was");
+    textInitHook(view.element, keyModel, nullptr);
+    Check(Slot(view) && Slot(view) != slot && inputsCreated == 6 && f.Ui().keyFields.size() == 2, "Back on the key row, the view gets fresh controls");
+    CheckEditable(view, false, "Fresh controls, empty, Enregistrer hidden");
+    // Recycled while Enregistrer is hidden: the native button gets its own display back.
     const auto foreign = Make("TextButtonOption");
     Get(foreign).refs["description"] = Make("DescriptionData");
-    for (const auto model : {f.Ui().metamobForgetOption.get(), foreign}) {
-        textInitHook(view.element, model, nullptr);
-        Check(Inputs(view).empty(), "Only the key row has a field");
-    }
-    textInitHook(view.element, keyModel, nullptr);
-    Check(Inputs(view).size() == 1 && Inputs(view)[0] != field && inputsCreated == 3 && f.Ui().keyFields.size() == 2,
-        "Back on the key row, the view gets a fresh field");
-    // A stopping module adds no field.
+    textInitHook(view.element, foreign, nullptr);
+    Check(!Slot(view) && SaveShown(view) && f.Ui().keyFields.size() == 1, "A foreign row gets no controls and its button as it was");
+    // A stopping module adds no controls.
     auto third = MakeRowView();
     f.state.stopRequested.store(true);
     textInitHook(third.element, keyModel, nullptr);
-    Check(Inputs(third).empty() && f.Ui().keyFields.size() == 2 && nativeTextInits == 10, "A stopping module adds no field");
+    Check(!Slot(third) && f.Ui().keyFields.size() == 1 && SaveShown(third), "A stopping module adds no controls");
     f.state.stopRequested.store(false);
-    // Restore removes every field and releases every Metamob reference.
-    f.StopAndRestore();
-    Check(f.Ui().keyFields.empty() && Inputs(view).empty() && Inputs(second).empty(), "Restore removes the owned fields from the pooled views");
-    Check(!f.Ui().metamobSyncSource.get() && !f.Ui().metamobSyncOption.get() && !f.Ui().metamobKeyOption.get() &&
-        !f.Ui().metamobKeyMarker.get() && !f.Ui().metamobForgetOption.get() && !f.Ui().metamobForgetMarker.get(), "Restore releases the Metamob rows");
     textInitHook(view.element, keyModel, nullptr);
-    Check(Inputs(view).empty() && f.Ui().keyFields.empty(), "After restore the stale key row gets no field");
+    Check(f.Ui().keyFields.size() == 2 && SaveHidden(view) && SaveHidden(second), "Two views, both without Enregistrer");
+    // Restore removes every control, gives each native button its own display
+    // back and releases every Metamob reference.
+    f.StopAndRestore();
+    Check(f.Ui().keyFields.empty() && !Slot(view) && !Slot(second) && SaveShown(view) && SaveShown(second),
+        "Restore removes the owned controls from the pooled views and shows their buttons as they were");
+    Check(!f.Ui().metamobSyncSource.get() && !f.Ui().metamobSyncOption.get() && !f.Ui().metamobKeyOption.get() && !f.Ui().metamobKeyMarker.get(),
+        "Restore releases the Metamob rows");
+    textInitHook(view.element, keyModel, nullptr);
+    Check(!Slot(view) && f.Ui().keyFields.empty(), "After restore the stale key row gets no controls");
     CheckNoKeyTrace();
 }
 
-// Enregistrer: the field is read once, emptied at once, the text goes to the sync.
-void MetamobKeySaveReadsOnceAndClears() {
+// No key saved: Enregistrer appears with the first typed character, without
+// copying the key; a click reads the field once, empties it and submits it.
+void MetamobKeySaveFollowsTyping() {
     Fixture f;
     initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
-    const auto field = Inputs(view).at(0);
-    Click(view);
-    Check(notices == std::vector<std::string>{PasteKeyFirst} && submittedKeys.empty() && textReads == 1 && foreignButtonClicks == 0,
-        "An empty field asks for the key in the chat");
+    const auto field = Controls(view).input;
+    CheckEditable(view, false, "Nothing typed: no Enregistrer");
+    Paste(field, "x");
+    f.Ui().Tick();
+    CheckEditable(view, true, "One character shows Enregistrer");
+    Paste(field, "");
+    f.Ui().Tick();
+    CheckEditable(view, false, "An emptied field hides it again");
     Paste(field, FakeKey);
+    const auto reads = lengthReads;
+    for (int i = 0; i != 5; ++i) f.Ui().Tick();
+    CheckEditable(view, true, "A pasted key shows Enregistrer");
+    Check(lengthReads >= reads + 5 && keyCopies == 0, "Each Tick reads the field's length only: no character of the key is copied");
     Click(view);
-    Check(textReads == 2 && submittedKeys == std::vector<std::string>{FakeKey} && Typed(field).empty() &&
-        notices.size() == 1 && foreignButtonClicks == 0 && openedUrls.empty(),
-        "Enregistrer reads the field once, empties it and submits the key, never the native action");
-    // The native search clone of the key row in another view uses its own field;
-    // the text goes as typed (the capture sync trims and validates it).
+    Check(submittedKeys == std::vector<std::string>{FakeKey} && Typed(field).empty() && keyCopies == 1 && notices.empty() &&
+        foreignButtonClicks == 0 && openedUrls.empty(), "Enregistrer reads the field once, empties it and submits the key, never the native action");
+    CheckEditable(view, false, "The emptied field hides Enregistrer at once");
+    // The native search clone of the key row in another view uses its own
+    // field; the text goes as typed (the capture sync trims and validates it).
     const auto clone = Make("TextButtonOption");
     Get(clone).refs["description"] = Get(f.Ui().metamobKeyOption.get()).refs.at("description");
     auto other = MakeRowView();
     textInitHook(other.element, clone, nullptr);
     const std::string spaced = std::string(" ") + FakeKey + " ";
-    Paste(Inputs(other).at(0), spaced);
+    Paste(Controls(other).input, spaced);
     Click(other);
-    Check(submittedKeys.size() == 2 && submittedKeys.back() == spaced && Typed(Inputs(other).at(0)).empty() && textReads == 3,
+    Check(submittedKeys.size() == 2 && submittedKeys.back() == spaced && Typed(Controls(other).input).empty() && keyCopies == 2,
         "A search clone of the key row submits its own field");
-    // A view of the key row whose field never appeared: only the chat hint.
+    // A view of the key row whose controls never appeared: only the chat hint.
     const auto bare = Make("TextButtonOptionElement");
     Get(bare).refs["option"] = f.Ui().metamobKeyOption.get();
     textButtonHook(bare, Make("Visual"), nullptr);
-    Check(notices.size() == 2 && notices.back() == PasteKeyFirst && submittedKeys.size() == 2 && foreignButtonClicks == 0,
-        "Without a field the button only asks for the key");
+    Check(notices == std::vector<std::string>{PasteKeyFirst} && submittedKeys.size() == 2 && foreignButtonClicks == 0,
+        "Without controls the button only asks for the key");
     // A stopping module ignores the button: the field stays, no native action.
     Paste(field, FakeKey);
     f.state.stopRequested.store(true);
     Click(view);
-    Check(Typed(field) == FakeKey && submittedKeys.size() == 2 && textReads == 3 && foreignButtonClicks == 0, "A stopping module ignores the key button");
+    Check(Typed(field) == FakeKey && submittedKeys.size() == 2 && keyCopies == 2 && foreignButtonClicks == 0, "A stopping module ignores the key button");
     f.state.stopRequested.store(false);
     // Capture sync not wired: the field is still emptied, nothing is called.
     f.Ui().metamob = MetamobHooks{};
     Click(view);
     Click(view);
-    Check(Typed(field).empty() && submittedKeys.size() == 2 && notices.size() == 2 && foreignButtonClicks == 0 && textReads == 5,
+    Check(Typed(field).empty() && submittedKeys.size() == 2 && notices.size() == 1 && foreignButtonClicks == 0 && keyCopies == 3,
         "Without capture sync hooks a click only empties the field");
     Check(!f.state.stopRequested.load() && !f.state.stopped.load(), "Key handling never stops the mod");
     CheckNoKeyTrace();
     f.StopAndRestore();
 }
 
-// Supprimer: a first click asks for confirmation, a second one within 5 s forgets.
-void MetamobForgetNeedsTwoClicks() {
+// A key Metamob accepted: fixed stars, « Clé valide » and the trash, no field
+// and no Enregistrer. The trash asks first: « Non » keeps the key, « Oui » forgets it
+// and the row is the empty field again.
+void MetamobSavedKeyTrashAsksFirst() {
     Fixture f;
-    fakeKeyStored = true;
-    initHook(f.page, false, true, SoulId, nullptr);
-    auto view = MakeRowView();
-    textInitHook(view.element, f.Ui().metamobForgetOption.get(), nullptr);
-    Check(Inputs(view).empty(), "The forget row has no field");
-    Click(view);
-    Check(keyForgets == 0 && notices == std::vector<std::string>{ConfirmForget} && f.Ui().forgetDeadline != 0, "A first click only asks for confirmation");
-    Click(view);
-    Check(keyForgets == 1 && notices.size() == 1 && f.Ui().forgetDeadline == 0, "A second click within five seconds forgets the key");
-    Click(view);
-    Check(keyForgets == 1 && notices.size() == 2, "A third click starts a new confirmation");
-    f.Ui().forgetDeadline = 1; // armed long ago: expired
-    Click(view);
-    Check(keyForgets == 1 && notices.size() == 3 && notices.back() == ConfirmForget, "An expired confirmation asks again");
-    Click(view);
-    Check(keyForgets == 2 && foreignButtonClicks == 0 && openedUrls.empty() && submittedKeys.empty(),
-        "Supprimer acts through forgetKey only, never the native action");
-    Click(view);
-    Check(f.Ui().forgetDeadline != 0, "Armed before stopping");
-    f.StopAndRestore();
-    Check(f.Ui().forgetDeadline == 0, "Restore disarms the confirmation");
-    CheckNoKeyTrace();
-}
-
-// The native reset turns the sync off and never touches the key.
-void MetamobNativeResetStopsSyncKeepsKey() {
-    Fixture f;
-    f.state.settings.metamobSync = true;
     fakeKeyStored = true;
     initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
-    Paste(Inputs(view).at(0), FakeKey);
+    const auto c = Controls(view);
+    CheckSaved(view, "A saved key: no field to edit, no Enregistrer");
+    Check(Get(c.stars).klass->name == "TextInput" && Typed(c.stars) == KeyStars && Get(c.stars).booleans.at("isPassword") &&
+        !Get(c.stars).booleans.at("enabled"), "Fixed stars in a disabled masked field: nothing to edit, copy or reveal");
+    Check(Get(c.indicator).klass->name == "DofusButtonCustom" && Caption(c.indicator) == ValidKey && Get(c.indicator).integers.at("icon") == 91 &&
+        Get(c.indicator).integers.at("status") == 0 && Get(c.indicator).integers.at("size") == 0 && Get(c.trash).klass->name == "DofusButtonCustom" &&
+        Get(c.trash).integers.at("icon") == 316 &&
+        Caption(c.trash).empty() && Get(c.trash).integers.at("status") == 1, "« Clé valide » with its tick, then the game's trash icon button");
+    Check(Get(c.question).klass->name == "DofusLabel" && Caption(c.question) == ConfirmQuestion && Get(c.question).enumStyles.at("whiteSpace") == 0 &&
+        Caption(c.yes) == "Oui" && Get(c.yes).integers.at("status") == 1 && Caption(c.no) == "Non", "The question and its answers wait, hidden");
+    // The hidden Enregistrer, clicked anyway: nothing read, said or submitted.
+    Click(view);
+    Check(notices.empty() && submittedKeys.empty() && keyCopies == 0 && foreignButtonClicks == 0, "A saved key: a click on the hidden Enregistrer does nothing");
+    // The indicator only explains.
+    Check(Press(c.indicator) && notices == std::vector<std::string>{ValidKeyNotice} && keyForgets == 0 && keyChecks.empty(),
+        "« Clé valide » only explains, in the chat");
+    CheckSaved(view, "and changes nothing");
+    // The trash asks; « Non » keeps the key.
+    Check(Press(c.trash) && keyForgets == 0 && f.Ui().confirmForget, "The trash forgets nothing by itself");
+    CheckQuestion(view, "The trash asks: Voulez-vous supprimer la clé Metamob ?");
+    f.Ui().Tick();
+    CheckQuestion(view, "The question stays while it waits for an answer");
+    Check(Press(c.no) && keyForgets == 0 && !f.Ui().confirmForget, "« Non » keeps the key");
+    CheckSaved(view, "« Non » shows the saved key again");
+    // Unanswered, the question goes after its delay; a late « Oui » does nothing.
+    Press(c.trash);
+    f.Ui().confirmDeadline = 1; // asked long ago: expired
+    f.Ui().Tick();
+    CheckSaved(view, "An unanswered question goes, the key stays");
+    Check(Press(c.yes) && keyForgets == 0, "« Oui » after the question went forgets nothing");
+    // A stopping module ignores the row's buttons.
+    f.state.stopRequested.store(true);
+    Check(Press(c.trash) && !f.Ui().confirmForget, "A stopping module ignores the trash");
+    f.state.stopRequested.store(false);
+    // The trash then « Oui »: forgotten, and the row is the empty field at once.
+    Press(c.trash);
+    Check(Press(c.yes) && keyForgets == 1 && !f.Ui().confirmForget, "« Oui » forgets the key through the capture sync");
+    CheckEditable(view, false, "The row is the empty field again, Enregistrer hidden");
+    Refresh(f); // the key file is still there: the capture sync says none until its worker deletes it
+    CheckEditable(view, false, "Still the empty field while the key file is being deleted");
+    fakeKeyStored = fakeForgetting = false;
+    Refresh(f);
+    CheckEditable(view, false, "Deleted: the empty field");
+    Check(!f.Ui().confirmForget && f.Ui().keyStatus == metamob::KeyStatus::None, "Nothing pending once the file is gone");
+    Paste(c.input, FakeKey);
+    f.Ui().Tick();
+    CheckEditable(view, true, "A new key can be typed, Enregistrer shown");
+    Check(foreignButtonClicks == 0 && openedUrls.empty() && submittedKeys.empty() && keyCopies == 0, "The row's buttons never run a native action");
+    // A deletion that fails (the capture sync says so in the chat): the saved key shows again once it has tried.
+    fakeKeyStored = true;
+    Refresh(f);
+    CheckSaved(view, "A key saved again: the typed text is dropped");
+    Press(c.trash);
+    Press(c.yes);
+    Check(keyForgets == 2, "Asked once more");
+    CheckEditable(view, false, "Shown empty while the deletion runs");
+    fakeForgetting = false; // the capture sync could not delete the file
+    Refresh(f);
+    CheckSaved(view, "A key that could not be deleted shows again");
+    // Without capture sync hooks « Oui » forgets nothing and the key stays shown.
+    const auto hooks = f.Ui().metamob;
+    f.Ui().metamob.forgetKey = nullptr;
+    Press(c.trash);
+    Press(c.yes);
+    CheckSaved(view, "Nothing to forget with: the saved key stays");
+    f.Ui().metamob = hooks;
+    // Not the key row's buttons: the game's click goes on.
+    Check(!Press(view.button) && !Press(Make("DofusButtonCustom")), "Other buttons keep the game's click");
+    // Restore while asking: no question left anywhere.
+    Press(c.trash);
+    CheckQuestion(view, "Asking before stopping");
+    f.StopAndRestore();
+    Check(!f.Ui().confirmForget && f.Ui().keyFields.empty() && !Slot(view) && SaveShown(view), "Restore removes the question with the controls");
+    Check(!Press(c.trash) && !Press(c.yes) && keyForgets == 2, "After restore the stale buttons do nothing");
+    CheckNoKeyTrace();
+}
+
+// After Enregistrer the capture sync checks the key with Metamob: accepted
+// (stored), the row shows the saved key; refused, it stays the empty field.
+// A key saved by another client while one is typed here replaces the field.
+void MetamobSavedStateFollowsTheCheck() {
+    Fixture f;
+    initHook(f.page, false, true, SoulId, nullptr);
+    auto view = MakeRowView();
+    textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
+    const auto c = Controls(view);
+    Paste(c.input, FakeKey);
+    Click(view);
+    Check(submittedKeys.size() == 1, "The key goes to the capture sync");
+    Refresh(f);
+    CheckEditable(view, false, "Not stored yet (being checked, or refused): the empty field, Enregistrer hidden");
+    fakeKeyStored = true; // accepted by Metamob: stored
+    Refresh(f);
+    CheckSaved(view, "Accepted: the saved key");
+    Check(Typed(c.stars) == KeyStars && Typed(c.stars).size() != std::string(FakeKey).size() && !Leaks(Typed(c.stars)),
+        "Fixed stars, neither the key's characters nor its length");
+    // Forgotten by another client: the empty field; a key typed there, then one
+    // saved by another client: the typed text goes, the saved key shows.
+    fakeKeyStored = false;
+    Refresh(f);
+    CheckEditable(view, false, "Forgotten elsewhere: the empty field");
+    Paste(c.input, "TEST-KEY-0123");
+    f.Ui().Tick();
+    CheckEditable(view, true, "Typing");
+    fakeKeyStored = true;
+    Refresh(f);
+    CheckSaved(view, "A key saved by another client shows here");
+    Check(Typed(c.input).empty() && keyCopies == 1, "The text typed meanwhile is dropped, never copied");
+    // Refused: nothing stored, the row stays the field, the capture sync says why in the chat.
+    fakeKeyStored = false;
+    Refresh(f);
+    Paste(c.input, FakeKey);
+    Click(view);
+    Refresh(f);
+    CheckEditable(view, false, "Refused: still the empty field");
+    Check(submittedKeys.size() == 2 && keyCopies == 2, "Submitted once more");
+    f.StopAndRestore();
+    CheckNoKeyTrace();
+}
+
+// Pooled views and display/search clones show the current state: set again at
+// each Init (also of the same view) and kept by Tick.
+void MetamobRecycledViewsShowTheCurrentState() {
+    Fixture f;
+    fakeKeyStored = true;
+    initHook(f.page, false, true, SoulId, nullptr);
+    const auto keyModel = f.Ui().metamobKeyOption.get();
+    const auto clone = Make("TextButtonOption");
+    Get(clone).refs["description"] = Get(keyModel).refs.at("description");
+    auto view = MakeRowView(), other = MakeRowView();
+    textInitHook(view.element, keyModel, nullptr);
+    Press(Controls(view).trash);
+    textInitHook(other.element, clone, nullptr);
+    CheckQuestion(other, "A clone bound while the question is shown asks too");
+    CheckQuestion(view, "and the first view still asks");
+    // Recycled for the credits row, then back on the key row: still asking.
+    textInitHook(view.element, f.Ui().creditsOption.get(), nullptr);
+    Check(!Slot(view) && SaveShown(view), "Recycled: no controls, the button as it was");
+    textInitHook(view.element, keyModel, nullptr);
+    CheckQuestion(view, "Back on the key row: the question is shown");
+    // Answered in one view: every view shows the saved key.
+    Press(Controls(other).no);
+    CheckSaved(view, "Answered in another view: the saved key");
+    CheckSaved(other, "and in the view that answered");
+    // The game changed a control of a bound view: its next Init shows the state again.
+    Get(Controls(view).stars).enumStyles["display"] = 1;
+    Get(view.button).enumStyles["display"] = NativeDisplay;
+    textInitHook(view.element, keyModel, nullptr);
+    CheckSaved(view, "A re-Init of the same view shows the current state again");
+    // « Oui » in one view: every view, and a view bound now, show the empty field.
+    Press(Controls(view).trash);
+    Press(Controls(other).yes);
+    auto third = MakeRowView();
+    textInitHook(third.element, clone, nullptr);
+    for (const auto* shown : {&view, &other, &third}) CheckEditable(*shown, false, "Deleting: the empty field in every view");
+    Check(keyForgets == 1, "Forgotten once");
+    // Typing in one view shows Enregistrer in that view only.
+    Paste(Controls(third).input, FakeKey);
+    f.Ui().Tick();
+    CheckEditable(third, true, "Enregistrer in the view typed in");
+    CheckEditable(view, false, "not in the others");
+    f.StopAndRestore();
+    for (const auto* shown : {&view, &other, &third}) Check(!Slot(*shown) && SaveShown(*shown), "Restore leaves every pooled view as it was");
+    CheckNoKeyTrace();
+}
+
+// The native reset turns the sync off and never touches the key or the key row.
+void MetamobNativeResetStopsSyncKeepsKey() {
+    Fixture f;
+    f.state.settings.metamobSync = true;
+    initHook(f.page, false, true, SoulId, nullptr);
+    auto view = MakeRowView();
+    textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
+    Paste(Controls(view).input, FakeKey);
     const auto before = f.state.settings;
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
     api.Call(Section(displayedParent, SoulSection), "Reset");
@@ -1344,8 +1624,15 @@ void MetamobNativeResetStopsSyncKeepsKey() {
     api.Call(displayedParent, "Reset");
     f.Ui().Tick();
     Check(f.state.settings == Config(2, 1), "The whole Mod reset turns the sync off with every other default");
-    Check(keyForgets == 0 && submittedKeys.empty() && notices.empty() && fakeKeyStored && Typed(Inputs(view).at(0)) == FakeKey,
-        "A native reset never forgets, submits or announces the key");
+    Check(keyForgets == 0 && submittedKeys.empty() && notices.empty() && Typed(Controls(view).input) == FakeKey && keyCopies == 0,
+        "A native reset never forgets, submits or announces the key, nor touches the field");
+    CheckEditable(view, true, "The key row is as it was");
+    fakeKeyStored = true;
+    Refresh(f);
+    api.Call(displayedParent, "Reset");
+    f.Ui().Tick();
+    CheckSaved(view, "A native reset leaves a saved key as it is");
+    Check(keyForgets == 0 && fakeKeyStored, "and never forgets it");
     f.state.settings.metamobSync = true;
     f.Ui().Sync();
     Check(Get(f.Ui().metamobSyncSource.get()).boolean, "An external change updates the native checkbox");
@@ -1353,7 +1640,7 @@ void MetamobNativeResetStopsSyncKeepsKey() {
     CheckNoKeyTrace();
 }
 
-// Key field failures: fixed codes, rate limited, never what(), never a stop.
+// Key row failures: fixed codes, rate limited, never what(), never a stop.
 void MetamobKeyFieldErrorsStayLocal() {
     Fixture f;
     initHook(f.page, false, true, SoulId, nullptr);
@@ -1362,62 +1649,204 @@ void MetamobKeyFieldErrorsStayLocal() {
     failKeyInsert = true;
     const auto lines = logs.size();
     textInitHook(view.element, keyModel, nullptr);
-    Check(nativeTextInits == 1 && Inputs(view).empty() && Get(view.row).items.size() == 2 && f.Ui().keyFields.empty(),
+    Check(nativeTextInits == 1 && !Slot(view) && Get(view.row).items.size() == 2 && f.Ui().keyFields.empty() && SaveShown(view),
         "A failed insertion leaves the native row as it was");
-    Check(logs.size() == lines + 1 && logs.back() == "METAMOB_KEY_FIELD_ERROR step=bind", "Key field failures log a fixed code");
+    Check(logs.size() == lines + 1 && logs.back() == "METAMOB_KEY_FIELD_ERROR step=bind", "Key row failures log a fixed code");
     textInitHook(view.element, keyModel, nullptr);
-    Check(logs.size() == lines + 1, "Key field failures are logged at most once per ten seconds");
+    Check(logs.size() == lines + 1, "Key row failures are logged at most once per ten seconds");
     failKeyInsert = false;
     textInitHook(view.element, keyModel, nullptr);
-    Check(Inputs(view).size() == 1 && f.Ui().keyFields.size() == 1, "The next Init places the field");
-    // A view whose binding has no button (layout change): no field.
+    Check(Slot(view) && f.Ui().keyFields.size() == 1, "The next Init places the controls");
+    // A view whose binding has no button (layout change): no controls.
     const auto broken = Make("TextButtonOptionElement");
     Get(broken).refs["m_binding"] = Make("TextButtonOptionElementBinding");
     f.Ui().nextKeyFieldLog = 0;
     textInitHook(broken, keyModel, nullptr);
-    Check(f.Ui().keyFields.size() == 1 && logs.back() == "METAMOB_KEY_FIELD_ERROR step=bind", "A row without its button gets no field");
+    Check(f.Ui().keyFields.size() == 1 && logs.back() == "METAMOB_KEY_FIELD_ERROR step=bind", "A row without its button gets no controls");
     // A managed exception quoting the typed key while the field is read.
-    Paste(Inputs(view).at(0), FakeKey);
+    Paste(Controls(view).input, FakeKey);
     failTextRead = true;
     f.Ui().nextKeyFieldLog = 0;
     Click(view);
     Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=save" && submittedKeys.empty() && notices.empty() && foreignButtonClicks == 0,
         "A failed read submits nothing and logs a fixed code, never the exception text");
+    // The same failure while Tick follows the field: that view loses its controls.
+    f.Ui().nextKeyFieldLog = 0;
+    f.Ui().Tick();
+    Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=refresh" && !Slot(view) && f.Ui().keyFields.empty() && SaveShown(view),
+        "A view failing in Tick loses its controls, its button as it was, and logs a fixed code");
     failTextRead = false;
+    textInitHook(view.element, keyModel, nullptr);
+    Check(Slot(view) && f.Ui().keyFields.size() == 1, "Its next Init places them again");
     // A throwing capture sync hook stays inside the options code.
     f.Ui().metamob.submitKey = [](std::string) { throw std::runtime_error(std::string("Synthetic sync failure ") + FakeKey); };
+    Paste(Controls(view).input, FakeKey);
     f.Ui().nextKeyFieldLog = 0;
     Click(view);
-    Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=save" && Typed(Inputs(view).at(0)).empty() && foreignButtonClicks == 0,
+    Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=save" && Typed(Controls(view).input).empty() && foreignButtonClicks == 0,
         "A throwing submit hook is contained and the field is still emptied");
-    f.Ui().metamob.keyStored = []() -> bool { throw std::runtime_error("Synthetic key file failure"); };
+    // A throwing chat hook behind the indicator: contained as well.
+    fakeKeyStored = true;
+    Refresh(f);
+    f.Ui().metamob.notice = [](const std::string&) { throw std::runtime_error(std::string("Synthetic chat failure ") + FakeKey); };
     f.Ui().nextKeyFieldLog = 0;
-    f.Ui().nextKeyFieldRefresh = 0;
-    f.Ui().Tick();
-    Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=stored" && Placeholder(Inputs(view).at(0)) == KeyHint,
-        "A failing key check in Tick logs a fixed code and keeps the empty-key hint");
-    Check(!f.state.stopRequested.load() && !f.state.stopped.load(), "Key field failures never stop the mod");
-    // Restore when a field cannot be detached: its references are still released.
+    Check(Press(Controls(view).indicator) && logs.back() == "METAMOB_KEY_FIELD_ERROR step=click", "A throwing chat hook is contained");
+    CheckSaved(view, "and changes nothing");
+    // A throwing check request: contained, the saved key still shown.
+    fakeStatus = metamob::KeyStatus::Saved;
+    f.Ui().metamob.checkKey = [](bool) { throw std::runtime_error(std::string("Synthetic check failure ") + FakeKey); };
+    f.Ui().nextKeyFieldLog = 0;
+    Refresh(f);
+    Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=check", "A throwing check request logs a fixed code");
+    CheckSaved(view, "and the saved key stays shown");
+    f.Ui().metamob.keyStatus = []() -> metamob::KeyStatus { throw std::runtime_error("Synthetic key file failure"); };
+    f.Ui().nextKeyFieldLog = 0;
+    Refresh(f);
+    Check(logs.back() == "METAMOB_KEY_FIELD_ERROR step=status", "A failing key status in Tick logs a fixed code");
+    CheckEditable(view, false, "and shows the empty field");
+    Check(!f.state.stopRequested.load() && !f.state.stopped.load(), "Key row failures never stop the mod");
+    // Restore when a container cannot be detached: its references are still released.
     failKeyRemove = true;
     f.Ui().nextKeyFieldLog = 0;
     const auto beforeRestore = logs.size();
     f.StopAndRestore();
     Check(f.Ui().keyFields.empty() && Logged(beforeRestore, "METAMOB_KEY_FIELD_ERROR step=remove") &&
-        f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}), "A field that cannot be detached never blocks Restore");
+        f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}), "A container that cannot be detached never blocks Restore");
     CheckNoKeyTrace();
 }
 
-// Logout: the game tore the options page down; the owned fields still leave.
+// The indicator after the stars tells the capture sync's status of the saved
+// key, in every pooled view and clone, redrawn when that status changes; its
+// click explains it in the chat and says « valide » only for a key Metamob
+// accepted. A key not checked yet is checked once while the row is shown;
+// « Clé non vérifiée » clicked checks it once more.
+void MetamobIndicatorFollowsTheKeyStatus() {
+    Fixture f;
+    initHook(f.page, false, true, SoulId, nullptr);
+    const auto keyModel = f.Ui().metamobKeyOption.get();
+    const auto clone = Make("TextButtonOption");
+    Get(clone).refs["description"] = Get(keyModel).refs.at("description");
+    auto view = MakeRowView();
+    textInitHook(view.element, keyModel, nullptr);
+    CheckEditable(view, false, "No key: the masked field");
+    Check(Caption(Controls(view).indicator).empty() && !Get(Controls(view).indicator).integers.count("icon") && keyChecks.empty(),
+        "No key: the hidden indicator is never drawn (never « Clé valide » by default), nothing checked");
+    textInitHook(view.element, f.Ui().creditsOption.get(), nullptr);
+    // A key from an earlier session: checked only once the row is shown, « Vérification… » meanwhile.
+    fakeKeyStored = true;
+    fakeStatus = metamob::KeyStatus::Saved;
+    for (int i = 0; i < 3; ++i) Refresh(f);
+    Check(keyChecks.empty(), "Nothing is checked while no view shows the key row");
+    textInitHook(view.element, keyModel, nullptr);
+    Check(!keyChecks.empty() && std::find(keyChecks.begin(), keyChecks.end(), true) == keyChecks.end(),
+        "The row shown with a key not checked yet asks for the silent check");
+    auto other = MakeRowView();
+    textInitHook(other.element, clone, nullptr);
+    struct Expected { metamob::KeyStatus status; std::string caption; int icon, look; std::string notice; };
+    const Expected expected[] = {
+        {metamob::KeyStatus::Saved, CheckingKey, 172, 0, CheckingNotice},
+        {metamob::KeyStatus::Verified, ValidKey, 91, 0, ValidKeyNotice},
+        {metamob::KeyStatus::Unverified, UnverifiedKey, 236, 0, UnverifiedNotice},
+        {metamob::KeyStatus::Refused, RefusedKey, 87, 1, RefusedNotice},
+        {metamob::KeyStatus::Unreadable, UnreadableKey, 94, 1, UnreadableNotice}};
+    for (const auto& row : expected) {
+        fakeStatus = row.status;
+        Refresh(f);
+        for (const auto* shown : {&view, &other}) {
+            CheckSaved(*shown, "Any key there: the stars, its indicator and the trash");
+            const auto indicator = Controls(*shown).indicator;
+            Check(Caption(indicator) == row.caption && Get(indicator).integers.at("icon") == row.icon &&
+                Get(indicator).integers.at("status") == row.look && Get(indicator).integers.at("size") == 0,
+                "Each status has its caption, icon and button status, in every view of the row");
+        }
+        Check((row.caption.find("valide") != std::string::npos) == (row.status == metamob::KeyStatus::Verified) &&
+            (row.notice.find("valide") != std::string::npos) == (row.status == metamob::KeyStatus::Verified),
+            "« valide » only for a key Metamob accepted");
+        notices.clear();
+        const auto checks = keyChecks.size();
+        Check(Press(Controls(other).indicator) && notices == std::vector<std::string>{row.notice} && keyForgets == 0,
+            "The indicator's click explains that status in the chat");
+        if (row.status == metamob::KeyStatus::Unverified) {
+            Check(keyChecks.size() > checks && keyChecks[checks] && fakeStatus == metamob::KeyStatus::Saved,
+                "« Clé non vérifiée » clicked: the key is checked once more");
+            for (const auto* shown : {&view, &other})
+                Check(Caption(Controls(*shown).indicator) == CheckingKey, "« Vérification… » at once in every view");
+        } else {
+            Check(std::find(keyChecks.begin() + static_cast<std::ptrdiff_t>(checks), keyChecks.end(), true) == keyChecks.end(),
+                "Only « Clé non vérifiée » asks for a new check");
+        }
+        CheckSaved(view, "The click changes nothing else");
+    }
+    // Each view keeps the status it shows: a view bound or recycled now shows the
+    // current one, a re-Init draws it again, an unchanged status is left as drawn.
+    fakeStatus = metamob::KeyStatus::Refused;
+    Refresh(f);
+    auto third = MakeRowView();
+    textInitHook(third.element, clone, nullptr);
+    Check(Caption(Controls(third).indicator) == RefusedKey && Get(Controls(third).indicator).integers.at("status") == 1,
+        "A view bound now shows the current status");
+    Get(Controls(view).indicator).refs["text"] = String("altered");
+    Refresh(f);
+    Check(Caption(Controls(view).indicator) == "altered", "An unchanged status is not written again");
+    textInitHook(view.element, keyModel, nullptr);
+    Check(Caption(Controls(view).indicator) == RefusedKey, "A re-Init of the view draws its status again");
+    // A status that changes while the trash asks shows once the question goes.
+    Press(Controls(view).trash);
+    fakeStatus = metamob::KeyStatus::Verified;
+    Refresh(f);
+    for (const auto* shown : {&view, &other, &third}) CheckQuestion(*shown, "The question stays");
+    Press(Controls(third).no);
+    for (const auto* shown : {&view, &other, &third})
+        Check(Caption(Controls(*shown).indicator) == ValidKey && Get(Controls(*shown).indicator).integers.at("status") == 0,
+            "« Non »: the new status in every view");
+    Check(keyForgets == 0 && submittedKeys.empty() && keyCopies == 0 && foreignButtonClicks == 0, "The indicator never forgets, submits or copies");
+    f.StopAndRestore();
+    CheckNoKeyTrace();
+}
+
+// « Oui », then a new key pasted and saved at once: the capture sync deletes the
+// old key file and stores the new key in one go, so the file is never seen
+// missing. The row follows the capture sync's status (none until the old file
+// is deleted), so the new key shows as soon as it is stored, never an empty
+// field for a minute.
+void MetamobNewKeyRightAfterForget() {
+    Fixture f;
+    fakeKeyStored = true;
+    initHook(f.page, false, true, SoulId, nullptr);
+    auto view = MakeRowView();
+    textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
+    const auto c = Controls(view);
+    CheckSaved(view, "A saved key");
+    Press(c.trash);
+    Press(c.yes);
+    CheckEditable(view, false, "« Oui »: the empty field at once");
+    Paste(c.input, FakeKey);
+    f.Ui().Tick();
+    Click(view);
+    Check(keyForgets == 1 && submittedKeys == std::vector<std::string>{FakeKey} && Typed(c.input).empty(), "A new key saved right after");
+    Refresh(f);
+    CheckEditable(view, false, "The old key file not deleted yet: no key shown");
+    fakeForgetting = false; // the old file deleted, the new key stored and verified, between two refreshes
+    fakeStatus = metamob::KeyStatus::Verified;
+    Refresh(f);
+    CheckSaved(view, "The new key shows as soon as it is stored");
+    Check(Caption(c.indicator) == ValidKey, "and Metamob accepted it");
+    f.StopAndRestore();
+    CheckNoKeyTrace();
+}
+
+// Logout: the game tore the options page down; the owned controls still leave.
 void MetamobFieldsLeaveOnAbandon() {
     Fixture f;
     initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
-    Check(Inputs(view).size() == 1, "Abandon fixture failed to place the field");
+    Press(Controls(view).trash);
+    Check(Slot(view) && SaveHidden(view), "Abandon fixture failed to place the controls");
     f.state.stopped.store(true);
     f.Ui().Abandon();
-    Check(f.Ui().pages.empty() && f.Ui().keyFields.empty() && Inputs(view).empty() && !f.Ui().CleanupPending(),
-        "Abandon drops the torn-down page and removes the owned key fields");
+    Check(f.Ui().pages.empty() && f.Ui().keyFields.empty() && !Slot(view) && SaveShown(view) && !f.Ui().CleanupPending() && !f.Ui().confirmForget,
+        "Abandon drops the torn-down page and removes the owned controls, the button as it was");
     f.Ui().Restore();
 }
 
@@ -1446,15 +1875,19 @@ int main() {
         run(fake::AutoLoadFailureIsRecoverable);
         run(fake::DeferredAndAccountGate);
         run(fake::CollisionAndSessionMismatch);
-        run(fake::MetamobKeyFieldFollowsPooledViews);
-        run(fake::MetamobKeySaveReadsOnceAndClears);
-        run(fake::MetamobForgetNeedsTwoClicks);
+        run(fake::MetamobKeyRowFollowsPooledViews);
+        run(fake::MetamobKeySaveFollowsTyping);
+        run(fake::MetamobSavedKeyTrashAsksFirst);
+        run(fake::MetamobSavedStateFollowsTheCheck);
+        run(fake::MetamobIndicatorFollowsTheKeyStatus);
+        run(fake::MetamobNewKeyRightAfterForget);
+        run(fake::MetamobRecycledViewsShowTheCurrentState);
         run(fake::MetamobNativeResetStopsSyncKeepsKey);
         run(fake::MetamobKeyFieldErrorsStayLocal);
         run(fake::MetamobFieldsLeaveOnAbandon);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: seven native sections (layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, two-click forget, no key trace)\n";
+        std::cout << "PASS: eight native sections (layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
