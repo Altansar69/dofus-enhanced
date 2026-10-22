@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.9.0** (révision r106).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.9.1** (révision r107).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -13,7 +13,7 @@ Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
-Dans **Options → Dofus Enhanced → Général** :
+Dans **Options → Dofus Enhanced → Chargement et mises à jour** :
 
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
@@ -41,8 +41,10 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 ```
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
-L’onglet des options s’appelle **Dofus Enhanced**. La version chargée (x.y.z et
-révision) figure dans la ligne de crédits en fin de la section Général, avec l’auteur Altansar
+L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence et animations,
+Surbrillance, Cartes, Déplacements, Pierre d’âme, Chargement et mises à jour,
+Metamob et À propos. La version chargée (x.y.z et
+révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
 et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 étiquette `rN` pour le vérificateur de mises à jour.
 
@@ -129,7 +131,7 @@ Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste v
 
 ## Surbrillance
 
-**Options → Dofus Enhanced → Général → Surbrillance** choisit le niveau : derrière
+**Options → Dofus Enhanced → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
 Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
 ces catégories hors combat, indépendamment. Elles sont décochées par défaut.

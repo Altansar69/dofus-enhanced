@@ -11,8 +11,9 @@ using namespace managed;
 
 namespace {
 constexpr int ModCategory = 0x4D4F44;
-constexpr int GeneralCategory = ModCategory + 1;
-constexpr int MetamobCategory = ModCategory + 2;
+// Native sections of the mod's category (see Attach), in display order: ids
+// ModCategory + 1 to ModCategory + ModSections.
+constexpr int ModSections = 8;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -224,7 +225,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
     prepared.miniCenterOption.reset(MakeBoolOption(prepared.miniCenterSource.get(), current.get(), tooltip.get(), "Bouton de recentrage sur la mini-carte",
         "Affiche en bas à gauche de la mini-carte le bouton qui la ramène sur ton personnage, avec le même aspect que le bouton joueur de la grande carte. Décocher le masque."));
-    // Last row of « Général »: credits, an owned text button (see TextButtonHook).
+    // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
         " (révision " + ModVersion + ", Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
@@ -558,35 +559,27 @@ bool OptionsUi::Attach(Obj page) {
             throw std::runtime_error("Mod category identifier already belongs to another entry");
     }
     Ref category(MakeCategory(ModCategoryTitle, ModCategory, false));
-    // Keep the parent/section shape used by the native menu and earlier releases.
-    Ref general(MakeCategory("Général", GeneralCategory, true));
-    auto options = api.Field(general.get(), "options");
-    api.Call(options, "Add", {modeOption.get()});
-    api.Call(options, "Add", {roleplayModeOption.get()});
-    api.Call(options, "Add", {animationOption.get()});
-    api.Call(options, "Add", {autoLoadOption.get()});
-    api.Call(options, "Add", {githubOption.get()});
-    api.Call(options, "Add", {soulOption.get()});
-    api.Call(options, "Add", {soulAutoOption.get()});
-    api.Call(options, "Add", {glowOption.get()});
-    api.Call(options, "Add", {glowNpcsOption.get()});
-    api.Call(options, "Add", {glowInteractivesOption.get()});
-    api.Call(options, "Add", {transitionsOption.get()});
-    api.Call(options, "Add", {preloadOption.get()});
-    api.Call(options, "Add", {spouseOption.get()});
-    api.Call(options, "Add", {resourcesOption.get()});
-    api.Call(options, "Add", {resourcesMiniOption.get()});
-    api.Call(options, "Add", {miniCenterOption.get()});
-    api.Call(options, "Add", {creditsOption.get()});
-    // Second section, so that the seventeen « Général » rows stay as they were.
-    Ref metamobSection(MakeCategory("Metamob", MetamobCategory, true));
-    auto metamobRows = api.Field(metamobSection.get(), "options");
-    api.Call(metamobRows, "Add", {metamobSyncOption.get()});
-    api.Call(metamobRows, "Add", {metamobKeyOption.get()});
-    api.Call(metamobRows, "Add", {metamobForgetOption.get()});
+    // Parent/section shape of the native menu: the page shows each section as
+    // its own block, in this order, with the ids that follow ModCategory.
+    struct Section { const char* title; std::vector<Obj> rows; };
+    const Section layout[] = {
+        {"Apparence et animations", {modeOption.get(), roleplayModeOption.get(), animationOption.get()}},
+        {"Surbrillance", {glowOption.get(), glowNpcsOption.get(), glowInteractivesOption.get()}},
+        {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), miniCenterOption.get()}},
+        {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get()}},
+        {"Pierre d’âme", {soulOption.get(), soulAutoOption.get()}},
+        {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
+        {"Metamob", {metamobSyncOption.get(), metamobKeyOption.get(), metamobForgetOption.get()}},
+        {"À propos", {creditsOption.get()}}};
+    static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
     auto sections = api.Field(category.get(), "subcategories");
-    api.Call(sections, "Add", {general.get()});
-    api.Call(sections, "Add", {metamobSection.get()});
+    int id = ModCategory;
+    for (const auto& [title, rows] : layout) {
+        Ref section(MakeCategory(title, ++id, true));
+        auto options = api.Field(section.get(), "options");
+        for (const auto row : rows) api.Call(options, "Add", {row});
+        api.Call(sections, "Add", {section.get()});
+    }
     Page owned;
     owned.owner.reset(page);
     owned.category = std::move(category);
@@ -675,7 +668,8 @@ void OptionsUi::Restore() {
         try {
             auto categories = api.Field(it->owner.get(), "m_options");
             int selected = SelectedCategory(it->owner.get());
-            if (selected == ModCategory || selected == GeneralCategory || selected == MetamobCategory)
+            // The mod's parent or any of its sections: back to « Jeu ».
+            if (selected >= ModCategory && selected <= ModCategory + ModSections)
                 selected = GameCategory;
             api.Call(categories, "Remove", {it->category.get()});
             // Retry rebuilding even when removal succeeded on an earlier pump.

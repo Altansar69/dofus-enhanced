@@ -18,8 +18,11 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-constexpr int GeneralId = ModId + 1;
-constexpr int MetamobId = ModId + 2;
+// The eight native sections of the mod, in display order: section i has the id
+// ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
+enum SectionIndex : size_t { DisplaySection, GlowSection, MapsSection, TravelSection, SoulSection, LoadingSection, MetamobSection, AboutSection, SectionCount };
+constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
+constexpr int DisplayId = SectionId(DisplaySection), MetamobId = SectionId(MetamobSection);
 struct Class { std::string name; };
 struct MethodInfo { Class* klass; std::string name; int argc; };
 struct Choice { int id = 0; Obj label = nullptr; };
@@ -503,25 +506,70 @@ void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original)
 }
 
 namespace fake {
-std::vector<Obj> GeneralSources(OptionsUi& ui) {
-    return {ui.modeSource.get(), ui.roleplayModeSource.get(),
-        ui.animationSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(), ui.soulSource.get(), ui.soulAutoSource.get(), ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(), ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get()};
+// Every private source, in section order (the text-button rows have none).
+std::vector<Obj> AllSources(OptionsUi& ui) {
+    return {ui.modeSource.get(), ui.roleplayModeSource.get(), ui.animationSource.get(),
+        ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(),
+        ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(),
+        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(),
+        ui.soulSource.get(), ui.soulAutoSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(),
+        ui.metamobSyncSource.get()};
 }
-std::vector<Obj> GeneralOptions(OptionsUi& ui) {
-    return {ui.modeOption.get(), ui.roleplayModeOption.get(),
-        ui.animationOption.get(), ui.autoLoadOption.get(), ui.githubOption.get(), ui.soulOption.get(), ui.soulAutoOption.get(), ui.glowOption.get(), ui.glowNpcsOption.get(), ui.glowInteractivesOption.get(), ui.transitionsOption.get(), ui.preloadOption.get(), ui.spouseOption.get(), ui.resourcesOption.get(), ui.resourcesMiniOption.get(), ui.miniCenterOption.get(), ui.creditsOption.get()};
+// Expected row: model, private source (none for a text button), label, native
+// control and the reset default of its source (choice id, or 1/0 for a checkbox).
+struct ExpectedRow { Obj option, source; std::string label, control; int reset; };
+struct ExpectedSection { std::string title; std::vector<ExpectedRow> rows; };
+ExpectedRow ChoiceRow(const Ref& option, const Ref& source, const char* label, int reset) {
+    return {option.get(), source.get(), label, "MultipleChoiceOption", reset};
+}
+ExpectedRow CheckRow(const Ref& option, const Ref& source, const char* label, bool reset) {
+    return {option.get(), source.get(), label, "BoolOption", reset ? 1 : 0};
+}
+ExpectedRow ButtonRow(const Ref& option, const char* label) { return {option.get(), nullptr, label, "TextButtonOption", 0}; }
+// The sections of the options tab, indexed by SectionIndex, with their rows.
+std::vector<ExpectedSection> Layout(OptionsUi& ui) {
+    return {
+        {"Apparence et animations", {ChoiceRow(ui.modeOption, ui.modeSource, "En combat", 2),
+            ChoiceRow(ui.roleplayModeOption, ui.roleplayModeSource, "Hors combat", 0),
+            ChoiceRow(ui.animationOption, ui.animationSource, "Animations", 1)}},
+        {"Surbrillance", {ChoiceRow(ui.glowOption, ui.glowSource, "Surbrillance", 1),
+            CheckRow(ui.glowNpcsOption, ui.glowNpcsSource, "Inclure les PNJ", false),
+            CheckRow(ui.glowInteractivesOption, ui.glowInteractivesSource, "Inclure les éléments interactifs", false)}},
+        {"Cartes", {CheckRow(ui.resourcesOption, ui.resourcesSource, "Ressources sur la grande carte", true),
+            CheckRow(ui.resourcesMiniOption, ui.resourcesMiniSource, "Ressources sur la mini-carte", true),
+            CheckRow(ui.miniCenterOption, ui.miniCenterSource, "Bouton de recentrage sur la mini-carte", true)}},
+        {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
+            CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
+            CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true)}},
+        {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
+            CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true)}},
+        {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
+            CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
+        {"Metamob", {CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
+            ButtonRow(ui.metamobKeyOption, "Clé API Metamob"), ButtonRow(ui.metamobForgetOption, "Oublier la clé Metamob")}},
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.9.1 — par Altansar")}}};
+}
+std::vector<Obj> Models(const ExpectedSection& section) {
+    std::vector<Obj> models;
+    for (const auto& row : section.rows) models.push_back(row.option);
+    return models;
+}
+// Every row model, in section order.
+std::vector<Obj> AllOptions(OptionsUi& ui) {
+    std::vector<Obj> all;
+    for (const auto& section : Layout(ui))
+        for (const auto& row : section.rows) all.push_back(row.option);
+    return all;
 }
 const std::vector<Obj>& Rows(Obj category) { return Get(Get(category).refs.at("options")).items; }
+const std::vector<Obj>& Sections(Obj category) { return Get(Get(category).refs.at("subcategories")).items; }
+Obj Section(Obj parent, size_t index) { return Sections(parent).at(index); }
+std::string Name(Obj category) { return Get(Get(category).refs.at("name")).text; }
 std::string Label(Obj option) { return Get(Get(option).refs.at("text")).text; }
 std::string Description(Obj option) { return Get(Get(Get(option).refs.at("description")).refs.at("text")).text; }
-Obj General(Obj parent) { return Get(Get(parent).refs.at("subcategories")).items.at(0); }
-Obj MetamobSection(Obj parent) { return Get(Get(parent).refs.at("subcategories")).items.at(1); }
-std::vector<Obj> MetamobOptions(OptionsUi& ui) { return {ui.metamobSyncOption.get(), ui.metamobKeyOption.get(), ui.metamobForgetOption.get()}; }
-std::vector<Obj> AllSources(OptionsUi& ui) { auto all = GeneralSources(ui); all.push_back(ui.metamobSyncSource.get()); return all; }
-std::vector<Obj> AllOptions(OptionsUi& ui) {
-    auto all = GeneralOptions(ui);
-    for (const auto option : MetamobOptions(ui)) all.push_back(option);
-    return all;
+bool AtDefault(Obj source) {
+    const auto& value = Get(source);
+    return value.klass->name == "IntSource" ? value.integer == value.defaultInteger : value.boolean == value.defaultBoolean;
 }
 std::string Text(Obj value) { return value ? Get(value).text : std::string{}; }
 std::string ButtonText(Obj option) { return Text(*static_cast<Obj*>(api.FieldAddress(option, "buttonText"))); }
@@ -565,30 +613,29 @@ void CheckNoKeyTrace() {
 bool Logged(size_t from, const std::string& line) { return std::find(logs.begin() + static_cast<std::ptrdiff_t>(from), logs.end(), line) != logs.end(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
-    Check(Get(Get(parent).refs.at("name")).text == ModCategoryTitle, "Loaded revision missing from category");
-    Check(!Get(parent).booleans["isSubCategory"] &&
-        Get(Get(parent).refs.at("subcategories")).items.size() == 2, "Mod must retain two native sections: Général, then Metamob");
-    const auto section = General(parent);
-    Check(Rows(parent).empty() && Get(section).booleans["isSubCategory"] &&
-        Get(section).integers.at("categoryId") == GeneralId &&
-        Get(Get(section).refs.at("name")).text == "Général", "Missing native General section");
-    Check(Get(Get(section).refs.at("subcategories")).items.empty(), "No nested settings sections expected");
-    Check(Rows(section) == GeneralOptions(f.Ui()), "General must contain exactly seventeen rows in the requested order");
-    const char* labels[] = {"En combat", "Hors combat", "Animations", "Chargement automatique", "Mises à jour GitHub", "Alerte pierre d’âme", "Équiper automatiquement la pierre d’âme", "Surbrillance", "Inclure les PNJ", "Inclure les éléments interactifs", "Transitions rapides entre cartes", "Précharger la prochaine carte (expérimental)", "Téléportation au conjoint", "Ressources sur la grande carte", "Ressources sur la mini-carte", "Bouton de recentrage sur la mini-carte", "Dofus Enhanced 1.9.0 — par Altansar"};
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.9.0", "Tab name carries no revision; version is x.y.z");
-    for (size_t i = 0; i != Rows(section).size(); ++i) {
-        const auto option = Rows(section)[i];
-        Check(Label(option) == labels[i], "Simple option label or ordering changed");
-        Check(Get(option).klass->name == (i == 16 ? "TextButtonOption" : i >= 3 && i != 7 ? "BoolOption" : "MultipleChoiceOption"),
-            "Simple settings must use native controls");
-        if (i == 16) {
-            const auto description = Description(option);
-            Check(description.find("Altansar") != std::string::npos && description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos &&
-                description.find("r106") != std::string::npos, "Credits must name the author, the project page and the revision");
-            Check(Get(*static_cast<Obj*>(api.FieldAddress(option, "buttonText"))).text == "Ouvrir GitHub", "Credits button opens the project page");
-        }
-        if (i < 3 || i == 7) {
-            const auto& choices = Get(Get(option).refs.at("choices")).items;
+    Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.9.1" && std::string(ModVersion) == "r107",
+        "Tab name carries no revision; version is x.y.z");
+    const auto layout = Layout(f.Ui());
+    Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
+        "Mod must hold its eight native sections, from Apparence et animations to À propos, and no row of its own");
+    std::vector<Obj> shownSources;
+    for (size_t i = 0; i != SectionCount; ++i) {
+        const auto section = Section(parent, i);
+        Check(Get(section).booleans["isSubCategory"] && Get(section).integers.at("categoryId") == SectionId(i) &&
+            Name(section) == layout[i].title, "A native section is missing, or its id, title or position changed");
+        Check(Sections(section).empty(), "No nested settings sections expected");
+        Check(Rows(section) == Models(layout[i]), "Each section must contain exactly its rows in the requested order");
+        for (const auto& row : layout[i].rows) {
+            const auto& option = Get(row.option);
+            Check(Label(row.option) == row.label, "Option label or ordering changed");
+            Check(option.klass->name == row.control, "Settings must use native controls");
+            Check(option.refs.at("source") == row.source && (!row.source ||
+                Get(row.source).klass->name == (row.control == "MultipleChoiceOption" ? "IntSource" : "BoolSource")),
+                "Each row keeps its own private source");
+            if (row.source) shownSources.push_back(row.source);
+            if (row.control != "MultipleChoiceOption") continue;
+            const auto& choices = Get(option.refs.at("choices")).items;
             Check(choices.size() >= 2 && choices.size() <= 4, "Unexpected percentage selector remains");
             for (const auto choice : choices)
                 Check(Get(choice).choice.id >= 0 && Get(choice).choice.id <= 3 &&
@@ -596,25 +643,27 @@ void CheckLayout(Fixture& f) {
                     "A percentage or minimum choice remains in native search models");
         }
     }
-    const auto metamob = MetamobSection(parent);
-    Check(Get(metamob).booleans["isSubCategory"] && Get(metamob).integers.at("categoryId") == MetamobId &&
-        Get(Get(metamob).refs.at("name")).text == "Metamob" && Get(Get(metamob).refs.at("subcategories")).items.empty(),
-        "Missing native Metamob section after Général");
-    Check(Rows(metamob) == MetamobOptions(f.Ui()), "Metamob must contain the sync, key and forget rows in this order");
-    const char* metamobLabels[] = {"Synchroniser les captures avec Metamob", "Clé API Metamob", "Oublier la clé Metamob"};
-    for (size_t i = 0; i != Rows(metamob).size(); ++i)
-        Check(Label(Rows(metamob)[i]) == metamobLabels[i] && Get(Rows(metamob)[i]).klass->name == (i == 0 ? "BoolOption" : "TextButtonOption"),
-            "Metamob row label or native control changed");
-    Check(Description(f.Ui().metamobSyncOption.get()) == SyncDescription, "The sync row must say what it changes, what it needs and its default");
-    Check(Description(f.Ui().metamobKeyOption.get()) == KeyDescription, "The key row must explain the masked field, the check and the storage");
-    Check(Description(f.Ui().metamobForgetOption.get()).find("5 secondes") != std::string::npos, "The forget row must explain its confirmation");
-    const auto key = f.Ui().metamobKeyOption.get(), forget = f.Ui().metamobForgetOption.get();
+    Check(shownSources == AllSources(f.Ui()), "Every private source must be shown once, by its own row");
+    // « Metamob »: the sync preference, then the key and forget text buttons.
+    const auto& metamob = Rows(Section(parent, MetamobSection));
+    const auto sync = metamob.at(0), key = metamob.at(1), forget = metamob.at(2);
+    Check(Description(sync) == SyncDescription, "The sync row must say what it changes, what it needs and its default");
+    Check(Description(key) == KeyDescription, "The key row must explain the masked field, the check and the storage");
+    Check(Description(forget).find("5 secondes") != std::string::npos, "The forget row must explain its confirmation");
     Check(ButtonText(key) == "Enregistrer" && Get(key).integers.at("icon") == 148 && ButtonText(forget) == "Supprimer" && Get(forget).integers.at("icon") == 316,
         "The key rows use native floppy and trash buttons");
     Check(!Get(key).refs.at("source") && !Get(forget).refs.at("source"), "The key rows have no source: a native reset never reaches the key");
     Check(f.Ui().metamobKeyMarker.get() == Get(key).refs.at("description") && f.Ui().metamobForgetMarker.get() == Get(forget).refs.at("description") &&
         f.Ui().metamobKeyMarker.get() != f.Ui().metamobForgetMarker.get() && f.Ui().metamobKeyMarker.get() != f.Ui().creditsMarker.get(),
         "Each owned text-button row is known by its own description reference");
+    // « À propos »: the credits row alone, named after the x.y.z version.
+    const auto credits = Rows(Section(parent, AboutSection)).at(0);
+    const auto description = Description(credits);
+    Check(Label(credits).find("1.9.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
+        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r107") != std::string::npos,
+        "Credits must name the version, the author, the project page and the revision");
+    Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
+        "Credits button opens the project page");
     Check(sourceModels == 17 && optionModels == 20,
         "The UI must create seventeen private sources and twenty rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
@@ -625,11 +674,13 @@ void CheckLayout(Fixture& f) {
         const auto clone = displayed.back();
         Check(clone != parent && Get(clone).refs.at("uid") == Get(parent).refs.at("uid"),
             "Native display must use an independent category clone with shared identity");
-        Check(Rows(clone).empty() && Get(Get(clone).refs.at("subcategories")).items.size() == 2 &&
-            General(clone) != section && Get(General(clone)).refs.at("uid") == Get(section).refs.at("uid") &&
-            Rows(General(clone)) == Rows(section) && MetamobSection(clone) != metamob &&
-            Get(MetamobSection(clone)).refs.at("uid") == Get(metamob).refs.at("uid") && Rows(MetamobSection(clone)) == Rows(metamob),
-            "Native display/search clone lost a section or its rows");
+        Check(Rows(clone).empty() && Sections(clone).size() == SectionCount, "Native display/search clone lost a section");
+        for (size_t i = 0; i != SectionCount; ++i) {
+            const auto original = Section(parent, i), copy = Section(clone, i);
+            Check(copy != original && Get(copy).refs.at("uid") == Get(original).refs.at("uid") &&
+                Get(copy).integers.at("categoryId") == SectionId(i) && Name(copy) == Name(original) && Rows(copy) == Rows(original),
+                "Native display/search clone lost a section or its rows");
+        }
     }
 }
 void ParentAndSectionSelection() {
@@ -637,19 +688,65 @@ void ParentAndSectionSelection() {
     initHook(f.page, false, true, ModId, nullptr);
     CheckLayout(f);
     const auto displayed = Get(f.page).refs.at("m_displayedOption");
-    Check(Rows(General(displayed)) == GeneralOptions(f.Ui()), "Displayed parent clone lost its controls");
-    Select(f.page, GeneralId);
-    Check(Get(f.page).refs.at("m_currentId") == Get(General(displayed)).refs.at("uid"),
-        "General selection must resolve to its own stable UID");
+    const auto layout = Layout(f.Ui());
+    for (size_t i = 0; i != SectionCount; ++i) {
+        Check(Rows(Section(displayed, i)) == Models(layout[i]), "Displayed parent clone lost its controls");
+        Select(f.page, SectionId(i));
+        Check(Get(f.page).refs.at("m_currentId") == Get(Section(displayed, i)).refs.at("uid") && Get(f.page).refs.at("m_displayedOption") == displayed,
+            "Each section selection must resolve to its own stable UID");
+    }
     const auto savedSources = AllSources(f.Ui());
-    initHook(f.page, false, true, GeneralId, nullptr);
-    Check(Get(f.page).integers["lastSelection"] == GeneralId && AllSources(f.Ui()) == savedSources,
-        "Reopening General must retain the selection and existing controls");
+    initHook(f.page, false, true, DisplayId, nullptr);
+    Check(Get(f.page).integers["lastSelection"] == DisplayId && AllSources(f.Ui()) == savedSources,
+        "Reopening Apparence et animations must retain the selection and existing controls");
     CheckLayout(f);
     f.StopAndRestore();
     Check(Get(f.page).integers["lastSelection"] == 0 &&
         f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}),
-        "Restore from the General child must select Jeu and remove the owned parent");
+        "Restore from the Apparence et animations child must select Jeu and remove the owned parent");
+}
+
+// Each section, from Apparence et animations to À propos, opens on its own rows and stable
+// UID and keeps its controls when reopened; Restore from it selects Jeu.
+void EverySectionSelectionAndRestore() {
+    for (size_t index = 0; index != SectionCount; ++index) {
+        Fixture f;
+        const int id = SectionId(index);
+        initHook(f.page, false, true, id, nullptr);
+        CheckLayout(f);
+        const auto displayed = Get(f.page).refs.at("m_displayedOption");
+        Check(Get(f.page).integers["lastSelection"] == id &&
+            Get(f.page).refs.at("m_currentId") == Get(Section(displayed, index)).refs.at("uid") &&
+            Rows(Section(displayed, index)) == Models(Layout(f.Ui())[index]), "A section opens on its own rows and stable UID");
+        const auto savedSources = AllSources(f.Ui());
+        initHook(f.page, false, true, id, nullptr);
+        Check(Get(f.page).integers["lastSelection"] == id && AllSources(f.Ui()) == savedSources && f.Categories().size() == 3,
+            "Reopening a section must retain the selection and existing controls");
+        f.StopAndRestore();
+        Check(Get(f.page).integers["lastSelection"] == 0 && f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}) && f.Ui().pages.empty(),
+            "Restore from any section must select Jeu and remove the owned parent");
+    }
+}
+
+// A failed rebuild keeps the page owned so that the next pump retries. The
+// retry then selects Jeu from a mod section, or keeps a native selection.
+void RestoreRetriesAfterFailedRebuild() {
+    for (const int id : {SectionId(AboutSection), 12}) {
+        Fixture f;
+        initHook(f.page, false, true, id, nullptr);
+        CheckLayout(f);
+        rejectRebuild = true;
+        bool failed = false;
+        try { f.StopAndRestore(); } catch (const std::exception&) { failed = true; }
+        Check(failed && f.Ui().CleanupPending() && f.Ui().pages.size() == 1 && f.Ui().pages.front().owner.get() == f.page &&
+            f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}) && f.Ui().modeSource.get() && f.Ui().creditsOption.get(),
+            "Failed rebuild must retain ownership until retry");
+        rejectRebuild = false;
+        f.Ui().Restore();
+        Check(!f.Ui().CleanupPending() && Get(f.page).integers["lastSelection"] == (id == 12 ? 12 : 0) &&
+            f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}) && !f.Ui().modeSource.get() && !f.Ui().creditsOption.get(),
+            "Retried restore must release the page and select Jeu, or keep the native selection");
+    }
 }
 
 void CheckModeChoices(Obj option) {
@@ -679,13 +776,14 @@ void RegistrationAndValues() {
     Check(!f.Ui().Attach(f.page) && f.Categories().size() == 3, "Repeated attachment must be idempotent");
     CheckModeChoices(f.Ui().modeOption.get());
     CheckModeChoices(f.Ui().roleplayModeOption.get());
-    const auto sources = GeneralSources(f.Ui());
-    for (size_t i = 0; i != sources.size(); ++i) {
-        const auto& source = Get(sources[i]);
-        Check(sources[i] != f.nativeInt && sources[i] != f.nativeBool, "Mod must use independent sources");
-        Check(i >= 3 && i != 7 ? source.defaultBoolean == (i != 8 && i != 9) : source.defaultInteger == (i == 0 ? 2 : i == 1 ? 0 : 1),
-            "Persisted settings must not replace native reset defaults");
-    }
+    for (const auto& section : Layout(f.Ui()))
+        for (const auto& row : section.rows) {
+            if (!row.source) continue;
+            const auto& source = Get(row.source);
+            Check(row.source != f.nativeInt && row.source != f.nativeBool, "Mod must use independent sources");
+            Check(source.klass->name == "IntSource" ? source.defaultInteger == row.reset : source.defaultBoolean == (row.reset != 0),
+                "Persisted settings must not replace native reset defaults");
+        }
     const auto& sync = Get(f.Ui().metamobSyncSource.get());
     Check(f.Ui().metamobSyncSource.get() != f.nativeBool && sync.klass->name == "BoolSource" && sync.boolean && !sync.defaultBoolean,
         "Metamob sync shows its saved value on its own source and resets to off");
@@ -777,7 +875,7 @@ void GlowModeValuesAndDefaults() {
     f.state.settings.monsterGlowMode = 2;
     f.Ui().Sync();
     Check(source.integer == 2, "External context choice must update the native dropdown");
-    const auto filtered = CloneCategory(General(f.Categories().back()));
+    const auto filtered = CloneCategory(Section(f.Categories().back(), GlowSection));
     Get(Get(filtered).refs.at("options")).items = {f.Ui().glowOption.get()};
     api.Call(filtered, "Reset");
     Check(source.integer == 1 && f.state.settings.monsterGlowMode == 2,
@@ -841,7 +939,7 @@ void NativeResetAndFilteredSearchOwnership() {
     Check(f.state.settings == beforeReset && Get(f.Ui().animationSource.get()).integer == 3,
         "Unrelated native reset must not affect Mod models");
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
-    const auto searchCategory = CloneCategory(General(displayedParent));
+    const auto searchCategory = CloneCategory(Section(displayedParent, DisplaySection));
     Get(searchCategory).integers["categoryId"] = 999;
     Get(Get(searchCategory).refs.at("options")).items = {f.Ui().animationOption.get()};
     const auto rebuilds = Get(f.page).integers["initCalls"];
@@ -860,14 +958,78 @@ void NativeResetAndFilteredSearchOwnership() {
         "Filtered reset must persist only its row without rebuilding native categories");
     api.Call(displayedParent, "Reset");
     for (const auto source : AllSources(f.Ui()))
-        Check(Get(source).klass->name == "BoolSource" ? Get(source).boolean == Get(source).defaultBoolean : Get(source).integer == Get(source).defaultInteger,
-            "Whole Mod native reset must restore all eleven defaults");
+        Check(AtDefault(source), "Whole Mod native reset must restore every default");
     f.Ui().Tick();
     Check(f.state.settings == Config(2, 1) && Get(f.page).integers["initCalls"] == rebuilds,
         "Whole Mod reset must commit all defaults without a custom reset hook or rebuild");
     CheckLayout(f);
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
+}
+
+// Every preference shown in the tab, away from its reset default.
+Settings AwayFromDefaults() {
+    Settings settings = Config(1, 3);
+    settings.roleplayMode = 1;
+    settings.monsterGlowMode = 3;
+    settings.glowNpcs = settings.glowInteractives = true;
+    settings.resourceMapEnabled = settings.resourceMiniMapEnabled = settings.miniMapCenterButton = false;
+    settings.fastMapTransitions = settings.preloadNextMap = settings.spouseTeleport = false;
+    settings.soulReminder = settings.soulAutoEquip = false;
+    settings.autoLoad = settings.githubUpdates = false;
+    settings.metamobSync = true;
+    return settings;
+}
+// The preferences behind one section's rows, back to their defaults.
+Settings WithSectionDefaults(Settings settings, size_t index) {
+    const Settings defaults;
+    if (index == DisplaySection) {
+        settings.mode = defaults.mode; settings.roleplayMode = defaults.roleplayMode; settings.animationMode = defaults.animationMode;
+    } else if (index == GlowSection) {
+        settings.monsterGlowMode = defaults.monsterGlowMode; settings.glowNpcs = defaults.glowNpcs; settings.glowInteractives = defaults.glowInteractives;
+    } else if (index == MapsSection) {
+        settings.resourceMapEnabled = defaults.resourceMapEnabled; settings.resourceMiniMapEnabled = defaults.resourceMiniMapEnabled;
+        settings.miniMapCenterButton = defaults.miniMapCenterButton;
+    } else if (index == TravelSection) {
+        settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
+    } else if (index == SoulSection) {
+        settings.soulReminder = defaults.soulReminder; settings.soulAutoEquip = defaults.soulAutoEquip;
+    } else if (index == LoadingSection) {
+        settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
+    } else if (index == MetamobSection) settings.metamobSync = defaults.metamobSync;
+    return settings;
+}
+// Resetting one section (its displayed clone) restores its own rows only; the
+// pump then persists exactly those preferences, once and without a rebuild.
+void SectionResetOwnsItsRows() {
+    for (size_t index = 0; index != SectionCount; ++index) {
+        Fixture f;
+        f.state.settings = AwayFromDefaults();
+        initHook(f.page, false, true, SectionId(index), nullptr);
+        const auto before = f.state.settings;
+        for (const auto source : AllSources(f.Ui())) Check(!AtDefault(source), "Every row starts away from its reset default");
+        const auto layout = Layout(f.Ui());
+        std::vector<Obj> own;
+        for (const auto& row : layout[index].rows)
+            if (row.source) own.push_back(row.source);
+        const auto onlyOwnRowsAtDefault = [&] {
+            for (const auto source : AllSources(f.Ui()))
+                if (AtDefault(source) != (std::find(own.begin(), own.end(), source) != own.end())) return false;
+            return true;
+        };
+        const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+        const auto section = Section(displayedParent, index);
+        const auto rebuilds = Get(f.page).integers["initCalls"];
+        api.Call(section, "Reset");
+        Check(Get(section).integers["resetCalls"] == 1 && onlyOwnRowsAtDefault() && f.state.settings == before,
+            "A section reset restores its own rows only and leaves persistence to the normal pump");
+        f.Ui().Tick();
+        Check(onlyOwnRowsAtDefault() && f.state.settings == WithSectionDefaults(before, index) &&
+            changes == (own.empty() ? 0u : 1u) && Get(f.page).integers["initCalls"] == rebuilds,
+            "The pump persists only the reset section's preferences, once and without a rebuild");
+        f.NativePreferencesUnchanged();
+        f.StopAndRestore();
+    }
 }
 
 void ResourceMapMasterPreservesSelection() {
@@ -1007,23 +1169,6 @@ void CreditsLinkOpensProject() {
     Check(!f.Ui().creditsOption.get() && !f.Ui().creditsMarker.get(), "Restore releases the credits row");
     textButtonHook(element, Make("Visual"), nullptr);
     Check(openedUrls.size() == 1 && foreignButtonClicks == 2, "After restore the stale element runs the native action");
-}
-
-void MetamobSectionSelectionAndRestore() {
-    Fixture f;
-    initHook(f.page, false, true, MetamobId, nullptr);
-    CheckLayout(f);
-    const auto displayed = Get(f.page).refs.at("m_displayedOption");
-    Check(Get(f.page).integers["lastSelection"] == MetamobId &&
-        Get(f.page).refs.at("m_currentId") == Get(MetamobSection(displayed)).refs.at("uid") &&
-        Rows(MetamobSection(displayed)) == MetamobOptions(f.Ui()), "The Metamob section opens on its own rows and stable UID");
-    const auto savedSources = AllSources(f.Ui());
-    initHook(f.page, false, true, MetamobId, nullptr);
-    Check(Get(f.page).integers["lastSelection"] == MetamobId && AllSources(f.Ui()) == savedSources && f.Categories().size() == 3,
-        "Reopening Metamob must retain the selection and existing controls");
-    f.StopAndRestore();
-    Check(Get(f.page).integers["lastSelection"] == 0 && f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}),
-        "Restore from the Metamob section must select Jeu and remove the owned parent");
 }
 
 // Row views are pooled: the masked field follows the key row from view to view.
@@ -1183,7 +1328,7 @@ void MetamobNativeResetStopsSyncKeepsKey() {
     Paste(Inputs(view).at(0), FakeKey);
     const auto before = f.state.settings;
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
-    api.Call(MetamobSection(displayedParent), "Reset");
+    api.Call(Section(displayedParent, MetamobSection), "Reset");
     Check(!Get(f.Ui().metamobSyncSource.get()).boolean && f.state.settings == before,
         "The section reset restores the off default and leaves persistence to the pump");
     f.Ui().Tick();
@@ -1283,18 +1428,21 @@ int main() {
             fake::Check(fake::handles.empty(), "UI test leaked GC references");
         };
         run(fake::ParentAndSectionSelection);
+        run(fake::EverySectionSelectionAndRestore);
+        run(fake::RestoreRetriesAfterFailedRebuild);
         run(fake::CreditsLinkOpensProject);
         run(fake::RegistrationAndValues);
         run(fake::AnimationModeValuesAndDefaults);
         run(fake::GlowModeValuesAndDefaults);
+        run(fake::GlowCategories);
         run(fake::ReducedMiniaturesDescription);
         run(fake::NativeResetAndFilteredSearchOwnership);
+        run(fake::SectionResetOwnsItsRows);
         run(fake::ValidationAndLoadingGate);
         run(fake::ResourceMapMasterPreservesSelection);
         run(fake::AutoLoadFailureIsRecoverable);
         run(fake::DeferredAndAccountGate);
         run(fake::CollisionAndSessionMismatch);
-        run(fake::MetamobSectionSelectionAndRestore);
         run(fake::MetamobKeyFieldFollowsPooledViews);
         run(fake::MetamobKeySaveReadsOnceAndClears);
         run(fake::MetamobForgetNeedsTwoClicks);
@@ -1303,7 +1451,7 @@ int main() {
         run(fake::MetamobFieldsLeaveOnAbandon);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob section (masked key field, two-click forget, no key trace)\n";
+        std::cout << "PASS: eight native sections (layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob section (masked key field, two-click forget, no key trace)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

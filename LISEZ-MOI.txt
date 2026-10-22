@@ -1,4 +1,16 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 106 — VERSION 1.9.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 107 — VERSION 1.9.1
+
+R107 — VERSION 1.9.1 : ONGLET DES OPTIONS EN BLOCS
+- L’onglet Dofus Enhanced est découpé par sujet, en blocs natifs du jeu :
+  Apparence et animations (en combat, hors combat, animations),
+  Surbrillance, Cartes (ressources sur la grande carte et la mini-carte,
+  bouton de recentrage), Déplacements (transitions rapides, préchargement,
+  téléportation au conjoint), Pierre d’âme, Chargement et mises à jour,
+  Metamob, puis À propos : la ligne
+  « Dofus Enhanced 1.9.1 — par Altansar » et son bouton GitHub, seuls en
+  bas de l’onglet.
+- Les réglages ne changent pas.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R106 — VERSION 1.9.0 : SYNCHRO METAMOB DES CAPTURES
 - Options › Dofus Enhanced › Metamob : après chaque combat où ton personnage

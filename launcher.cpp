@@ -66,7 +66,7 @@ static void WaitForStartup(HANDLE process, DWORD pid, const std::filesystem::pat
         if (status == "WAITING_ACCOUNT_OPTIONS") deadline = started + 180000;
         if (status == "STOPPED") throw std::runtime_error("Le module s'est desactive; consulter module.log.");
         if (status == "READY") {
-            output << "Initialisation confirmee. Ouvre ou rouvre Options > Mod (version chargee) > General.\n"
+            output << "Initialisation confirmee. Ouvre ou rouvre Options > Dofus Enhanced.\n"
                          "Cela ne valide pas encore le rendu ni les fonctions en combat.\n";
             return;
         }
@@ -259,9 +259,11 @@ int wmain(int argc, wchar_t** argv) {
             std::cout << "ModuleLoader --interactive\nModuleLoader <Dofus PID> <absolute module DLL>\n"
                          "ModuleLoader --verify-files <GameAssembly.dll> <global-metadata.dat>\n"
                          "ModuleLoader --watch <absolute Dofus.exe>\n"
-                         "  Enabled only by Options > Mod; watches newly started clients, never existing ones.\n"
+                         "  Runs while its startup entry exists (Options > Dofus Enhanced > Chargement et mises a jour >\n"
+                         "  Chargement automatique, or --enable-auto); watches newly started clients, never existing ones.\n"
                          "  Chooses the newest compatible sibling rN folder using release.ini and SHA256.\n"
-                         "  Local files only; no downloads or automatic changes to an already running game.\n"
+                         "  Before each load, runs the GitHub updater (as --check-updates) if Mises a jour GitHub is on;\n"
+                         "  otherwise or offline, local files only. Never changes an already running game.\n"
                          "ModuleLoader --disable-auto\n"
                          "  Removes only this release family's startup entry; no client is accessed.\n"
                          "ModuleLoader --enable-auto <absolute Dofus.exe>\n"
