@@ -124,10 +124,38 @@ try {
     $result = Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe')
     Check ($result -eq 'UPDATE_ALREADY_INSTALLED r78' -and $script:requests -eq 3) 'Unnecessary repeated archive download'
     Check (@(Get-ChildItem -LiteralPath $root -Force -Directory | Where-Object Name -Like '.dofus-update-*').Count -eq 0) 'Staging cleanup failed'
+    # A degraded GitHub answers the listing with an empty page: the newest
+    # release endpoint still finds the compatible package.
+    $script:testArchive = Make-Package 'newest' 79
+    $script:testRelease = Asset 79 $gameHash $metadataHash (Get-FileHash -LiteralPath $script:testArchive).Hash.ToLowerInvariant()
+    $script:testRelease.assets[0].size = (Get-Item -LiteralPath $script:testArchive).Length
+    $script:requested = @()
+    function Get-TrustedDownload([string]$Url, [string]$Destination, [long]$Limit, [Threading.CancellationToken]$Cancellation) {
+        $script:requested += $Url
+        if ($Url.EndsWith('/releases?per_page=100')) { Write-Text $Destination '[]' }
+        elseif ($Url.EndsWith('/releases/latest')) { Write-Text $Destination (ConvertTo-Json -InputObject $script:testRelease -Depth 6) }
+        else { [IO.File]::Copy($script:testArchive, $Destination) }
+    }
+    $result = @(Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe'))
+    Check (($result -join '|') -eq 'UPDATE_LISTING_EMPTY|UPDATE_INSTALLED r79' -and $script:requested.Count -eq 3 -and
+        $script:requested[1] -eq "https://api.github.com/repos/$script:Repository/releases/latest") 'Empty listing must fall back to the newest release'
+    $script:testRelease = Asset 80 ('d' * 64) $metadataHash $digest
+    $script:requested = @()
+    $result = @(Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe'))
+    Check (($result -join '|') -eq 'UPDATE_LISTING_EMPTY|UPDATE_NO_COMPATIBLE_RELEASE' -and $script:requested.Count -eq 2) 'An incompatible newest release must not be downloaded'
+    # Releases without a compatible one are a definitive answer: no second request.
+    $script:requested = @()
+    function Get-TrustedDownload([string]$Url, [string]$Destination, [long]$Limit, [Threading.CancellationToken]$Cancellation) {
+        $script:requested += $Url
+        Write-Text $Destination (ConvertTo-Json -InputObject @($script:testRelease) -Depth 6)
+    }
+    $result = @(Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe'))
+    Check (($result -join '|') -eq 'UPDATE_NO_COMPATIBLE_RELEASE' -and $script:requested.Count -eq 1) 'A listing without a compatible release must not query the newest release'
+    Check (@(Get-ChildItem -LiteralPath $root -Force -Directory | Where-Object Name -Like '.dofus-update-*').Count -eq 0) 'Staging cleanup failed after the fallback'
     function Get-TrustedDownload { throw 'simulated offline' }
     Reject { Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe') } 'Network failure must be reported'
     Test-Package (Join-Path $root "$script:Family`78") 78 $gameHash $metadataHash
-    Write-Output 'PASS: stable compatible selection, trusted assets, atomic install, no overwrite, no traversal, integrity, idempotence, future client, offline retention; fixtures only'
+    Write-Output 'PASS: stable compatible selection, trusted assets, atomic install, no overwrite, no traversal, integrity, idempotence, future client, empty-listing fallback to the newest release, offline retention; fixtures only'
 } finally {
     if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($fixture)) -ne [IO.Path]::GetFullPath($build) -or
         [IO.Path]::GetFileName($fixture) -notmatch '^update-fixtures-[a-f0-9]{32}$') { throw 'Invalid fixture cleanup target' }

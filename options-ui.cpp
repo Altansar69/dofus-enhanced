@@ -13,7 +13,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 8;
+constexpr int ModSections = 7;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -230,7 +230,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
         " (révision " + ModVersion + ", Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
     prepared.creditsOption.reset(MakeTextButtonOption(tooltip.get(), creditsTitle.c_str(), creditsText.c_str(), "Ouvrir GitHub", 0, prepared.creditsMarker));
-    // Section « Metamob »: the sync preference, then two owned text buttons. The
+    // « Pierre d’âme », after the soul rows: the Metamob sync preference, then two owned text buttons. The
     // key itself stays in the capture sync, reached through ui.metamob only.
     prepared.metamobSyncOption.reset(MakeBoolOption(prepared.metamobSyncSource.get(), current.get(), tooltip.get(), "Synchroniser les captures avec Metamob",
         "Après chaque capture d’un archimonstre ou d’un boss (pierre d’âme remplie en combat), ajoute 1 à ce monstre dans ta quête Ocre sur Metamob, sans rien modifier d’autre. Nécessite ta clé API personnelle (metamob.fr › Paramètres › Clé API). Désactivé par défaut."));
@@ -567,9 +567,9 @@ bool OptionsUi::Attach(Obj page) {
         {"Surbrillance", {glowOption.get(), glowNpcsOption.get(), glowInteractivesOption.get()}},
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), miniCenterOption.get()}},
         {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get()}},
-        {"Pierre d’âme", {soulOption.get(), soulAutoOption.get()}},
+        {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(),
+            metamobSyncOption.get(), metamobKeyOption.get(), metamobForgetOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
-        {"Metamob", {metamobSyncOption.get(), metamobKeyOption.get(), metamobForgetOption.get()}},
         {"À propos", {creditsOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
     auto sections = api.Field(category.get(), "subcategories");

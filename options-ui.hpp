@@ -33,8 +33,9 @@ struct OptionsUi {
     managed::Ref miniCenterSource, miniCenterOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
-    // "Metamob" section: capture sync toggle, API key row and forget row. The
-    // two text-button rows are known by their unique description reference.
+    // Metamob rows, after the two soul rows of the « Pierre d’âme » section:
+    // capture sync toggle, API key row and forget row. The two text-button
+    // rows are known by their unique description reference.
     managed::Ref metamobSyncSource, metamobSyncOption;
     managed::Ref metamobKeyOption, metamobKeyMarker, metamobForgetOption, metamobForgetMarker;
     // Masked native input owned in each pooled row view showing the key row:

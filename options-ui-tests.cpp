@@ -18,11 +18,12 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The eight native sections of the mod, in display order: section i has the id
+// The seven native sections of the mod, in display order: section i has the id
 // ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
-enum SectionIndex : size_t { DisplaySection, GlowSection, MapsSection, TravelSection, SoulSection, LoadingSection, MetamobSection, AboutSection, SectionCount };
+enum SectionIndex : size_t { DisplaySection, GlowSection, MapsSection, TravelSection, SoulSection, LoadingSection, AboutSection, SectionCount };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
-constexpr int DisplayId = SectionId(DisplaySection), MetamobId = SectionId(MetamobSection);
+// The Metamob rows sit in « Pierre d’âme », after the two soul rows.
+constexpr int DisplayId = SectionId(DisplaySection), SoulId = SectionId(SoulSection);
 struct Class { std::string name; };
 struct MethodInfo { Class* klass; std::string name; int argc; };
 struct Choice { int id = 0; Obj label = nullptr; };
@@ -512,8 +513,8 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(),
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(),
-        ui.soulSource.get(), ui.soulAutoSource.get(), ui.autoLoadSource.get(), ui.githubSource.get(),
-        ui.metamobSyncSource.get()};
+        ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
+        ui.autoLoadSource.get(), ui.githubSource.get()};
 }
 // Expected row: model, private source (none for a text button), label, native
 // control and the reset default of its source (choice id, or 1/0 for a checkbox).
@@ -542,12 +543,12 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
             CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true)}},
         {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
-            CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true)}},
+            CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true),
+            CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
+            ButtonRow(ui.metamobKeyOption, "Clé API Metamob"), ButtonRow(ui.metamobForgetOption, "Oublier la clé Metamob")}},
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"Metamob", {CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
-            ButtonRow(ui.metamobKeyOption, "Clé API Metamob"), ButtonRow(ui.metamobForgetOption, "Oublier la clé Metamob")}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.9.1 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.9.2 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -614,11 +615,11 @@ bool Logged(size_t from, const std::string& line) { return std::find(logs.begin(
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.9.1" && std::string(ModVersion) == "r107",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.9.2" && std::string(ModVersion) == "r108",
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its eight native sections, from Apparence et animations to À propos, and no row of its own");
+        "Mod must hold its seven native sections, from Apparence et animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -644,9 +645,10 @@ void CheckLayout(Fixture& f) {
         }
     }
     Check(shownSources == AllSources(f.Ui()), "Every private source must be shown once, by its own row");
-    // « Metamob »: the sync preference, then the key and forget text buttons.
-    const auto& metamob = Rows(Section(parent, MetamobSection));
-    const auto sync = metamob.at(0), key = metamob.at(1), forget = metamob.at(2);
+    // « Pierre d’âme », after the two soul rows: the Metamob sync preference,
+    // then the key and forget text buttons.
+    const auto& soul = Rows(Section(parent, SoulSection));
+    const auto sync = soul.at(2), key = soul.at(3), forget = soul.at(4);
     Check(Description(sync) == SyncDescription, "The sync row must say what it changes, what it needs and its default");
     Check(Description(key) == KeyDescription, "The key row must explain the masked field, the check and the storage");
     Check(Description(forget).find("5 secondes") != std::string::npos, "The forget row must explain its confirmation");
@@ -659,8 +661,8 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.9.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
-        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r107") != std::string::npos,
+    Check(Label(credits).find("1.9.2") != std::string::npos && description.find("Altansar") != std::string::npos &&
+        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r108") != std::string::npos,
         "Credits must name the version, the author, the project page and the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
@@ -994,9 +996,10 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
     } else if (index == SoulSection) {
         settings.soulReminder = defaults.soulReminder; settings.soulAutoEquip = defaults.soulAutoEquip;
+        settings.metamobSync = defaults.metamobSync;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
-    } else if (index == MetamobSection) settings.metamobSync = defaults.metamobSync;
+    }
     return settings;
 }
 // Resetting one section (its displayed clone) restores its own rows only; the
@@ -1174,7 +1177,7 @@ void CreditsLinkOpensProject() {
 // Row views are pooled: the masked field follows the key row from view to view.
 void MetamobKeyFieldFollowsPooledViews() {
     Fixture f;
-    initHook(f.page, false, true, MetamobId, nullptr);
+    initHook(f.page, false, true, SoulId, nullptr);
     const auto keyModel = f.Ui().metamobKeyOption.get();
     auto view = MakeRowView();
     textInitHook(view.element, keyModel, nullptr);
@@ -1244,7 +1247,7 @@ void MetamobKeyFieldFollowsPooledViews() {
 // Enregistrer: the field is read once, emptied at once, the text goes to the sync.
 void MetamobKeySaveReadsOnceAndClears() {
     Fixture f;
-    initHook(f.page, false, true, MetamobId, nullptr);
+    initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
     const auto field = Inputs(view).at(0);
@@ -1294,7 +1297,7 @@ void MetamobKeySaveReadsOnceAndClears() {
 void MetamobForgetNeedsTwoClicks() {
     Fixture f;
     fakeKeyStored = true;
-    initHook(f.page, false, true, MetamobId, nullptr);
+    initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobForgetOption.get(), nullptr);
     Check(Inputs(view).empty(), "The forget row has no field");
@@ -1322,19 +1325,19 @@ void MetamobNativeResetStopsSyncKeepsKey() {
     Fixture f;
     f.state.settings.metamobSync = true;
     fakeKeyStored = true;
-    initHook(f.page, false, true, MetamobId, nullptr);
+    initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
     Paste(Inputs(view).at(0), FakeKey);
     const auto before = f.state.settings;
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
-    api.Call(Section(displayedParent, MetamobSection), "Reset");
+    api.Call(Section(displayedParent, SoulSection), "Reset");
     Check(!Get(f.Ui().metamobSyncSource.get()).boolean && f.state.settings == before,
         "The section reset restores the off default and leaves persistence to the pump");
     f.Ui().Tick();
     auto expected = before;
     expected.metamobSync = false;
-    Check(f.state.settings == expected && changes == 1, "The Metamob section reset turns only the sync off");
+    Check(f.state.settings == expected && changes == 1, "The Pierre d’âme section reset turns the sync off; the soul rows were already at their defaults");
     Get(f.Ui().metamobSyncSource.get()).boolean = true;
     f.Ui().Tick();
     Check(f.state.settings.metamobSync && changes == 2, "The sync can be turned on again");
@@ -1353,7 +1356,7 @@ void MetamobNativeResetStopsSyncKeepsKey() {
 // Key field failures: fixed codes, rate limited, never what(), never a stop.
 void MetamobKeyFieldErrorsStayLocal() {
     Fixture f;
-    initHook(f.page, false, true, MetamobId, nullptr);
+    initHook(f.page, false, true, SoulId, nullptr);
     const auto keyModel = f.Ui().metamobKeyOption.get();
     auto view = MakeRowView();
     failKeyInsert = true;
@@ -1407,7 +1410,7 @@ void MetamobKeyFieldErrorsStayLocal() {
 // Logout: the game tore the options page down; the owned fields still leave.
 void MetamobFieldsLeaveOnAbandon() {
     Fixture f;
-    initHook(f.page, false, true, MetamobId, nullptr);
+    initHook(f.page, false, true, SoulId, nullptr);
     auto view = MakeRowView();
     textInitHook(view.element, f.Ui().metamobKeyOption.get(), nullptr);
     Check(Inputs(view).size() == 1, "Abandon fixture failed to place the field");
@@ -1451,7 +1454,7 @@ int main() {
         run(fake::MetamobFieldsLeaveOnAbandon);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: eight native sections (layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob section (masked key field, two-click forget, no key trace)\n";
+        std::cout << "PASS: seven native sections (layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, two-click forget, no key trace)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

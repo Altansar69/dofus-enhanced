@@ -206,6 +206,15 @@ function Invoke-GitHubUpdate([string]$Root, [string]$Exe) {
         Get-TrustedDownload "https://api.github.com/repos/$script:Repository/releases?per_page=100" $listing 4MB $cancellation.Token
         $releases = [IO.File]::ReadAllText($listing) | ConvertFrom-Json
         $update = Select-Update $releases $gameHash $metadataHash
+        if (@($releases).Count -eq 0) {
+            # A degraded GitHub can answer the listing with an empty page (seen on
+            # 2026-10-22); the newest published release has its own endpoint. A
+            # listing with releases but none compatible stays a definitive answer.
+            Write-Output 'UPDATE_LISTING_EMPTY'
+            $newest = Join-Path $stage 'latest.json'
+            Get-TrustedDownload "https://api.github.com/repos/$script:Repository/releases/latest" $newest 1MB $cancellation.Token
+            $update = Select-Update ([IO.File]::ReadAllText($newest) | ConvertFrom-Json) $gameHash $metadataHash
+        }
         if (!$update) { Write-Output 'UPDATE_NO_COMPATIBLE_RELEASE'; return }
         $destination = Join-Path $Root "$script:Family$($update.revision)"
         if (Test-Path -LiteralPath $destination) {

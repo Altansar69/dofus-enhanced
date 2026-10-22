@@ -1,4 +1,21 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 107 — VERSION 1.9.1
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 108 — VERSION 1.9.2
+
+R108 — VERSION 1.9.2 : METAMOB DANS LE BLOC PIERRE D’ÂME
+- Les trois lignes Metamob (synchroniser les captures, clé API, oublier la
+  clé) sont dans le bloc Pierre d’âme, sous l’alerte et l’équipement
+  automatique. L’onglet compte sept blocs : Apparence et animations,
+  Surbrillance, Cartes, Déplacements, Pierre d’âme, Chargement et mises à
+  jour, puis À propos.
+- Le message « aucune clé enregistrée » renvoie vers
+  Options › Dofus Enhanced › Pierre d’âme.
+- Mise à jour GitHub : le 22 octobre 2026, pendant un incident GitHub, la
+  liste des publications revenait parfois vide ; la mise à jour concluait
+  alors « aucune version compatible » et le jeu gardait la 1.9.0. Une liste
+  vide fait maintenant consulter la dernière publication (mêmes
+  vérifications d’intégrité). Ce correctif s’applique aux mises à jour
+  suivantes, une fois la 1.9.2 installée.
+- Les réglages et la clé enregistrée ne changent pas.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R107 — VERSION 1.9.1 : ONGLET DES OPTIONS EN BLOCS
 - L’onglet Dofus Enhanced est découpé par sujet, en blocs natifs du jeu :

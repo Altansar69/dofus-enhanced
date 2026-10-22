@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.9.1** (révision r107).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.9.2** (révision r108).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -22,6 +22,9 @@ Dans **Options → Dofus Enhanced → Chargement et mises à jour** :
 Le lanceur conserve les anciennes versions et les réglages. En cas d’absence
 de réseau, il utilise une version locale compatible. Il ne remplace pas un module
 dans un jeu déjà ouvert. Il laisse intact un client sans version compatible.
+Depuis la 1.9.2, si GitHub renvoie une liste de publications vide (service
+dégradé), il consulte la dernière publication avant de conclure qu’aucune
+version n’est compatible.
 
 L’assistant de démarrage peut reconnaître une future version du jeu et lancer
 le chargeur livré avec son correctif. Cela ne rend pas les fonctions natives du mod
@@ -42,8 +45,8 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence et animations,
-Surbrillance, Cartes, Déplacements, Pierre d’âme, Chargement et mises à jour,
-Metamob et À propos. La version chargée (x.y.z et
+Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chargement et mises à jour
+et À propos. La version chargée (x.y.z et
 révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
 et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 étiquette `rN` pour le vérificateur de mises à jour.
@@ -206,8 +209,9 @@ seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqu�
 
 ## Metamob
 
-**Options → Dofus Enhanced → Metamob** synchronise les captures avec ta quête
-Ocre sur [metamob.fr](https://www.metamob.fr) :
+Dans **Options → Dofus Enhanced → Pierre d’âme**, sous l’alerte et l’équipement
+automatique, trois lignes synchronisent les captures avec ta quête Ocre sur
+[metamob.fr](https://www.metamob.fr) :
 
 1. Sur Metamob, **Paramètres → Clé API → Générer une clé**, puis copie-la.
 2. Colle-la dans le champ masqué **Clé API Metamob** et clique sur **Enregistrer**.

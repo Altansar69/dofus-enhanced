@@ -36,7 +36,7 @@ std::string AddedText(const std::string& name, int before, int after) {
     return "Metamob : +" + Number(after - before) + " " + Quoted(name) + " (" + Number(before) + " → " + Number(after) + ").";
 }
 std::string NoKeyText(const std::string& name) {
-    return "Metamob : capture de " + Quoted(name) + " non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Metamob).";
+    return "Metamob : capture de " + Quoted(name) + " non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
 }
 std::string UnmatchedText(const std::string& name) { return "Metamob : " + Quoted(name) + " introuvable dans ta quête Ocre, rien n’a été modifié."; }
 std::string CappedText(const std::string& name) {

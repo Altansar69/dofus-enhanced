@@ -228,7 +228,7 @@ std::string Added(const Row& row, int before, int after) {
     return "Metamob : +" + std::to_string(after - before) + " « " + row.name + " » (" + std::to_string(before) + " → " + std::to_string(after) + ").";
 }
 std::string NoKey(const std::string& name) {
-    return "Metamob : capture de « " + name + " » non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Metamob).";
+    return "Metamob : capture de « " + name + " » non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
 }
 std::string Unmatched(const std::string& name) { return "Metamob : « " + name + " » introuvable dans ta quête Ocre, rien n’a été modifié."; }
 std::string Capped(const Row& row) { return "Metamob : « " + row.name + " » est déjà à 30, la quantité maximale."; }
@@ -406,7 +406,7 @@ void CaptureWithoutKey() {
     Begin(Folder("nokey"), false);
     EnqueueCapture(Captured(Tofu));
     Tick();
-    Said({"Metamob : capture de « Tofumanchou l'Empereur » non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Metamob)."},
+    Said({"Metamob : capture de « Tofumanchou l'Empereur » non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme)."},
         "A capture without a key");
     // A name with markup is shown without it.
     auto odd = Captured(Mob);
