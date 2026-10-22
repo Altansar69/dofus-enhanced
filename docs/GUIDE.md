@@ -9,7 +9,7 @@ Les détails et les limites figurent dans [LISEZ-MOI.txt](../LISEZ-MOI.txt).
 
 ## Mises à jour
 
-Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/dofus-miniatures/releases).
+Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/dofus-enhanced/releases).
 Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
 conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
 
@@ -305,8 +305,8 @@ renvoyées automatiquement pendant la session.
 Windows x64, outils C++ Visual Studio, CMake, Ninja, Python 3 et Windows PowerShell.
 
 ```powershell
-git clone --recurse-submodules https://github.com/Altansar69/dofus-miniatures.git
-cd dofus-miniatures
+git clone --recurse-submodules https://github.com/Altansar69/dofus-enhanced.git
+cd dofus-enhanced
 .\build.ps1
 ctest --test-dir build --output-on-failure --output-junit test-results.xml
 python tools/package-release.py --output "C:\chemin\vers\releases"

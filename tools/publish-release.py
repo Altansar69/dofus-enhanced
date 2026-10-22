@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-REPO = "Altansar69/dofus-miniatures"
+REPO = "Altansar69/dofus-enhanced"
 ACCOUNT = REPO.split("/")[0]
 source = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
