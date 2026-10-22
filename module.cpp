@@ -451,8 +451,9 @@ static DWORD WINAPI Worker(void*) {
         InstallSpousePartyMenu();
         InstallSpousePartyWidget();
         InstallChatTravel();
-        // Metamob capture sync: optional, the rest of the mod runs without it.
-        metamob::InstallSync(module->settingsPath, metamob::SendWinHttp, PostChatNotice);
+        // Metamob capture sync: optional, the rest of the mod runs without it. Its
+        // chat part reads monsters and the character through capture detection.
+        metamob::InstallSync(module->settingsPath, metamob::SendWinHttp, PostChatNotice, {CaptureDetectMonster, CaptureDetectCharacter});
         module->ui->metamob = {metamob::SubmitKey, metamob::ForgetStoredKey, metamob::StoredKeyStatus, metamob::CheckStoredKey, PostChatNotice};
         InstallCaptureDetect(metamob::EnqueueCapture); // never throws: CAPTURE_DETECT_DISABLED disables only this
         InstallMapTravel();

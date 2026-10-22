@@ -21,7 +21,7 @@ constexpr uint32_t BossSoul = 327, ArchSoul = 328; // item types "Âme de gardie
 constexpr uint16_t SoulMonster = 4058;             // ActionId.CharacterSoulMonster: its value is the monster id
 constexpr int16_t Victory = 3;                     // fze.dwpy (emw) of a winner, as UIFightResult reads it
 constexpr int MaxFighters = 128, MaxLoot = 512, MaxEffects = 128;
-constexpr size_t MaxSeen = 16, MaxMonsterName = 256, MaxCharacterName = 128;
+constexpr size_t MaxSeen = 16, MaxMonsterName = 256, MaxCharacterName = 128, MaxMonsters = 512;
 struct Contract {
     Klass service{}, fight{}, history{}, report{}, fighter{}, loot{}, character{}, characterInfo{};
     Klass item{}, itemData{}, integerEffect{}, monster{};
@@ -38,6 +38,10 @@ struct State {
     int64_t localId = 0;
     bool known = false, fightLogged = false;
     std::map<std::string, uint64_t> nextLog;
+    // The chat part's reads: each monster read once (bounded), and the
+    // character's name, read again when another character is seen.
+    std::map<int, std::optional<metamob::GameMonster>> monsters;
+    std::string name;
 } state;
 struct Soul { int gid = 0; uint32_t type = 0; int quantity = 0; bool valid = true; Ref item; };
 struct Snapshot { Ref fight, history, report, character, info; int64_t localId = 0; };
@@ -74,6 +78,7 @@ bool Printable(const std::string& text, size_t maximum) {
 void Reset() {
     state.owner = nullptr; state.compositor.reset(); state.history.reset(); state.seen.clear();
     state.localId = 0; state.known = state.fightLogged = false; state.nextLog.clear();
+    state.monsters.clear(); state.name.clear();
 }
 bool Seen(Obj report) {
     return std::any_of(state.seen.begin(), state.seen.end(), [&](const Ref& known) { return known.get() == report; });
@@ -241,6 +246,8 @@ void Process(Obj report, Obj info, int64_t localId) {
 void Observe(bool enabled) {
     Snapshot now;
     if (!Read(now)) { if (!enabled) state.known = false; return; }
+    // The chat part's character: its name read again only when another character is seen.
+    if (now.localId != state.localId) state.name = CharacterName(now.info.get());
     if (enabled && !state.fightLogged && module->fight.get() && now.fight.get() != module->fight.get()) {
         state.fightLogged = true;
         Log("CAPTURE_FIGHT_CHANGED");
@@ -327,3 +334,32 @@ void TickCaptureDetect() {
     }
 }
 void RestoreCaptureDetect() { capture_detect::Reset(); }
+std::optional<metamob::GameMonster> CaptureDetectMonster(int monsterId) {
+    using namespace capture_detect;
+    try {
+        if (monsterId <= 0 || !contract.installed || !Active()) return std::nullopt;
+        if (const auto known = state.monsters.find(monsterId); known != state.monsters.end()) return known->second;
+        std::optional<metamob::GameMonster> found;
+        try {
+            int64_t key = monsterId;
+            Ref monster(api.Invoke(contract.byId, nullptr, {&key}));
+            if (Is(monster.get(), contract.monster)) {
+                Ref text(api.Invoke(contract.name, monster.get()));
+                auto name = api.String(text.get());
+                if (Printable(name, MaxMonsterName)) {
+                    // Metamob's types: a boss, an archimonster, else any monster.
+                    const int type = api.Value<bool>(api.Invoke(contract.isBoss, monster.get())) ? metamob::TypeBoss :
+                        api.Value<bool>(api.Invoke(contract.isArch, monster.get())) ? metamob::TypeArchimonster : metamob::TypeMonster;
+                    found = metamob::GameMonster{std::move(name), type};
+                }
+            }
+        } catch (...) { found.reset(); Error("lookup"); }
+        // Unknown and unreadable monsters are kept too: never read again at every chat pump.
+        if (state.monsters.size() >= MaxMonsters) state.monsters.clear();
+        state.monsters.emplace(monsterId, found);
+        return found;
+    } catch (...) { return std::nullopt; }
+}
+std::string CaptureDetectCharacter() {
+    try { return capture_detect::state.name; } catch (...) { return {}; }
+}

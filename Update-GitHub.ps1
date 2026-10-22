@@ -10,6 +10,9 @@ $ErrorActionPreference = 'Stop'
 # Resolve the installed Windows module explicitly instead of depending on it.
 Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
 $script:Repository = 'Altansar69/dofus-miniatures'
+# The repository becomes Altansar69/dofus-enhanced. GitHub redirects the API
+# from the old name, but release assets are then listed under the new one.
+$script:AssetRepositories = @('Altansar69/dofus-miniatures', 'Altansar69/dofus-enhanced')
 $script:Family = 'DofusMiniatures-3.7.11.11-r'
 $script:PayloadFiles = @('DofusMiniatures.dll', 'ModuleLoader.exe', 'ModuleAutoLoader.exe',
     'TreasureOverlay.exe', 'Update-GitHub.ps1')
@@ -75,8 +78,12 @@ function Select-Update($Releases, [string]$GameHash, [string]$MetadataHash) {
             # GitHub computes the digest on upload; never trust a checksum from
             # an arbitrary asset URL or silently accept an absent digest.
             if (!$asset.PSObject.Properties['digest'] -or $asset.digest -cnotmatch '^sha256:[a-f0-9]{64}$') { continue }
-            $expected = "https://github.com/$script:Repository/releases/download/r$revision/$($asset.name)"
-            if ($asset.browser_download_url -cne $expected) { continue }
+            $expected = $null
+            foreach ($repository in $script:AssetRepositories) {
+                $candidate = "https://github.com/$repository/releases/download/r$revision/$($asset.name)"
+                if ($asset.browser_download_url -ceq $candidate) { $expected = $candidate }
+            }
+            if (!$expected) { continue }
             if (!$selected -or $revision -gt $selected.revision) {
                 $selected = [pscustomobject]@{
                     revision = $revision; url = $expected; size = [long]$asset.size

@@ -144,7 +144,7 @@ std::string Quest(const std::string& slug, const char* character, const char* ty
         "\",\"name\":{\"fr\":\"Ocre\",\"en\":\"" + Marker + "\",\"es\":\"Ocre\"}},\"monster_count\":337,\"step_count\":18}}";
 }
 // Real Unity Ocre monsters (Metamob ids, steps, types), and generated ones up to the 337 of the quest.
-struct Row { int64_t id; std::string name; int type, step, quantity; };
+struct Row { int64_t id; std::string name; int type, step, quantity; std::string en, es; }; // en, es: empty for the marker, null
 const Row Bouftou{305, "Bouftou Royal", TypeBoss, 1, 5}, Mob{312, "Mob l'Éponge", TypeBoss, 1, 0},
     Tofu{370, "Tofumanchou l'Empereur", TypeArchimonster, 4, 2}, Tiwa{387, "Tiwa'Missou le Gateux", TypeArchimonster, 5, 3},
     Abrakroc{432, "Abrakroc l'édenté", TypeArchimonster, 8, 0}, Larva{565, "Larvaloeil l'Émue", TypeArchimonster, 14, 1};
@@ -159,7 +159,9 @@ std::vector<Row> Catalog() {
     return rows;
 }
 std::string MonsterJson(const Row& row) {
-    return "{\"id\":" + std::to_string(row.id) + ",\"name\":{\"fr\":\"" + row.name + "\",\"en\":\"" + Marker + "\",\"es\":null},"
+    const auto es = row.es.empty() ? std::string("null") : "\"" + row.es + "\"";
+    return "{\"id\":" + std::to_string(row.id) + ",\"name\":{\"fr\":\"" + row.name + "\",\"en\":\"" + (row.en.empty() ? Marker : row.en) +
+        "\",\"es\":" + es + "},"
         "\"image\":\"m.png\",\"level_min\":60,\"level_max\":60,\"type\":{\"id\":" + std::to_string(row.type) +
         ",\"name\":{\"fr\":\"Archimonstre\",\"en\":\"Archmonster\",\"es\":\"Archimonstruo\"}},\"step\":" + std::to_string(row.step) +
         ",\"quantity\":" + std::to_string(row.quantity) + ",\"want\":0,\"offer\":0,\"trade_offer\":null,\"trade_want\":null}";
@@ -181,10 +183,18 @@ void ExpectQuests(const std::vector<std::string>& quests) {
     for (const auto& quest : quests) items += (items.empty() ? "" : ",") + quest;
     Expect("GET", "/quests", Json("{\"data\":[" + items + "]}"));
 }
-void ExpectList(const std::string& slug) {
-    const auto rows = Catalog();
-    Expect("GET", "/quests/" + slug + "/monsters?limit=200&offset=0", Json(Page(slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
-    Expect("GET", "/quests/" + slug + "/monsters?limit=200&offset=200", Json(Page(slug, {rows.begin() + 200, rows.end()}, rows.size(), 200)));
+std::string ListPath(const std::string& slug, int offset) { return "/quests/" + slug + "/monsters?limit=200&offset=" + std::to_string(offset); }
+// Both pages of a quest's list (the test catalog unless given).
+void ExpectList(const std::string& slug, const std::vector<Row>& rows = Catalog()) {
+    Expect("GET", ListPath(slug, 0), Json(Page(slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
+    Expect("GET", ListPath(slug, 200), Json(Page(slug, {rows.begin() + 200, rows.end()}, rows.size(), 200)));
+}
+// The test catalog with some quantities changed (Metamob id, quantity).
+std::vector<Row> CatalogWith(const std::vector<std::pair<int64_t, int>>& quantities) {
+    auto rows = Catalog();
+    for (auto& row : rows)
+        for (const auto& [id, quantity] : quantities) if (row.id == id) row.quantity = quantity;
+    return rows;
 }
 // The step read again before a write: the monster at `quantity`, and a neighbour.
 void ExpectStep(const std::string& slug, const Row& row, int quantity) {
@@ -249,6 +259,50 @@ std::string ForgetUnsure(const Row& row) {
     return "Metamob : clé oubliée pendant l’envoi de « " + row.name + " » ; vérifie ta quête sur Metamob.";
 }
 
+// « Metamob dans le chat »: the chat part's game view. Game ids from the Ocre
+// goal table; their names and kinds are labels matching the test catalog (the
+// game's own pairs are capture detection's business).
+constexpr int GameBouftou = 147, GameMob = 797, GameTofu = 2270, GameTiwa = 2271, GameAbrakroc = 2272, GameLarva = 2273,
+    GameMissing = 2275,   // an Ocre goal whose name is not in the user's quest
+    GameOtherKind = 2276, // Tofumanchou's name as a boss: not that monster
+    GamePlain = 2277,     // neither boss nor archimonster
+    GameNameless = 2278,  // unknown to the game view
+    GameStranger = 31;    // outside L’éternelle moisson
+std::map<int, GameMonster> bestiary;
+std::map<int, int> lookedUp; // game view reads per monster
+std::string playing;         // the local character
+void Bestiary() {
+    bestiary = {{GameBouftou, {"Bouftou Royal", TypeBoss}}, {GameMob, {"Mob l’Éponge", TypeBoss}},
+        {GameTofu, {"Tofumanchou l'Empereur", TypeArchimonster}}, {GameTiwa, {"Tiwa’Missou le Gâteux", TypeArchimonster}},
+        {GameAbrakroc, {"Abrakroc l'édenté", TypeArchimonster}}, {GameLarva, {"Larvalœil l’Émue", TypeArchimonster}},
+        {GameMissing, {"Krokette la Croustillante", TypeArchimonster}}, {GameOtherKind, {"Tofumanchou l'Empereur", TypeBoss}},
+        {GamePlain, {"Bouftou", TypeMonster}}, {GameStranger, {"Bouftou Royal", TypeBoss}}};
+    lookedUp.clear();
+    playing = Character;
+}
+GameView View() {
+    return {[](int id) -> std::optional<GameMonster> {
+        ++lookedUp[id];
+        const auto found = bestiary.find(id);
+        return found == bestiary.end() ? std::nullopt : std::optional<GameMonster>(found->second);
+    }, [] { return playing; }};
+}
+// The visible texts of the chat part (DESIGN r110), written here independently of the module.
+const std::string NotRead = "Metamob : ?.\nTa quête Ocre sur Metamob n’a pas encore été lue ou n’a pas pu l’être ; nouvel essai automatique.",
+    NoQuestDetail = "Metamob : ?.\nAucune quête Ocre Dofus Unity sur ton compte Metamob : crée-la sur metamob.fr, puis elle sera lue automatiquement.",
+    SeveralDetail = "Metamob : ?.\nPlusieurs quêtes Ocre Dofus Unity sur ton compte Metamob, et aucune n’indique ce personnage dans "
+        "« Personnage à contacter » : ajoute son nom dans la bonne quête sur metamob.fr.";
+std::string Counted(int quantity) {
+    return "Metamob : " + std::to_string(quantity) + ".\nTa quête Ocre sur Metamob compte " + std::to_string(quantity) +
+        (quantity > 1 ? " exemplaires" : " exemplaire") + " de ce monstre ; elle est relue au plus toutes les 10 minutes et mise à jour "
+        "aussitôt après une capture synchronisée par le mod.";
+}
+std::string Colored(int quantity) {
+    return std::string(quantity > 0 ? "<color=#8DDB91>" : "<color=#F18C8C>") + "Metamob : " + std::to_string(quantity) + "</color>";
+}
+std::string Rich(int monster) { return MetamobChatCaption(monster, true); }
+std::string Plain(int monster) { return MetamobChatCaption(monster, false); }
+
 Path root;
 Path Folder(const std::string& name) {
     const auto folder = root / name;
@@ -265,7 +319,8 @@ void Begin(const Path& settings, bool key) {
     notices.clear(); keyNow = FakeKey; intercept = nullptr; onSleep = nullptr; syncOn = true;
     metamob::testing::SetClock(FakeNow, FakeEpoch, FakeSleep);
     metamob::testing::RunJobsInline(true);
-    InstallSync(settings, Scripted, Noted);
+    Bestiary();
+    InstallSync(settings, Scripted, Noted, View());
     if (key) StoreKey(KeyPath(settings), Secret(FakeKey));
 }
 void Finish(const std::string& name) {
@@ -299,6 +354,9 @@ size_t Sent() { std::lock_guard<std::mutex> guard(scriptLock); return calls.size
 uint64_t LastAt() { std::lock_guard<std::mutex> guard(scriptLock); return calls.back().at; }
 void Tick(uint64_t advance = 0) { fakeNow += advance; TickSync(syncOn); }
 void TickAt(uint64_t at) { if (fakeNow.load() < at) fakeNow = at; TickSync(syncOn); }
+// A chat pump: a label shows the Metamob part (it asks for the list), then the sync ticks.
+void Ask(uint64_t advance = 0) { fakeNow += advance; WantMetamobCatalog(); TickSync(syncOn); }
+void AskAt(uint64_t at) { if (fakeNow.load() < at) fakeNow = at; WantMetamobCatalog(); TickSync(syncOn); }
 template<class Ready> void Await(Ready ready, uint64_t limit, const std::string& what) {
     const auto end = GetTickCount64() + limit;
     while (!ready()) {
@@ -641,6 +699,30 @@ void RefusedKeyRetry() {
     Tick(2000);
     Said({KeyRefused}, "A refusal after a confirmed write is told again");
     Finish("refused key retry");
+}
+
+// A key Metamob lets read but not write: refused at its write, told once. Its
+// retries 10 min later read with it, then are refused at the write again: never
+// told again (a read accepted does not end the pause, only a confirmed write).
+void ReadOnlyKey() {
+    Begin(Folder("read-only"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    ExpectStep(Slug, Tofu, 2);
+    ExpectWrite(Slug, Tofu, 3, Status(403));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({KeyRefused}, "Refused at its write");
+    for (size_t round = 0; round < 2; ++round) {
+        for (int i = 0; i < 19; ++i) Tick(30000);
+        Check(Sent() == 5 + 2 * round, "Not tried again before 10 min");
+        ExpectStep(Slug, Tofu, 2);
+        ExpectWrite(Slug, Tofu, 3, Status(403));
+        Tick(30000);
+        Check(notices.empty() && LoggedCount("METAMOB_KEY_REFUSED") == 1 && StoredKeyStatus() == KeyStatus::Refused,
+            "Read again 10 min later, refused again at its write: never told again");
+    }
+    Finish("read-only key");
 }
 
 // A 401/403 page that is not JSON (a Cloudflare challenge, a filtering proxy)
@@ -2039,6 +2121,590 @@ void ForgetThenNewKey() {
     Finish("a new key right after a forget, watched");
 }
 
+// « Metamob dans le chat »: the user's quest is read at once when a chat label
+// first asks for it; each monster then shows its quantity from that copy: green
+// from 1, red at 0, « ? » before; nothing for a monster outside L’éternelle
+// moisson, unknown to the game or not in the quest. Silent, reads only (never
+// the sender lock), the capture sync on or off.
+void ChatFirstLoad() {
+    Begin(Folder("chat"), true);
+    syncOn = false;
+    Check(Rich(GameTofu) == "Metamob : ?" && Plain(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead,
+        "Before the quest is read: « ? »");
+    Check(Rich(GameStranger).empty() && MetamobChatDetail(GameStranger).empty() && Rich(GameNameless).empty() &&
+        MetamobChatDetail(GameNameless).empty() && Rich(0).empty() && Rich(-GameTofu).empty(),
+        "Nothing outside L’éternelle moisson, nor for a monster the game does not name");
+    for (int i = 0; i < 5; ++i) Tick(60000);
+    Check(Sent() == 0 && Rich(GameTofu) == "Metamob : ?", "Nothing read until a chat label asks");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Ask();
+    Check(Sent() == 3 && notices.empty() && Logged("METAMOB_CATALOG monsters=337") &&
+        LoggedCount("METAMOB_HTTP method=GET route=/quests/*/monsters status=200") == 2, "Read at once: the quests, both pages, silently");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        for (size_t i = 0; i < calls.size(); ++i) {
+            Check(calls[i].key == FakeKey && !calls[i].held && calls[i].thread == GetCurrentThreadId(), "The stored key, never the sender lock");
+            if (i) Check(calls[i].at - calls[i - 1].at >= 1100, "At least 1.1 s between two requests");
+        }
+    }
+    Check(Rich(GameTofu) == Colored(2) && Plain(GameTofu) == "Metamob : 2" && MetamobChatDetail(GameTofu) == Counted(2), "2: green");
+    Check(Rich(GameMob) == Colored(0) && Plain(GameMob) == "Metamob : 0" && MetamobChatDetail(GameMob) == Counted(0), "0: red");
+    Check(Rich(GameLarva) == Colored(1) && MetamobChatDetail(GameLarva) == Counted(1) && Rich(GameBouftou) == Colored(5) &&
+        Rich(GameTiwa) == Colored(3) && Rich(GameAbrakroc) == Colored(0), "Every quest monster the game names, accents and apostrophes aside");
+    Check(Rich(GameMissing).empty() && MetamobChatDetail(GameMissing).empty() && Rich(GameOtherKind).empty() && Rich(GamePlain).empty(),
+        "Not in the quest, nor under another type: nothing");
+    Check(Rich(GameStranger).empty() && Rich(GameNameless).empty() && lookedUp[GameStranger] == 0,
+        "A monster outside L’éternelle moisson is never even looked up");
+    // Matched once per list: the chat asks at every pump without reading the game again.
+    const auto views = lookedUp;
+    for (int i = 0; i < 100; ++i)
+        for (const int monster : {GameTofu, GameMob, GameMissing, GameOtherKind}) { Rich(monster); MetamobChatDetail(monster); }
+    Check(lookedUp == views, "Each monster matched once per list read");
+    for (int i = 0; i < 9; ++i) Ask(60000);
+    Check(Sent() == 3, "Read once in 10 min, however often asked");
+    Finish("chat first load");
+}
+
+// Asked at every chat pump, the list is read again 10 min after the last
+// reading, only while a label asked within the last minute; what was read stays.
+void ChatRefresh() {
+    Begin(Folder("chat-refresh"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Ask();
+    auto read = LastAt();
+    for (int i = 0; i < 19; ++i) Ask(30000);
+    AskAt(read + 599999);
+    Check(Sent() == 3 && Plain(GameTofu) == "Metamob : 2" && Plain(GameMob) == "Metamob : 0", "Not read again within 10 min");
+    auto reordered = CatalogWith({{Tofu.id, 7}, {Mob.id, 4}});
+    std::reverse(reordered.begin(), reordered.end()); // another order: every monster matched again
+    ExpectList(Slug, reordered);
+    AskAt(read + 600000);
+    Check(Sent() == 5 && Plain(GameTofu) == "Metamob : 7" && Plain(GameMob) == "Metamob : 4" && Plain(GameLarva) == "Metamob : 1" &&
+        notices.empty(), "Read again after 10 min: both pages, the quests kept, every monster matched again");
+    read = LastAt();
+    TickAt(read + 600000);
+    TickAt(read + 1800000);
+    Check(Sent() == 5 && Plain(GameTofu) == "Metamob : 7", "No label asking: not read again, what was read stays");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 8}}));
+    Ask();
+    Check(Sent() == 7 && Plain(GameTofu) == "Metamob : 8", "Asked again: read at once");
+    // A label that asked 59.999 s ago still counts, one that asked a minute ago no longer does.
+    read = LastAt();
+    AskAt(read + 540001);
+    ExpectList(Slug, CatalogWith({{Tofu.id, 9}}));
+    TickAt(read + 600000);
+    Check(Sent() == 9 && Plain(GameTofu) == "Metamob : 9", "Asked within the last minute");
+    read = LastAt();
+    AskAt(read + 540000);
+    TickAt(read + 600000);
+    TickAt(read + 700000);
+    Check(Sent() == 9, "Asked a minute ago: not read");
+    Finish("chat refresh");
+}
+
+// Nothing at all without a usable key: none, unreadable, refused, or a forget
+// under way. Never a notice from the chat part.
+void ChatWithoutKey() {
+    Begin(Folder("chat-nokey"), false);
+    for (int i = 0; i < 3; ++i) Ask(60000);
+    Check(Sent() == 0 && Rich(GameTofu).empty() && MetamobChatDetail(GameTofu).empty(), "No key: nothing shown, nothing read");
+    Finish("chat without key");
+
+    const auto unreadable = Folder("chat-unreadable");
+    Begin(unreadable, false);
+    {
+        std::ofstream output(KeyPath(unreadable), std::ios::binary);
+        output << "DEMK1\n" << Marker;
+    }
+    Check(Rich(GameTofu) == "Metamob : ?", "A key file not checked yet: « ? »");
+    Ask();
+    Check(Sent() == 0 && notices.empty() && StoredKeyStatus() == KeyStatus::Unreadable && Rich(GameTofu).empty() &&
+        Logged("METAMOB_CATALOG_FAILED reason=key"), "Unreadable: nothing sent, shown nor said");
+    for (int i = 0; i < 3; ++i) Ask(60000);
+    Check(Sent() == 0 && LoggedCount("METAMOB_CATALOG_FAILED") == 1, "Not tried again");
+    Finish("chat with an unreadable key");
+
+    // Refused by Metamob (its JSON 401): silent, the key row says it, nothing more is read with it.
+    Begin(Folder("chat-refused"), true);
+    Expect("GET", "/quests", Status(401));
+    Ask();
+    Check(notices.empty() && StoredKeyStatus() == KeyStatus::Refused && Rich(GameTofu).empty() && !Logged("METAMOB_KEY_REFUSED") &&
+        Logged("METAMOB_CATALOG_FAILED reason=refused"), "Refused: silent, nothing shown");
+    for (int i = 0; i < 25; ++i) Ask(60000);
+    Check(Sent() == 1, "Never read again with a refused key");
+    // A capture still tells it at its first request, then retries it 10 min later.
+    Expect("GET", "/quests", Status(401));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({KeyRefused}, "The capture tells the refusal");
+    for (int i = 0; i < 19; ++i) Ask(30000);
+    Check(Sent() == 2 && Rich(GameTofu).empty(), "Paused");
+    ExpectFirst(Tofu, 2, 3);
+    Ask(30000);
+    Said({Added(Tofu, 2, 3)}, "Accepted again");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 3}}));
+    Ask();
+    Check(StoredKeyStatus() == KeyStatus::Verified && Rich(GameTofu) == Colored(3) && Sent() == 9, "Accepted again: read for the chat");
+    Finish("chat with a refused key");
+
+    Begin(Folder("chat-forget"), true);
+    ForgetStoredKey();
+    Check(Rich(GameTofu).empty() && MetamobChatDetail(GameTofu).empty(), "Forgotten: nothing at once");
+    Ask();
+    Said({KeyForgotten}, "Forgotten");
+    Ask(60000);
+    Check(Sent() == 0 && Rich(GameTofu).empty(), "Nothing read once forgotten");
+    Finish("chat while forgetting");
+}
+
+// A capture's refusal pauses the capture sync only. Accepted again 10 min later
+// by a retry that writes nothing (its capture not in the quest), the key is valid
+// again and the chat part reads with it. Saved again by another client (the sync
+// turned off meanwhile), the same key is tried once by the chat part: refused
+// again, silently, and never read with; saved again and accepted, read.
+void ChatAfterRefusal() {
+    Begin(Folder("chat-after-refusal"), true);
+    Capture krok;
+    krok.characterName = Character; krok.monsterId = 3180; krok.name = "Krokette la Croustillante"; krok.type = TypeArchimonster;
+    Expect("GET", "/quests", Status(401));
+    EnqueueCapture(krok);
+    Tick(2000);
+    Said({KeyRefused}, "A capture refused");
+    for (int i = 0; i < 19; ++i) Ask(30000);
+    Check(Sent() == 1 && Rich(GameTofu).empty() && StoredKeyStatus() == KeyStatus::Refused, "Paused: nothing read, nothing shown");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Tick(30000);
+    Said({Unmatched("Krokette la Croustillante")}, "Accepted again 10 min later, its capture not in the quest: nothing written");
+    Check(StoredKeyStatus() == KeyStatus::Verified && Rich(GameTofu) == "Metamob : ?", "Accepted again: valid, the list not read yet");
+    ExpectList(Slug);
+    Ask();
+    Check(Rich(GameTofu) == Colored(2) && MetamobChatDetail(GameTofu) == Counted(2) && Sent() == 6 && notices.empty() &&
+        Logged("METAMOB_CATALOG monsters=337") && !Logged("METAMOB_CATALOG_FAILED reason=key"),
+        "Valid again without a confirmed write: the chat part reads with that key, the quests kept");
+    Finish("chat after a refused key accepted again");
+
+    const auto settings = Folder("chat-after-refusal-saved");
+    Begin(settings, true);
+    Expect("GET", "/quests", Status(401));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({KeyRefused}, "A capture refused");
+    syncOn = false;
+    Tick();
+    Said({Dropped(1)}, "The capture sync turned off: its capture dropped");
+    AnotherClientSaves(settings, FakeKey);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "The same key saved again by another client: not checked yet");
+    Expect("GET", "/quests", Status(401));
+    Ask(30000); // once the refusal's pause is over
+    Check(notices.empty() && StoredKeyStatus() == KeyStatus::Refused && Rich(GameTofu).empty() && LoggedCount("METAMOB_KEY_REFUSED") == 1 &&
+        Logged("METAMOB_CATALOG_FAILED reason=refused"), "Tried once by the chat part, refused again: silent");
+    for (int i = 0; i < 5; ++i) Ask(60000);
+    Check(Sent() == 2, "Never read again with it");
+    AnotherClientSaves(settings, FakeKey);
+    Check(StoredKeyStatus() == KeyStatus::Saved, "Saved again: not checked yet");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Ask();
+    Check(StoredKeyStatus() == KeyStatus::Verified && Rich(GameTofu) == Colored(2) && Sent() == 5 && notices.empty() &&
+        !Logged("METAMOB_CATALOG_FAILED reason=key"), "Accepted: read with it");
+    Finish("chat after a refused key saved again");
+}
+
+// The chat part's failures are silent and spaced (30 s, then twice longer),
+// never hold the captures, and show « ? » until a reading succeeds. Retry-After
+// holds both; the captures go first. A quest gone is looked for once more.
+void ChatFailures() {
+    Begin(Folder("chat-fail"), true);
+    Expect("GET", "/quests", Html(503));
+    Ask();
+    auto at = LastAt();
+    Check(notices.empty() && Rich(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead &&
+        Logged("METAMOB_CATALOG_FAILED reason=request") && Logged("METAMOB_HTTP method=GET route=/quests status=503"),
+        "Unreachable: « ? », silently");
+    ExpectFirst(Tofu, 2, 3);
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({Added(Tofu, 2, 3)}, "A capture right after a failed reading goes out at once");
+    Check(Rich(GameTofu) == "Metamob : ?", "A write is no reading of the list");
+    AskAt(at + 29999);
+    Check(Sent() == 6, "Not tried again before 30 s");
+    Expect("GET", ListPath(Slug, 0), Lost(12029, false));
+    AskAt(at + 30000);
+    at = LastAt();
+    AskAt(at + 59999);
+    Check(Sent() == 7, "Then 60 s");
+    Expect("GET", ListPath(Slug, 0), Html(200));
+    AskAt(at + 60000);
+    at = LastAt();
+    AskAt(at + 119999);
+    Check(Sent() == 8 && notices.empty(), "Then 120 s; never told, even at the third failure in a row");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 3}}));
+    AskAt(at + 120000);
+    Check(Rich(GameTofu) == Colored(3) && Sent() == 10 && notices.empty(), "Read once Metamob answers (the quests kept)");
+    // Rate limited: neither the chat part nor a capture before Retry-After; then the capture first.
+    auto read = LastAt();
+    Expect("GET", ListPath(Slug, 0), Status(429, "120"));
+    AskAt(read + 600000);
+    at = LastAt();
+    Check(Rich(GameTofu) == "Metamob : ?" && Logged("METAMOB_RATE_LIMIT seconds=120") && notices.empty(), "Rate limited: « ? »");
+    AskAt(at + 30000);
+    Check(Sent() == 11, "The chat part waits for Retry-After");
+    EnqueueCapture(Captured(Mob));
+    AskAt(at + 119999);
+    Check(Sent() == 11, "And so does a capture");
+    ExpectStep(Slug, Mob, 0);
+    ExpectWrite(Slug, Mob, 1, Written(Mob, 1));
+    AskAt(at + 120000);
+    Said({Added(Mob, 0, 1)}, "The capture first");
+    Check(Sent() == 13 && Rich(GameMob) == "Metamob : ?", "Alone in its worker; « ? » until the list is read");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 3}, {Mob.id, 1}}));
+    Ask();
+    Check(Rich(GameMob) == Colored(1) && Rich(GameTofu) == Colored(3) && Sent() == 15, "Then the list");
+    // Its quest gone (404): looked for again once, then read there.
+    read = LastAt();
+    Expect("GET", ListPath(Slug, 0), Status(404));
+    ExpectQuests({Quest(OtherSlug, Character.c_str(), "ocre", 1)});
+    ExpectList(OtherSlug, CatalogWith({{Tofu.id, 12}}));
+    AskAt(read + 600000);
+    Check(Rich(GameTofu) == Colored(12) && notices.empty() && Sent() == 19, "Rediscovered after a 404");
+    read = LastAt();
+    Expect("GET", ListPath(OtherSlug, 0), Status(404));
+    ExpectQuests({Quest(OtherSlug, Character.c_str(), "ocre", 1)});
+    Expect("GET", ListPath(OtherSlug, 0), Status(404));
+    AskAt(read + 600000);
+    Check(Rich(GameTofu) == "Metamob : ?" && Logged("METAMOB_QUEST_GONE") && notices.empty() && Sent() == 22, "Looked for once per reading");
+    Finish("chat failures");
+}
+
+// No Unity Ocre quest, or several naming none of this character: « ? »,
+// silently, its tooltip saying what to fix on metamob.fr, and the quests asked
+// again 10 min later only. A passing failure then shows the generic text again,
+// and so does another character until its own quest is read.
+void ChatQuestChoice() {
+    Begin(Folder("chat-quest"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 2), Quest(OtherSlug, nullptr, "dokille", 1)});
+    Ask();
+    auto at = LastAt();
+    Check(notices.empty() && Rich(GameTofu) == "Metamob : ?" && Logged("METAMOB_CATALOG_FAILED reason=quest"), "No Unity Ocre quest: silent");
+    Check(Plain(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NoQuestDetail && MetamobChatDetail(GameMob) == NoQuestDetail,
+        "No Unity Ocre quest: its tooltip says to create it on metamob.fr");
+    for (int i = 0; i < 19; ++i) Ask(30000);
+    AskAt(at + 599999);
+    Check(Sent() == 1 && MetamobChatDetail(GameTofu) == NoQuestDetail, "Not asked again within 10 min");
+    ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, nullptr, "ocre", 1)});
+    AskAt(at + 600000);
+    at = LastAt();
+    Check(Sent() == 2 && notices.empty() && Rich(GameTofu) == "Metamob : ?", "Several quests naming none of this character: silent");
+    Check(Plain(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == SeveralDetail,
+        "Several quests naming none of this character: its tooltip says to name it in the right quest");
+    ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, (Character + ", Bob").c_str(), "ocre", 1)});
+    ExpectList(OtherSlug, CatalogWith({{Tofu.id, 6}}));
+    AskAt(at + 599999);
+    Check(Sent() == 2, "Again 10 min later only");
+    AskAt(at + 600000);
+    Check(Rich(GameTofu) == Colored(6) && MetamobChatDetail(GameTofu) == Counted(6) && notices.empty(), "The quest naming this character");
+    at = LastAt();
+    Expect("GET", ListPath(OtherSlug, 0), Html(503));
+    AskAt(at + 600000);
+    Check(Rich(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead && Sent() == 6, "A passing failure once read: the generic text");
+    Finish("chat quest choice");
+
+    // A passing failure right after a quest problem: the generic text again.
+    Begin(Folder("chat-quest-passing"), true);
+    ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, nullptr, "ocre", 1)});
+    Ask();
+    at = LastAt();
+    Check(MetamobChatDetail(GameTofu) == SeveralDetail, "Several quests naming none of this character");
+    Expect("GET", "/quests", Html(503));
+    AskAt(at + 600000);
+    at = LastAt();
+    Check(Rich(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead && notices.empty() &&
+        Logged("METAMOB_CATALOG_FAILED reason=request"), "A passing failure after a quest problem: the generic text again");
+    ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, nullptr, "ocre", 1)});
+    AskAt(at + 600000);
+    Check(MetamobChatDetail(GameTofu) == SeveralDetail && Sent() == 3, "The quest problem read again");
+    // Another character: nothing of the previous one's problem; its own quest read.
+    playing = "Bobinou";
+    Tick(60000); // no label asked within the last minute: nothing read
+    Check(Rich(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead && Sent() == 3,
+        "Another character: the generic text until its quest is read");
+    ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, "Bobinou", "ocre", 1)});
+    ExpectList(OtherSlug, CatalogWith({{Tofu.id, 4}}));
+    Ask();
+    Check(Rich(GameTofu) == Colored(4) && MetamobChatDetail(GameTofu) == Counted(4) && notices.empty(), "Its own quest");
+    Finish("chat quest problem, then a passing failure and another character");
+}
+
+// A page that does not read as expected is refused (another offset, another
+// quest, a page missing before the total, missing fields): never a shorter list.
+void ChatPages() {
+    Begin(Folder("chat-pages"), true);
+    const auto rows = Catalog();
+    const auto bad = [] { return LoggedCount("METAMOB_BAD_ANSWER route=/quests/*/monsters"); };
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    Expect("GET", ListPath(Slug, 0), Json(Page(Slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
+    Expect("GET", ListPath(Slug, 200), Json(Page(Slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
+    Ask();
+    auto at = LastAt();
+    Check(Rich(GameTofu) == "Metamob : ?" && bad() == 1 && notices.empty(), "A page of another offset");
+    Expect("GET", ListPath(Slug, 0), Json(Page(OtherSlug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
+    AskAt(at + 30000);
+    at = LastAt();
+    Check(Rich(GameTofu) == "Metamob : ?" && bad() == 2, "Another quest's page");
+    Expect("GET", ListPath(Slug, 0), Json(Page(Slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
+    Expect("GET", ListPath(Slug, 200), Json(Page(Slug, {}, rows.size(), 200)));
+    AskAt(at + 60000);
+    at = LastAt();
+    Check(Rich(GameTofu) == "Metamob : ?" && bad() == 3, "A page missing before the total");
+    Expect("GET", ListPath(Slug, 0), Json("{\"data\":{\"slug\":\"" + Slug + "\",\"bio\":\"" + Marker + "\"}}"));
+    AskAt(at + 120000);
+    at = LastAt();
+    Check(Rich(GameTofu) == "Metamob : ?" && bad() == 4 && notices.empty() && Sent() == 7, "Missing fields");
+    // Overlapping pages (a total grown between them): each monster once.
+    Expect("GET", ListPath(Slug, 0), Json(Page(Slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0)));
+    Expect("GET", ListPath(Slug, 200), Json(Page(Slug, {rows.begin() + 150, rows.end()}, rows.size() + 50, 200)));
+    AskAt(at + 240000);
+    Check(Rich(GameTofu) == Colored(2) && Rich(GameLarva) == Colored(1) && Logged("METAMOB_CATALOG monsters=337"),
+        "Read once the pages read well, each monster once");
+    Finish("chat pages");
+}
+
+// The captures go first: nothing is read while a capture waits; a due cycle
+// runs alone in its worker, the list comes at the next pump.
+void ChatCapturesFirst() {
+    Begin(Folder("chat-captures"), true);
+    EnqueueCapture(Captured(Tofu));
+    Ask();
+    Ask(1999);
+    Check(Sent() == 0, "Not read while a capture waits for its 2 s");
+    ExpectFirst(Tofu, 2, 3);
+    Ask(1);
+    Said({Added(Tofu, 2, 3)}, "The capture first");
+    Check(Sent() == 5 && Rich(GameTofu) == "Metamob : ?", "Alone in its worker");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 3}}));
+    Ask();
+    Check(Sent() == 7 && Rich(GameTofu) == Colored(3), "Then the list, the quests kept");
+    Finish("chat after the captures");
+}
+
+// The sync's own confirmed writes show at once, without reading the list again;
+// a value read back from someone else is not one of them.
+void ChatFollowsWrites() {
+    Begin(Folder("chat-writes"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Ask();
+    Check(Rich(GameTofu) == Colored(2) && Rich(GameMob) == Colored(0), "Read");
+    ExpectStep(Slug, Tofu, 2);
+    ExpectWrite(Slug, Tofu, 3, Written(Tofu, 3));
+    EnqueueCapture(Captured(Tofu));
+    Ask(2000);
+    Said({Added(Tofu, 2, 3)}, "Written");
+    Check(Rich(GameTofu) == Colored(3) && MetamobChatDetail(GameTofu) == Counted(3) && Sent() == 5, "Confirmed by its answer: shown at once");
+    ExpectStep(Slug, Mob, 0);
+    ExpectWrite(Slug, Mob, 1, Lost(12002, true));
+    ExpectStep(Slug, Mob, 1);
+    EnqueueCapture(Captured(Mob));
+    Ask(2000);
+    Said({Added(Mob, 0, 1)}, "Confirmed by a read back");
+    Check(Rich(GameMob) == Colored(1), "Shown once confirmed");
+    ExpectStep(Slug, Abrakroc, 0);
+    ExpectWrite(Slug, Abrakroc, 1, Written(Abrakroc, 4));
+    EnqueueCapture(Captured(Abrakroc));
+    Ask(2000);
+    Said({Changed(Abrakroc, 0, 4)}, "Another value in the answer");
+    Check(Rich(GameAbrakroc) == Colored(0) && Sent() == 10, "Not the sync's write: left as read until the next reading");
+    Finish("chat follows the sync's writes");
+}
+
+// Forgotten: nothing at once; a new key, or another client's: « ? » until the
+// list is read with it.
+void ChatKeyChanges() {
+    const auto settings = Folder("chat-keys");
+    Begin(settings, true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Ask();
+    Check(Rich(GameTofu) == Colored(2), "Read");
+    ForgetStoredKey();
+    Check(Rich(GameTofu).empty() && MetamobChatDetail(GameTofu).empty(), "Forgotten: nothing at once");
+    Ask();
+    Said({KeyForgotten}, "Forgotten");
+    Ask(60000);
+    Check(Sent() == 3 && Rich(GameTofu).empty(), "Nothing read nor shown without a key");
+    keyNow = OtherKey;
+    Expect("GET", "/me", Json(MeBody(User)));
+    SubmitKey(OtherKey);
+    Ask();
+    Said({SavedUser}, "A new key");
+    Check(Rich(GameTofu) == "Metamob : ?" && Sent() == 4, "A new key: « ? », its list never read by the worker saving it");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug, CatalogWith({{Tofu.id, 9}}));
+    Ask();
+    Check(Rich(GameTofu) == Colored(9), "Read with the new key");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        Check(calls.back().key == OtherKey, "With the new key");
+    }
+    AnotherClientSaves(settings, FakeKey);
+    keyNow = FakeKey;
+    fakeNow += 1000;
+    Check(Rich(GameTofu) == "Metamob : ?", "Another client's key, seen within a second: « ? »");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 4}}));
+    Ask();
+    Check(Rich(GameTofu) == Colored(4), "Read with that key");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        Check(calls.back().key == FakeKey, "With the other client's key");
+    }
+    // A key typed when the list is due: saved alone in its worker, the list read with it at the next pump.
+    const auto read = LastAt();
+    keyNow = OtherKey;
+    Expect("GET", "/me", Json(MeBody(User)));
+    SubmitKey(OtherKey);
+    AskAt(read + 600000);
+    Said({SavedUser}, "A key typed when the list is due");
+    Check(Rich(GameTofu) == "Metamob : ?" && Sent() == 10, "Saved alone first: « ? » until its list is read");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug, CatalogWith({{Tofu.id, 5}}));
+    Ask();
+    Check(Rich(GameTofu) == Colored(5) && Sent() == 13, "Then read with it");
+    Finish("chat key changes");
+}
+
+// Another character on this client: its own quest (several Ocre quests), read
+// at once; a character unknown for a moment keeps what was read.
+void ChatCharacters() {
+    Begin(Folder("chat-characters"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1), Quest(OtherSlug, "Bobinou", "ocre", 1)});
+    ExpectList(Slug);
+    Ask();
+    Check(Rich(GameTofu) == Colored(2), "This character's quest");
+    playing = "Bobinou";
+    ExpectList(OtherSlug, CatalogWith({{Tofu.id, 11}}));
+    Ask();
+    Check(Rich(GameTofu) == Colored(11) && Sent() == 5, "Another character: its quest at once (the quests kept)");
+    // A capture of the first character goes to its own quest: the quest shown is unchanged.
+    ExpectStep(Slug, Tofu, 2);
+    ExpectWrite(Slug, Tofu, 3, Written(Tofu, 3));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({Added(Tofu, 2, 3)}, "A capture of the first character");
+    Check(Rich(GameTofu) == Colored(11) && Sent() == 7, "Written to another quest than the one shown: not counted there");
+    playing.clear();
+    Ask(1000);
+    Check(Rich(GameTofu) == Colored(11) && Sent() == 7, "A character unknown for a moment: what was read stays");
+    Finish("chat characters");
+}
+
+// The game names monsters in the client's language: Metamob's English and
+// Spanish names match as its French ones do, the type deciding among equal names.
+void ChatLanguages() {
+    Begin(Folder("chat-languages"), true);
+    auto rows = Catalog();
+    for (auto& row : rows) {
+        if (row.id == Tofu.id) { row.en = "Tofumanchou the Emperor"; row.es = "Tofumanchú el Emperador"; }
+        if (row.id == Mob.id) { row.en = "Mob the Sponge"; row.es = "Mob la Esponja"; }
+        if (row.id == Bouftou.id) { row.en = "Royal Gobball"; row.es = "Jalató Real"; }
+    }
+    rows.back() = Row{900, "Bouftou", TypeMonster, 1, 4, "Gobball", "Jalató"};
+    bestiary[GameTofu] = {"Tofumanchou the Emperor", TypeArchimonster};
+    bestiary[GameMob] = {"Mob la Esponja", TypeBoss};
+    bestiary[GameBouftou] = {"ROYAL GOBBALL", TypeBoss};
+    bestiary[GamePlain] = {"Jalató", TypeMonster};
+    bestiary[GameOtherKind] = {"Tofumanchú el Emperador", TypeBoss};
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug, rows);
+    Ask();
+    Check(Rich(GameTofu) == Colored(2), "An English client's name");
+    Check(Rich(GameMob) == Colored(0), "A Spanish client's name");
+    Check(Rich(GameBouftou) == Colored(5), "Case aside");
+    Check(Rich(GamePlain) == Colored(4), "A monster neither boss nor archimonster, by its type");
+    Check(Rich(GameOtherKind).empty(), "The same name under another type: not that monster");
+    Check(Rich(GameLarva) == Colored(1), "French names still match");
+    Finish("chat languages");
+}
+
+// The real wrapper: the list read on a worker thread and kept on the game
+// thread; a capture made meanwhile goes out after it; « Oui » meanwhile:
+// nothing shown at once, nothing more read.
+void ChatThreaded() {
+    const auto list = "GET " + ListPath(Slug, 0);
+    Gate(Folder("chat-thread"), list);
+    Ask();
+    Await([] { return holding.load(); }, 5000, "the chat part's list read");
+    Check(Rich(GameTofu) == "Metamob : ?" && metamob::testing::WorkerRunning(), "« ? » while the worker reads");
+    EnqueueCapture(Captured(Tofu));
+    letGo = true;
+    AwaitWorker("the list read");
+    Check(Rich(GameTofu) == Colored(2) && notices.empty(), "Read on the worker, kept on the game thread");
+    Tick(2000);
+    Await([] { return Noticed(Added(Tofu, 2, 3)) && !metamob::testing::WorkerRunning(); }, 10000, "the capture made meanwhile");
+    Tick();
+    Said({Added(Tofu, 2, 3)}, "The capture made while the list was read");
+    Check(Rich(GameTofu) == Colored(3) && Requested(list) == 1 && Requested("GET /quests") == 3, "Its write shown at once, the list read once");
+    Finish("chat on the worker");
+
+    // The capture sync turned off while the quests are read: reads only, the list is read all the same.
+    Gate(Folder("chat-thread-off"), "GET /quests");
+    Ask();
+    Await([] { return holding.load(); }, 5000, "the chat part's quests read");
+    syncOn = false;
+    Tick();
+    letGo = true;
+    AwaitWorker("the list read");
+    Check(Rich(GameTofu) == Colored(2) && Requested(list) == 1 && notices.empty(), "The capture sync turned off meanwhile: read all the same");
+    Finish("chat read while the sync is turned off");
+
+    Gate(Folder("chat-thread-forget"), list);
+    Ask();
+    Await([] { return holding.load(); }, 5000, "the chat part's list read");
+    ForgetStoredKey();
+    Check(Rich(GameTofu).empty() && MetamobChatDetail(GameTofu).empty(), "Forgotten while read: nothing at once");
+    letGo = true;
+    Await([] { return Noticed(KeyForgotten) && !metamob::testing::WorkerRunning(); }, 10000, "the forget");
+    Tick();
+    Said({KeyForgotten}, "Forgotten");
+    Ask(60000);
+    Check(Rich(GameTofu).empty() && Requested() == 2 && !KeyStored(), "Nothing more read, nothing shown");
+    Finish("chat forgotten while read");
+
+    // Another client saves a key while the list is read: that reading is dropped,
+    // the list read again with the new key.
+    const auto replaced = Folder("chat-thread-replaced");
+    Gate(replaced, list);
+    Ask();
+    Await([] { return holding.load(); }, 5000, "the chat part's list read");
+    AnotherClientSaves(replaced, OtherKey);
+    letGo = true;
+    Await([&] { return Requested(list) == 2 && !metamob::testing::WorkerRunning(); }, 10000, "the list read again with the new key");
+    Tick();
+    Check(Rich(GameTofu) == Colored(2) && Requested("GET /quests") == 3 && notices.empty() && StoredKeyStatus() == KeyStatus::Verified,
+        "A reading made with a replaced key is dropped, then made with the new one");
+    Finish("chat key replaced while read");
+}
+
+// The key the chat part's reading loads is wiped before its heap block is
+// released (the transport answers through intercept, which never copies it).
+void ChatWipedKey() {
+    Begin(Folder("chat-wiped"), true);
+    intercept = [](const Request& request, const std::atomic_bool&) {
+        const auto rows = Catalog();
+        if (request.method == "GET" && request.path == "/quests") return Json("{\"data\":[" + Quest(Slug, Character.c_str(), "ocre", 1) + "]}");
+        if (request.method == "GET" && request.path == ListPath(Slug, 0)) return Json(Page(Slug, {rows.begin(), rows.begin() + 200}, rows.size(), 0));
+        if (request.method == "GET" && request.path == ListPath(Slug, 200)) return Json(Page(Slug, {rows.begin() + 200, rows.end()}, rows.size(), 200));
+        return Response{};
+    };
+    heapprobe::Arm();
+    Ask(); // the key loaded from its file, sent, released
+    Check(heapprobe::Disarm() == 0, "A heap block was released with a plaintext copy of the key");
+    Check(Rich(GameTofu) == Colored(2) && notices.empty(), "Read while the heap is watched");
+    Finish("chat wiped key");
+}
+
 // The real wrapper: a detached worker and the real clock, end to end.
 void Threaded() {
     Begin(Folder("thread"), false);
@@ -2130,6 +2796,7 @@ int main() {
         ChoosingQuests();
         AuthPause();
         RefusedKeyRetry();
+        ReadOnlyKey();
         ProxyPages();
         Rediscovery();
         StaleAnswers();
@@ -2158,15 +2825,35 @@ int main() {
         CheckWhileForgetting();
         RecheckWhileTheWorkerRuns();
         ForgetThenNewKey();
+        ChatFirstLoad();
+        ChatRefresh();
+        ChatWithoutKey();
+        ChatAfterRefusal();
+        ChatFailures();
+        ChatQuestChoice();
+        ChatPages();
+        ChatCapturesFirst();
+        ChatFollowsWrites();
+        ChatKeyChanges();
+        ChatCharacters();
+        ChatLanguages();
+        ChatThreaded();
+        ChatWipedKey();
         Threaded();
         NoPrivateData();
         std::filesystem::remove_all(root);
         std::cout << "PASS: Metamob capture sync: key check and storage, debounce and grouping, quest choice, re-read before every "
-            "absolute write, 30 cap, unmatched names, 401 pause and its 10 min retry, proxy 401/403 pages, 404 rediscovery, Retry-After, "
+            "absolute write, 30 cap, unmatched names, 401 pause and its 10 min retry (a read-only key told once), proxy 401/403 pages, "
+            "404 rediscovery, Retry-After, "
             "backoff, unknown outcomes settled under the sender lock and announced to sibling clients (only that monster waits), "
             "resends never +n, unsettled writes given up as unconfirmed, sync toggle off, forget during a cycle and at Stop, no write "
             "left announced after a Stop, sender lock, worker thread, key copies wiped, no private data in logs or notices; the key row's "
-            "status (valid, not verified, refused, unreadable) tied to the key file, none while a forget runs, one silent check per key file (its pause holds its worker's captures; asked again on request, never undone)\n";
+            "status (valid, not verified, refused, unreadable) tied to the key file, none while a forget runs, one silent check per key file (its pause holds its worker's captures; asked again on request, never undone); "
+            "« Metamob dans le chat »: the quest read at once when a chat label asks, again at most every 10 min while one asked within a minute, "
+            "never while a capture waits nor without a usable key or during a forget, read with a refused key once valid or saved again, "
+            "silent spaced failures, Retry-After, page checks, 404 rediscovery, the quest of each character, the sync's own writes shown "
+            "at once, captions and details per state (what to fix after a lasting quest problem), fr/en/es names by "
+            "type, on the worker, key copies wiped\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

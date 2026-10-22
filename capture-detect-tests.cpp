@@ -44,7 +44,7 @@ std::vector<std::string> logs, earlier;
 std::vector<metamob::Capture> captured;
 std::string fail;                // member, method, "Class.member" or "FindService:name[:int]" that fails
 GCHandle nextHandle = 0xCA9700000000ULL;
-unsigned lookups = 0, zcxCalls = 0, verifications = 0;
+unsigned lookups = 0, zcxCalls = 0, verifications = 0, byIdCalls = 0;
 bool sinkThrows = false;
 void Check(bool condition, const char* message) { if (!condition) throw std::runtime_error(message); }
 Object& Get(Obj object) { Check(object != nullptr, "Null fake capture object"); return *static_cast<Object*>(object); }
@@ -200,6 +200,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> values) co
     if (m.name == fail) throw std::runtime_error("Injected native failure");
     if (m.name == "GetById") {
         Check(self == nullptr, "MonsterData.GetById is static");
+        ++byIdCalls;
         const auto found = monsters.find(*static_cast<int64_t*>(args.at(0)));
         return found == monsters.end() ? nullptr : found->second;
     }
@@ -288,6 +289,7 @@ void InstallContract() {
     fail.clear(); Bestiary();
     World world; world.Show(Capture()); lookups = 0; Tick(2);
     Check(lookups == 0 && captured.empty(), "A disabled detector reads nothing");
+    Check(!CaptureDetectMonster(2270) && byIdCalls == 0 && CaptureDetectCharacter().empty(), "A disabled detector names no monster");
     earlier.insert(earlier.end(), logs.begin(), logs.end());
     logs.clear(); layouts.clear(); guarded.clear(); verifications = 0;
     InstallCaptureDetect(Sink);
@@ -580,11 +582,53 @@ void SessionAndRestore() {
     world.Show(Capture()); Tick();
     Check(captured.size() == 1, "After a restore the shown report is a baseline");
 }
+// « Metamob dans le chat »: a monster's client-language name and Metamob type
+// through the same verified MonsterData reads, once per id (512 at most), and
+// the local character's name, read again for each new character.
+void ChatLookups() {
+    Fresh(); World world; Tick();
+    Check(CaptureDetectCharacter() == "Testeur", "The character's name from the first complete read");
+    Monster(5101, "Gardien", true, false); Monster(5102, "Archi", false, true); Monster(5103, "Bouftou", false, false);
+    Monster(5104, "Tofumanchou l’Empereur", true, true); Monster(5105, "", false, true); Monster(5106, "Autre", false, true, "Other");
+    Monster(5107, std::string("Nom\x01") + "cassé", true, false); Monster(5108, std::string(257, 'a'), false, true);
+    byIdCalls = 0;
+    const auto boss = CaptureDetectMonster(5101), arch = CaptureDetectMonster(5102), plain = CaptureDetectMonster(5103),
+        both = CaptureDetectMonster(5104);
+    Check(boss && boss->name == "Gardien" && boss->type == metamob::TypeBoss, "A boss");
+    Check(arch && arch->name == "Archi" && arch->type == metamob::TypeArchimonster, "An archimonster");
+    Check(plain && plain->name == "Bouftou" && plain->type == metamob::TypeMonster, "Any other monster");
+    Check(both && both->name == "Tofumanchou l’Empereur" && both->type == metamob::TypeBoss, "The boss flag first; the name as the client gives it");
+    for (const int id : {5105, 5106, 5107, 5108, 5999})
+        Check(!CaptureDetectMonster(id), "No name, not a MonsterData, an unusable name or an unknown id: none");
+    Check(!CaptureDetectMonster(0) && !CaptureDetectMonster(-5101) && byIdCalls == 9, "Each id read once, no id never");
+    for (int i = 0; i < 20; ++i) for (const int id : {5101, 5103, 5107, 5999}) CaptureDetectMonster(id);
+    Check(byIdCalls == 9 && CaptureDetectMonster(5101)->name == "Gardien", "Kept per id, unknown and unusable ones too");
+    Monster(5109, "Raté", false, true);
+    fail = "get_isMiniBoss";
+    Check(!CaptureDetectMonster(5109) && Logged("CAPTURE_DETECT_ERROR stage=lookup"), "A failing read: none, one fixed line, never thrown");
+    fail.clear();
+    for (int id = 6000; id < 6512; ++id) CaptureDetectMonster(id);
+    const auto before = byIdCalls;
+    Check(CaptureDetectMonster(5101)->type == metamob::TypeBoss && byIdCalls == before + 1, "512 ids at most: read again after");
+    module->ready = false;
+    Check(!CaptureDetectMonster(5102) && byIdCalls == before + 1, "Nothing read while the module does not run");
+    module->ready = true;
+    world.Become(1002, "Seconde"); Tick();
+    Check(CaptureDetectCharacter() == "Seconde", "Read again for another character");
+    Get(world.info).fields["dbrm"] = Text("Renommée"); Tick(3);
+    Check(CaptureDetectCharacter() == "Seconde", "Not read again at every tick for the same character");
+    RestoreCaptureDetect();
+    Check(CaptureDetectCharacter().empty(), "Forgotten at Restore");
+    const auto restored = byIdCalls;
+    Check(CaptureDetectMonster(5101) && byIdCalls == restored + 1, "And so are the monsters read so far");
+    Tick();
+    Check(CaptureDetectCharacter() == "Renommée", "Read again at the next complete read");
+}
 void FixedCodeLogs() {
     earlier.insert(earlier.end(), logs.begin(), logs.end());
     const std::regex format(R"(^(CAPTURE_REPORT entries=\d+ local=\d+ loot=\d+ souls=\d+ winner=[01])"
         R"(|CAPTURE_SOUL monster=\d+ kind=(boss|arch) qty=\d+|CAPTURE_SOUL_SKIPPED gid=\d+ reason=(quantity|unknown|monster|kind|name|error))"
-        R"(|CAPTURE_DETECT_ERROR stage=(read|report|effects|name|sink)|CAPTURE_DETECT_DISABLED stage=(fight|monster)|CAPTURE_FIGHT_CHANGED)$)");
+        R"(|CAPTURE_DETECT_ERROR stage=(read|report|effects|name|sink|lookup)|CAPTURE_DETECT_DISABLED stage=(fight|monster)|CAPTURE_FIGHT_CHANGED)$)");
     Check(earlier.size() > 50, "The scenarios produced logs");
     for (const auto& line : earlier) {
         Check(std::regex_match(line, format), "Every log line is a fixed code with numbers");
@@ -616,12 +660,14 @@ int main() {
         CharacterNames();
         ModuleStates();
         SessionAndRestore();
+        ChatLookups();
         FixedCodeLogs();
         RestoreCaptureDetect();
         owner.compositor.reset(); owner.fight.reset(); module = nullptr;
         Check(handles.empty(), "Capture detection leaked GC references");
         std::cout << "PASS: fight-report baseline and identity, local character only, 327/328 souls, effect 4058 then table, "
-                     "dungeon-room souls, boss/archimonster check, sync off, quantity bounds, contained failures, fixed-code logs\n";
+                     "dungeon-room souls, boss/archimonster check, sync off, quantity bounds, contained failures, fixed-code logs; "
+                     "chat monster reads (client name, boss/archimonster/other type, once per id, bounded) and the character's name\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

@@ -59,6 +59,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "chatTravelLinks" && (value == 0 || value == 1)) settings.chatTravelLinks = value != 0;
             else if (key == "chatSoulInventory" && (value == 0 || value == 1)) settings.chatSoulInventory = value != 0;
             else if (key == "chatOcreStatus" && (value == 0 || value == 1)) settings.chatOcreStatus = value != 0;
+            else if (key == "chatMetamobStatus" && (value == 0 || value == 1)) settings.chatMetamobStatus = value != 0;
             else if (key == "mapTravelPlanner" && (value == 0 || value == 1)) settings.mapTravelPlanner = value != 0;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
             else if (key == "resourceMiniMapEnabled" && (value == 0 || value == 1)) { settings.resourceMiniMapEnabled = value != 0; resourceMiniMapRead = true; }
@@ -136,6 +137,7 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\nchatTravelLinks=" << (chatTravelLinks ? 1 : 0)
              << "\nchatSoulInventory=" << (chatSoulInventory ? 1 : 0)
              << "\nchatOcreStatus=" << (chatOcreStatus ? 1 : 0)
+             << "\nchatMetamobStatus=" << (chatMetamobStatus ? 1 : 0)
              << "\nmapTravelPlanner=" << (mapTravelPlanner ? 1 : 0);
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';

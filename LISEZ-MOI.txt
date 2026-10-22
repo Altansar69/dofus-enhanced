@@ -1,4 +1,46 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 109 — VERSION 1.10.0
+AVERTISSEMENT — Projet non officiel : je ne suis pas affilié à Ankama, et
+ce mod n’est ni approuvé ni sponsorisé par Ankama. Dofus, son nom, ses
+contenus et tous les droits du jeu appartiennent à Ankama. Je ne sais pas
+si l’utilisation de ce mod est autorisée par les conditions d’Ankama : un
+bannissement n’est pas totalement à exclure. Tu l’utilises à tes risques ;
+logiciel fourni « tel quel », sans aucune garantie.
+WARNING — Unofficial project: I am not affiliated with Ankama, and this
+mod is not endorsed or sponsored by Ankama. Dofus, its name, assets and
+all game rights belong to Ankama. I do not know whether using this mod is
+allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
+your own risk; the software is provided "as is", without any warranty.
+
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 110 — VERSION 1.11.0
+
+R110 — VERSION 1.11.0 : METAMOB DANS LE CHAT, TRAJET CORRIGÉ
+- Chat › « Metamob dans le chat » (coché par défaut, utile avec une clé
+  Metamob) : après l’avancement Ocre, la quantité de ce monstre dans ta
+  quête Metamob (« Metamob : 2 », en rouge à 0, « Metamob : ? » tant que
+  la quête n’est pas lue ou si sa dernière lecture a échoué). La quête est
+  lue en une fois (2 ou 3 requêtes), relue au plus toutes les 10 minutes
+  tant que le chat montre un archimonstre ou boss de L’éternelle moisson
+  (après un échec : 30 s, puis intervalle doublé jusqu’à 15 minutes), et
+  mise à jour aussitôt après une capture synchronisée. Aucune requête par
+  monstre, aucun message en cas d’échec.
+- Trajet du mod corrigé. Déjà sur la carte que le jeu vise pour ces
+  coordonnées (hors Havre-Sac) : plus de trajet, « TP : tu es déjà sur
+  [x,y]. ».
+  La carte actuelle compte toujours comme départ, même coupée en zones :
+  le mod pouvait prendre un zaap pour revenir au même endroit. Un zaap
+  posé sur une carte coupée en zones est de nouveau comparé (une étape de
+  plus) au lieu d’être ignoré : vers [-2,-10] depuis le Havre-Sac, zaap
+  [-5,-8] au lieu de [3,-5]. La destination reste la carte que le jeu
+  choisit pour ces coordonnées.
+- Temple Roublard : ses portes et sa statue sont déjà dans le graphe de
+  déplacement du jeu et le trajet du mod les prend pour un Roublard qui
+  remplit la condition de quête ; la statue n’abrège que les trajets qui
+  partent de l’intérieur du temple.
+- Mise à jour automatique : elle accepte aussi le futur nom du dépôt,
+  Altansar69/dofus-enhanced (renommage après cette version).
+- Dépôt : README en français et en anglais, licence Unlicense,
+  avertissement en tête de ce fichier.
+- Les réglages et la clé enregistrée ne changent pas.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R109 — VERSION 1.10.0 : CLÉ METAMOB, OPTIONS DU CHAT ET DE L’AUTOPILOTE
 - Clé API Metamob (bloc Pierre d’âme), une seule ligne. Sans clé,

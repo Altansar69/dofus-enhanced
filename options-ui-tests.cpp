@@ -577,7 +577,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
-        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(),
+        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
 }
 // Expected row: model, private source (none for a text button), label, native
@@ -613,10 +613,11 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             ButtonRow(ui.metamobKeyOption, "Clé API Metamob")}},
         {"Chat", {CheckRow(ui.chatTravelOption, ui.chatTravelSource, "Bouton TP dans le chat", true),
             CheckRow(ui.chatSoulOption, ui.chatSoulSource, "Âme en sac dans le chat", true),
-            CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true)}},
+            CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true),
+            CheckRow(ui.chatMetamobOption, ui.chatMetamobSource, "Metamob dans le chat", true)}},
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.10.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.11.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -722,7 +723,7 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.10.0" && std::string(ModVersion) == "r109",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.11.0" && std::string(ModVersion) == "r110",
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -767,13 +768,13 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.10.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
-        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r109") != std::string::npos,
+    Check(Label(credits).find("1.11.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r110") != std::string::npos,
         "Credits must name the version, the author, the project page and the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 21 && optionModels == 23,
-        "The UI must create twenty-one private sources and twenty-three rows");
+    Check(sourceModels == 22 && optionModels == 24,
+        "The UI must create twenty-two private sources and twenty-four rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1089,7 +1090,7 @@ Settings AwayFromDefaults() {
     settings.autoLoad = settings.githubUpdates = false;
     settings.metamobSync = true;
     settings.mapTravelPlanner = false;
-    settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = false;
+    settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = settings.chatMetamobStatus = false;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -1110,7 +1111,7 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.metamobSync = defaults.metamobSync;
     } else if (index == ChatSection) {
         settings.chatTravelLinks = defaults.chatTravelLinks; settings.chatSoulInventory = defaults.chatSoulInventory;
-        settings.chatOcreStatus = defaults.chatOcreStatus;
+        settings.chatOcreStatus = defaults.chatOcreStatus; settings.chatMetamobStatus = defaults.chatMetamobStatus;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
     }

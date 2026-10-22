@@ -109,7 +109,7 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return source.get() && api.Value<bool>(api.Call(source.get(), "IsLoaded"));
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) &&
-        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource);
+        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -137,6 +137,7 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.chatTravelSource.get(), settings.chatTravelLinks, notify);
     SetSource(ui.chatSoulSource.get(), settings.chatSoulInventory, notify);
     SetSource(ui.chatOcreSource.get(), settings.chatOcreStatus, notify);
+    SetSource(ui.chatMetamobSource.get(), settings.chatMetamobStatus, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -212,6 +213,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.chatTravelSource.reset(api.New(booleanType, {&defaults.chatTravelLinks, &readOnly}));
     prepared.chatSoulSource.reset(api.New(booleanType, {&defaults.chatSoulInventory, &readOnly}));
     prepared.chatOcreSource.reset(api.New(booleanType, {&defaults.chatOcreStatus, &readOnly}));
+    prepared.chatMetamobSource.reset(api.New(booleanType, {&defaults.chatMetamobStatus, &readOnly}));
     if (!ModelsLoaded(prepared)) return false;
     // Native reset uses constructor defaults, independently of persisted values.
     ApplySettings(prepared, module->settings, false);
@@ -267,6 +269,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "À côté d’un archimonstre ou d’un boss de L’éternelle moisson partagé dans le chat, indique si une de ses âmes est dans le sac de ce personnage : Âme en sac ou Pas en sac (Sac : ? tant que le sac n’est pas lu). La banque et le coffre ne sont pas consultés ; décoché, le sac n’est plus lu. Activé par défaut."));
     prepared.chatOcreOption.reset(MakeBoolOption(prepared.chatOcreSource.get(), current.get(), tooltip.get(), "Avancement Ocre dans le chat",
         "À côté d’un archimonstre ou d’un boss de L’éternelle moisson partagé dans le chat, indique son objectif : Ocre validé, Ocre à faire ou Ocre non commencée (Ocre : ? sans données). Un clic ouvre la quête dans le journal. Activé par défaut."));
+    prepared.chatMetamobOption.reset(MakeBoolOption(prepared.chatMetamobSource.get(), current.get(), tooltip.get(), "Metamob dans le chat",
+        "Après l’avancement Ocre, indique combien d’exemplaires de ce monstre ta quête Metamob compte : Metamob : 2, ou Metamob : 0 en rouge (Metamob : ? tant que la quête n’est pas lue). Nécessite une clé Metamob enregistrée ; la quête est relue au plus toutes les 10 minutes et une capture synchronisée la met à jour aussitôt. Activé par défaut."));
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
@@ -297,6 +301,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.chatSoulOption = std::move(prepared.chatSoulOption);
     ui.chatOcreSource = std::move(prepared.chatOcreSource);
     ui.chatOcreOption = std::move(prepared.chatOcreOption);
+    ui.chatMetamobSource = std::move(prepared.chatMetamobSource);
+    ui.chatMetamobOption = std::move(prepared.chatMetamobOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -812,7 +818,7 @@ bool OptionsUi::Attach(Obj page) {
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), miniCenterOption.get()}},
         {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get()}},
         {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
-        {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get()}},
+        {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
         {"À propos", {creditsOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
@@ -884,6 +890,7 @@ void OptionsUi::Tick() {
     next.chatTravelLinks = api.Value<bool>(api.Call(chatTravelSource.get(), "get_property"));
     next.chatSoulInventory = api.Value<bool>(api.Call(chatSoulSource.get(), "get_property"));
     next.chatOcreStatus = api.Value<bool>(api.Call(chatOcreSource.get(), "get_property"));
+    next.chatMetamobStatus = api.Value<bool>(api.Call(chatMetamobSource.get(), "get_property"));
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
         !Settings::ValidAnimationMode(next.animationMode) || !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
         Sync(); return;
@@ -957,6 +964,7 @@ void OptionsUi::Restore() {
     chatTravelSource.reset(); chatTravelOption.reset();
     chatSoulSource.reset(); chatSoulOption.reset();
     chatOcreSource.reset(); chatOcreOption.reset();
+    chatMetamobSource.reset(); chatMetamobOption.reset();
     creditsOption.reset(); creditsMarker.reset();
     metamobSyncSource.reset(); metamobSyncOption.reset();
     metamobKeyOption.reset(); metamobKeyMarker.reset();

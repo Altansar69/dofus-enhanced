@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <optional>
 #include <string>
 // "Synchro des captures": after each archimonster or boss capture, +1 to that
 // monster in the user's Metamob Ocre quest, nothing else. Metamob only takes
@@ -25,10 +26,21 @@ using Notice = std::function<void(const std::string&)>;
 // Refused: Metamob refused it (until it accepts it again or another key is
 // saved); Unreadable: it cannot be decrypted on this Windows account.
 enum class KeyStatus { None, Saved, Verified, Unverified, Refused, Unreadable };
+// A game monster as the chat part matches it with the quest: its name in the
+// client's language and its Metamob type (TypeBoss, TypeArchimonster or TypeMonster).
+struct GameMonster { std::string name; int type = 0; };
+// What the chat part reads of the game, on the game thread only (module.cpp
+// gives capture detection's verified reads): a monster by game id (nullopt:
+// unknown or unreadable), and the local character's name, which picks the quest
+// when there are several (empty: unknown).
+struct GameView {
+    std::function<std::optional<GameMonster>(int monsterId)> monster;
+    std::function<std::string()> character;
+};
 // Game-thread API. Never throws and never blocks: requests, DPAPI and files run
 // on one worker thread at a time; notices ("Metamob : ...") are posted from
 // TickSync on the game thread.
-void InstallSync(const std::filesystem::path& settingsPath, Transport transport, Notice notice);
+void InstallSync(const std::filesystem::path& settingsPath, Transport transport, Notice notice, GameView game = {});
 // enabled: the options' "Synchroniser les captures avec Metamob", at every pump.
 // Off, nothing more is written: no cycle starts, a running one ends before its
 // next write, the captures not sent yet are dropped with one notice (never kept
@@ -55,5 +67,22 @@ KeyStatus StoredKeyStatus();
 // file and session, never before a pause ends (backoff, Retry-After). again:
 // « Clé non vérifiée » clicked, an Unverified key is checked once more.
 void CheckStoredKey(bool again);
+// Chat « Metamob dans le chat », on the game thread: the label of a game
+// monster from the user's Metamob Ocre quest (« Metamob : N », green from 1, red
+// at 0; « Metamob : ? » while the quest is not read yet or its last reading
+// failed), read from a cache the worker refreshes; never a request here. Empty
+// for a monster outside L’éternelle moisson, not in the quest or unknown to the
+// game view, or when no usable key is saved. colorStatus: rich-text colors.
+std::string MetamobChatCaption(int monsterId, bool colorStatus);
+// Plain-text tooltip of that label; empty when the caption is. After a reading
+// that found no Dofus Unity Ocre quest, or several none of which names this
+// character, its « ? » says what to fix on metamob.fr.
+std::string MetamobChatDetail(int monsterId);
+// A shown chat label holds a monster of L’éternelle moisson (one a Metamob part
+// can follow): keep the quest cache fresh. It is read at once the first time,
+// then at most every 10 min while a label asked within the last minute; never
+// while a capture waits, a key is being saved or forgotten, nor without a
+// usable key. Called at every chat pump while such a label is shown.
+void WantMetamobCatalog();
 bool SyncCleanupPending();
 }

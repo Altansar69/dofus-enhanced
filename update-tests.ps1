@@ -67,6 +67,17 @@ try {
     $external = Asset 90 $gameHash $metadataHash $digest
     $external.assets[0].browser_download_url = 'https://untrusted.example/archive.zip'
     Check ($null -eq (Select-Update @($external) $gameHash $metadataHash)) 'External URL accepted'
+    # Renamed repository: assets listed under dofus-enhanced stay trusted.
+    $renamed = Asset 91 $gameHash $metadataHash $digest
+    $renamed.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-enhanced/releases/download/r91/$($renamed.assets[0].name)"
+    $chosen = Select-Update @($renamed) $gameHash $metadataHash
+    Check ($null -ne $chosen -and $chosen.revision -eq 91 -and $chosen.url -ceq $renamed.assets[0].browser_download_url) 'Renamed repository asset rejected'
+    $other = Asset 92 $gameHash $metadataHash $digest
+    $other.assets[0].browser_download_url = "https://github.com/Altansar69/other-repo/releases/download/r92/$($other.assets[0].name)"
+    Check ($null -eq (Select-Update @($other) $gameHash $metadataHash)) 'Other repository asset accepted'
+    $wrongTag = Asset 93 $gameHash $metadataHash $digest
+    $wrongTag.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-enhanced/releases/download/r90/$($wrongTag.assets[0].name)"
+    Check ($null -eq (Select-Update @($wrongTag) $gameHash $metadataHash)) 'Renamed asset under another tag accepted'
     $first.assets[0].digest = $null
     Check ($null -eq (Select-Update @($first) $gameHash $metadataHash)) 'Missing GitHub digest accepted'
     $first.assets[0].digest = "sha256:$digest"; $first.assets[0].size = 33MB
@@ -155,7 +166,7 @@ try {
     function Get-TrustedDownload { throw 'simulated offline' }
     Reject { Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe') } 'Network failure must be reported'
     Test-Package (Join-Path $root "$script:Family`78") 78 $gameHash $metadataHash
-    Write-Output 'PASS: stable compatible selection, trusted assets, atomic install, no overwrite, no traversal, integrity, idempotence, future client, empty-listing fallback to the newest release, offline retention; fixtures only'
+    Write-Output 'PASS: stable compatible selection, trusted assets, atomic install, no overwrite, no traversal, integrity, idempotence, future client, empty-listing fallback to the newest release, renamed repository assets, offline retention; fixtures only'
 } finally {
     if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($fixture)) -ne [IO.Path]::GetFullPath($build) -or
         [IO.Path]::GetFileName($fixture) -notmatch '^update-fixtures-[a-f0-9]{32}$') { throw 'Invalid fixture cleanup target' }

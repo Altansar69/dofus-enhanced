@@ -1,4 +1,5 @@
 #include "metamob-sync.hpp"
+#include "chat-soul-data.hpp"
 #include "metamob-data.hpp"
 #include <windows.h>
 #include <algorithm>
@@ -7,6 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <thread>
 #include <utility>
@@ -15,11 +17,12 @@
 void Log(const std::string& text);
 
 // The game thread queues captures and key operations; one detached worker at a
-// time takes the whole state ("book"), runs Work (key operations then one sync
-// cycle, plain C++ only: no IL2CPP call), and hands it back to TickSync, which
-// posts its notices and keeps what it learnt of the stored key for the options'
-// key row. Logs carry fixed codes and numbers only: never the key, a header, a
-// body, the username, a slug or a character name.
+// time takes the whole state ("book"), runs Work (key operations, then one sync
+// cycle or the chat part's reading of the quest; plain C++ only: no IL2CPP call),
+// and hands it back to TickSync, which posts its notices and keeps what it learnt
+// of the stored key for the options' key row and of the quest for the chat. Logs
+// carry fixed codes and numbers only: never the key, a header, a body, the
+// username, a slug, a monster or a character name.
 namespace metamob {
 namespace {
 // Visible texts: local chat notices, prefix included.
@@ -74,6 +77,11 @@ std::string ForgetUnsureText(const std::string& name) {
 constexpr uint64_t DebounceMs = 2000, SpacingMs = 1100, SenderWaitMs = 10000, BusyMs = 2000, PauseCheckMs = 30000,
     BackoffMs = 30000, BackoffCapMs = 15 * 60 * 1000, ErrorLogMs = 60000, RefusedRetryMs = 10 * 60 * 1000;
 constexpr int DefaultRetryAfter = 60, MaxPending = 500, MaxPages = 10, CycleRequests = 30, MaxNotices = 32;
+// « Metamob dans le chat »: the quest's list is read again at most every 10 min,
+// only while a chat label asked for it within the last minute; the key file is
+// looked at again at most every second for it.
+constexpr uint64_t RefreshMs = 10 * 60 * 1000, WantedMs = 60000, StatusMs = 1000;
+constexpr size_t MaxWrites = 64;
 constexpr wchar_t SenderName[] = L"Local\\DofusMiniatures.Metamob";
 constexpr char QuestsRoute[] = "/quests", ListRoute[] = "/quests/*/monsters", WriteRoute[] = "/quests/*/monsters/*";
 
@@ -181,7 +189,7 @@ struct Book {
     std::map<std::string, std::vector<QuestMonster>> monsters;  // per quest slug: ids and steps (quantities are read again)
     int failures = 0;           // consecutive transient failures
     uint64_t notBefore = 0;     // backoff, Retry-After, a busy sender, the refused key check
-    bool refused = false;       // Metamob refused the key (its JSON 401/403): paused until it changes
+    bool refused = false;       // a capture's request refused (Metamob's JSON 401/403): the captures paused, told once; the chat part ignores it
     uint64_t refusedKey = 0;    // fingerprint of the refused key
     uint64_t retryRefused = 0;  // when that same key is tried again (one request, no new notice)
 };
@@ -211,10 +219,24 @@ void Fresh(Book& book) {
 // A stopped job's book, emptied without allocating: the announcements of its flights close.
 void Empty(Book& book) noexcept { book.groups.clear(); book.flights.clear(); book.quests.reset(); book.monsters.clear(); }
 
+// The chat part's reading: the character's quest and its whole list with the
+// quantities, or why not (handed to the game thread with the job, kept there).
+struct Listed {
+    std::optional<KeyFile> file;      // the key file it was read with (read before the key)
+    std::string character, slug;      // the character the quest was chosen for; that quest
+    std::vector<QuestMonster> monsters;
+    bool ok = false;                  // read
+    QuestProblem problem = QuestProblem::None; // no Unity Ocre quest, or several: read again 10 min later
+};
+// A write of the sync confirmed by Metamob: the chat part shows its quantity at once.
+struct Written { std::string slug; int64_t id = 0; int quantity = 0; };
 struct Job {
     Book book;
     std::optional<Secret> submit;   // a key to verify with GET /me, then store
     bool forget = false, cycle = false, submitting = false;
+    bool listing = false;           // read the chat part's list (never while a capture waits)
+    std::string character;          // the local character, which picks that quest
+    std::optional<Listed> listed;   // what that reading found, taken once the worker has ended
     std::optional<KeyFile> check;   // the key row's check of this key file (CheckStoredKey)
     bool told = false;              // that check told the key's status (read once the worker has ended)
     std::filesystem::path keyPath;
@@ -227,9 +249,14 @@ struct Job {
     std::mutex lock;
     std::vector<std::string> notices; // taken by TickSync, posted on the game thread
     std::optional<Known> found;       // the stored key's status learnt last, taken by TickSync like the notices
+    std::vector<Written> written;     // the sync's confirmed writes, taken by TickSync like the notices
     void Post(std::string text) {
         std::lock_guard<std::mutex> guard(lock);
         if (notices.size() < MaxNotices) notices.push_back(std::move(text));
+    }
+    void Confirmed(Written write) {
+        std::lock_guard<std::mutex> guard(lock);
+        if (written.size() < MaxWrites) written.push_back(std::move(write));
     }
     // What an answer or a load told of the stored key, for the key file read
     // before it (not read: nothing can be tied to it). The latest one counts.
@@ -271,6 +298,8 @@ struct Session {
     int requests = 0, done = 0;
     bool rediscovered = false, askQuestsAgain = false, accepted = false;
     std::vector<std::string> problems; // quest choice notices already given in this cycle
+    QuestProblem questProblem = QuestProblem::None; // why the last quest choice found none
+    bool listing = false, refused = false; // the chat part's silent reading; Metamob refused its key
 };
 // A 2xx answer to the stored key: Metamob accepts it (told to the key row once per cycle).
 void Accepted(Session& s) {
@@ -282,6 +311,9 @@ bool KeyRefusal(const Response& response) { return (response.status == 401 || re
 // Network errors, 5xx, a page that is not JSON (Cloudflare), an unreadable answer:
 // 30 s, then twice longer each time up to 15 min; told at the 3rd in a row.
 [[noreturn]] void Backoff(Session& s) {
+    // The chat part's reading only stops, untold: the game thread spaces its next
+    // try, so it neither pauses the captures nor hides their third failure.
+    if (s.listing) throw Halt{};
     auto& book = s.book;
     book.failures = std::min(book.failures + 1, 1000);
     book.notBefore = timing.now() + std::min<uint64_t>(BackoffCapMs, BackoffMs << std::min(book.failures - 1, 5));
@@ -291,6 +323,13 @@ bool KeyRefusal(const Response& response) { return (response.status == 401 || re
 // The key refused: the captures are kept until it changes; said once. The same
 // key is tried again every 10 min (refused again: no new notice).
 [[noreturn]] void Refuse(Session& s) {
+    if (s.listing) {
+        // Silent: the key row says it and the chat part stops with that key; a
+        // capture still tells it at its first request.
+        s.job.Found(KeyStatus::Refused, s.file);
+        s.refused = true;
+        throw Halt{};
+    }
     if (!s.book.refused) { s.job.Post(KeyRefused); Log("METAMOB_KEY_REFUSED"); }
     s.job.Found(KeyStatus::Refused, s.file); // until Metamob accepts it again or another key is saved
     s.book.refused = true;
@@ -325,8 +364,9 @@ std::string Get(Session& s, std::string path, const char* route, bool questPath)
 template<class Parse> auto Parsed(Session& s, const char* route, Parse parse) {
     try { return parse(); } catch (...) { BadAnswer(s, route); }
 }
-// The character's quest. No quest or an ambiguous choice: told once per cycle,
-// and the list is asked again for the next capture (the user may fix it meanwhile).
+// The character's quest. No quest or an ambiguous choice: told once per cycle
+// (never by the chat part's reading), and the list is asked again next time (the
+// user may fix it meanwhile).
 std::optional<std::string> QuestSlug(Session& s, const std::string& character) {
     if (!s.book.quests) {
         const auto body = Get(s, "/quests", QuestsRoute, false);
@@ -334,27 +374,37 @@ std::optional<std::string> QuestSlug(Session& s, const std::string& character) {
     }
     auto choice = ChooseQuest(*s.book.quests, character);
     if (choice.quest) return std::move(choice.quest->slug);
-    if (std::find(s.problems.begin(), s.problems.end(), choice.problem) == s.problems.end()) {
+    s.questProblem = choice.kind;
+    if (!s.listing && std::find(s.problems.begin(), s.problems.end(), choice.problem) == s.problems.end()) {
         s.job.Post(choice.problem);
         s.problems.push_back(std::move(choice.problem));
     }
     s.askQuestsAgain = true;
     return std::nullopt;
 }
-// The quest's whole monster list (Unity Ocre: 337, two pages), kept for the session.
-const std::vector<QuestMonster>& Monsters(Session& s, const std::string& slug) {
-    if (const auto known = s.book.monsters.find(slug); known != s.book.monsters.end()) return known->second;
+// The quest's whole monster list with its quantities (Unity Ocre: 337, two
+// pages). complete (the chat part): a page missing before the total is a bad
+// answer, never a shorter list.
+std::vector<QuestMonster> ReadList(Session& s, const std::string& slug, bool complete = false) {
     std::vector<QuestMonster> monsters;
-    for (int offset = 0, pages = 0;; ++pages) {
+    int offset = 0, total = 0;
+    for (int pages = 0;; ++pages) {
         if (pages == MaxPages) BadAnswer(s, ListRoute);
         const auto body = Get(s, "/quests/" + slug + "/monsters?limit=200&offset=" + std::to_string(offset), ListRoute, true);
         auto page = Parsed(s, ListRoute, [&] { return ParseMonsters(body); });
         if (page.slug != slug || page.offset != offset) BadAnswer(s, ListRoute);
         offset += static_cast<int>(page.monsters.size());
+        total = page.total;
         monsters.insert(monsters.end(), std::make_move_iterator(page.monsters.begin()), std::make_move_iterator(page.monsters.end()));
         if (page.monsters.empty() || offset >= page.total) break;
     }
-    return s.book.monsters.emplace(slug, std::move(monsters)).first->second;
+    if (complete && offset != total) BadAnswer(s, ListRoute);
+    return monsters;
+}
+// Kept for the session: the sync reads its ids and steps (quantities are read again).
+const std::vector<QuestMonster>& Monsters(Session& s, const std::string& slug) {
+    if (const auto known = s.book.monsters.find(slug); known != s.book.monsters.end()) return known->second;
+    return s.book.monsters.emplace(slug, ReadList(s, slug)).first->second;
 }
 // The monster's quantity read again right before a write; nullopt when its step does not list it.
 std::optional<int> Current(Session& s, const std::string& slug, int64_t id, int step) {
@@ -403,6 +453,7 @@ void Confirm(Session& s) {
     const auto flight = Take(s);
     s.job.Post(AddedText(flight.shown, flight.base, flight.target));
     if (flight.base + flight.group.count > flight.target) s.job.Post(CappedText(flight.shown)); // the rest stays uncounted
+    s.job.Confirmed({flight.slug, flight.id, flight.target}); // the chat part shows it at once
     s.done += flight.target - flight.base;
 }
 void Conflict(Session& s, int quantity) {
@@ -610,6 +661,59 @@ void Cycle(Job& job) {
     if (s.askQuestsAgain) book.quests.reset();
     Log("METAMOB_SYNC done=" + std::to_string(s.done) + " pending=" + std::to_string(Units(book)));
 }
+// « Metamob dans le chat »: the character's quest and its whole list with the
+// quantities, read afresh and silently (fixed log codes, never a notice). The
+// game thread keeps what it found (Keep) and decides when to read it again.
+void ReadCatalog(Job& job) {
+    auto& book = job.book;
+    Listed listed;
+    listed.character = job.character;
+    const char* failure = "error";
+    try {
+        listed.file = Identity(job.keyPath); // read first: a key saved meanwhile is never taken for the one loaded
+        std::optional<Secret> key;
+        try { key = LoadKey(job.keyPath); }
+        catch (...) { job.Found(KeyStatus::Unreadable, listed.file); }
+        // No key (forgotten, unreadable): nothing is sent. A key Metamob refused is
+        // kept away by the key row's status (Usable); the same key saved again is
+        // tried once, its refusal silent (Refuse). book.refused only holds the
+        // capture sync's pause and its one notice: a key accepted again without a
+        // confirmed write leaves it set, and the chat part reads with that key.
+        if (!key) failure = "key";
+        else {
+            Session s{job, book, *key, listed.file};
+            s.listing = true;
+            try {
+                for (;;) {
+                    try {
+                        const auto slug = QuestSlug(s, job.character);
+                        if (!slug) { listed.problem = s.questProblem; failure = "quest"; break; } // no Unity Ocre quest, or several
+                        std::vector<QuestMonster> monsters;
+                        std::set<int64_t> ids; // overlapping pages: each monster once
+                        for (auto& monster : ReadList(s, *slug, true))
+                            if (ids.insert(monster.id).second) monsters.push_back(std::move(monster));
+                        book.monsters[*slug] = monsters; // the sync's own list, fresher
+                        listed.slug = *slug;
+                        listed.monsters = std::move(monsters);
+                        listed.ok = true;
+                        break;
+                    } catch (const QuestGone&) {
+                        // Its quest deleted (maybe created again): looked for once more, as a cycle does.
+                        if (s.rediscovered) { Log("METAMOB_QUEST_GONE"); Backoff(s); }
+                        s.rediscovered = true;
+                        book.quests.reset(); book.monsters.clear();
+                    }
+                }
+            } catch (const Halt&) { failure = s.refused ? "refused" : "request"; }
+            if (s.askQuestsAgain) book.quests.reset();
+        }
+    } catch (...) { listed.ok = false; listed.monsters.clear(); }
+    const auto count = listed.monsters.size();
+    const bool ok = listed.ok;
+    job.listed = std::move(listed); // always handed back: the game thread spaces the next reading
+    if (ok) Log("METAMOB_CATALOG monsters=" + std::to_string(count));
+    else Log(std::string("METAMOB_CATALOG_FAILED reason=") + failure);
+}
 // Options › « Enregistrer »: GET /v1/me with the candidate key. Refused by
 // Metamob (its JSON 401/403): nothing stored. Otherwise stored, verified or not
 // (Metamob unreachable, or a page that is not its answer).
@@ -680,6 +784,9 @@ void Work(Job& job) noexcept {
         // A pause set just before (a failed check, a rate-limited key) holds the
         // captures too: Collect gives them back, Start sends them once it ends.
         if (job.cycle && !job.cancelled.load() && !Ending(job) && Units(job.book) > 0 && timing.now() >= job.book.notBefore) Cycle(job);
+        // The chat part's list, given only to a job without captures (Start): never
+        // before them. Reads only: the sync turned off does not stop it, a forget does.
+        if (job.listing && !job.cancelled.load() && !job.forgetting.load() && timing.now() >= job.book.notBefore) ReadCatalog(job);
     } catch (...) {
         try { Log("METAMOB_WORKER_ERROR"); } catch (...) {}
     }
@@ -693,6 +800,16 @@ void Work(Job& job) noexcept {
     } catch (...) { job.done.store(true); }
 }
 
+// The chat part's copy of the quest (game thread only): the list the last
+// reading found, for the current key file and the character it was chosen for.
+struct Catalog {
+    std::string character, slug;
+    std::vector<QuestMonster> monsters;
+    bool read = false, failed = false; // a list read; the last reading failed (« ? » until one succeeds)
+    QuestProblem problem = QuestProblem::None; // that failure lasts (no Unity Ocre quest, or several): the tooltip says why
+    int failures = 0;                  // passing failures in a row: tried again 30 s later, twice longer each time
+    uint64_t next = 0;                 // no reading before
+};
 // Game-thread state. While a worker runs it owns the book; captures wait in the inbox.
 struct State {
     bool installed = false;
@@ -711,6 +828,14 @@ struct State {
     uint64_t lastCapture = 0, nextError = 0;
     int jobUnits = 0;
     std::shared_ptr<Job> job;
+    // « Metamob dans le chat »: the game as the chat part reads it, the quest's
+    // list, the chat monsters matched with it (their entry in catalog.monsters;
+    // none: not in the quest) and when a chat label last asked for it.
+    GameView game;
+    Catalog catalog;
+    std::map<int, std::optional<size_t>> matched;
+    bool wanted = false;
+    uint64_t wantedAt = 0, statusAt = 0;
 };
 State state;
 // A cancelled worker that has not ended yet keeps a new one from starting:
@@ -736,12 +861,16 @@ int Pending() { return Units(state.book) + Count(state.inbox) + state.jobUnits; 
 // has been taken back: no key for the key row meanwhile, then the key file as
 // it is, a new key saved right after included.
 bool Forgetting() { return state.forget || (state.job && state.job->forget); }
+// The chat part's list goes with the key it was read with (another key file, a
+// forget) and with the character it was chosen for: read again for the new ones.
+void Unlist() { state.catalog = Catalog{}; state.matched.clear(); }
 // The key file seen now. Another one than the known one (saved, replaced or
 // forgotten, here or by another client) is a key not checked yet, or none.
 void Track(const KeyFile& file) {
     if (file == state.known.file) return;
     state.known = Known{file, file.present ? KeyStatus::Saved : KeyStatus::None};
     state.check = false;
+    Unlist();
 }
 // What a worker learnt holds for the key file it read, if that file is still there.
 void Learn(const Known& found) {
@@ -755,6 +884,116 @@ void Error(const char* code) noexcept {
         state.nextError = now + ErrorLogMs;
         Log(code);
     } catch (...) {}
+}
+// « Metamob dans le chat »: the monsters of L’éternelle moisson (the Ocre part's
+// own table) are the only ones a chat label gives a Metamob part.
+bool OcreMonster(int monsterId) { return chat_souls::IsOcreGoal(monsterId); }
+// The local character, which picks the quest when there are several (empty: unknown).
+std::string Character() {
+    try { return state.game.character ? state.game.character() : std::string(); } catch (...) { return {}; }
+}
+// The stored key as the chat part may use it: saved, valid or not verified, no
+// forget under way. The chat asks at every pump: its file is looked at again at
+// most every second (the workers' answers and the options keep it meanwhile).
+bool Usable() {
+    if (Forgetting()) return false;
+    const auto now = timing.now();
+    if (now < state.statusAt || now - state.statusAt >= StatusMs) {
+        state.statusAt = now;
+        if (const auto file = Identity(state.keyPath)) Track(*file);
+    }
+    const auto status = state.known.status;
+    return status == KeyStatus::Saved || status == KeyStatus::Verified || status == KeyStatus::Unverified;
+}
+// The list is read while a chat label asked for it within the last minute, with
+// a usable key: at once the first time, then 10 min after the last reading.
+bool ListingDue(uint64_t now) {
+    if (!state.wanted || (now >= state.wantedAt && now - state.wantedAt >= WantedMs)) return false;
+    return Usable() && now >= state.catalog.next;
+}
+// A reading handed back by its worker. One made with another key file than the
+// one there now is dropped (Track cleared the list: read again for the new key);
+// one that cannot be told apart is kept, so it is always spaced. A failure keeps
+// the list but shows « ? », its tooltip saying why when no quest could be chosen
+// (a passing failure: the generic text again); the next try comes 30 s later,
+// twice longer each time up to 15 min (10 min when no quest could be chosen).
+void Keep(Listed listed) {
+    const auto file = Identity(state.keyPath);
+    if (file) Track(*file);
+    if (file && listed.file && *listed.file != *file) return;
+    const auto now = timing.now();
+    auto& catalog = state.catalog;
+    catalog.character = std::move(listed.character);
+    if (listed.ok) {
+        catalog.slug = std::move(listed.slug);
+        catalog.monsters = std::move(listed.monsters);
+        catalog.read = true; catalog.failed = false; catalog.failures = 0; catalog.problem = QuestProblem::None;
+        catalog.next = now + RefreshMs;
+        state.matched.clear(); // matched again with the new list
+        return;
+    }
+    catalog.failed = true;
+    catalog.problem = listed.problem;
+    catalog.failures = std::min(catalog.failures + 1, 1000);
+    catalog.next = now + (listed.problem != QuestProblem::None ? RefreshMs :
+        std::min<uint64_t>(BackoffCapMs, BackoffMs << std::min(catalog.failures - 1, 5)));
+}
+// The sync's own write, confirmed by Metamob: the chat part shows it at once.
+void Wrote(const Written& write) {
+    auto& catalog = state.catalog;
+    if (!catalog.read || write.slug != catalog.slug) return;
+    for (auto& monster : catalog.monsters)
+        if (monster.id == write.id) monster.quantity = write.quantity;
+}
+// Another character on this client: the quest read for the previous one may not
+// be this one's (several Ocre quests). An unknown character keeps what was read.
+void Follow() {
+    if (!state.catalog.read && !state.catalog.failed) return;
+    const auto character = Character();
+    if (!character.empty() && character != state.catalog.character) Unlist();
+}
+// A game monster's chat part: none (outside L’éternelle moisson, unknown to the
+// game view, not in the quest, no usable key), unknown (« ? »: the list not read
+// yet, or its last reading failed, maybe for a lasting quest problem), or its
+// quantity in the list.
+struct Part { bool shown = false; int quantity = -1; QuestProblem problem = QuestProblem::None; };
+Part ChatPart(int monsterId) {
+    if (!state.installed || !state.game.monster || monsterId <= 0 || !OcreMonster(monsterId) || !Usable()) return {};
+    const auto& catalog = state.catalog;
+    const bool known = catalog.read && !catalog.failed;
+    const auto match = known ? state.matched.find(monsterId) : state.matched.end();
+    if (match != state.matched.end()) return match->second ? Part{true, catalog.monsters[*match->second].quantity} : Part{};
+    const auto game = state.game.monster(monsterId);
+    if (!game || game->name.empty()) return {};
+    if (!known) return {true, -1, catalog.problem};
+    // Matched once per list read: FindMonster compares every name of the list.
+    std::optional<size_t> entry;
+    if (const auto monster = FindMonster(catalog.monsters, game->name, game->type))
+        for (size_t i = 0; i < catalog.monsters.size() && !entry; ++i)
+            if (catalog.monsters[i].id == monster->id) entry = i;
+    state.matched.emplace(monsterId, entry);
+    return entry ? Part{true, catalog.monsters[*entry].quantity} : Part{};
+}
+std::string ChatCaption(const Part& part, bool color) {
+    if (part.quantity < 0) return "Metamob : ?";
+    const auto text = "Metamob : " + Number(part.quantity);
+    if (!color) return text;
+    return (part.quantity > 0 ? "<color=#8DDB91>" : "<color=#F18C8C>") + text + "</color>";
+}
+std::string ChatDetail(const Part& part) {
+    const auto title = ChatCaption(part, false) + ".\n";
+    // A lasting quest problem says what to fix on Metamob (read again 10 min later).
+    if (part.quantity < 0) switch (part.problem) {
+    case QuestProblem::NoQuest:
+        return title + "Aucune quête Ocre Dofus Unity sur ton compte Metamob : crée-la sur metamob.fr, puis elle sera lue automatiquement.";
+    case QuestProblem::Several:
+        return title + "Plusieurs quêtes Ocre Dofus Unity sur ton compte Metamob, et aucune n’indique ce personnage dans "
+            "« Personnage à contacter » : ajoute son nom dans la bonne quête sur metamob.fr.";
+    default:
+        return title + "Ta quête Ocre sur Metamob n’a pas encore été lue ou n’a pas pu l’être ; nouvel essai automatique.";
+    }
+    return title + "Ta quête Ocre sur Metamob compte " + Number(part.quantity) + (part.quantity > 1 ? " exemplaires" : " exemplaire") +
+        " de ce monstre ; elle est relue au plus toutes les 10 minutes et mise à jour aussitôt après une capture synchronisée par le mod.";
 }
 // « Synchroniser les captures avec Metamob » off: the captures not sent yet are
 // dropped and told once, never kept for later (the user may enter them by hand
@@ -778,13 +1017,16 @@ void Collect() {
     if (!state.job) return;
     const bool finished = state.job->done.load(); // read first: no notice posted before it is missed
     std::optional<Known> found;
+    std::vector<Written> written;
     {
         std::lock_guard<std::mutex> guard(state.job->lock);
         for (auto& text : state.job->notices) Post(std::move(text));
         state.job->notices.clear();
         found.swap(state.job->found);
+        written.swap(state.job->written);
     }
     if (found) Learn(*found);
+    for (const auto& write : written) Wrote(write);
     if (!finished) return;
     const auto job = std::move(state.job);
     state.job.reset();
@@ -797,6 +1039,7 @@ void Collect() {
     // (« Clé non vérifiée » clicked meanwhile): that request stands.
     if (job->check && !job->told && *job->check == state.known.file && state.known.status == KeyStatus::Saved)
         state.known.status = KeyStatus::Unverified;
+    if (job->listed) Keep(std::move(*job->listed));
     if (job->off.load()) Discard(false); // turned off while it ran: nothing of it is resumed
 }
 void Start(bool enabled) {
@@ -804,10 +1047,13 @@ void Start(bool enabled) {
     state.inbox.clear();
     const auto now = timing.now();
     const bool due = enabled && Units(state.book) > 0 && (now < state.lastCapture || now - state.lastCapture >= DebounceMs) && now >= state.book.notBefore;
+    // The chat part's list: never while a capture waits (the captures go first),
+    // nor with a key being saved or forgotten.
+    const bool listing = Units(state.book) == 0 && !state.submit && !state.forget && now >= state.book.notBefore && ListingDue(now);
     // The key row's check: dropped once its key file's status is known, never before a pause ends.
     if (state.known.status != KeyStatus::Saved) state.check = false;
     const bool check = state.check && now >= state.book.notBefore;
-    if (!due && !check && !state.submit && !state.forget) return;
+    if (!due && !check && !listing && !state.submit && !state.forget) return;
     if (activeJob && !activeJob->done.load()) return;
     auto job = std::make_shared<Job>();
     job->book = std::move(state.book);
@@ -817,6 +1063,8 @@ void Start(bool enabled) {
     state.submit.reset();
     job->forget = std::exchange(state.forget, false);
     job->cycle = due;
+    job->listing = listing;
+    if (listing) job->character = Character();
     if (check) { job->check = state.known.file; state.check = false; }
     job->keyPath = state.keyPath;
     job->transport = state.transport;
@@ -838,13 +1086,14 @@ void Start(bool enabled) {
 }
 }
 
-void InstallSync(const std::filesystem::path& settingsPath, Transport transport, Notice notice) {
+void InstallSync(const std::filesystem::path& settingsPath, Transport transport, Notice notice, GameView game) {
     try {
         Cancel();
         state = State{};
         state.keyPath = KeyPath(settingsPath);
         state.transport = std::move(transport);
         state.notice = std::move(notice);
+        state.game = std::move(game);
         state.installed = static_cast<bool>(state.transport);
         if (const auto file = Identity(state.keyPath)) Track(*file); // a key file there: Saved until checked
         Log(state.installed ? "METAMOB_SYNC_READY" : "METAMOB_SYNC_UNAVAILABLE");
@@ -859,6 +1108,7 @@ void TickSync(bool enabled) {
         if (!enabled && state.job) state.job->off.store(true); // a running cycle writes nothing more
         Collect();
         if (!enabled) Discard(true);
+        Follow();
         if (!state.job) Start(enabled);
         Collect(); // a job run inline has already finished
         const auto notices = std::move(state.outbox);
@@ -918,6 +1168,7 @@ void ForgetStoredKey() {
         if (!state.installed) return;
         state.submit.reset(); // a key not verified yet is dropped as well
         state.forget = true;
+        Unlist();             // and the chat part's list read with it
         state.check = false;  // and a check not started yet
         if (state.job) state.job->forgetting.store(true); // a running cycle sends nothing more with that key
     } catch (...) { Error("METAMOB_KEY_ERROR"); }
@@ -940,6 +1191,23 @@ void CheckStoredKey(bool again) {
         // Once per key file and session: a check, answered or not, leaves its file out of Saved (Learn, Collect).
         if (state.known.status == KeyStatus::Saved) state.check = true;
     } catch (...) { Error("METAMOB_KEY_ERROR"); }
+}
+std::string MetamobChatCaption(int monsterId, bool colorStatus) {
+    try {
+        const auto part = ChatPart(monsterId);
+        return part.shown ? ChatCaption(part, colorStatus) : std::string();
+    } catch (...) { return {}; }
+}
+std::string MetamobChatDetail(int monsterId) {
+    try {
+        const auto part = ChatPart(monsterId);
+        return part.shown ? ChatDetail(part) : std::string();
+    } catch (...) { return {}; }
+}
+void WantMetamobCatalog() {
+    if (!state.installed) return;
+    state.wanted = true;
+    state.wantedAt = timing.now();
 }
 // Nothing of the game is held: Restore has nothing to wait for.
 bool SyncCleanupPending() { return false; }

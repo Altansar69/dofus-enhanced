@@ -33,6 +33,7 @@ struct Settings {
     bool chatTravelLinks = true; // Chat : TP à côté des positions et des groupes de monstres partagés
     bool chatSoulInventory = true; // Chat : « Âme en sac » / « Pas en sac » à côté des archimonstres et boss de L’éternelle moisson partagés
     bool chatOcreStatus = true; // Chat : avancement Ocre à côté des archimonstres et boss de L’éternelle moisson partagés
+    bool chatMetamobStatus = true; // Chat : quantité de ta quête Metamob à côté des monstres de L’éternelle moisson partagés
     bool mapTravelPlanner = true; // Trajet du mod au double-clic sur la carte ou la mini-carte et à « Voyager jusqu'à cette position »
     static bool ValidResourceSelection(const std::vector<int>& items) {
         if (items.size() > 128) return false;

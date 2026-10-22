@@ -23,6 +23,7 @@ Ref graph, vertices, outgoing, filter, loader, pathService, dependencies;
 Method getGraph{},init{},edgeAllowed{},areaAllowed{},initFilter{};
 Klass graphClass{},vertexClass{},edgeClass{},filterClass{},loaderClass{},serviceClass{};
 int64_t target=0,current=0;
+int currentZone=-1;
 bool seeded=false,loading=false;
 size_t inspected=0;
 size_t slices=0;
@@ -57,26 +58,49 @@ void Enqueue(Obj vertex,uint64_t uid,int distance,size_t source) {
     best[uid]={distance,source};
     queue.push({distance,source,uid,Ref(vertex)});
 }
+// Start distances, in map changes; a teleport adds 1. The current map starts at
+// 0: only the player's own zone when the game's cell-to-zone link gave it, else
+// every zone of the map (the game's autopilot then walks from the real cell). A
+// zaap starts at 1, but on a map split into several zones the arrival side of
+// the zaap is unknown: every zone then starts at 2. A closer zaap is never
+// hidden, and an unambiguous arrival still wins an otherwise equal route.
+constexpr int HereStart=0, ZaapStart=1, SplitZaapStart=2;
 void Seed() {
     vertices.reset(api.Field(graph.get(),"m_vertices"));outgoing.reset(api.Field(graph.get(),"m_outgoingEdges"));
     if(!vertices.get()||!outgoing.get())throw std::runtime_error("World route graph incomplete");
     filter.reset(api.New(filterClass));api.Invoke(initFilter,filter.get());
+    int hereStarts=0,splitZaaps=0;
     for(size_t i=0;i<choices.size();++i) {
         const auto& choice=choices[i];
         Ref zones(Lookup(vertices.get(),choice.map));
-        // A map split into disconnected zones does not identify a zaap arrival
-        // cell. Never rank it using an arbitrary side of an obstacle.
-        if(Count(zones.get(),64,"zones")!=1)continue;
+        const int count=Count(zones.get(),64,"zones");
+        if(!count)continue;
         Ref values(api.Call(zones.get(),"get_Values"));Ref iterator(api.Call(values.get(),"GetEnumerator"));
-        if(!api.Value<bool>(api.Call(iterator.get(),"MoveNext")))continue;
-        Ref vertex(api.Call(iterator.get(),"get_Current"));
-        if(!Exact(vertex.get(),vertexClass))throw std::runtime_error("World route vertex mismatch");
-        const auto uid=*static_cast<uint64_t*>(api.FieldAddress(vertex.get(),"m_uid"));
-        const int distance=choice.map==current?0:1;
-        if(Improves(uid,distance,i))Enqueue(vertex.get(),uid,distance,i);
+        std::vector<Ref> starts;
+        while(static_cast<int>(starts.size())<count&&api.Value<bool>(api.Call(iterator.get(),"MoveNext"))) {
+            Ref vertex(api.Call(iterator.get(),"get_Current"));
+            if(!Exact(vertex.get(),vertexClass))throw std::runtime_error("World route vertex mismatch");
+            starts.push_back(std::move(vertex));
+        }
+        const bool here=choice.map==current;
+        if(here&&currentZone>=0) {
+            const auto own=std::find_if(starts.begin(),starts.end(),[](const Ref& vertex) {
+                return *static_cast<int*>(api.FieldAddress(vertex.get(),"m_zoneId"))==currentZone;
+            });
+            if(own!=starts.end()) {Ref vertex(std::move(*own));starts.clear();starts.push_back(std::move(vertex));}
+        }
+        const int distance=here?HereStart:starts.size()==1?ZaapStart:SplitZaapStart;
+        if(!here&&starts.size()>1)++splitZaaps;
+        for(const auto& vertex:starts) {
+            const auto uid=*static_cast<uint64_t*>(api.FieldAddress(vertex.get(),"m_uid"));
+            if(!Improves(uid,distance,i))continue;
+            Enqueue(vertex.get(),uid,distance,i);
+            if(here)++hereStarts;
+        }
     }
     seeded=true;
-    Log("CHAT_ROUTE_SEEDED target="+std::to_string(target)+" candidates="+std::to_string(choices.size())+" starts="+std::to_string(queue.size()));
+    Log("CHAT_ROUTE_SEEDED target="+std::to_string(target)+" candidates="+std::to_string(choices.size())+" starts="+std::to_string(queue.size())+
+        " hereStarts="+std::to_string(hereStarts)+" splitZaaps="+std::to_string(splitZaaps));
 }
 }
 void Install() {
@@ -92,15 +116,18 @@ void Install() {
 }
 void Clear() {
     queue={};visited.clear();best.clear();choices.clear();graph.reset();vertices.reset();outgoing.reset();filter.reset();loader.reset();
-    pathService.reset();dependencies.reset();target=current=0;seeded=loading=false;inspected=0;
+    pathService.reset();dependencies.reset();target=current=0;currentZone=-1;seeded=loading=false;inspected=0;
     pendingEdges.reset();edgeIndex=edgeCount=pendingDistance=0;pendingSource=0;slices=0;
 }
-void Begin(std::vector<chat_travel::Destination> candidates,int64_t destination,int64_t source) {
-    Clear();target=destination;current=source;searchStarted=std::chrono::steady_clock::now();
+void Begin(std::vector<chat_travel::Destination> candidates,int64_t destination,int64_t source,int sourceZone) {
+    Clear();target=destination;current=source;currentZone=sourceZone;searchStarted=std::chrono::steady_clock::now();
     pathService.reset(module->FindService("fnf"));dependencies.reset(module->FindService("fkq"));
     if(!Exact(pathService.get(),serviceClass)||!dependencies.get())throw std::runtime_error("Native route conditions unavailable");
     for(auto value:candidates)if(value.map>0&&value.known&&value.type==0&&value.cost>=0)choices.push_back(value);
-    std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){return std::tie(a.cost,a.map)<std::tie(b.cost,b.map);});
+    // An equal route from the current map beats a teleport: no kamas, no loading.
+    std::sort(choices.begin(),choices.end(),[](const auto& a,const auto& b){
+        return std::tuple(a.map!=current,a.cost,a.map)<std::tuple(b.map!=current,b.cost,b.map);
+    });
 }
 Result Tick() {
     if(!target||!Session())return {Status::Unreachable};

@@ -1,6 +1,8 @@
 #include "chat-tp-links.hpp"
+#include "chat-soul-data.hpp"
 #include "chat-soul-status.hpp"
 #include "chat-coordinate-policy.hpp"
+#include "metamob-sync.hpp"
 #include "module.hpp"
 #include <algorithm>
 #include <cstddef>
@@ -23,8 +25,10 @@ struct NullableColor {
     Color value{};
 };
 static_assert(sizeof(NullableColor) == 20 && offsetof(NullableColor, value) == 4);
-enum class LinkPart { Travel, Inventory, Ocre };
-constexpr LinkPart LinkParts[] = {LinkPart::Travel, LinkPart::Inventory, LinkPart::Ocre};
+// Display order after each position: TP, bag, Ocre, then the quantity of that
+// monster in the user's Metamob quest.
+enum class LinkPart { Travel, Inventory, Ocre, Metamob };
+constexpr LinkPart LinkParts[] = {LinkPart::Travel, LinkPart::Inventory, LinkPart::Ocre, LinkPart::Metamob};
 struct Link { Ref manager; ChatTpTarget target; std::string sourceId; int monster = 0; std::string caption; LinkPart part; };
 // A native position the parts follow: map link, shared monster group, or
 // plain coordinates converted for TP.
@@ -95,7 +99,8 @@ bool Active() {
 bool Enabled(LinkPart part) {
     const auto& settings = module->settings;
     return part == LinkPart::Travel ? settings.chatTravelLinks :
-        part == LinkPart::Inventory ? settings.chatSoulInventory : settings.chatOcreStatus;
+        part == LinkPart::Inventory ? settings.chatSoulInventory :
+        part == LinkPart::Ocre ? settings.chatOcreStatus : settings.chatMetamobStatus;
 }
 bool Owned(Obj manager) {
     return manager && std::any_of(state.labels.begin(),state.labels.end(),[&](const auto& label) {
@@ -260,7 +265,10 @@ ChatSoulPart SoulPart(LinkPart part) {
 }
 std::string Caption(int monster, LinkPart part) {
     if (part == LinkPart::Travel) return "TP";
-    const auto status = ChatSoulCaption(monster, SoulPart(part), true);
+    // Metamob reads only the capture sync's cache of the user's quest, never
+    // Metamob itself; a position without a monster group has no quantity.
+    const auto status = part != LinkPart::Metamob ? ChatSoulCaption(monster, SoulPart(part), true) :
+        monster > 0 ? metamob::MetamobChatCaption(monster, true) : std::string{};
     // Scope status colors to their own native hover area; TP keeps its cyan.
     return status.empty() ? std::string{} : "<color=#D7CFB8>" + status + "</color>";
 }
@@ -416,7 +424,8 @@ void OpenOcreQuest(Obj manager, Vec2 position) {
 void ClickHook(Obj manager, Vec2 position, Method method) {
     for (const auto& label : state.labels) for (const auto& link : label->links) {
         if (link.manager.get() != manager) continue;
-        if (link.part == LinkPart::Inventory) return;
+        // Bag and Metamob statuses only inform: no action, never the native one.
+        if (link.part == LinkPart::Inventory || link.part == LinkPart::Metamob) return;
         try {
             // A part whose option was just unchecked stays inert until it leaves.
             if (Active() && Enabled(link.part) && label->cached.get() == module->cached.get() && label->element.get() &&
@@ -441,10 +450,14 @@ Obj TooltipHook(Obj manager, Vec2 mousePosition, Method method) {
             if (!Active() || !Enabled(link.part) || label->cached.get() != module->cached.get() ||
                 !api.Call(label->element.get(),"get_panel")) return nullptr;
             const auto target=link.target;
-            auto text=link.part != LinkPart::Travel ? ChatSoulDetail(link.monster,SoulPart(link.part)) :
+            auto text=link.part == LinkPart::Metamob ? metamob::MetamobChatDetail(link.monster) :
+                link.part != LinkPart::Travel ? ChatSoulDetail(link.monster,SoulPart(link.part)) :
                 module->InCombat() ? std::string("TP indisponible pendant un combat.") :
                 "TP vers le zaap le plus proche, puis trajet vers ["+std::to_string(target.x)+","+std::to_string(target.y)+"].";
             if (link.part == LinkPart::Ocre) text += "\nClique pour ouvrir L’éternelle moisson dans le journal de quêtes.";
+            // A quantity whose quest just left the cache (key forgotten) has no
+            // detail left: no tooltip until its part leaves the label.
+            if (text.empty()) return nullptr;
             Ref caption(api.string_new(text.c_str())), empty(api.string_new(""));
             Ref position(api.Invoke(state.tooltipPosition,manager,{&mousePosition}));
             Ref builder(api.object_new(state.tooltipClass));
@@ -533,10 +546,24 @@ void TickChatTpLinks() {
         });
     };
     TickChatSoulStatus(shown(LinkPart::Inventory),shown(LinkPart::Ocre));
+    // The Metamob part reads only the capture sync's cache. While it is checked
+    // and a shown label holds a monster group led by a monster of L’éternelle
+    // moisson (the only ones a Metamob part can follow), ask the sync to keep that
+    // cache fresh (bounded there, never a request from here), also before a first
+    // quantity exists: the cache is what brings it. Unchecked, or other leaders
+    // only, nothing is asked: their reading would cost requests for nothing.
+    const auto monsterShown = [] {
+        return std::any_of(state.labels.begin(),state.labels.end(),[](const auto& label) {
+            return std::any_of(label->sources.begin(),label->sources.end(),[](const Source& source) {
+                return source.monster > 0 && chat_souls::IsOcreGoal(source.monster);
+            });
+        });
+    };
+    if (Enabled(LinkPart::Metamob) && monsterShown()) metamob::WantMetamobCatalog();
     // Native text rebuild updates row wrapping as well as the clickable managers.
     // Bound changes per pump; unchanged captions retain their original identities.
     // A status or « Chat » option change adds or removes parts and converts or
-    // restores plain coordinates; all three unchecked leave the native text.
+    // restores plain coordinates; all four unchecked leave the native text.
     int refreshed = 0;
     for (size_t i = 0; i < state.labels.size() && refreshed < 4; ++i) {
         auto& label = *state.labels[i];

@@ -132,7 +132,7 @@ void RouteFromMap(Obj owner,Point coordinates,int world,const char* entry) {
     ChatTpTarget target;
     if (!OwnerCurrent(owner) || world!=World(owner) || !Target(coordinates,world,target)) return;
     // Banner (mini-map) and full map share these explicit native actions.
-    // Reuse TP planning; its onward call goes to esg.zhy, not these UI hooks.
+    // Reuse TP planning; its onward call goes to faw.bcdq, not these UI hooks.
     Log(std::string("MAP_TRAVEL_ROUTE entry=")+entry+" x="+std::to_string(target.x)+
         " y="+std::to_string(target.y)+" world="+std::to_string(target.world));
     StartChatTravel(target);

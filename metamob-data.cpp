@@ -377,7 +377,8 @@ QuestChoice ChooseQuest(const std::vector<Quest>& quests, std::string_view chara
     std::vector<const Quest*> ocre;
     for (const auto& quest : quests)
         if (quest.questType == "ocre" && quest.gameVersion == 1) ocre.push_back(&quest);
-    if (ocre.empty()) return {std::nullopt, "Metamob : aucune quête Ocre Dofus Unity sur ton compte, rien n’a été modifié."};
+    if (ocre.empty())
+        return {std::nullopt, "Metamob : aucune quête Ocre Dofus Unity sur ton compte, rien n’a été modifié.", QuestProblem::NoQuest};
     if (ocre.size() == 1) return {*ocre.front(), {}};
     const auto character = NameKey(characterName);
     const Quest* chosen = nullptr;
@@ -386,7 +387,7 @@ QuestChoice ChooseQuest(const std::vector<Quest>& quests, std::string_view chara
         if (!character.empty() && Names(quest->characterName, character) && ++matches == 1) chosen = quest;
     if (matches == 1) return {*chosen, {}};
     return {std::nullopt, "Metamob : plusieurs quêtes Ocre sur ton compte ; indique le nom de ce personnage dans "
-        "« Personnage à contacter » de la bonne quête."};
+        "« Personnage à contacter » de la bonne quête.", QuestProblem::Several};
 }
 std::optional<QuestMonster> FindMonster(const std::vector<QuestMonster>& monsters, std::string_view gameName, int type) {
     const auto key = MatchKey(gameName);

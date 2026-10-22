@@ -1,323 +1,240 @@
-# Dofus Miniatures
+# 🐉 Dofus Enhanced
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.10.0** (révision r109).
+**[🇫🇷 Français](#francais) · [🇬🇧 English](#english)**
 
-Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
-raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
-Carnet personnel et planification de l’XP des métiers.
-Les détails et les limites figurent dans [LISEZ-MOI.txt](LISEZ-MOI.txt).
+[![License](https://img.shields.io/badge/License-UNLICENSE-red)](LICENSE) [![Release](https://img.shields.io/github/v/release/Altansar69/dofus-miniatures)](../../releases/latest) ![Dofus Unity](https://img.shields.io/badge/Dofus%20Unity-3.7.12.12-orange) ![OS](https://img.shields.io/badge/OS-Windows-green)
 
-## Mises à jour
+> [!WARNING]
+> **🇫🇷 Projet non officiel : à lire avant toute utilisation**
+>
+> - **Je ne suis pas affilié à Ankama.** Dofus Enhanced est un projet de fan non officiel, ni approuvé ni sponsorisé par Ankama.
+> - **Dofus**, son nom, ses visuels et **tous les droits sur le jeu appartiennent à Ankama**.
+> - **Je ne sais pas si l’utilisation de ce mod est autorisée** par les conditions d’utilisation de Dofus et d’Ankama : **la possibilité d’un bannissement n’est pas à exclure totalement**.
+> - Tu l’utilises **à tes risques et périls**. Le logiciel est fourni **« tel quel », sans aucune garantie**.
+>
+> **🇬🇧 Unofficial project: please read before using it**
+>
+> - **I am not affiliated with Ankama.** Dofus Enhanced is an unofficial fan project, not endorsed or sponsored by Ankama.
+> - **Dofus**, its name, its assets and **all rights to the game belong to Ankama**.
+> - **I don’t know whether using this mod is allowed** by the terms of use of Dofus and Ankama: **a ban cannot be completely ruled out**.
+> - Use it **at your own risk**. The software is provided **“as is”, without any warranty**.
 
-Les versions sont disponibles dans les [Releases](https://github.com/Altansar69/dofus-miniatures/releases).
-Extraire l’archive entière. Le nom historique `DofusMiniatures-3.7.11.11-rN`
-conserve les réglages partagés ; la version du jeu ciblée figure dans `release.ini`.
+<a id="francais"></a>
 
-Dans **Options → Dofus Enhanced → Chargement et mises à jour** :
+# 🇫🇷 Français
 
-- **Chargement automatique** charge le mod lors des prochains lancements.
-- **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
-  avant le chargement. Activé par défaut. Aucun compte GitHub requis.
+**Dofus Enhanced** ajoute à **Dofus Unity** une bonne dose de confort, directement dans l’interface du jeu : 🤏 miniatures, ⏩ animations de combat raccourcies, ⛏️ ressources sur les cartes, 🚀 trajets en un clic (zaaps et Havre-Sac compris), 💎 aide à la capture d’âmes avec synchro Metamob, 🏴‍☠️ chasse au trésor, 📒 carnet et 📈 XP des métiers.
 
-Le lanceur conserve les anciennes versions et les réglages. En cas d’absence
-de réseau, il utilise une version locale compatible. Il ne remplace pas un module
-dans un jeu déjà ouvert. Il laisse intact un client sans version compatible.
-Depuis la 1.9.2, si GitHub renvoie une liste de publications vide (service
-dégradé), il consulte la dernière publication avant de conclure qu’aucune
-version n’est compatible.
+Tout se règle dans les options du jeu, les panneaux du mod sont construits avec les composants du jeu, et le mod se met à jour tout seul au lancement du jeu. Gratuit et open source. 🎁
 
-L’assistant de démarrage peut reconnaître une future version du jeu et lancer
-le chargeur livré avec son correctif. Cela ne rend pas les fonctions natives du mod
-universelles : des changements dans Dofus peuvent nécessiter une adaptation et
-une nouvelle publication.
+## ✨ Fonctionnalités
 
-Pour enregistrer manuellement l’assistant, depuis le dossier extrait :
+⚙️ **Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence et animations, Surbrillance, Cartes, Déplacements, Pierre d’âme, Chat, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
 
-```powershell
-.\ModuleLoader.exe --enable-auto "C:\chemin\vers\Dofus.exe"
-```
+### 🎨 Apparence et animations
+- 🤏 **Miniatures, Créatures ou Normal**, au choix en combat et hors combat, séparément. Miniatures réduit à 60 % de la taille d’origine, sans descendre sous 50 % de la hauteur d’un joueur pour les monstres et les invocations.
+- ⏩ **Animations de combat raccourcies** : Raccourcies (par défaut), Sans animations des combattants ou Instantané (ces deux modes sont expérimentaux). Les délais du serveur ne changent pas : toutes les animations ne disparaissent pas.
+- 🖱️ Le bouton créature du jeu devient un sélecteur Normal / Créatures / Miniatures, et le clic droit sur la carte propose Affichage, Animations et Surbrillance.
 
-Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
+### 🔦 Surbrillance
+- 👀 **Contour des monstres** hors combat, pour les repérer quand ils sont cachés derrière l’interface, derrière l’interface et les murs, ou tout le temps.
+- 🧑‍🌾 En option, les **PNJ** et les **éléments interactifs** (ressources récoltables, portes, zaaps…). Jusqu’à 32 contours à la fois, toutes catégories confondues.
 
-```powershell
-.\ModuleLoader.exe --check-updates "C:\chemin\vers\Dofus.exe"
-```
+### 🗺️ Cartes
+- ⛏️ **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Ce sont les points de récolte connus, pas leur disponibilité en temps réel.
+- 🎯 **Bouton de recentrage** sur la mini-carte, pour la ramener sur ton personnage.
 
-Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
-L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence et animations,
-Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chat, Chargement et
-mises à jour et À propos. La version chargée (x.y.z et
-révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
-et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
-étiquette `rN` pour le vérificateur de mises à jour.
+### 🧭 Déplacements
+- 🚀 **Trajets améliorés** : bouton **TP** du chat, double-clic sur la grande carte ou la mini-carte, ou « Voyager jusqu’à cette position » au clic droit. Le mod compare le départ à pied et par tes zaaps connus (directement ou depuis le Havre-Sac), puis laisse l’autopilote du jeu finir le trajet. Les prix des zaaps s’appliquent.
+- 🕹️ Tu préfères l’autopilote d’origine ? Décoche **Remplacer l’autopilote du jeu** ; Ctrl + double-clic et `/travel` le gardent toujours.
+- 💨 **Transitions rapides entre cartes** (fondus raccourcis) et **préchargement de la carte suivante** (expérimental). Le chargement et le serveur restent nécessaires.
+- 💞 **Téléportation au conjoint** : bouton, cœur et distance sur la vignette de ton conjoint dans le groupe, plus une entrée au clic droit. Uniquement au clic, selon les conditions du jeu.
 
-## Chasse au trésor
+### 💎 Pierre d’âme et Metamob
+- 🔔 **Alerte pierre d’âme** : au placement d’un combat contre un archimonstre ou un boss capturable, la tranche de pierre requise, ton stock et la pierre équipée. En combat, **Capture d’âme** passe au vert quand l’état Chercheur d’âmes est actif sur toi, au rouge sinon. Le vert ne garantit pas à lui seul la capture.
+- 🎒 **Équipement automatique** de la bonne pierre pendant le placement (une seule tentative par combat), sinon un bouton **Équiper**.
+- 🔗 **Synchro Metamob** (désactivée par défaut) : après chaque combat où ton personnage obtient l’âme d’un archimonstre ou d’un boss, +1 à ce monstre dans ta quête Ocre sur [metamob.fr](https://www.metamob.fr). Ta clé API personnelle est chiffrée pour ton compte Windows, jamais affichée ni journalisée.
 
-Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, en haut à droite.
-Un second clic ou **⋯ → Masquer le module** ferme le panneau.
-Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
-Son entrée **Réduire les titres des modules** propose en revanche les trois
-panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet) à la suite des modules
-du jeu ; le choix est conservé entre les lancements et **Tout réduire** /
-**Tout agrandir** les suivent.
-La fenêtre n’utilise que des composants du jeu, comme le carnet : barre de titre
-native avec sa croix de fermeture, poignées de redimensionnement, trois sections
-natives **Point de départ** (X, Y, **Ma position**, onglets natifs Nord / Ouest /
-Sud / Est), **Indice à trouver** (filtre, **Étape en cours**, **Rechercher les
-indices**) et **Résultats** (lignes natives avec l’icône de chasse, **Chemin**
-sur chaque ligne, compteur et pagination), puis une ligne d’état.
-À l’ouverture, le départ reprend la carte où tu te trouves et, si une chasse est
-en cours, sa direction et son indice sont lus dans le jeu (**Étape en cours**
-relance cette lecture et la recherche ; **Ma position** ne reprend que les
-coordonnées). Renseigner X, Y et une direction reste possible à la main, puis
-Rechercher et filtrer par indice. Chaque résultat affiche sa position la plus
-proche et sa distance. Un clic prépare le départ suivant ; **Chemin** lance le
-trajet amélioré du mod vers l’indice (zaaps, bateaux, puis `/travel`), comme le
-bouton TP du chat. Aucune validation de chasse n’est envoyée.
-Les requêtes vont directement à DofusDB, sans identifiants ni cookies.
-Un refus d’accès ou une erreur réseau reste visible dans le panneau.
+### 💬 Chat
+- 💬 À côté des positions et des archimonstres ou boss de L’éternelle moisson partagés dans le chat : bouton **TP**, **Âme en sac** / Pas en sac (sac uniquement, pas la banque), avancement **Ocre** (un clic ouvre la quête) et quantité **Metamob** (avec une clé enregistrée).
+- 🎛️ Chaque ajout s’active séparément. Avec le TP, les coordonnées écrites `[x,y]` deviennent cliquables.
 
-## Carnet
+### 🧰 Outils intégrés
+- 🏴‍☠️ **Chasse au trésor** : un panneau reprend ta position et l’étape en cours, cherche les indices sur DofusDB et lance le trajet vers l’indice en un clic (**Chemin**). Aucune validation n’est envoyée à ta place.
+- 📒 **Carnet personnel** : positions, notes et messages. Voyage vers une position ou envoie un message dans le canal choisi en un clic. Version complète ou compacte.
+- 📈 **XP des métiers** : un onglet **XP** dans la fenêtre Métiers calcule les fabrications et les ingrédients nécessaires pour atteindre le niveau visé, avec les recettes DofusDB.
 
-Cliquer sur le bouton **Carnet personnel**, dans la même barre, à côté de **Capture d’âme**.
-Un second clic, **⋯ → Masquer le module** ou le bouton de fermeture de la barre
-de titre ferme le carnet (une modification non enregistrée demande un second
-clic). Le menu ⋯ des modules ne le liste plus non plus, sauf dans **Réduire les
-titres des modules**.
-La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat.
-Son menu ⋯ liste les deux dispositions comme des choix à puce du jeu, la
-disposition active cochée : **Version complète** (la grande fenêtre, seule à
-permettre de créer et modifier les entrées) et **Version compacte** (une
-fenêtre étroite avec les onglets, la liste des entrées, la pagination et les
-actions Voyager, Envoyer, Préparer dans le chat, Copier et canal des messages
-sous la liste, sans formulaire). Le choix est enregistré et appliqué aussitôt
-à la fenêtre ouverte, qui garde l’onglet et l’entrée choisis et reste à sa
-place (ramenée dans l’écran si la version complète, plus large, en dépasserait).
-Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
-**Notes** et **Messages**, la liste des entrées sans en-tête (entrée courante
-surlignée, pagination et compteur) et une section **Détail**
-(titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
-**Ma position**, puis **Voyager**, **Envoyer**, **Préparer dans le chat** et
-**Copier** selon l’onglet), et une ligne d’état avec **Actualiser**.
-Un brouillon modifié demande une confirmation avant d’être abandonné.
-Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
-et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
-coordonnées saisies ; le monde se choisit dans une liste déroulante native
-alimentée par les mondes du jeu. Le trajet se lance au clic. Un message s’envoie dans le chat
-par **Envoyer**, par la fonction d’envoi du jeu elle-même (celle de la touche
-Entrée), sur le canal choisi avec le bouton **Canal** : actuel (celui du chat),
-Général, Équipe, Guilde, Alliance, Groupe, Commerce ou Recrutement. Ce canal est
-enregistré avec le message. **Préparer dans le chat** place le texte dans le
-brouillon sans l’envoyer.
+### 🔄 Mises à jour
+- 🔄 **Mises à jour automatiques depuis GitHub** au lancement du jeu : chaque archive est vérifiée (SHA-256 et compatibilité exacte avec ta version de Dofus) avant d’être installée. Sans réseau, la version locale compatible est utilisée.
 
-Le carnet est enregistré localement à côté des préférences partagées, hors des
-dossiers de révision. Une modification concurrente de la même entrée est signalée
-pour éviter d’écraser celle d’un autre client.
+## 🔨 Installation
 
-## XP des métiers
+1. 📦 Sur la **[dernière version](../../releases/latest)** (page Releases), télécharge l’archive `DofusMiniatures-rN-….zip` (pas « Source code »).
+2. 📂 Extrais **toute l’archive** dans un dossier que tu gardes, au chemin court et hors du dossier du jeu (par exemple `C:\DofusEnhanced`). Elle contient un dossier `DofusMiniatures-3.7.11.11-rN` : ce nom historique est normal, la version de Dofus visée est indiquée dans `release.ini`.
+3. ▶️ Ouvre un terminal dans ce dossier `DofusMiniatures-3.7.11.11-rN` (dans l’Explorateur, tape `powershell` dans la barre d’adresse puis Entrée), puis choisis l’une des deux méthodes :
 
-Le troisième onglet **XP** de la fenêtre **Métiers** reprend le métier sélectionné,
-son niveau et son XP total. Les recettes viennent de
-[l’outil DofusDB](https://dofusdb.fr/fr/tools/jobs-xp).
-La simulation calcule le nombre de fabrications et les ingrédients nécessaires
-pour atteindre le niveau cible, en recalculant le gain quand le niveau augmente.
-Le panneau sépare l’objectif de niveau, la liste des recettes et les ingrédients
-à préparer. La recette sélectionnée est signalée par un liseré vert. Le coefficient
-d’XP et le bonus de serveur Épique se règlent manuellement ; garder 100 % sans bonus.
-L’onglet s’appelle uniquement **XP**, s’aligne sur les onglets natifs et conserve
-le même espace après Ressources qu’entre Recettes et Ressources. Un seul onglet
-reste sélectionné quand on passe de Recettes ou Ressources à XP.
-Chaque recette proposée et chaque ingrédient à préparer affiche son objet natif,
-avec son image, son infobulle au survol et ses actions habituelles.
-Ce calcul ne choisit pas automatiquement la recette la moins chère et ne fabrique rien.
-Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste visible.
+   **A. Jeu déjà lancé** : connecte-toi à ton personnage, lance la commande ci-dessous et entre le PID de Dofus qu’elle affiche. Après ce premier chargement, le chargement automatique s’active par défaut pour les lancements suivants.
 
-## Surbrillance
+   ```powershell
+   .\ModuleLoader.exe --interactive
+   ```
 
-**Options → Dofus Enhanced → Surbrillance** choisit le niveau : derrière
-les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
-Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
-ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
-Jusqu’à 32 cibles sont contourées en même temps, dans l’ordre monstres, PNJ
-puis éléments interactifs.
-Les mêmes cases sont disponibles dans **clic droit → Surbrillance**, sous les
-quatre modes. Elles sont indépendantes et le menu reste ouvert après sélection.
-Les objets doivent être visibles et proposer une action disponible dans le jeu.
-Aucun contour n’est dessiné pendant un combat. Le contour est calculé en fin
-d’image, après l’animation de zoom du jeu, et dessiné dans la même image : il
-suit la caméra image par image pendant un zoom ou un déplacement de la vue, et
-environ 30 fois par seconde quand la vue est immobile.
-Les grandes fenêtres restent devant les contours et les clics restent natifs.
-Ce budget de 32 contours simultanés est partagé entre les catégories.
+   **B. Chargement automatique d’emblée** : indique le chemin de ton `Dofus.exe`, puis lance le jeu normalement. Le mod se chargera à chaque lancement ; un jeu déjà ouvert n’est pas touché.
 
-## Ressources sur les cartes
+   ```powershell
+   .\ModuleLoader.exe --enable-auto "C:\chemin\vers\Dofus.exe"
+   ```
 
-Sur la **mini-carte**, une barre de six icônes rondes donne accès aux métiers.
-Un clic ouvre uniquement les ressources du métier choisi ; cliquer à nouveau
-sur son icône referme la liste. La bulle ouverte devient jaune, sans case à cocher.
-Les bulles mesurent 48 px, avec une image de 40 px ; les noms sont disponibles au survol.
-La barre conserve sa taille au zoom et au dézoom de la carte. Une main signale
-les boutons cliquables ; leur survol ne sélectionne pas la case de carte située
-derrière. La molette dans le sélecteur fait défiler les ressources sans zoomer
-la carte.
-Sur la grande carte (**M**), ouvrir le volet **Ressources**, à droite : chaque
-catégorie affiche la première ressource du métier : eau, frêne, fer, ortie,
-blé ou goujon. Les mêmes images servent de boutons sur la mini-carte et
-proviennent du catalogue des objets du jeu.
+   💡 Pour trouver `Dofus.exe` : jeu lancé, Gestionnaire des tâches → clic droit sur Dofus → *Ouvrir l’emplacement du fichier*.
+4. 🎮 En jeu : **Options → Dofus Enhanced**. C’est parti ! 🎉
 
-La sélection des ressources est commune aux deux cartes et sauvegardée entre
-les lancements. **Afficher sur la mini-carte** et **Afficher sur la grande carte**
-se règlent indépendamment. Les filtres restent accessibles sans ressource
-sélectionnée. Décocher l’affichage d’une carte, dans son volet ou dans les
-options, masque aussi le volet de sélection de cette carte jusqu’à réactivation
-par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
-bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
-carte, avec son survol et son infobulle natifs ; son clic est lu directement sur
-le composant du jeu et déclenche le recentrage natif, instantané, en conservant
-le zoom. Le zoom à la molette et le recentrage sont ceux du jeu, sans animation
-ajoutée : les glissements des versions 1.2.0 et 1.3.0 ont été retirés en 1.3.1.
-L’option **Bouton de recentrage sur la mini-carte** permet de masquer le bouton.
-Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
-sont disponibles, avec leur icône et leur niveau.
+🔄 **Mises à jour** : avec le chargement automatique et l’option **Mises à jour GitHub** (activée par défaut), chaque nouvelle version est téléchargée, vérifiée et installée automatiquement au lancement du jeu. Tes réglages sont conservés d’une version à l’autre. Un jeu déjà ouvert garde sa version jusqu’au prochain lancement.
 
-Chaque repère est un repère natif du jeu (le composant de ses propres indices
-de carte : foreuse, indice de chasse), avec la taille des indices du jeu sur les
-deux cartes et l’image de l’objet chargée par le jeu depuis son catalogue. Les
-quantités en gras occupent une petite pastille dorée claire dans le coin
-inférieur droit, proportionnelle au repère. Les ressources d’une même case
-rejoignent le groupe de position du jeu de cette case, avec ses éléments
-(foreuse, indice, attitude) : dès que la case empile plusieurs éléments, la
-pastille de nombre native affiche le total des ressources de la case (3 cuivre
-et 11 fer donnent 14, même avec une foreuse ou une attitude du jeu dans la
-pile) ; au survol de la souris, le groupe
-s’étale avec l’animation native de Dofus, foreuse comprise, chaque ressource
-montrant alors sa propre quantité, puis se replie quand le curseur s’éloigne.
-Les repères apparaissent par lots de 32 par image pour ne pas figer le jeu.
-Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
-Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
-les clics de navigation. Le message demandant de zoomer a été retiré ; les
-repères trop proches peuvent toujours être espacés en zoomant.
-La barre se répartit sur plusieurs lignes si nécessaire et la liste dispose
-de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
-contenir la barre et au moins une ligne de ressources.
-Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
-[Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+## ❓ FAQ et remarques
 
-Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
-seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
+- 🪟 **Windows uniquement** (64 bits).
+- 🎯 **Une version de Dofus par version du mod** : actuellement **Dofus Unity 3.7.12.12**. Le mod vérifie les empreintes exactes du jeu avant de se charger.
+- 🛠️ **Mise à jour de Dofus par Ankama ?** Le mod peut devoir être adapté : tant qu’aucune version compatible n’est publiée, il ne se charge pas et le jeu reste intact. Dès qu’elle sort, la mise à jour automatique l’installe.
+- 🔁 **Version antérieure à 1.11.0 ?** Après le renommage du dépôt en `dofus-enhanced`, sa mise à jour automatique ne trouve plus les nouvelles versions. Télécharge la dernière, extrais-la dans le dossier qui contient déjà `DofusMiniatures-3.7.11.11-rN` (pas dans un sous-dossier), puis décoche et recoche **Chargement automatique** en jeu (ou lance `.\ModuleLoader.exe --enable-auto "C:\chemin\vers\Dofus.exe"` depuis le nouveau dossier). Tes réglages sont conservés.
+- 📝 **Journaux** : `module.log` dans le dossier de la version chargée (`DofusMiniatures-3.7.11.11-rN`), `autoload.log` dans celui de l’assistant de chargement automatique.
+- 🌐 **Connexions** : GitHub pour les mises à jour, DofusDB pour la chasse au trésor et l’XP des métiers, Metamob seulement si tu enregistres ta clé.
+- 🗣️ **Langue** : l’interface du mod est en français. La synchro Metamob demande un jeu en français, en anglais ou en espagnol.
+- 🧪 **Mod expérimental** : chaque version passe ses tests hors jeu avant publication, mais certaines fonctions restent marquées expérimentales et des bugs sont possibles.
+- 🧹 **Désinstaller** : décoche **Chargement automatique** (ou lance `.\ModuleLoader.exe --disable-auto`), ferme le jeu, puis supprime le dossier du mod. Ta clé Metamob reste valable sur metamob.fr tant que tu ne la régénères pas.
+- 🐛 **Un bug ?** Ouvre une [issue](../../issues) avec ta version (Options → Dofus Enhanced → À propos) et les dernières lignes de `module.log`.
 
-## Trajets et chat
+## 📖 Documentation
 
-Le bouton TP du chat, le double-clic sur la grande carte ou la mini-carte et
-l’entrée « Voyager jusqu’à cette position » de leur clic droit lancent le trajet
-du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu. Ctrl +
-double-clic, le menu d’un point de repère et `/travel` gardent l’autopilote du jeu.
-**Options → Dofus Enhanced → Déplacements → Remplacer l’autopilote du jeu**,
-décoché, rend le double-clic et cette entrée à l’autopilote du jeu.
+- 📘 [Guide détaillé (français)](docs/GUIDE.md) : chaque fonction en détail, Metamob, compilation et publication.
+- 📜 [LISEZ-MOI.txt](LISEZ-MOI.txt) : historique des versions, aussi inclus dans l’archive.
+- ⛏️ [RESOURCE-DATA.md](RESOURCE-DATA.md) : origine des données des ressources.
 
-**Options → Dofus Enhanced → Chat** affiche ou masque séparément, à côté des
-positions et des archimonstres ou boss de L’éternelle moisson partagés dans le
-chat, le bouton TP, « Âme en sac » et l’avancement Ocre. Tout est affiché par
-défaut ; sans TP, les coordonnées écrites [x,y] restent du texte.
+## 🔢 Versions
 
-## Metamob
+Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, et une révision **rN** : l’étiquette GitHub (`r109`, `r110`…) que suit la mise à jour automatique. Exemple : 1.11.0 = r110.
 
-Dans **Options → Dofus Enhanced → Pierre d’âme**, sous l’alerte et l’équipement
-automatique, deux lignes synchronisent les captures avec ta quête Ocre sur
-[metamob.fr](https://www.metamob.fr) :
+## 🤝 Crédits
 
-1. Sur Metamob, **Paramètres → Clé API → Générer une clé**, puis copie-la.
-2. Colle-la dans le champ masqué **Clé API Metamob** : le bouton **Enregistrer**
-   apparaît dès le premier caractère. Le mod vérifie la clé auprès de Metamob et
-   indique dans le chat le compte reconnu.
-3. Coche **Synchroniser les captures avec Metamob**.
+- [Altansar69](https://github.com/Altansar69) - a créé le projet
+- [MinHook](https://github.com/TsudaKageyu/minhook) (Tsuda Kageyu) - bibliothèque de hooks
+- [nlohmann/json](https://github.com/nlohmann/json) (Niels Lohmann) - lecture du JSON
+- [DofusDB](https://dofusdb.fr) - données des ressources, API de la chasse au trésor et recettes des métiers
+- [Metamob](https://www.metamob.fr) - API de suivi des quêtes Ocre
 
-Une fois la clé enregistrée, la ligne n’a plus de champ modifiable : des étoiles
-fixes (jamais la clé ni sa longueur), un bouton d’état et une petite corbeille.
-Le bouton d’état dit ce que le mod sait de la clé, et un clic l’explique dans le
-chat :
+## 📄 Licence
 
-- **Clé valide** : Metamob l’a acceptée pendant cette session (à l’enregistrement,
-  lors d’une synchronisation ou de la vérification ci-dessous) ;
-- **Vérification…** : une clé enregistrée lors d’une session précédente ou par un
-  autre client ; le mod la vérifie une fois, sans message dans le chat, quand la
-  ligne s’affiche ;
-- **Clé non vérifiée** : Metamob n’a pas pu la confirmer (injoignable) ; un clic
-  relance la vérification, après une courte pause ;
-- **Clé refusée** (révoquée ou régénérée sur Metamob) ou **Clé illisible**
-  (chiffrée pour un autre compte Windows, ou abîmée) : supprime-la avec la
-  corbeille, puis enregistre une clé valide.
+Le code de Dofus Enhanced est placé dans le domaine public sous **Unlicense** : voir [LICENSE](LICENSE).
 
-La corbeille reste toujours disponible et demande « Voulez-vous supprimer la clé
-Metamob ? » : **Oui** la supprime de ce PC et rend le champ vide, **Non** (ou dix
-secondes sans réponse) la garde. Pour changer de clé, supprime l’ancienne puis
-colle la nouvelle.
+Les composants tiers gardent leur propre licence : MinHook (BSD 2-Clause, `third_party/minhook`), nlohmann/json (MIT, `third_party/nlohmann`) et le SDK WebView2 de Microsoft (`third_party/webview2/LICENSE.txt`). Les textes de MinHook et nlohmann/json figurent aussi à la fin de `LISEZ-MOI.txt`.
 
-Après chaque combat où ton personnage obtient l’âme d’un archimonstre ou d’un
-boss, le mod ajoute 1 à ce monstre dans ta quête Ocre Dofus Unity, sans rien
-modifier d’autre, et l’écrit dans le chat (« Metamob : +1 « Tofumanchou
-l’Empereur » (2 → 3). »). Il lit le rapport de fin de combat du jeu : seul le
-butin du personnage de ce client compte, donc avec un client par personnage
-chaque capture est comptée une fois. Les achats, échanges, la banque et le
-courrier ne sont jamais comptés. Metamob n’accepte que des quantités absolues :
-le mod relit la quantité juste avant d’écrire, et un envoi interrompu est
-vérifié avant d’être renvoyé, pour ne jamais compter deux fois. Avec plusieurs
-quêtes Ocre sur le compte, indique le nom du personnage dans « Personnage à
-contacter » de la bonne quête.
+L’Unlicense ne couvre que le code écrit pour Dofus Enhanced : ni les composants tiers ci-dessus, ni les données de ressources issues de DofusDB (`resource-map-generated.hpp`, voir [RESOURCE-DATA.md](RESOURCE-DATA.md)), ni Dofus et ses contenus, qui restent la propriété d’Ankama.
 
-La case vaut pour tous tes clients ouverts : cochée ou décochée dans l’un, elle
-suit dans les autres en deux secondes. Décocher abandonne aussi les captures en
-attente, sans rien envoyer. Le jeu doit être en français, en anglais ou en
-espagnol, les langues des noms Metamob. Une âme de salle de donjon (Tynrils,
-Gelées, Rats…) compte pour le boss dont c’est l’âme ; les autres boss de la salle
-se mettent à jour à la main sur Metamob.
+<a id="english"></a>
 
-Les clients ouverts sur ce PC écrivent un même monstre l’un après l’autre. Avec
-la même clé sur un autre PC (ou une autre session Windows), rien ne les
-coordonne : deux captures du même monstre faites au même moment des deux côtés
-peuvent n’en compter qu’une. Ne coche la synchro que sur un seul PC, et
-redémarre les clients encore ouverts avec une ancienne version avant de la cocher.
+# 🇬🇧 English
 
-La clé est personnelle (CGU de Metamob) : aucune clé n’est incluse dans le mod.
-Elle est chiffrée pour ton compte Windows dans `DofusMiniatures-metamob.key`, à
-côté des réglages, et n’est jamais affichée, journalisée ni publiée. Supprimée
-avec la corbeille, elle reste valable sur Metamob : régénère-la sur le site pour
-la révoquer. Les captures faites pendant que Metamob est injoignable sont
-renvoyées automatiquement pendant la session.
+**Dofus Enhanced** brings a good dose of quality of life to **Dofus Unity**, right inside the game’s interface: 🤏 miniatures, ⏩ shortened combat animations, ⛏️ resources on the maps, 🚀 one-click travel (zaaps and Havenbag included), 💎 soul capture helper with Metamob sync, 🏴‍☠️ treasure hunt, 📒 notebook and 📈 profession XP.
 
-## Compilation et publication
+Everything is set up in the game’s options, the mod’s panels are built from the game’s own components, and the mod updates itself when the game starts. Free and open source. 🎁
 
-Windows x64, outils C++ Visual Studio, CMake, Ninja, Python 3 et Windows PowerShell.
+## ✨ Features
 
-```powershell
-git clone --recurse-submodules https://github.com/Altansar69/dofus-miniatures.git
-cd dofus-miniatures
-.\build.ps1
-ctest --test-dir build --output-on-failure --output-junit test-results.xml
-python tools/package-release.py --output "C:\chemin\vers\releases"
-```
+⚙️ **A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence et animations (appearance and animations), Surbrillance (highlight), Cartes (maps), Déplacements (travel), Pierre d’âme (soul stone), Chat, Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
 
-Après incrément de révision, validation, commit et push sur `main`, publier
-avec `tools/publish-release.py --package <rN-package.json> --notes <notes.md>`.
-Cet outil utilise la connexion Git Credential Manager du propriétaire, vérifie
-l’empreinte calculée par GitHub, puis publie la release. Il ne remplace jamais
-une version déjà publiée.
+### 🎨 Appearance and animations
+- 🤏 **Miniatures, Créatures (creatures) or Normal**, chosen separately in and out of combat. Miniatures shrinks to 60% of the original size, never below 50% of a player’s height for monsters and summons.
+- ⏩ **Shortened combat animations**: Raccourcies (shortened, default), Sans animations des combattants (no fighter animations) or Instantané (instant); the last two modes are experimental. Server delays do not change, so not every animation disappears.
+- 🖱️ The game’s creature button becomes a Normal / Créatures / Miniatures selector, and right-clicking the map offers Affichage (display), Animations and Surbrillance (highlight).
 
-L’archive distribuée contient uniquement les fichiers nécessaires à l’exécution,
-les manifestes et la documentation : aucun fichier Dofus, réglage personnel,
-journal ou identifiant. Les téléchargements utilisent HTTPS et le SHA-256 fourni
-par GitHub ; le module est sélectionné par les empreintes exactes du binaire et
-des métadonnées du jeu.
+### 🔦 Highlight
+- 👀 **Monster outlines** out of combat, to spot monsters hidden behind the interface, behind the interface and walls, or all the time.
+- 🧑‍🌾 Optionally, **NPCs** and **interactive elements** (harvestable resources, doors, zaaps…). Up to 32 outlines at once, all categories combined.
 
-## Dépendances
+### 🗺️ Maps
+- ⛏️ **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). These are known gathering spots, not their real-time availability.
+- 🎯 **Recenter button** on the minimap, bringing it back to your character.
 
-MinHook est un sous-module, sous sa licence d’origine (BSD à deux clauses, reproduite
-à la fin de `LISEZ-MOI.txt`). Le SDK WebView2 inclut
-sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
-chargeurs, mais le panneau natif r95 ne le lance pas et ne dépend pas de son moteur.
-Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
-`third_party/nlohmann` et `LISEZ-MOI.txt`.
+### 🧭 Travel
+- 🚀 **Smarter travel**: the chat **TP** button, double-clicking the world map or the minimap, or the right-click « Voyager jusqu’à cette position » (travel to this position) entry. The mod compares walking with your known zaaps (directly or from the Havenbag), then lets the game’s autopilot finish the trip. Zaap prices apply.
+- 🕹️ Prefer the original autopilot? Untick **Remplacer l’autopilote du jeu** (replace the game’s autopilot); Ctrl + double-click and `/travel` always keep it.
+- 💨 **Fast map transitions** (shorter fades) and **next-map preloading** (experimental). Loading and the server are still needed.
+- 💞 **Spouse teleport**: a button, a heart and the distance on your spouse’s portrait in the party, plus a right-click entry. Only on click, under the game’s own conditions.
 
-La compilation et les tests hors jeu ne remplacent pas la vérification de
-l’initialisation et du rendu dans Dofus.
+### 💎 Soul stones and Metamob
+- 🔔 **Soul stone alert**: during the placement phase of a fight against a capturable archmonster or boss, the required soul stone tier, your stock and the equipped stone. In combat, **Capture d’âme** (soul capture) turns green when the Chercheur d’âmes (soul seeker) state is on you, red otherwise. Green alone does not guarantee the capture.
+- 🎒 **Auto-equip** of the right stone during placement (a single attempt per fight), otherwise an **Équiper** (equip) button.
+- 🔗 **Metamob sync** (off by default): after each fight where your character gets the soul of an archmonster or a boss, +1 for that monster in your Ochre quest on [metamob.fr](https://www.metamob.fr). Your personal API key is encrypted for your Windows account, never shown or logged.
+
+### 💬 Chat
+- 💬 Next to positions and to archmonsters or bosses of the Ochre quest (L’éternelle moisson) shared in chat: a **TP** button, **Âme en sac** / Pas en sac (soul in your bag or not; the bank is not checked), **Ocre** progress (a click opens the quest) and your **Metamob** count (with a saved key).
+- 🎛️ Each addition can be turned on or off. With TP, typed `[x,y]` coordinates become clickable.
+
+### 🧰 Built-in tools
+- 🏴‍☠️ **Treasure hunt**: a panel picks up your position and the current step, searches clues on DofusDB and starts the trip to the clue in one click (**Chemin**, path). Nothing is validated on your behalf.
+- 📒 **Personal notebook**: positions, notes and messages. Travel to a position or send a message on the chosen channel in one click. Full or compact layout.
+- 📈 **Profession XP**: an **XP** tab in the professions (Métiers) window works out the crafts and ingredients needed to reach your target level, using DofusDB recipes.
+
+### 🔄 Updates
+- 🔄 **Automatic updates from GitHub** when the game starts: each archive is verified (SHA-256 and exact compatibility with your Dofus version) before it is installed. Offline, the compatible local version is used.
+
+## 🔨 Installation
+
+1. 📦 On the **[latest release](../../releases/latest)** (Releases page), download the `DofusMiniatures-rN-….zip` archive (not “Source code”).
+2. 📂 Extract **the whole archive** into a folder you keep, with a short path and outside the game folder (for example `C:\DofusEnhanced`). It contains a `DofusMiniatures-3.7.11.11-rN` folder: this historical name is normal, the targeted Dofus version is written in `release.ini`.
+3. ▶️ Open a terminal in that `DofusMiniatures-3.7.11.11-rN` folder (in File Explorer, type `powershell` in the address bar, then Enter), then pick one of the two methods:
+
+   **A. Game already running**: log in to your character, run the command below and type the Dofus PID it shows. After this first load, automatic loading is turned on by default for the next launches.
+
+   ```powershell
+   .\ModuleLoader.exe --interactive
+   ```
+
+   **B. Automatic loading right away**: give the path of your `Dofus.exe`, then start the game as usual. The mod will load at every launch; a game that is already running is left alone.
+
+   ```powershell
+   .\ModuleLoader.exe --enable-auto "C:\path\to\Dofus.exe"
+   ```
+
+   💡 To find `Dofus.exe`: with the game running, Task Manager → right-click Dofus → *Open file location*.
+4. 🎮 In game: **Options → Dofus Enhanced**. Have fun! 🎉
+
+🔄 **Updates**: with automatic loading and the **Mises à jour GitHub** (GitHub updates) option, on by default, each new version is downloaded, verified and installed automatically when the game starts. Your settings are kept from one version to the next. A game that is already running keeps its version until the next launch.
+
+## ❓ FAQ and notes
+
+- 🪟 **Windows only** (64-bit).
+- 🎯 **One Dofus version per mod version**: currently **Dofus Unity 3.7.12.12**. The mod checks the game’s exact fingerprints before loading.
+- 🛠️ **Ankama updated Dofus?** The mod may need an update: until a compatible version is published, it does not load and the game is left untouched. As soon as it is out, the automatic update installs it.
+- 🔁 **On a version older than 1.11.0?** Once the repository is renamed to `dofus-enhanced`, its automatic update no longer finds new versions. Download the latest one, extract it into the folder that already contains `DofusMiniatures-3.7.11.11-rN` (not into a subfolder), then untick and tick **Chargement automatique** in game (or run `.\ModuleLoader.exe --enable-auto "C:\path\to\Dofus.exe"` from the new folder). Your settings are kept.
+- 📝 **Logs**: `module.log` in the folder of the loaded version (`DofusMiniatures-3.7.11.11-rN`), `autoload.log` in the folder of the automatic loading helper.
+- 🌐 **Connections**: GitHub for updates, DofusDB for the treasure hunt and profession XP, Metamob only if you save your key.
+- 🗣️ **Language**: the mod’s interface is in French. Metamob sync needs the game in French, English or Spanish.
+- 🧪 **Experimental mod**: every version passes its offline tests before release, but some features are still marked experimental and bugs are possible.
+- 🧹 **Uninstall**: untick **Chargement automatique** (automatic loading), or run `.\ModuleLoader.exe --disable-auto`, close the game, then delete the mod’s folder. Your Metamob key stays valid on metamob.fr until you regenerate it.
+- 🐛 **Found a bug?** Open an [issue](../../issues) with your version (Options → Dofus Enhanced → À propos) and the last lines of `module.log`.
+
+## 📖 Documentation
+
+- 📘 [Detailed guide (French)](docs/GUIDE.md): every feature in detail, Metamob, build and release.
+- 📜 [LISEZ-MOI.txt](LISEZ-MOI.txt): version history (in French), also included in the archive.
+- ⛏️ [RESOURCE-DATA.md](RESOURCE-DATA.md): where the resource data comes from.
+
+## 🔢 Versioning
+
+Each version has an **x.y.z** number, shown in game in **Options → Dofus Enhanced → À propos** (about), and an **rN** revision: the GitHub tag (`r109`, `r110`…) that the automatic updates follow. Example: 1.11.0 = r110.
+
+## 🤝 Credits
+
+- [Altansar69](https://github.com/Altansar69) - Has created the project
+- [MinHook](https://github.com/TsudaKageyu/minhook) (Tsuda Kageyu) - hooking library
+- [nlohmann/json](https://github.com/nlohmann/json) (Niels Lohmann) - JSON parsing
+- [DofusDB](https://dofusdb.fr) - resource data, treasure hunt API and profession recipes
+- [Metamob](https://www.metamob.fr) - Ochre quest tracking API
+
+## 📄 License
+
+Dofus Enhanced’s code is released into the public domain under the **Unlicense**: see [LICENSE](LICENSE).
+
+Third-party components keep their own licenses: MinHook (BSD 2-Clause, `third_party/minhook`), nlohmann/json (MIT, `third_party/nlohmann`) and Microsoft’s WebView2 SDK (`third_party/webview2/LICENSE.txt`). The MinHook and nlohmann/json texts are also reproduced at the end of `LISEZ-MOI.txt`.
+
+The Unlicense only covers the code written for Dofus Enhanced: not the third-party components above, not the DofusDB resource data (`resource-map-generated.hpp`, see [RESOURCE-DATA.md](RESOURCE-DATA.md)), and not Dofus and its content, which remain Ankama’s property.

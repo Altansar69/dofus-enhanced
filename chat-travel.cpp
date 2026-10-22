@@ -33,13 +33,19 @@ bool installed=false, dispatching=false;
 bool directPlan=false;
 bool teleportOnly=false, havenbagDeparture=false;
 uint64_t nextPlanningSlice=0;
+// The game's own destination: the last map esg.zid gives for the coordinates
+// and world, the one its autopilot travels to. The route search, already there,
+// the arrival and the onward trip use this map only.
 int64_t targetMap=0;
-Method resolve{}, currentMap{}, inBag{}, eligible{}, walk{}, interactives{}, interact{}, interactCtor{};
+Method resolve{}, currentMap{}, inBag{}, eligible{}, travel{}, interactives{}, interact{}, interactCtor{};
 Method teleport{}, teleportCtor{}, funds{}, mapInfo{}, subarea{}, world{};
 Method isKnown{}, quote{}, quoteCtor{};
 Klass skillMakerClass{}, teleportClass{}, quoteClass{};
 Method noticeCtor{},noticeConvert{},noticeDisplay{};
 Klass noticeClass{},chatClass{};
+// The player's own cell and zone, read like the game's world path service.
+Method localId{},findEntity{},entityCell{},cellZone{};
+Klass registryClass{},entityClass{},mapDataClass{},cellClass{};
 std::string lastNotice;
 uint64_t lastNoticeAt=0;
 using ListFn=bool(*)(Obj,Obj,Method);
@@ -61,6 +67,10 @@ bool SameSession() {
 int64_t Map() {
     Ref location(api.Invoke(currentMap,character.get()));
     return location.get()?*static_cast<int64_t*>(api.FieldAddress(location.get(),"m_mapId")):0;
+}
+void RequireField(Klass type,const char* name,size_t offset) {
+    auto field=api.class_get_field_from_name(type,name);
+    if (!field || api.field_get_offset(field)!=offset) throw std::runtime_error(std::string("Travel field mismatch: ")+name);
 }
 void Notice(const std::string& message) { PostChatNotice("TP : "+message); }
 void PostNotice(const std::string& message) {
@@ -151,13 +161,52 @@ void RequestTeleport(int source,int64_t map,int price) {
     Log("CHAT_TRAVEL teleport requested; awaiting confirmed arrival");
     Notice(teleportOnly ? "téléportation demandée vers le zaap choisi." : "téléportation demandée ; le trajet continuera après l'arrivée.");
 }
+// The player's own zone on the current map, read the way the game's world path
+// service starts its own search (eza.bbnj): the local entity's cell
+// (EntityInfo.bajk) in the loaded map's cells, then that cell's roleplay zone
+// (ClientCellData.GetLinkedRpZone), the zone of the graph's vertices. -1 when
+// any step is not exactly known: every zone of the map then starts the search.
+int HereZone() {
+    const auto map=journey.sourceMap;
+    const auto unknown=[map](const std::string& reason) {
+        Log("CHAT_TRAVEL_HERE_ZONE map="+std::to_string(map)+" unknown="+reason); return -1;
+    };
+    if (!localId || !findEntity || !entityCell || !cellZone) return unknown("contracts");
+    try {
+        // zcx dereferences esg.dpzj: no character data while it is null.
+        if (!api.Field(character.get(),"dpzj")) return unknown("character");
+        auto id=api.Value<int64_t>(api.Invoke(localId,character.get()));
+        Ref registry(module->FindService("fso"));
+        if (id<=0 || !registry.get() || api.object_get_class(registry.get())!=registryClass) return unknown("registry");
+        Obj found=nullptr;
+        if (!api.Value<bool>(api.Invoke(findEntity,registry.get(),{&id,&found})) || !found) return unknown("entity");
+        Ref entity(found);
+        if (api.object_get_class(entity.get())!=entityClass) return unknown("entity");
+        int cell=api.Value<int>(api.Invoke(entityCell,entity.get()));
+        Ref scene(module->FindService("fpm"));
+        if (!scene.get() || api.object_get_class(scene.get())!=mapServiceClass ||
+            !api.Value<bool>(api.Invoke(mapReady,scene.get()))) return unknown("scene");
+        Ref data(api.Invoke(mapData,scene.get()));
+        if (!data.get() || api.object_get_class(data.get())!=mapDataClass || api.Value<int>(api.Field(data.get(),"id"))!=map) return unknown("map");
+        Ref cells(api.Field(data.get(),"cellsData"));
+        if (cell<0 || cell>=Count(cells.get())) return unknown("cell");
+        Ref info(api.Call(cells.get(),"get_Item",{&cell}));
+        if (!info.get() || api.object_get_class(info.get())!=cellClass ||
+            api.Value<uint32_t>(api.Field(info.get(),"cellNumber"))!=static_cast<uint32_t>(cell)) return unknown("cell");
+        const int zone=api.Value<int>(api.Invoke(cellZone,info.get()));
+        Log("CHAT_TRAVEL_HERE_ZONE map="+std::to_string(map)+" cell="+std::to_string(cell)+" zone="+std::to_string(zone));
+        return zone;
+    } catch (const std::exception& e) { return unknown(e.what()); }
+}
 void CompletePlan();
 void Plan(std::vector<chat_travel::Destination> choices,bool direct) {
     chat_travel::Destination here;here.map=journey.sourceMap;here.known=true;
-    if(!api.Value<bool>(api.Invoke(inBag,character.get()))&&Locate(here))
-        choices.push_back(here);
+    int zone=-1;
+    if(!api.Value<bool>(api.Invoke(inBag,character.get()))&&Locate(here)) {
+        choices.push_back(here); zone=HereZone();
+    }
     directPlan=direct;
-    chat_route::Begin(std::move(choices),targetMap,journey.sourceMap);
+    chat_route::Begin(std::move(choices),targetMap,journey.sourceMap,zone);
     journey.phase=Phase::Planning;
     Log("CHAT_TRAVEL comparing native traversable routes (map changes, teleport penalty 1)");
     Notice("recherche d'un trajet accessible...");
@@ -293,10 +342,14 @@ bool ArrivalReady() {
         api.Value<bool>(api.Invoke(eligible,character.get()));
 }
 void RequestOnward() {
-    auto target=journey.target;
+    auto map=targetMap;
     journey.Walk(GetTickCount64()); // Commit before the native action can reenter.
+    // esg.zhy resolves the coordinates again and sends their last map in the
+    // game's autopilot request, which faw.bcdl hands to faw.bcdq. The same native
+    // call, with the map resolved at the start: zid ranks the maps from the
+    // current one, so after a teleport it could pick another layer.
     bool immediate=true;
-    api.Invoke(walk,character.get(),{&target.x,&target.y,&target.world,&immediate});
+    api.Invoke(travel,routeService.get(),{&map,&immediate});
     journey.onwardAccepted=api.Value<bool>(api.Invoke(routeActive,routeService.get())) ||
         api.Value<bool>(api.Field(routeService.get(),"dsjd"));
     Log("CHAT_TRAVEL_ONWARD_REQUEST attempt="+std::to_string(journey.onwardAttempts)+" target="+std::to_string(targetMap));
@@ -346,13 +399,25 @@ void StartChatTravel(ChatTpTarget target) {
         if (!character.get() || !teleports.get() || !routeService.get() || api.object_get_class(routeService.get())!=routeClass || !api.Value<bool>(api.Invoke(eligible,character.get()))) { Cancel("native automatic travel unavailable","voyage automatique indisponible dans l'état actuel du personnage."); return; }
         const auto map=Map(); if (!map || target.world<0) { Cancel("destination context unavailable"); return; }
         Ref candidates(api.Invoke(resolve,character.get(),{&target.x,&target.y,&target.world}));
-        int index=Count(candidates.get())-1;
-        if (index<0) { Cancel("no native map at destination coordinates"); return; }
-        targetMap=api.Value<int64_t>(api.Call(candidates.get(),"get_Item",{&index}));
+        const int count=Count(candidates.get());
+        if (!count) { Cancel("no native map at destination coordinates"); return; }
+        // Every map at the coordinates is logged; the last one is the game's choice.
+        std::string layers;
+        for (int i=0;i<count;++i) {
+            targetMap=api.Value<int64_t>(api.Call(candidates.get(),"get_Item",{&i}));
+            layers+=(layers.empty()?"":",")+std::to_string(targetMap);
+        }
         if(targetMap<=0){Cancel("invalid native destination map");return;}
-        Log("CHAT_TRAVEL_RESOLVED source="+std::to_string(map)+" target="+std::to_string(targetMap)+" world="+std::to_string(target.world));
+        Log("CHAT_TRAVEL_RESOLVED source="+std::to_string(map)+" target="+std::to_string(targetMap)+" world="+std::to_string(target.world)+" maps="+layers);
+        const bool bag=api.Value<bool>(api.Invoke(inBag,character.get()));
+        // Already on the game's destination map. A Havre-Sac start always goes
+        // through its zaap, even at the Havre-Sac's own coordinates.
+        if (!bag && map==targetMap) {
+            Log("CHAT_TRAVEL_ALREADY_THERE map="+std::to_string(map)+" x="+std::to_string(target.x)+" y="+std::to_string(target.y)+" world="+std::to_string(target.world));
+            EndJourney(); Notice("tu es déjà sur ["+std::to_string(target.x)+","+std::to_string(target.y)+"]."); return;
+        }
         journey.Begin(target,map,GetTickCount64());
-        havenbagDeparture=api.Value<bool>(api.Invoke(inBag,character.get()));
+        havenbagDeparture=bag;
         if (havenbagDeparture) { UseZaap(); return; }
         BeginDirect();
     } catch (const std::exception& e) { Log(std::string("CHAT_TRAVEL_START_ERROR ")+e.what()); RestoreChatTravel();Notice("échec du calcul du trajet. Le détail est enregistré dans module.log."); }
@@ -449,7 +514,10 @@ void InstallChatTravel() {
     mapData=verify("epf","xkd",0,0x11ECD00);
     routeActive=verify("faw","bcdi",0,0x7E1C10);
     currentMap=verify("esg","zeo",0,0x185C1E0); inBag=verify("esg","zfr",0,0x18BBA00);
-    eligible=verify("esg","zhx",0,0x18BD400); walk=verify("esg","zhy",4,0x18BD470);
+    eligible=verify("esg","zhx",0,0x18BD400);
+    // The game's autopilot request handler (faw.bcdl and faw.bcdm call it):
+    // travel to an exact map. esg.zhy is zhx, then zid's last map to this call.
+    travel=verify("faw","bcdq",2,0x1A1A2D0);
     // Party follow state of the character (esg <dpzc>, set by the game's
     // follow messages): the only native source of trips after a cancel.
     following=verify("esg","zcl",0,0x18BAE60);
@@ -472,5 +540,19 @@ void InstallChatTravel() {
     AddHook(receive,0x1A4AA10,reinterpret_cast<void*>(&ListHook),reinterpret_cast<void**>(&originalList));
     auto price=verify("fhk","bepe",1,0x1C4A5D0);
     AddHook(price,0x1C4A5D0,reinterpret_cast<void*>(&QuoteHook),reinterpret_cast<void**>(&originalQuote));
+    // The player's own zone, as the game's world path service reads it (eza.bbnj).
+    // Optional: without it, every zone of the current map starts the comparison.
+    try {
+        constexpr const char* entities="Core.Services.Entities.EntityInformationServices",*cells="AleCore.Data.UnityClient";
+        registryClass=api.Class("Core.dll","","evv"); entityClass=api.Class("Core.dll",entities,"EntityInfo");
+        mapDataClass=api.Class("AleCore.dll",cells,"ClientMapData"); cellClass=api.Class("AleCore.dll",cells,"ClientCellData");
+        RequireField(mapDataClass,"cellsData",0x80); RequireField(cellClass,"cellNumber",0x10);
+        localId=verify("esg","zcx",0,0x18BB140); findEntity=verify("evv","bamm",2,0x1957A70);
+        entityCell=api.FindVerified(entityClass,"bajk",0,0x1951590);
+        cellZone=api.FindVerified(cellClass,"GetLinkedRpZone",0,0x681F30);
+    } catch (const std::exception& e) {
+        localId=findEntity=entityCell=cellZone=nullptr;
+        Log(std::string("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE ")+e.what());
+    }
     installed=true;
 }

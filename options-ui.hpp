@@ -37,6 +37,7 @@ struct OptionsUi {
     managed::Ref travelPlannerSource, travelPlannerOption;
     // « Chat »: what the mod adds next to positions and monster groups shared in chat.
     managed::Ref chatTravelSource, chatTravelOption, chatSoulSource, chatSoulOption, chatOcreSource, chatOcreOption;
+    managed::Ref chatMetamobSource, chatMetamobOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
     // Metamob rows, after the two soul rows of the « Pierre d’âme » section:

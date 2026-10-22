@@ -56,7 +56,8 @@ std::vector<chat_travel::Destination> plannedChoices;
 std::vector<std::string> notices,logs;
 bool failSpellEligibility=false;
 int allowedChecks=0;
-int64_t teleportMap=0; ChatTpTarget walkedTo{};
+int64_t teleportMap=0,walkedMap=0,plannedTarget=0,plannedSource=0; ChatTpTarget resolvedFor{};
+int plannedZone=-2; Obj mapCells{};
 soul::CombatSnapshot fightState{soul::CombatState::Fighting,17,51};
 soul::InventorySnapshot inventory{true,0,{{55,9687,3,true}}};
 bool (*receiveHook)(Obj,Obj,Method)=nullptr;
@@ -119,15 +120,18 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     if (name=="zeo") return currentMap;
     if (name=="zfr") return Box(bag);
     if (name=="xkj") return Box(sceneReady);
-    if (name=="xkd") {auto d=Make("ClientMapData");Get(d).fields["id"]=Box<int>(loadedMapOverride<0?int(Get(currentMap).numbers["m_mapId"]):loadedMapOverride);return d;}
+    if (name=="xkd") {auto d=Make("ClientMapData");Get(d).fields["id"]=Box<int>(loadedMapOverride<0?int(Get(currentMap).numbers["m_mapId"]):loadedMapOverride);Get(d).fields["cellsData"]=mapCells;return d;}
     if (name=="bcdi") return Box(routeRunning);
     if (name=="zcl") return Box(followingMember);
     if (name=="zhx") return Box(eligible);
-    if (name=="zid") {auto result=List();if(mapValid)for(auto map:resolvedMaps)Get(result).items.push_back(Box<int64_t>(map));return result;}
+    if (name=="zid") {resolvedFor={*static_cast<int*>(a[0]),*static_cast<int*>(a[1]),*static_cast<int*>(a[2])};auto result=List();if(mapValid)for(auto map:resolvedMaps)Get(result).items.push_back(Box<int64_t>(map));return result;}
     if (name=="zdc") return n.fields["money"];
     // zch/0x11EDC80 reads +0xF8, not the known-zaap list at +0x120.
     if (name=="zch") return n.fields["otherMaps"];
     if (name=="zhr") return Box(directKnown);
+    if (name=="zcx") return Box<int64_t>(localId);
+    if (name=="bajk") return Box<int>(static_cast<int>(n.numbers["cell"]));
+    if (name=="GetLinkedRpZone") return Box<int>(static_cast<int>(n.numbers["zone"]));
     if (name=="bepd") {++quotes;requestedQuote=Get(a[0]).numbers["map"];if(synchronousQuote){auto message=Make("hgu");Raw<int64_t>(message,0x28,requestedQuote);Raw<int>(message,0x30,25);quoteHook(self,message,nullptr);}return Box(true);}
     if (name=="yhr") return n.fields["event"];
     if (name=="bjfd") {++entered;return nullptr;}
@@ -136,9 +140,11 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     if (name=="get_subArea") return n.fields["area"];
     if (name=="get_worldmapId") return Box(static_cast<int>(n.numbers["world"]));
     if (name=="bcla") {++teleported;teleportMap=Get(a[0]).numbers["map"];teleportSource=static_cast<int>(Get(a[0]).numbers["source"]);teleportCost=static_cast<int>(Get(a[0]).numbers["cost"]);return Box(true);}
-    if (name=="zhy") {Check(*static_cast<bool*>(a[3]),"Explicit TP must resume native autopilot without confirmation");++walked;
-        if(acceptRoute){auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(123);Get(services["fjs"]).fields["dsjs"]=d;routeRunning=true;}
-        walkedTo={*static_cast<int*>(a[0]),*static_cast<int*>(a[1]),*static_cast<int*>(a[2])};return nullptr;}
+    // faw.bcdq: the game's own autopilot request handler, toward an exact map.
+    if (name=="bcdq") {Check(self==services["fjs"]&&*static_cast<bool*>(a[1]),"Explicit TP must resume native autopilot without confirmation");++walked;
+        walkedMap=*static_cast<int64_t*>(a[0]);
+        if(acceptRoute){auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(static_cast<uint32_t>(walkedMap));Get(services["fjs"]).fields["dsjs"]=d;routeRunning=true;}
+        return nullptr;}
     if (name=="bajh") return Box<int64_t>(99);
     if (name=="bapo") return groupStore;
     if (name=="baqa") {*static_cast<Obj*>(a[1])=group;return Box(group!=nullptr);}
@@ -169,7 +175,9 @@ void Initialize() {
     api.gchandle_free=[](GCHandle id){handles.erase(id);};
     api.method_get_param=[](Method,uint32_t)->const void*{return api.Class("","","ValueStruct");};
     api.class_from_type=[](const void* type)->Klass{return const_cast<void*>(type);};
-    api.class_get_field_from_name=[](Klass,const char* name)->void*{static size_t dugt=0x80;return std::string(name)=="dugt"?static_cast<void*>(&dugt):nullptr;};
+    api.class_get_field_from_name=[](Klass,const char* name)->void*{
+        static size_t dugt=0x80,cellsData=0x80,cellNumber=0x10;const std::string field(name);
+        return field=="dugt"?&dugt:field=="cellsData"?&cellsData:field=="cellNumber"?static_cast<void*>(&cellNumber):nullptr;};
     api.field_get_offset=[](void* field)->size_t{return *static_cast<size_t*>(field);};
 }
 struct Fixture {
@@ -181,6 +189,7 @@ struct Fixture {
         entered=interacted=teleported=walked=cast=equipped=quotes=0;teleportSource=teleportCost=-1;requestedQuote=0;directKnown=true;synchronousQuote=false;
         synchronousList=failAppend=false;resolvedMaps={123};nativeMenus=nativeWalks=nativeAutos=nativeMouseDowns=stoppedEvents=0;gameTime=100;
         plannedDeparture=104;plannedChoices.clear();notices.clear();logs.clear();routePending=false;routeTicks=0;
+        walkedMap=plannedTarget=plannedSource=0;resolvedFor={};plannedZone=-2;mapCells=nullptr;
         for(auto name:{"fng","fpf","fkc","frq","fro","frv","fsm","fmz","fnm","fnk","fnr","fjx","frs","fsf","fvq","fns","fsr","fmo"}) services[name]=Make(name);
         services["ham"]=Make("hal");services["fjs"]=Make("faw");services["fpm"]=Make("epf");
         sceneReady=acceptRoute=true;loadingMap=routeRunning=routePendingNative=followingMember=false;loadedMapOverride=-1;
@@ -246,9 +255,9 @@ namespace chat_route {
 Result result;
 void Install() {}
 void Clear() {result={Status::Unreachable};}
-void Begin(std::vector<chat_travel::Destination> choices,int64_t target,int64_t) {
+void Begin(std::vector<chat_travel::Destination> choices,int64_t target,int64_t source,int zone) {
     fake::Check(target>0,"Planner requires the resolved native destination map");
-    fake::plannedChoices=choices;
+    fake::plannedChoices=choices;fake::plannedTarget=target;fake::plannedSource=source;fake::plannedZone=zone;
     Clear();for(auto choice:choices)if(choice.map==fake::plannedDeparture){result={Status::Found,choice,3};return;}
 }
 Result Tick(){++fake::routeTicks;return fake::routePending?Result{}:result;}
@@ -282,7 +291,7 @@ void MapTravelTests() {
         Check(quotes==1&&routeTicks==1,"Same destination through either UI entrypoint preserves pending request");
         f.Price();TickChatTravel();Check(teleported==1&&teleportMap==104&&teleportSource==5&&!walked,"Fresh affordable quote permits selected direct zaap");
         Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();TickChatTravel();
-        Check(walked==1&&walkedTo==ChatTpTarget{-10,11,14}&&!nativeWalks&&!nativeAutos,
+        Check(walked==1&&resolvedFor==ChatTpTarget{-10,11,14}&&walkedMap==123&&!nativeWalks&&!nativeAutos,
             "Confirmed arrival starts one no-confirm native route with displayed world and native coordinate truncation");});
     for(int action=0;action<2;++action)run([action](Fixture& f){
         plannedDeparture=10;Info(10,9,10,1);auto owner=f.MapOwner();
@@ -359,7 +368,7 @@ void MapTravelTests() {
         Check(interacted==1&&!nativeAutos&&!nativeWalks&&!quotes,"Both native map-travel entrypoints use Havenbag interactive");f.Receive();TickChatTravel();
         Check(teleported==1&&teleportMap==104&&teleportSource==3&&!walked,"Route chooses accessible zaap first");
         Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();Check(!walked,"No walking while still in Havenbag context");bag=false;TickChatTravel();TickChatTravel();TickChatTravel();
-        Check(walked==1&&walkedTo==ChatTpTarget{10,10,1},"One native no-confirm onward route after confirmed arrival");});
+        Check(walked==1&&resolvedFor==ChatTpTarget{10,10,1}&&walkedMap==123,"One native no-confirm onward route after confirmed arrival");});
     run([](Fixture& f){bag=true;eligible=false;mapAutoHook(f.MapOwner(),{10,10},nullptr);Check(!interacted&&!teleported&&!walked,"Native route eligibility failure cannot initiate movement");});
     run([](Fixture& f){bag=true;auto owner=f.MapOwner();mapAutoHook(owner,{std::numeric_limits<float>::quiet_NaN(),10},nullptr);mapWalkHook(owner,{9,10},-1,true,nullptr);Check(!interacted&&!teleported,"Invalid map coordinates/world cannot initiate a trip");});
     run([](Fixture& f){bag=true;auto owner=f.MapOwner();Get(Get(owner).fields["dugq"]).fields["panel"]=nullptr;mapAutoHook(owner,{10,10},nullptr);Check(!interacted,"Detached cartography owner is inert");});
@@ -411,9 +420,105 @@ void MapTravelTests() {
         Check(HandleMapTravelCallback(Get(rows.back()).fields["callback"],lastView)&&interacted==1&&!teleported,"Option off keeps the Havre-Sac zaap click");
         f.Receive();TickChatTravel();Check(teleported==1&&teleportMap==104&&!walked&&!quotes,"Option off: the chosen Havre-Sac zaap still departs on its fresh list");});
 }
+// r110: already there, the player's own zone, the Havre-Sac start, and the trip
+// toward the game's own destination map (the last map esg.zid gives).
+void TravelFixTests() {
+    using namespace fake;
+    const auto run=[](auto scenario) {const auto before=handles.size();{Fixture f;scenario(f);}Check(handles.size()==before,"Travel must release managed references");};
+    const auto logged=[](const std::string& text) {return std::any_of(logs.begin(),logs.end(),[&](const std::string& l){return l.find(text)!=std::string::npos;});};
+    const auto noticed=[](const std::string& text) {return std::any_of(notices.begin(),notices.end(),[&](const std::string& n){return n.find(text)!=std::string::npos;});};
+    const auto idle=[] {return !quotes&&!teleported&&!walked&&!interacted&&!entered&&!routeTicks&&!plannedTarget;};
+    // The user's report: on [9,17] (82313729), a TP to [9,17] took the zaap of
+    // [10,22] and walked back. esg.zid gives both maps there, the game's choice last.
+    run([&](Fixture&){Get(currentMap).numbers["m_mapId"]=82313729;resolvedMaps={83104256,82313729};
+        StartChatTravel({9,17,1});
+        Check(idle(),"Already on the destination map: no quote, zaap, route comparison or trip");
+        Check(!notices.empty()&&notices.back()=="TP : tu es déjà sur [9,17].","Already there is told in the local chat");
+        Check(logged("CHAT_TRAVEL_RESOLVED source=82313729 target=82313729 world=1 maps=83104256,82313729")&&
+            logged("CHAT_TRAVEL_ALREADY_THERE map=82313729 x=9 y=17 world=1"),"Already there is logged with every map of the coordinates");
+        TickChatTravel();TickChatTravel();Check(idle(),"Nothing stays pending after an already-there click");
+        resolvedMaps={123};Get(currentMap).numbers["m_mapId"]=10;StartChatTravel({10,10,1});
+        Check(quotes==1&&requestedQuote==104,"The next TP plans normally");});
+    // Another map at the same coordinates (a zaap's own layer, an interior) is not
+    // the destination: a trip to the game's choice is planned.
+    run([&](Fixture&){resolvedMaps={10,123};StartChatTravel({9,10,1});
+        Check(quotes==1&&requestedQuote==104&&plannedTarget==123&&!logged("CHAT_TRAVEL_ALREADY_THERE")&&!noticed("déjà sur"),
+            "Standing on another map of the coordinates plans a trip to the game's choice");});
+    // Map double-click, « Voyager jusqu’à cette position » and the auto entry.
+    for(int action=0;action<3;++action)run([&,action](Fixture& f){
+        Get(currentMap).numbers["m_mapId"]=82313729;resolvedMaps={83104256,82313729};auto owner=f.MapOwner();
+        const float x=30.f+action;const auto expected="TP : tu es déjà sur ["+std::to_string(30+action)+",17].";
+        if(action==0){Get(owner).fields["dugt"]=Box<float>(gameTime-0.3f);mapMouseDownHook(owner,MouseDown(0,{x*10,170}),nullptr);}
+        else if(action==1)mapWalkHook(owner,{x+0.4f,17.6f},1,true,nullptr);
+        else mapAutoHook(owner,{x,17},nullptr);
+        Check(idle()&&!nativeWalks&&!nativeAutos&&!nativeMouseDowns,"Map entries on the current position neither travel nor fall back to the game's autopilot");
+        Check(!notices.empty()&&notices.back()==expected,"Map entries tell already there");
+        Check(resolvedFor==ChatTpTarget{30+action,17,1}&&logged("CHAT_TRAVEL_ALREADY_THERE map=82313729 x="+std::to_string(30+action)+" y=17 world=1"),
+            "Map entries resolve the clicked position and log already there");
+        Check(action!=0||stoppedEvents==1,"The double-click is consumed");});
+    // The user's double-click on [10,17] from 82313729: with the current map as a
+    // departure, the trip walks there, with no zaap request.
+    run([&](Fixture&){Get(currentMap).numbers["m_mapId"]=82313729;Info(82313729,9,17,1);plannedDeparture=82313729;resolvedMaps={83101186,82314241};
+        StartChatTravel({10,17,1});TickChatTravel();TickChatTravel();
+        Check(plannedSource==82313729&&plannedTarget==82314241&&
+            std::any_of(plannedChoices.begin(),plannedChoices.end(),[](const auto& c){return c.map==82313729;}),"The current map is a departure toward the game's map of [10,17]");
+        Check(!quotes&&!teleported&&!interacted&&walked==1&&walkedMap==82314241,"Walking from the current map to [10,17], no zaap");});
+    // Several maps at the coordinates: all logged; the route search, the onward
+    // trip and its confirmation use only the game's choice (the last).
+    run([&](Fixture& f){resolvedMaps={555,123};StartChatTravel({10,10,1});
+        Check(plannedTarget==123&&logged("CHAT_TRAVEL_RESOLVED source=10 target=123 world=1 maps=555,123"),"The route search targets only the game's choice");
+        f.Price();TickChatTravel();Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
+        Check(walked==1&&walkedMap==123&&logged("CHAT_TRAVEL_ONWARD_REQUEST attempt=1 target=123"),"The onward native trip targets the game's choice");
+        TickChatTravel();Check(logged("CHAT_TRAVEL_ONWARD_ACTIVE target=123 following=0"),"The native trip toward it is confirmed");});
+    // Review case (Otomaï): a zaap on another layer of the destination coordinates
+    // is a departure like any other; arriving there does not end the trip.
+    run([&](Fixture& f){resolvedMaps={104,123};StartChatTravel({10,10,1});f.Price();TickChatTravel();
+        Check(plannedTarget==123&&teleported==1&&teleportMap==104,"The zaap layer is only a departure");
+        Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
+        Check(walked==1&&walkedMap==123&&!noticed("destination atteinte"),"Arriving on the zaap layer continues to the game's choice");});
+    // Inside the Havre-Sac, its own coordinates ([0,0] world 1 for most bags) are
+    // not « déjà sur »: the trip always departs through the Havre-Sac zaap.
+    for(int order=0;order<2;++order)run([&,order](Fixture& f){bag=true;resolvedMaps=order?std::vector<int64_t>{123,10}:std::vector<int64_t>{10,123};
+        StartChatTravel({0,0,1});
+        Check(interacted==1&&!quotes&&!logged("CHAT_TRAVEL_ALREADY_THERE")&&!noticed("déjà sur"),"A Havre-Sac start uses its zaap even at the bag's own coordinates");
+        f.Receive();TickChatTravel();Check(teleported==1&&teleportSource==3,"The Havre-Sac trip departs on the fresh zaap list");});
+    // The player's own zone, read like the game's world path service: the local
+    // entity's cell in the loaded map's cells, then that cell's roleplay zone.
+    const auto zones=[] {
+        Info(10,9,10,1);Get(localCharacter).fields["dpzj"]=Make("z");services["fso"]=Make("evv");Get(entity).numbers["cell"]=2;mapCells=List();
+        for(int i=0;i<4;++i){auto cell=Make("ClientCellData");Get(cell).fields["cellNumber"]=Box<uint32_t>(i);Get(cell).numbers["zone"]=i==2?3:1;Get(mapCells).items.push_back(cell);}
+    };
+    run([&](Fixture&){zones();StartChatTravel({10,10,1});
+        Check(plannedZone==3&&plannedSource==10&&logged("CHAT_TRAVEL_HERE_ZONE map=10 cell=2 zone=3")&&quotes==1,"The player's own zone reaches the route search");});
+    for(int invalid=0;invalid<7;++invalid)run([&,invalid](Fixture&){zones();
+        if(invalid==0)Get(localCharacter).fields["dpzj"]=nullptr;
+        if(invalid==1)services["fso"]=Make("OtherRegistry");
+        if(invalid==2)entity=nullptr;
+        if(invalid==3)sceneReady=false;
+        if(invalid==4)loadedMapOverride=11;
+        if(invalid==5)Get(entity).numbers["cell"]=9;
+        if(invalid==6)Get(Get(mapCells).items[2]).fields["cellNumber"]=Box<uint32_t>(7);
+        StartChatTravel({10,10,1});
+        const char* reasons[]={"character","registry","entity","scene","map","cell","cell"};
+        Check(plannedZone==-1&&quotes==1,"An unknown zone starts every zone of the current map; planning goes on");
+        Check(logged(std::string("CHAT_TRAVEL_HERE_ZONE map=10 unknown=")+reasons[invalid]),"The unknown zone is logged with its reason");});
+    run([&](Fixture& f){zones();bag=true;StartChatTravel({10,10,1});f.Receive();TickChatTravel();
+        Check(plannedZone==-1&&plannedTarget==123&&!logged("CHAT_TRAVEL_HERE_ZONE"),"From the Havre-Sac there is no current-map departure, hence no zone");});
+    // A changed cell layout disables only the zone reading: travel still starts
+    // from every zone of the current map.
+    const auto layout=api.class_get_field_from_name;
+    api.class_get_field_from_name=[](Klass,const char* name)->void*{static size_t dugt=0x80;return std::string(name)=="dugt"?&dugt:nullptr;};
+    logs.clear();InstallChatTravel();api.class_get_field_from_name=layout;
+    Check(logged("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE Travel field mismatch: cellsData"),"The zone contracts are optional and their absence is logged");
+    run([&](Fixture&){zones();StartChatTravel({10,10,1});
+        Check(plannedZone==-1&&quotes==1&&logged("CHAT_TRAVEL_HERE_ZONE map=10 unknown=contracts"),"Without them every zone of the current map starts the search");});
+    logs.clear();InstallChatTravel();Check(!logged("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE"),"The zone contracts install again");
+}
 int main(){using namespace fake;try{
     Initialize();InstallChatTravel();InstallMapTravel();InstallSoulGroupMenu();soul::InstallSpell();
+    Check(std::none_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE")!=std::string::npos;}),"The player's zone contracts install");
     MapTravelTests();
+    TravelFixTests();
     {Fixture f;routePending=true;StartChatTravel({10,10,1});Check(!quotes,"Pending route must not request a price");
       TickChatTravelPlanning();auto slices=routeTicks;TickChatTravel();TickChatTravelPlanning();
       Check(routeTicks==slices,"Frame and normal pumps share a single planning-slice gate");
@@ -426,7 +531,7 @@ int main(){using namespace fake;try{
     {Fixture f;Get(monsterInfos.at(1)).numbers["forbidden"]=1;createHook(f.Maker(),nullptr);Check(Get(Get(lastMenu).fields["rows"]).items.size()==2,"Forbidden boss must not offer equip");}
     {Fixture f;monsterInfos.clear();createHook(f.Maker(),nullptr);Check(Get(Get(lastMenu).fields["rows"]).items.size()==2,"Unknown monster metadata must not offer equip");}
     {Fixture f;auto data=monsterInfos.at(1);Get(data).numbers["boss"]=0;Get(data).numbers["arch"]=1;createHook(f.Maker(),nullptr);Check(Get(Get(lastMenu).fields["rows"]).items.size()==3,"Archimonster retains exact-tier menu action");auto callback=Get(Get(lastView).fields["data"]).fields["callback"];Get(data).numbers["arch"]=0;HandleSoulGroupMenuCallback(callback,lastView);Check(equipped==0,"Stale action must recheck capture eligibility before equipping");}
-    {Fixture f;StartChatTravel({10,10,1});Check(entered==0&&interacted==0&&quotes==1&&requestedQuote==104&&teleported==0,"Direct native quote for closest known same-world zaap without Havenbag");TickChatTravel();f.Receive();f.Price(25,101);TickChatTravel();Check(quotes==1&&teleported==0,"Cached lists and another map's quote cannot authorize direct TP; no polling requests");f.Price();Check(teleported==0,"Price receiver must not dispatch reentrantly");TickChatTravel();Check(teleported==1&&teleportMap==104&&teleportSource==5&&teleportCost==25&&walked==0,"Native direct source and fresh cost");TickChatTravel();Check(walked==0,"Wait for actual arrival");Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();Check(walked==1&&walkedTo==ChatTpTarget{10,10,1},"Exactly one onward route");}
+    {Fixture f;StartChatTravel({10,10,1});Check(entered==0&&interacted==0&&quotes==1&&requestedQuote==104&&teleported==0,"Direct native quote for closest known same-world zaap without Havenbag");TickChatTravel();f.Receive();f.Price(25,101);TickChatTravel();Check(quotes==1&&teleported==0,"Cached lists and another map's quote cannot authorize direct TP; no polling requests");f.Price();Check(teleported==0,"Price receiver must not dispatch reentrantly");TickChatTravel();Check(teleported==1&&teleportMap==104&&teleportSource==5&&teleportCost==25&&walked==0,"Native direct source and fresh cost");TickChatTravel();Check(walked==0,"Wait for actual arrival");Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();Check(walked==1&&resolvedFor==ChatTpTarget{10,10,1}&&walkedMap==123,"Exactly one onward route");}
     {Fixture f;bag=true;StartChatTravel({10,10,1});Check(interacted==1&&quotes==0&&entered==0,"Already in Havenbag retains enabled native zaap");TickChatTravel();Check(teleported==0,"Cached list cannot authorize teleport");f.Receive();Check(teleported==0,"Receiver hook must not dispatch travel reentrantly");TickChatTravel();Check(teleported==1&&teleportMap==104&&teleportSource==3,"Havenbag list source preserved");Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();Check(walked==0,"Wait for exit from Havenbag");bag=false;TickChatTravel();TickChatTravel();Check(walked==1,"Onward route after Havenbag arrival");}
     {Fixture f;synchronousQuote=true;StartChatTravel({10,10,1});Check(quotes==1&&teleported==0,"Synchronous quote records only");TickChatTravel();TickChatTravel();Check(teleported==1,"Synchronous response dispatched once");}
     {Fixture f;StartChatTravel({10,10,1});f.Price(0);TickChatTravel();Check(teleported==0&&entered==0,"Unavailable direct price never forces departure");}
@@ -440,9 +545,9 @@ int main(){using namespace fake;try{
     {Fixture f;Get(currentMap).numbers["m_mapId"]=104;StartChatTravel({10,10,1});TickChatTravel();TickChatTravel();Check(quotes==0&&teleported==0&&walked==1,"Already at closest zaap: onward route only");}
     {Fixture f;eligible=false;StartChatTravel({1,2,1});Check(entered==0,"Native eligibility gates departure");eligible=true;mapValid=false;StartChatTravel({1,2,1});Check(entered==0,"Unknown coordinates do not depart");}
     {Fixture f;StartChatTravel({1,2,1});StartChatTravel({1,2,1});Check(quotes==1,"Repeated click must not cancel or duplicate the requested trip");f.Price();TickChatTravel();Check(teleported==1,"Trip survives an impatient repeated click");}
-    {Fixture f;StartChatTravel({1,2,1});StartChatTravel({7,8,14});f.Price();TickChatTravel();Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();Check(walked==1&&walkedTo==ChatTpTarget{7,8,14},"A different link replaces the target and preserves Srambad's world ID");}
+    {Fixture f;StartChatTravel({1,2,1});StartChatTravel({7,8,14});f.Price();TickChatTravel();Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();Check(walked==1&&resolvedFor==ChatTpTarget{7,8,14}&&walkedMap==123,"A different link replaces the target and preserves Srambad's world ID");}
     {Fixture f;plannedDeparture=103;StartChatTravel({7,8,14});Check(quotes==1&&requestedQuote==103,"A known zaap on another world layer must reach the native graph comparison");}
-    {Fixture f;Info(10,0,0,1);plannedDeparture=10;StartChatTravel({7,8,14});TickChatTravel();TickChatTravel();Check(quotes==0&&teleported==0&&walked==1&&walkedTo.world==14,"Current map participates across connected world layers without a needless teleport");}
+    {Fixture f;Info(10,0,0,1);plannedDeparture=10;StartChatTravel({7,8,14});TickChatTravel();TickChatTravel();Check(quotes==0&&teleported==0&&walked==1&&resolvedFor.world==14,"Current map participates across connected world layers without a needless teleport");}
     {Fixture f;plannedDeparture=0;StartChatTravel({7,8,14});Check(quotes==0&&teleported==0&&walked==0&&!notices.empty()&&notices.back().find("Srambad")!=std::string::npos,"An inaccessible dimension gets a local explanation, never a guessed world1 teleport");}
     {Fixture f;StartChatTravel({1,2,1});combat=true;bag=true;TickChatTravel();Check(interacted==0,"Combat cancels pending trip");}
     {Fixture f;StartChatTravel({1,2,1});services["fng"]=Make("Replacement");bag=true;TickChatTravel();Check(interacted==0,"Session replacement cancels");}
@@ -523,5 +628,5 @@ int main(){using namespace fake;try{
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
       auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(999);Get(services["fjs"]).fields["dsjs"]=d;
       routePendingNative=true;TickChatTravel();Sleep(1050);TickChatTravel();Check(walked==1,"Never replace a different native destination");}
-    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, confirmed arrival then native onward travel, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
+    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, already there on the game's destination map, the Havre-Sac start, the player's own zone, confirmed arrival then native onward travel to the game's map, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

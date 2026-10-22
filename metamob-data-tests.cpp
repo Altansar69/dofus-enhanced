@@ -45,7 +45,7 @@ std::string With(std::string text, const std::string& from, const std::string& t
 }
 std::string Chosen(const std::vector<Quest>& quests, std::string_view character) {
     const auto choice = ChooseQuest(quests, character);
-    return choice.quest && choice.problem.empty() ? choice.quest->slug : "-";
+    return choice.quest && choice.problem.empty() && choice.kind == QuestProblem::None ? choice.quest->slug : "-";
 }
 int64_t Found(const std::vector<QuestMonster>& monsters, std::string_view name, int type) {
     const auto monster = FindMonster(monsters, name, type);
@@ -323,13 +323,14 @@ void Names() {
 void Choices() {
     {
         const auto choice = ChooseQuest({}, "Bob");
-        Check(!choice.quest && choice.problem == NoQuest, "No quest");
+        Check(!choice.quest && choice.problem == NoQuest && choice.kind == QuestProblem::NoQuest, "No quest");
     }
     const Quest unity{"a1", "Mon perso", "Draconiros", "ocre", 1, 6}, retro{"r2", "Bob", "Boune", "ocre", 2, 1},
         dokille{"d3", "Bob", "Draconiros", "dokille", 1, 2}, noServer{"n4", "Bob", "", "ocre", 0, 1};
     {
         const auto choice = ChooseQuest({retro, dokille, noServer}, "Bob");
-        Check(!choice.quest && choice.problem == NoQuest, "Only Dofus Unity Ocre quests count (Retro, Dokille, null server)");
+        Check(!choice.quest && choice.problem == NoQuest && choice.kind == QuestProblem::NoQuest,
+            "Only Dofus Unity Ocre quests count (Retro, Dokille, null server)");
     }
     Check(Chosen({retro, unity, dokille, noServer}, "Zed") == "a1", "The only Unity Ocre quest, whatever the name");
     Check(Chosen({unity}, "") == "a1", "One quest needs no character name");
@@ -346,7 +347,8 @@ void Choices() {
         {{team1, team2}, "Zed"}, {{team1, team2}, ""}, {{team1, team2}, "\xFF"}, {{team1, {"t6", "bob/Gus", "", "ocre", 1, 1}}, "Bob"},
         {{team1, team1}, "Alice"}}) {
         const auto choice = ChooseQuest(quests, character);
-        Check(!choice.quest && choice.problem == SeveralQuests, "Several quests and no single one naming the character: none");
+        Check(!choice.quest && choice.problem == SeveralQuests && choice.kind == QuestProblem::Several,
+            "Several quests and no single one naming the character: none");
     }
 }
 
@@ -371,6 +373,7 @@ void Monsters() {
     const std::vector<QuestMonster> kinds{{20, "Bouftou Royal", 1, 1, 0}, {305, "Bouftou Royal", TypeBoss, 1, 0}};
     Check(Found(kinds, "Bouftou Royal", TypeBoss) == 305 && Found(kinds, "Bouftou Royal", TypeArchimonster) == -1,
         "The type picks among equal names");
+    Check(TypeMonster == 1 && Found(kinds, "Bouftou Royal", TypeMonster) == 20, "Any other monster: type 1");
 }
 
 // Client language: MonsterData.get_name is GetLocalized(nameId), so an English or
@@ -439,7 +442,8 @@ int main() {
         Monsters();
         Languages();
         std::cout << "PASS: Metamob answers (accents, ’ and ', JSON escapes, null, unknown fields, wrong types, HTML, truncated JSON), "
-            "fixed errors without body or key, Retry-After, key/slug bounds, NameKey, quest choice, monster match in fr/en/es\n";
+            "fixed errors without body or key, Retry-After, key/slug bounds, NameKey, quest choice and the kind of its problem, "
+            "monster match in fr/en/es\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
 }

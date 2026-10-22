@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <array>
 #include <cstdint>
 namespace chat_souls {
@@ -345,6 +346,13 @@ inline constexpr std::array<Goal, 337> OcreGoals{{
     {6326,2289,864},
     {7197,2271,863},
 }};
+// Hand-written, not generated (keep it when regenerating): whether a game
+// monster is one of the quest's goals, OcreGoals being sorted by monster id.
+inline bool IsOcreGoal(int monster) {
+    const auto found = std::lower_bound(OcreGoals.begin(), OcreGoals.end(), monster,
+        [](const Goal& goal, int id) { return goal.monster < id; });
+    return found != OcreGoals.end() && found->monster == monster;
+}
 struct SoulItem { int item, monster; };
 inline constexpr std::array<SoulItem, 402> SoulItems{{
     {33681,799},

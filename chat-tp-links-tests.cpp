@@ -1,6 +1,7 @@
 #include "chat-tp-links.hpp"
 #include "chat-soul-status.hpp"
 #include "chat-coordinate-policy.hpp"
+#include "metamob-sync.hpp"
 #include "module.hpp"
 #include "features.hpp"
 #include "options-ui.hpp"
@@ -38,6 +39,11 @@ bool questFailure = false;
 std::vector<std::string> logs;
 std::map<std::pair<int,ChatSoulPart>,std::string> soulCaptions, richSoulCaptions;
 bool soulReaderNeeded = false, inventoryReader = false, questReader = false;
+// The capture sync's quest cache as the Metamob part reads it: plain and rich
+// captions per game monster, reads, and the pumps that wanted the catalog.
+std::map<int,std::string> metamobCaptions, richMetamobCaptions;
+int metamobReads = 0, metamobWants = 0;
+bool metamobOutsideMonster = false; // Read for a position without a monster group.
 ChatTpTarget clicked;
 using BindFn = void(*)(Obj,Obj,int,Method);
 using TextFn = void(*)(Obj,Obj,Method);
@@ -432,8 +438,21 @@ void OutsideOcreTravelOnly() {
     const auto before=clicks;
     clickHook(tp[0],{},nullptr);
     Check(clicks==before+1 && clicked==ChatTpTarget{7,8,1},"Outside-Ocre TP must still travel to the original coordinates");
+    const auto wants=metamobWants;
     for (int i=0;i<10;++i)TickChatTpLinks();
     Check(TpManagers(label)==tp && InfoManagers(label).empty(),"Refreshes must keep an outside-Ocre group free of status zones");
+    // Its leader can never get a Metamob part: no catalog wish, so no request for
+    // nothing; nor for a leader between two Ocre goals (Krokette, of Dokille).
+    auto dokille=Result();Link(dokille,MonsterGroup(3,4,1,"dokille",3180));
+    Get(binding).fields={{"content",MakeLabel(Build(dokille))},{"subContent",MakeLabel(Str(""))}};
+    bindHook(view,Make("Row"),1,nullptr);
+    for (int i=0;i<10;++i)TickChatTpLinks();
+    Check(module->settings.chatMetamobStatus && metamobWants==wants,"Leaders outside L’éternelle moisson must never want the Metamob catalog");
+    auto ocre=Result();Link(ocre,MonsterGroup(1,2,1,"inside-ocre",147));
+    Get(binding).fields={{"content",MakeLabel(Build(ocre))},{"subContent",MakeLabel(Str(""))}};
+    bindHook(view,Make("Row"),1,nullptr);
+    for (int i=0;i<10;++i)TickChatTpLinks();
+    Check(metamobWants==wants+10,"An Ocre leader shown beside it still wants the catalog at every pump");
     RestoreChatTpLinks();
     Check(Get(Get(label).fields["text"]).text==Get(input).text,"Cleanup must restore the original outside-Ocre group link");
     soulCaptions.clear();richSoulCaptions.clear();
@@ -470,7 +489,7 @@ void OcreJournalClick() {
 }
 
 // « Chat » options: each part follows its own option, live, on new and shown
-// messages; all three unchecked give back the native text and read no status.
+// messages; all four unchecked give back the native text and read no status.
 void OptionalParts() {
     auto& settings=module->settings;
     const auto baseline=handles.size();const auto travels=clicks,nativeClicks=originalClicks;
@@ -536,19 +555,20 @@ void OptionalParts() {
     Check(InfoManagers(label).empty()&&InfoManagers(ocreOnly).empty()&&TpManagers(label)==tp&&TpManagers(ocreOnly).size()==1&&
         !soulReaderNeeded&&!inventoryReader&&!questReader,"Both statuses unchecked: TickChatSoulStatus gets needed=false and the statuses leave");
 
-    // All three unchecked: shown messages return to their native text.
-    settings.chatTravelLinks=false;pump(1);
+    // All four unchecked (Metamob, which had no quantity here, too): native text.
+    settings.chatTravelLinks=settings.chatMetamobStatus=false;const auto wants=metamobWants,reads=metamobReads;pump(1);
     Check(shown(label)==Get(input).text&&shown(typed)=="rejoins-moi en [9,9]"&&shown(ocreOnly)==Get(groupInput).text&&
-        TpManagers(label).empty()&&TpManagers(typed).empty()&&TpManagers(ocreOnly).empty()&&!soulReaderNeeded,
-        "All three unchecked: shown messages return to their native text and nothing is read");
+        TpManagers(label).empty()&&TpManagers(typed).empty()&&TpManagers(ocreOnly).empty()&&!soulReaderNeeded&&
+        metamobWants==wants&&metamobReads==reads,
+        "All four unchecked: shown messages return to their native text, nothing is read and no Metamob catalog is wanted");
     clickHook(tp[0],{},nullptr);Check(clicks==travels+1&&originalClicks==nativeClicks,"Removed TP stays inert");
     auto later=Result();Link(later,MonsterGroup(2,3,1,"option-later",147));Text(later,Str(" ou [7,7]"));
     const auto parsedOff=parses;auto laterInput=Build(later);auto quiet=bind(laterInput);pump(3);
-    Check(parses==parsedOff&&shown(quiet)==Get(laterInput).text&&TpManagers(quiet).empty()&&InfoManagers(quiet).empty()&&!soulReaderNeeded,
-        "All three unchecked: a new message keeps its native text, without conversion or reading");
+    Check(parses==parsedOff&&shown(quiet)==Get(laterInput).text&&TpManagers(quiet).empty()&&InfoManagers(quiet).empty()&&!soulReaderNeeded&&
+        metamobWants==wants&&metamobReads==reads,"All four unchecked: a new message keeps its native text, without conversion or reading");
 
     // All checked again: every shown message is enhanced again within a pump or two.
-    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=true;pump(2);
+    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=true;pump(2);
     Check(TpManagers(label).size()==3&&InfoManagers(label).size()==2&&TpManagers(typed).size()==1&&InfoManagers(ocreOnly).size()==2&&
         TpManagers(quiet).size()==2&&InfoManagers(quiet).size()==2&&inventoryReader&&questReader,
         "Checked again, shown messages are enhanced again, those received while all were unchecked included");
@@ -557,6 +577,159 @@ void OptionalParts() {
     Check(shown(label)==Get(input).text&&shown(quiet)==Get(laterInput).text&&shown(typed)=="rejoins-moi en [9,9]"&&handles.size()==baseline,
         "Cleanup restores native texts, plain coordinates included, and releases every reference");
     soulCaptions.clear();richSoulCaptions.clear();
+}
+
+// The Metamob parts of a label, in display order.
+std::vector<Obj> MetamobManagers(Obj label) {
+    std::vector<Obj> result;
+    for(auto manager:InfoManagers(label))if(Get(manager).text.find("Metamob")!=std::string::npos)result.push_back(manager);
+    return result;
+}
+// The captions of every part this module shows in a label, in display order.
+std::vector<std::string> Parts(Obj label) {
+    std::vector<std::string> result;auto decoded=Get(Get(label).fields["manip"]).fields["m_hyperlinkResult"];
+    if(!decoded)return result;
+    for(auto value:Get(Get(decoded).fields["sequence"]).items) {
+        auto token=*reinterpret_cast<Token*>(Get(value).bytes.data());
+        if(token.manager&&(Get(token.manager).text=="TP"||Get(token.manager).text.starts_with("<color=#D7CFB8>")))
+            result.push_back(Get(token.manager).text);
+    }
+    return result;
+}
+void SetMetamob(int monster,const std::string& caption,const std::string& rich) {
+    metamobCaptions[monster]=caption;richMetamobCaptions[monster]=rich;
+}
+// « Metamob dans le chat »: after Ocre, the monster's quantity in the user's
+// Metamob quest, read from the capture sync's cache only. Information without
+// action; it follows its option and the cache on shown messages, and the
+// catalog is wanted only while it is checked and a monster group led by a
+// monster of L’éternelle moisson is shown (any other leader: OutsideOcreTravelOnly).
+void MetamobPart() {
+    auto& settings=module->settings;
+    const auto baseline=handles.size();const auto travels=clicks,nativeClicks=originalClicks,opens=questOpens;
+    const auto pump=[](int count){for(int i=0;i<count;++i)TickChatTpLinks();};
+    const auto shown=[](Obj label){return Get(Get(label).fields["text"]).text;};
+    auto view=Make("ChatView"),binding=Make("ChatItemBinding");Get(view).fields["binding"]=binding;
+    const auto bind=[&](Obj input){
+        auto label=MakeLabel(input);Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};
+        bindHook(view,Make("Row"),0,nullptr);return label;
+    };
+    using Captions=std::vector<std::string>;
+    const std::string bag="<color=#D7CFB8><color=#8DDB91>Âme en sac</color></color>",ocre="<color=#D7CFB8><color=#F18C8C>Ocre à faire</color></color>";
+    const std::string none="<color=#D7CFB8><color=#F18C8C>Metamob : 0</color></color>",two="<color=#D7CFB8><color=#8DDB91>Metamob : 2</color></color>";
+    const std::string one="<color=#D7CFB8>Metamob : 1</color>";
+    for(int monster:{147,2477})SetSoul(monster,"Âme en sac","Ocre à faire","<color=#8DDB91>Âme en sac</color>","<color=#F18C8C>Ocre à faire</color>");
+    SetMetamob(147,"Metamob : 0","<color=#F18C8C>Metamob : 0</color>"); // 2477 is not in the Metamob quest yet.
+
+    // Nothing shown, then positions only: the cache is neither read nor wanted.
+    auto wants=metamobWants;pump(2);
+    Check(metamobWants==wants,"Without a shown label the Metamob catalog is not wanted");
+    auto positions=Result();Link(positions,Map(3,4,1,"metamob-map"));Text(positions,Str(" puis [5,6]"));
+    auto positionsInput=Build(positions);auto place=bind(positionsInput);pump(2);
+    Check(TpManagers(place).size()==2&&MetamobManagers(place).empty()&&metamobWants==wants&&!metamobOutsideMonster,
+        "Positions without a monster group get TP only, never read the Metamob cache nor want its catalog");
+
+    // A quantity in the quest: its part comes last, after Ocre, in its colors.
+    auto source=Result();Link(source,MonsterGroup(7,8,1,"metamob-group",147));Text(source,Str(" et "));
+    Link(source,MonsterGroup(1,2,1,"metamob-outside",2477));
+    auto input=Build(source);auto label=bind(input);auto manip=Get(label).fields["manip"];
+    auto tp=TpManagers(label),metamob=MetamobManagers(label);
+    Check(Parts(label)==Captions{"TP",bag,ocre,none,"TP",bag,ocre}&&metamob.size()==1&&SeparatorCount(shown(label))==7,
+        "TP, bag, Ocre then Metamob, each after its separator; a monster outside the Metamob quest gets no Metamob part");
+    Check(Get(input).text.find("Metamob")==std::string::npos,"The original message is unchanged");
+    Check(Get(tooltipHook(metamob[0],{},nullptr)).text=="Metamob detail: Metamob : 0","The Metamob tooltip is the sync's plain detail, with no action advertised");
+    combat=true;Check(Get(tooltipHook(metamob[0],{},nullptr)).text=="Metamob detail: Metamob : 0","Combat does not change the Metamob tooltip");combat=false;
+    clickHook(metamob[0],{4,9},nullptr);
+    Check(clicks==travels&&originalClicks==nativeClicks&&questOpens==opens,"A Metamob click neither travels, opens the journal nor reaches the native follow action");
+
+    // The 16-target bound keeps every part of each target.
+    auto many=Result();for(int i=0;i<17;++i)Link(many,MonsterGroup(i,8,1,"metamob-bounded-"+std::to_string(i),147));
+    auto crowded=bind(Build(many));
+    Check(TpManagers(crowded).size()==16&&InfoManagers(crowded).size()==48&&MetamobManagers(crowded).size()==16,
+        "Still 16 targets per message, each with its bag, Ocre and Metamob parts");
+    textHook(Get(crowded).fields["manip"],Str("vide"),nullptr);
+
+    // Unchanged quantities: one catalog wish per pump, identities and roots kept.
+    const auto rooted=handles.size();wants=metamobWants;pump(20);
+    Check(metamobWants==wants+20&&MetamobManagers(label)==metamob&&TpManagers(label)==tp&&handles.size()==rooted,
+        "Each pump with a shown monster group wants the catalog once; unchanged quantities keep every identity and the root count");
+
+    // A new quantity: only the Metamob part is rebuilt, within a pump.
+    const auto info=InfoManagers(label);const auto rolledOut=rollouts;
+    Get(manip).fields["m_hoveredHyperlinkManager"]=metamob[0];
+    SetMetamob(147,"Metamob : 2","<color=#8DDB91>Metamob : 2</color>");pump(1);
+    auto changed=InfoManagers(label);
+    Check(Parts(label)==Captions{"TP",bag,ocre,two,"TP",bag,ocre}&&TpManagers(label)==tp&&changed.size()==5&&changed[0]==info[0]&&
+        changed[1]==info[1]&&changed[2]!=info[2]&&changed[3]==info[3]&&changed[4]==info[4]&&rollouts==rolledOut+1,
+        "A new quantity rebuilds only its Metamob part within a pump, closing its hover; TP, bag and Ocre keep their identities");
+    Check(Get(tooltipHook(changed[2],{},nullptr)).text=="Metamob detail: Metamob : 2"&&tooltipHook(metamob[0],{},nullptr)==nullptr,
+        "The tooltip follows the new quantity and the replaced part shows none");
+    clickHook(metamob[0],{},nullptr);clickHook(changed[2],{},nullptr);
+    Check(clicks==travels&&originalClicks==nativeClicks&&questOpens==opens,"Current and replaced Metamob parts stay without action");
+    metamob=MetamobManagers(label);
+
+    // Unchecked: inert at once, gone within a pump; no read and no catalog wish.
+    settings.chatMetamobStatus=false;
+    Check(tooltipHook(metamob[0],{},nullptr)==nullptr,"A Metamob part whose option was just unchecked shows no tooltip until it leaves");
+    auto reads=metamobReads;wants=metamobWants;pump(1);
+    Check(MetamobManagers(label).empty()&&Parts(label)==Captions{"TP",bag,ocre,"TP",bag,ocre}&&TpManagers(label)==tp&&
+        SeparatorCount(shown(label))==6&&metamobReads==reads&&metamobWants==wants,
+        "Unchecked, the Metamob part leaves within a pump with its separator, without reading the cache or wanting the catalog");
+    auto meanwhileInput=Build(source);auto meanwhile=bind(meanwhileInput);pump(3);
+    Check(Parts(meanwhile)==Captions{"TP",bag,ocre,"TP",bag,ocre}&&metamobReads==reads&&metamobWants==wants,
+        "Unchecked, a new monster message gets the other parts only and nothing is read or wanted");
+
+    // Checked again: back on shown messages, the one received meanwhile included.
+    settings.chatMetamobStatus=true;wants=metamobWants;pump(1);
+    Check(Parts(label)==Captions{"TP",bag,ocre,two,"TP",bag,ocre}&&Parts(meanwhile)==Parts(label)&&TpManagers(label)==tp&&metamobWants==wants+1,
+        "Checked again, the Metamob part returns on shown messages within a pump and the catalog is wanted again");
+
+    // An empty caption (key forgotten, monster gone from the quest) removes the part.
+    metamob=MetamobManagers(label);metamobCaptions.erase(147);richMetamobCaptions.erase(147);
+    Check(tooltipHook(metamob[0],{},nullptr)==nullptr,"A quantity that just left the cache shows no empty tooltip");
+    wants=metamobWants;pump(1);
+    Check(Parts(label)==Captions{"TP",bag,ocre,"TP",bag,ocre}&&Parts(meanwhile)==Parts(label)&&metamobWants==wants+1,
+        "An empty caption removes the Metamob part from shown messages; monsters still shown keep the catalog wanted");
+
+    // A quantity that appears adds its part after that monster's Ocre.
+    SetMetamob(2477,"Metamob : 1","Metamob : 1");pump(1);
+    Check(Parts(label)==Captions{"TP",bag,ocre,"TP",bag,ocre,one}&&Parts(meanwhile)==Parts(label)&&TpManagers(label)==tp,
+        "A quantity that appears in the cache adds its part after that monster's Ocre");
+
+    // Serialized redraws with fresh managers never duplicate the part.
+    for(int i=0;i<20;++i) {
+        auto rebuilt=Result();Text(rebuilt,Str("refresh "));
+        for(auto token:Get(Get(Get(manip).fields["m_hyperlinkResult"]).fields["sequence"]).items)Get(Get(rebuilt).fields["sequence"]).items.push_back(token);
+        textHook(manip,Build(rebuilt),nullptr);
+        Check(Parts(label)==Captions{"TP",bag,ocre,"TP",bag,ocre,one}&&TpManagers(label)==tp&&SeparatorCount(shown(label))==7,
+            "Serialized redraws keep one Metamob part and one separator for it");
+    }
+
+    // Metamob alone, then all four unchecked: native text, nothing read.
+    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=false;pump(1);
+    Check(Parts(label)==Captions{one}&&SeparatorCount(shown(label))==1&&Parts(meanwhile)==Captions{one}&&
+        shown(place)==Get(positionsInput).text&&!soulReaderNeeded,
+        "Metamob alone: only its part follows its monster group, positions keep their native text and no soul status is read");
+    settings.chatMetamobStatus=false;reads=metamobReads;wants=metamobWants;pump(1);
+    Check(Parts(label).empty()&&SeparatorCount(shown(label))==0&&shown(meanwhile)==Get(meanwhileInput).text&&
+        shown(place)==Get(positionsInput).text&&metamobReads==reads&&metamobWants==wants&&!soulReaderNeeded,
+        "All four unchecked: shown messages return to their native text, nothing is read or wanted");
+    auto later=bind(input);pump(2);
+    Check(shown(later)==Get(input).text&&Parts(later).empty()&&metamobReads==reads&&metamobWants==wants,
+        "All four unchecked: a new monster message keeps its native text");
+    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=true;pump(1);
+    Check(Parts(later)==Captions{"TP",bag,ocre,"TP",bag,ocre,one}&&Parts(meanwhile)==Parts(later)&&TpManagers(place).size()==2,
+        "All checked again: every shown message gets its parts back within a pump");
+
+    // No monster group shown any more: no catalog wish. Inactive: none either.
+    for(auto row:{label,meanwhile,later})textHook(Get(row).fields["manip"],Str("recycled [9,10]"),nullptr);
+    wants=metamobWants;pump(2);
+    Check(metamobWants==wants&&MetamobManagers(label).empty(),"Once no shown label holds a monster group, the catalog is no longer wanted");
+    textHook(manip,input,nullptr);module->servicesReady=false;pump(2);module->servicesReady=true;
+    Check(metamobWants==wants&&!ChatTpLinksCleanupPending(),"An inactive module wants no catalog and releases its chat labels");
+    Check(shown(label)==Get(input).text&&shown(place)==Get(positionsInput).text&&handles.size()==baseline,
+        "Cleanup restores native texts and releases every reference");
+    metamobCaptions.clear();richMetamobCaptions.clear();soulCaptions.clear();richSoulCaptions.clear();
 }
 
 // A text the native decoder rejects leaves the label: neither an option change
@@ -614,6 +787,18 @@ std::string ChatSoulCaption(int monster,ChatSoulPart part,bool colorStatus){
 std::string ChatSoulDetail(int monster,ChatSoulPart part){return std::string(part==ChatSoulPart::Inventory?"Inventory detail: ":"Ocre detail: ")+ChatSoulCaption(monster,part);}
 void TickChatSoulStatus(bool inventory,bool quest){fake::soulReaderNeeded=inventory||quest;fake::inventoryReader=inventory;fake::questReader=quest;}
 void RestoreChatSoulStatus(){fake::soulReaderNeeded=false;}
+namespace metamob {
+std::string MetamobChatCaption(int monsterId,bool colorStatus){
+    ++fake::metamobReads;if(monsterId<=0)fake::metamobOutsideMonster=true;
+    const auto& captions=colorStatus?fake::richMetamobCaptions:fake::metamobCaptions;
+    auto it=captions.find(monsterId);return it==captions.end()?std::string{}:it->second;
+}
+std::string MetamobChatDetail(int monsterId){
+    auto it=fake::metamobCaptions.find(monsterId);
+    return it==fake::metamobCaptions.end()?std::string{}:"Metamob detail: "+it->second;
+}
+void WantMetamobCatalog(){++fake::metamobWants;}
+}
 void AddHook(managed::Method,uintptr_t rva,void* hook,void** original){
     using namespace fake;
     if(rva==0x2D8E4C0){bindHook=reinterpret_cast<BindFn>(hook);*original=reinterpret_cast<void*>(&NativeBind);}
@@ -630,9 +815,9 @@ int main(int argc,char** argv){
         InstallChatTpLinks(fake::OnClick);
         if(fallback)fake::Check(!fake::logs.empty()&&fake::logs.back().starts_with("CHAT_TP_COLOR_FALLBACK "),
             "Unavailable cosmetic layout must preserve chat TP with a diagnostic instead of aborting module startup");
-        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::OptionalParts();fake::RejectedTextForgets();fake::clicks=0;fake::Run();
+        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::OptionalParts();fake::MetamobPart();fake::RejectedTextForgets();fake::clicks=0;fake::Run();
         fake::Check(fake::nullableAllocations==0,"Nullable<Color> must never be allocated or boxed");
         module=nullptr;
-        std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover, optional TP/bag/Ocre parts and cleanup retries\n";return 0;
+        std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover, optional TP/bag/Ocre/Metamob parts (the Metamob catalog wanted for Ocre leaders only) and cleanup retries\n";return 0;
     }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
 }
