@@ -10,9 +10,11 @@ using namespace managed;
 constexpr const char* Menus="Core.UILogic.Components.ContextMenu";
 struct Entry {
     std::string key,title; int icon=0; bool (*visible)()=nullptr; bool (*toggle)()=nullptr;
-    const char* (*extraLabel)()=nullptr; bool (*extraToggle)()=nullptr; // optional layout row
+    Layouts layouts; // optional radio rows of the panel's layouts
     Ref window,header,button,manipulator,cached,compositor,service;
-    Ref menu,item,callback,extraItem,extraCallback;
+    Ref menu,item,callback;
+    struct LayoutRow {Ref item,callback;};
+    std::vector<LayoutRow> layoutRows; // in layout order
     bool armed=false;
 };
 // "Réduire les titres des modules": the game's header sub-menu lists its own
@@ -27,7 +29,7 @@ struct Choice { size_t panel=0; Ref menu,item,callback,cached,compositor,owner,s
 std::vector<Entry> entries;
 std::vector<Choice> choices;
 Ref soulWindow;
-Method add{},remove{},appendTitle{},appendSeparator{},appendItem{},appendCheckbox{},setHeaderSize{};
+Method add{},remove{},appendTitle{},appendSeparator{},appendItem{},appendCheckbox{},appendRadio{},setHeaderSize{};
 using SubMenuFn=Obj(*)(Obj,Method);
 using AllFn=void(*)(Obj,bool,Method);
 SubMenuFn originalSubMenu=nullptr;
@@ -37,7 +39,7 @@ bool Ready(){return module&&module->ready&&module->servicesReady&&!module->stopp
 Entry& Find(const char* key){auto i=std::find_if(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;});if(i==entries.end())throw std::runtime_error("Unknown native tool panel");return *i;}
 Obj Root(Obj menu){if(!menu)return nullptr;Obj root=api.Field(menu,"dofusContextualMenuRoot");return root&&api.Call(root,"get_menuData")==menu?root:nullptr;}
 bool Present(Obj menu,Obj item){Ref rows(api.Call(menu,"get_menuItems"));int n=api.Value<int>(api.Call(rows.get(),"get_Count"));if(n<0||n>256)return false;for(int i=0;i<n;++i)if(api.Call(rows.get(),"get_Item",{&i})==item)return true;return false;}
-void Close(Entry& e){e.armed=false;Ref root(Root(e.menu.get()));if(root.get()&&api.Call(root.get(),"get_panel")){bool delayed=false;api.Call(root.get(),"RemoveMenu",{&delayed});}e.callback.reset();e.item.reset();e.extraCallback.reset();e.extraItem.reset();e.menu.reset();}
+void Close(Entry& e){e.armed=false;Ref root(Root(e.menu.get()));if(root.get()&&api.Call(root.get(),"get_panel")){bool delayed=false;api.Call(root.get(),"RemoveMenu",{&delayed});}e.callback.reset();e.item.reset();e.layoutRows.clear();e.menu.reset();}
 bool Current(const Entry& e){return Ready()&&e.window.get()&&e.manipulator.get()&&e.cached.get()==module->cached.get()&&e.compositor.get()==module->compositor.get()&&e.service.get()==module->FindService("fpz")&&api.Call(e.window.get(),"get_panel")&&api.Call(e.button.get(),"get_panel")==api.Call(e.window.get(),"get_panel")&&api.Value<bool>(api.Call(e.button.get(),"get_enabledInHierarchy"));}
 bool Populate(Obj owner,Obj event){
     auto found=std::find_if(entries.begin(),entries.end(),[&](const Entry& e){return owner&&owner==e.manipulator.get();});if(found==entries.end())return false;
@@ -52,14 +54,21 @@ bool Populate(Obj owner,Obj event){
         bool disabled=false,close=true;unsigned delay=500;int style=1,icon=137;
         api.Invoke(appendItem,e.menu.get(),{text.get(),nullptr,&disabled,&close,help.get(),&delay,empty.get(),api.object_unbox(asset.get()),&style,&icon,api.object_unbox(color.get()),empty.get(),empty.get()});
         e.item.reset(api.Call(rows.get(),"get_Item",{&index}));e.callback.reset(api.Call(e.item.get(),"get_m_callback"));e.armed=true;
-        if(e.extraLabel&&e.extraToggle&&e.visible()){
-            // The panel's own layout row (e.g. the notebook's compact version).
+        if(!e.layouts.choices.empty()&&e.visible()){
+            // The panel's layouts as the game's radio rows (one group, the
+            // current one marked); a click on another one applies it.
             api.Invoke(appendSeparator,e.menu.get());
-            Ref extraText(api.string_new(e.extraLabel())),extraHelp(api.string_new("Change la disposition de ce panneau ; le choix est conservé."));
-            int extraIndex=api.Value<int>(api.Call(rows.get(),"get_Count"));int extraIcon=185;
-            if(extraIndex<0||extraIndex>128)throw std::runtime_error("Tool menu bounds");
-            api.Invoke(appendItem,e.menu.get(),{extraText.get(),nullptr,&disabled,&close,extraHelp.get(),&delay,empty.get(),api.object_unbox(asset.get()),&style,&extraIcon,api.object_unbox(color.get()),empty.get(),empty.get()});
-            e.extraItem.reset(api.Call(rows.get(),"get_Item",{&extraIndex}));e.extraCallback.reset(api.Call(e.extraItem.get(),"get_m_callback"));
+            Ref radioAsset(api.object_new(api.class_from_type(api.method_get_param(appendRadio,4))));
+            const int current=e.layouts.current();int group=0;bool switchOff=false,refreshParent=false;
+            for(size_t i=0;i<e.layouts.choices.size();++i){
+                int layoutIndex=api.Value<int>(api.Call(rows.get(),"get_Count"));
+                if(layoutIndex<0||layoutIndex>128)throw std::runtime_error("Tool menu bounds");
+                Ref label(api.string_new(e.layouts.choices[i].label.c_str())),layoutHelp(api.string_new(e.layouts.choices[i].help.c_str()));
+                bool on=static_cast<int>(i)==current;
+                api.Invoke(appendRadio,e.menu.get(),{label.get(),nullptr,&on,&group,api.object_unbox(radioAsset.get()),&switchOff,&disabled,&close,layoutHelp.get(),empty.get(),&delay,&refreshParent});
+                Entry::LayoutRow row;row.item.reset(api.Call(rows.get(),"get_Item",{&layoutIndex}));row.callback.reset(api.Call(row.item.get(),"get_m_callback"));
+                e.layoutRows.push_back(std::move(row));
+            }
         }
     }catch(const std::exception& error){e.armed=false;Log(std::string("TOOL_PANEL_MENU_ERROR ")+error.what());}
     return true;
@@ -133,9 +142,12 @@ bool Callback(Obj callback,Obj view){
             Ref root(Root(e.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;Close(e);if(e.visible())e.toggle();
         }catch(const std::exception& error){Log(std::string("TOOL_PANEL_HIDE_ERROR ")+error.what());}return true;
     }
-    for(auto& e:entries)if(callback&&e.extraCallback.get()&&callback==e.extraCallback.get()){
-        try{if(!e.armed||!Current(e)||!view||!api.Call(view,"get_panel")||api.Call(view,"get_itemData")!=e.extraItem.get()||api.Value<bool>(api.Call(e.extraItem.get(),"get_disabled"))||!Present(e.menu.get(),e.extraItem.get()))return true;
-            Ref root(Root(e.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;Close(e);if(e.extraToggle)e.extraToggle();
+    for(auto& e:entries)for(size_t layout=0;layout<e.layoutRows.size();++layout)if(callback&&callback==e.layoutRows[layout].callback.get()){
+        try{const auto& row=e.layoutRows[layout];
+            if(!e.armed||!Current(e)||!view||!api.Call(view,"get_panel")||api.Call(view,"get_itemData")!=row.item.get()||api.Value<bool>(api.Call(row.item.get(),"get_disabled"))||!Present(e.menu.get(),row.item.get()))return true;
+            Ref root(Root(e.menu.get()));if(!root.get()||!api.Call(root.get(),"get_panel"))return true;Close(e);
+            // The current layout's row only keeps its mark (native radio): nothing to apply.
+            if(static_cast<int>(layout)!=e.layouts.current())e.layouts.choose(static_cast<int>(layout));
         }catch(const std::exception& error){Log(std::string("TOOL_PANEL_LAYOUT_ERROR ")+error.what());}return true;
     }
     for(auto& c:choices)if(callback&&callback==c.callback.get()){
@@ -149,12 +161,13 @@ bool Callback(Obj callback,Obj view){
     return false;
 }
 }
-void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)(),const char*(*extraLabel)(),bool(*extraToggle)()){
+void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)(),Layouts layouts){
     if(!visible||!toggle)throw std::runtime_error("Missing tool panel callbacks");
+    if(!layouts.choices.empty()&&(!layouts.current||!layouts.choose))throw std::runtime_error("Missing tool panel layout callbacks");
     if(std::any_of(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;}))return;
-    Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;e.extraLabel=extraLabel;e.extraToggle=extraToggle;entries.push_back(std::move(e));
+    Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;e.layouts=std::move(layouts);entries.push_back(std::move(e));
 }
-bool ToggleExtra(const char* key){auto& e=Find(key);return Ready()&&e.extraToggle&&e.extraToggle();}
+bool ChooseLayout(const char* key,int layout){auto& e=Find(key);return Ready()&&layout>=0&&layout<static_cast<int>(e.layouts.choices.size())&&e.layouts.choose(layout);}
 std::vector<Shortcut> Shortcuts(){
     std::vector<Shortcut> result;
     for(const auto& e:entries)result.push_back({e.key,e.title,e.icon});
@@ -168,6 +181,7 @@ void Install(){if(installed)return;
     auto klass=api.Class("Core.dll",Menus,"DofusContextualMenu");
     appendTitle=api.FindVerified(klass,"AppendTitle",1,0x16D7F70);appendSeparator=api.FindVerified(klass,"AppendSeparator",0,0x16D76E0);appendItem=api.FindVerified(klass,"AppendDefaultItem",13,0x16D6C60);
     appendCheckbox=api.FindVerified(klass,"AppendCheckboxItem",9,0x16D63D0);
+    appendRadio=api.FindVerified(klass,"AppendRadioButtonItem",12,0x16D72F0);
     auto extensions=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElementExtensions");add=api.FindVerified(extensions,"AddManipulator",2,0x56755F0);remove=api.FindVerified(extensions,"RemoveManipulator",2,0x5676A90);
     auto window=api.Class("Core.dll","Core.UILogic.Components","MagneticDragWindow");
     setHeaderSize=api.FindVerified(window,"SetHeaderSize",1,0x15B27B0);

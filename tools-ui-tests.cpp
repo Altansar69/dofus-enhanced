@@ -66,8 +66,9 @@ bool TreasureVisible(){return treasure;}
 bool ToggleNotebook(){if(refuseNotebook)return false;++notebookToggles;notebook=!notebook;return true;}
 bool ToggleTreasure(){++treasureToggles;treasure=!treasure;return true;}
 int compactToggles=0;bool compact=false;
-const char* CompactLabel(){return compact?"Version complète":"Version compacte";}
-bool ToggleCompact(){++compactToggles;compact=!compact;return true;}
+bool failCompact=false;
+int CompactLayout(){return compact?1:0;}
+bool ChooseCompact(int layout){if(failCompact)throw std::runtime_error("Injected layout failure");++compactToggles;compact=layout==1;return true;}
 
 void Initialize(){
     api.object_get_class=[](Obj value)->Klass{return Get(value).type;};
@@ -76,8 +77,9 @@ void Initialize(){
     api.string_new=[](const char* text)->Obj{return String(text);};
     api.class_from_type=[](const void* type)->Klass{return const_cast<void*>(type);};
     api.method_get_param=[](Method method,uint32_t index)->const void*{
-        Check(static_cast<const MethodData*>(method)->name=="AppendDefaultItem"&&(index==7||index==10),"Only asset/color parameter metadata needed");
-        return Class(index==7?"AddressableEntry":"Color");
+        const auto& name=static_cast<const MethodData*>(method)->name;
+        Check((name=="AppendDefaultItem"&&(index==7||index==10))||(name=="AppendRadioButtonItem"&&index==4),"Only asset/color parameter metadata needed");
+        return Class(index==10?"Color":"AddressableEntry");
     };
     api.gchandle_new=[](Obj value,bool)->GCHandle{handles[++nextHandle]=value;return nextHandle;};
     api.gchandle_get_target=[](GCHandle value)->Obj{return handles.at(value);};
@@ -118,6 +120,13 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         auto item=Row(self,"CheckboxItem",Get(args[0]).text);auto& row=Get(item);
         row.on=*static_cast<bool*>(args[2]);row.disabled=*static_cast<bool*>(args[3]);row.close=*static_cast<bool*>(args[4]);
         row.icon=*static_cast<int*>(args[7]);row.fields["callback"]=Make("Callback");return nullptr;
+    }
+    if(m.name=="AppendRadioButtonItem"){
+        Check(args.size()==12&&!args[1]&&*static_cast<int*>(args[3])==0&&!*static_cast<bool*>(args[5])&&!*static_cast<bool*>(args[11])&&!Get(args[8]).text.empty(),
+            "Layout rows are one native radio group with the null callback, no switch-off and an explanation");
+        auto item=Row(self,"RadioItem",Get(args[0]).text);auto& row=Get(item);
+        row.on=*static_cast<bool*>(args[2]);row.disabled=*static_cast<bool*>(args[6]);row.close=*static_cast<bool*>(args[7]);
+        row.fields["callback"]=Make("Callback");return nullptr;
     }
     if(m.name=="AppendDefaultItem"){
         Check(args.size()==13&&!args[1],"Native hide row uses owned callback identity");
@@ -192,7 +201,7 @@ struct Fixture {
         owner=Make("WidgetManager");panel=Make("Panel");currentPanel=panel;
         services["frm"]=Make("WidgetService");Get(services["frm"]).fields["<dzqi>k__BackingField"]=owner;
         services["fpz"]=Make("ContextMenuService");
-        notebook=treasure=false;notebookToggles=treasureToggles=closed=nativeSubMenus=nativeAllHeaders=changes=0;compactToggles=0;compact=false;
+        notebook=treasure=false;notebookToggles=treasureToggles=closed=nativeSubMenus=nativeAllHeaders=changes=0;compactToggles=0;compact=false;failCompact=false;
         closeFailures=removeFailures=0;soulWindow=nullptr;logs.clear();
     }
     ~Fixture(){closeFailures=removeFailures=0;toolsUi::Restore();soulWindow=nullptr;module=nullptr;}
@@ -234,8 +243,10 @@ void NativeWidgetListKeepsNativeRows(){
 }
 void HeaderTitleAndHide(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu();auto rows=f.Rows(menu);
-    Check(rows.size()==5&&Get(rows[0]).type->name=="Title"&&Get(rows[0]).text=="Carnet"&&Get(rows[1]).type->name=="Separator","Header menu includes title and separator");
-    Check(Get(rows[3]).type->name=="Separator"&&Get(rows[4]).text=="Version compacte"&&Get(rows[4]).icon==185&&Get(rows[4]).close,"The notebook menu offers its layout row after the hide row");
+    Check(rows.size()==6&&Get(rows[0]).type->name=="Title"&&Get(rows[0]).text=="Carnet"&&Get(rows[1]).type->name=="Separator","Header menu includes title and separator");
+    Check(Get(rows[3]).type->name=="Separator"&&Get(rows[4]).type->name=="RadioItem"&&Get(rows[5]).type->name=="RadioItem"&&Get(rows[4]).text=="Version complète"&&Get(rows[5]).text=="Version compacte",
+        "The notebook menu lists its two layouts as radio rows after the hide row");
+    Check(Get(rows[4]).on&&!Get(rows[5]).on&&Get(rows[4]).close&&Get(rows[5]).close&&!Get(rows[5]).disabled,"The current layout is marked and a choice closes the menu");
     Check(Get(rows[2]).text=="Masquer le module"&&Get(rows[2]).icon==137&&Get(rows[2]).close,"Native hide row includes eye-slash icon and closes");
     auto cb=f.Callback(rows[2]),view=f.View(rows[2]);
     auto wrong=f.View(Make("ForeignItem"));
@@ -243,10 +254,17 @@ void HeaderTitleAndHide(){
     Check(callback(cb,view)&&!notebook&&notebookToggles==1&&closed==1,"Header hide closes owned menu then hides once");
     callback(cb,view);Check(notebookToggles==1,"Old header callback cannot toggle again");
     notebook=true;menu=f.HeaderMenu();rows=f.Rows(menu);
-    Check(callback(f.Callback(rows[4]),f.View(rows[4]))&&compactToggles==1&&compact&&notebookToggles==1&&closed==2,"The layout row closes the menu and applies its own action, not the hide one");
-    menu=f.HeaderMenu();rows=f.Rows(menu);Check(rows.size()==5&&Get(rows[4]).text=="Version complète","The layout row's label follows the current layout");
-    Check(toolsUi::ToggleExtra("notebook")&&compactToggles==2&&!compact,"The layout action is also reachable directly");
-    notebook=false;menu=f.HeaderMenu();Check(f.Rows(menu).size()==3,"A hidden panel's menu has no layout row");
+    Check(callback(f.Callback(rows[5]),f.View(rows[4]))&&compactToggles==0&&closed==1,"A layout row's callback with another row's view does nothing");
+    Check(callback(f.Callback(rows[5]),f.View(rows[5]))&&compactToggles==1&&compact&&notebookToggles==1&&closed==2,"The compact row closes the menu and applies its layout, not the hide action");
+    menu=f.HeaderMenu();rows=f.Rows(menu);Check(rows.size()==6&&!Get(rows[4]).on&&Get(rows[5]).on,"The mark follows the current layout");
+    Check(callback(f.Callback(rows[5]),f.View(rows[5]))&&compactToggles==1&&compact&&closed==3,"The current layout's row only closes the menu");
+    failCompact=true;menu=f.HeaderMenu();rows=f.Rows(menu);
+    Check(callback(f.Callback(rows[4]),f.View(rows[4]))&&compact&&compactToggles==1&&closed==4&&
+        std::any_of(logs.begin(),logs.end(),[](const std::string& line){return line.starts_with("TOOL_PANEL_LAYOUT_ERROR");}),"A failing layout choice is logged and the menu still closes");
+    failCompact=false;
+    Check(toolsUi::ChooseLayout("notebook",0)&&compactToggles==2&&!compact,"A layout is also reachable directly");
+    Check(!toolsUi::ChooseLayout("notebook",2)&&!toolsUi::ChooseLayout("notebook",-1)&&!toolsUi::ChooseLayout("treasure",0)&&compactToggles==2,"Unknown layouts are refused");
+    notebook=false;menu=f.HeaderMenu();Check(f.Rows(menu).size()==3,"A hidden panel's menu has no layout rows");
     Check(!populate(Make("ForeignManipulator"),Make("Event")),"Foreign header menu preserved");
     Check(!callback(Make("ForeignCallback"),view),"Foreign callbacks remain native");
 }
@@ -278,12 +296,13 @@ void HeaderCloseFailure(){
     toolsUi::Restore();Check(!toolsUi::CleanupPending()&&Get(f.button).items.empty(),"Header close retry releases manipulator");
 }
 void HeaderMenuReplacement(){
-    Fixture f;notebook=true;f.Header();auto old=f.HeaderMenu(),oldItem=f.Rows(old)[2],oldCallback=f.Callback(oldItem);
+    Fixture f;notebook=true;f.Header();auto old=f.HeaderMenu(),oldItem=f.Rows(old)[2],oldCallback=f.Callback(oldItem),oldLayout=f.Rows(old)[5];
     auto current=f.HeaderMenu();
     Check(!Get(f.MenuRoot(old)).fields["panel"]&&Get(f.MenuRoot(current)).fields["panel"],"A new header menu retires only the old owned menu");
     callback(oldCallback,f.View(oldItem));Check(notebookToggles==0,"Replaced header callbacks cannot toggle");
+    callback(f.Callback(oldLayout),f.View(oldLayout));Check(compactToggles==0&&!compact,"Replaced layout rows cannot apply a layout");
     auto event=Make("MenuEvent");Get(event).fields["menu"]=current;
-    Check(populate(f.manipulator,event)&&f.Rows(current).size()==5,"Repopulating the same menu must not duplicate rows (hide row and layout row once each)");
+    Check(populate(f.manipulator,event)&&f.Rows(current).size()==6,"Repopulating the same menu must not duplicate rows (hide row and layout rows once each)");
 }
 void StopClosesHeaderMenus(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu(),item=f.Rows(menu)[2];
@@ -360,12 +379,16 @@ void RestoreClosesSubMenu(){
 int main(){
     try{
         fake::Initialize();
-        toolsUi::Register("notebook","Carnet",225,fake::NotebookVisible,fake::ToggleNotebook,fake::CompactLabel,fake::ToggleCompact);
+        toolsUi::Register("notebook","Carnet",225,fake::NotebookVisible,fake::ToggleNotebook,
+            {{{"Version complète","Grande fenêtre."},{"Version compacte","Fenêtre étroite."}},fake::CompactLayout,fake::ChooseCompact});
         toolsUi::Register("treasure","Chasse au trésor",317,fake::TreasureVisible,fake::ToggleTreasure);
         toolsUi::Register("notebook","Ignored duplicate",999,fake::NotebookVisible,fake::ToggleNotebook);
+        bool refused=false;
+        try{toolsUi::Register("broken","Sans choix",1,fake::NotebookVisible,fake::ToggleNotebook,{{{"Seule","Une disposition."}}});}catch(const std::runtime_error&){refused=true;}
+        fake::Check(refused,"Layouts need their current and choose callbacks");
         toolsUi::Install();toolsUi::Install();
         fake::Check(fake::installs==2&&fake::menuRegistrations==1&&fake::subMenuHook&&fake::allHeadersHook,"Install registers header menus once and hooks the native header sub-menu");
-        fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0,"Native header entry points are pinned");
+        fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16D72F0,"Native header entry points are pinned");
         for(auto test:{fake::ToolbarUsesRegisteredActions,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
                 fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus,fake::HeaderSubMenuListsPanels,fake::HeaderToggleAppliesAndPersists,

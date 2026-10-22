@@ -3,6 +3,8 @@
 #include "native-panel-test-fixture.hpp"
 #include "notebook-panel.hpp"
 #include "notebook-native.hpp"
+#include <algorithm>
+#include <fstream>
 
 int travels=0,prepares=0,copies=0,sends=0,sentChannel=-1;
 std::string prepared,sent;
@@ -32,6 +34,22 @@ Obj FindType(Obj root,const char* type,const std::string& text){
     for(auto child:Get(root).children)if(auto found=FindType(child,type,text))return found;
     return nullptr;
 }
+// The window's ⋯ menu, opened through the native populate hook; a row is
+// clicked through the shared native callback router, like the game does.
+struct LayoutMenu {Obj menu=nullptr,root=nullptr;std::vector<Obj> rows;};
+LayoutMenu OpenMenu(Obj window){
+    auto button=Get(Get(window).fields.at("header")).fields.at("rightButton");
+    LayoutMenu m;m.menu=Make("Menu");m.root=Element("MenuRoot");auto event=Make("PopulateEvent");
+    Get(m.menu).fields["menuItems"]=Make("List");Get(m.menu).fields["dofusContextualMenuRoot"]=m.root;
+    Get(m.root).fields["menuData"]=m.menu;Get(event).fields["menu"]=m.menu;Add(nativeRoot,m.root);
+    populateHook(Get(button).fields.at("manipulator"),event,nullptr);
+    m.rows=Get(Get(m.menu).fields.at("menuItems")).children;return m;
+}
+bool Pick(const LayoutMenu& m,size_t row){
+    auto view=Element("MenuView");Get(view).fields["itemData"]=m.rows.at(row);Add(m.root,view);
+    return soul::HandlePanelMenuCallback(Get(m.rows.at(row)).fields.at("m_callback"),view);
+}
+size_t IndexIn(Obj parent,Obj child){const auto& children=Get(parent).children;return static_cast<size_t>(std::find(children.begin(),children.end(),child)-children.begin());}
 int Count(Obj root,const char* type){int n=Get(root).type->name==type?1:0;for(auto child:Get(root).children)n+=Count(child,type);return n;}
 std::vector<Obj> Inputs(Obj root){
     std::vector<Obj> result;if(Get(root).type->name=="TextInput")result.push_back(root);
@@ -132,16 +150,85 @@ int main(){
         Check(!Panel(window),"Session replacement retires notebook");
         owner.cached.reset(Get(dependencies).fields["cached"]);initFailures=1;OpenNotebookPanel();TickNotebookPanel();
         Check(!NotebookPanelCleanupPending(),"Partial creation failure doesn't stop module or leak native state");
-        // Compact layout from the panel's ⋯ menu: entries and use actions only, no editor.
+        // Layouts chosen in the panel's ⋯ menu (the game's radio rows): applied in
+        // place to the open window, which is never rebuilt and stays on screen.
+        Get(middle).dimensions["width"]=1280;Get(middle).dimensions["height"]=720;logs.clear();
         owner.settings.notebookCompact=false;OpenNotebookPanel();TickNotebookPanel();window=latestWindow;Check(Panel(window),"Full panel open");
-        Check(toolsUi::ToggleExtra("notebook")&&owner.settings.notebookCompact,"The layout row flips the saved setting");
-        TickNotebookPanel();TickNotebookPanel();Check(latestWindow!=window&&Panel(latestWindow),"The panel is rebuilt in the new layout");
-        window=latestWindow;auto detail=FindType(window,"SectionHeader","Détail"),entries=Get(FindText(window,"Nouvelle entrée")).fields.at("parent");
-        Check(Get(window).dimensions["width"]==360&&Get(Get(detail).fields.at("parent")).enums["display"]==1&&Get(FindText(window,"Nouvelle entrée")).enums["display"]==1,"Compact: narrow window, hidden editor, no new-entry button");
-        Check(FindText(entries,"Copier")&&FindText(entries,"Voyager")&&!FindText(detail,"Copier"),"Compact: the use actions sit under the entries list");
-        Check(FindText(window,"Choisis une entrée, puis Voyager, Envoyer ou Copier.")!=nullptr,"Compact status explains the layout");
-        Check(toolsUi::ToggleExtra("notebook")&&!owner.settings.notebookCompact,"Back to the full layout");TickNotebookPanel();TickNotebookPanel();window=latestWindow;
-        Check(Get(window).dimensions["width"]==660&&Get(Get(FindType(window,"SectionHeader","Détail")).fields.at("parent")).enums["display"]==0,"Full layout restored");
+        inputs=Inputs(window);auto savedRow=FindText(window,"[-25,36]  Mon zaap <b>littéral</b>");Check(!!savedRow,"The saved position is listed");Click(savedRow);
+        Get(window).dimensions["left"]=230;Get(window).dimensions["top"]=140; // The native dragger writes the inline left/top.
+        auto menu=OpenMenu(window);
+        Check(menu.rows.size()==6&&Get(menu.rows[4]).text=="Version complète"&&Get(menu.rows[5]).text=="Version compacte"&&Get(menu.rows[4]).enums["isOn"]==1&&Get(menu.rows[5]).enums["isOn"]==0,
+            "The notebook's ⋯ menu lists both layouts as radio rows, the full one marked");
+        Get(inputs[0]).text="Titre non enregistré";
+        Check(Pick(menu,5)&&!owner.settings.notebookCompact&&!Panel(menu.root)&&Get(window).dimensions["width"]==660&&
+            FindText(window,"Modifications non enregistrées. Enregistre-les ou reclique pour les abandonner."),"A choice with unsaved edits closes the menu and waits for a confirming second choice");
+        menu=OpenMenu(window);
+        Check(Pick(menu,5)&&owner.settings.notebookCompact&&Get(inputs[0]).text=="Mon zaap <b>littéral</b>","The confirming choice drops the edits and applies the compact layout");
+        TickNotebookPanel();TickNotebookPanel();
+        Check(latestWindow==window&&Panel(window)&&Get(window).fields["parent"]==middle&&Get(window).dimensions["left"]==230&&Get(window).dimensions["top"]==140,
+            "The same window stays where it was dragged: no rebuild, no position reset");
+        auto detail=FindType(window,"SectionHeader","Détail"),add=FindText(window,"Nouvelle entrée"),entries=Get(add).fields.at("parent");
+        Check(Get(window).dimensions["width"]==360&&Get(window).dimensions["minWidth"]==300&&Get(Get(detail).fields.at("parent")).enums["display"]==1&&Get(add).enums["display"]==1,
+            "Compact: narrow window, hidden editor, no new-entry button");
+        auto channelRow=Get(FindText(window,"Canal : actuel")).fields.at("parent"),useRow=Get(FindText(window,"Copier")).fields.at("parent");
+        const auto& listed=Get(entries).children;
+        Check(listed.size()>=3&&listed[listed.size()-3]==channelRow&&listed.back()==useRow&&!FindText(detail,"Copier")&&!FindText(detail,"Canal : actuel"),
+            "Compact: the channel and use actions sit under the entries list");
+        Check(FindText(window,"Choisis une entrée, puis Voyager, Envoyer ou Copier.")&&Get(savedRow).enums["set_isActivated"]==1,"Compact status explains the layout; the entry stays selected");
+        const auto travelsBefore=travels;Click(FindText(window,"Voyager"));Check(travels==travelsBefore+1&&travelled.x==-25,"Compact travel uses the selected entry");
+        menu=OpenMenu(window);Check(Get(menu.rows[4]).enums["isOn"]==0&&Get(menu.rows[5]).enums["isOn"]==1,"The mark follows the compact layout");
+        Check(Pick(menu,5)&&owner.settings.notebookCompact&&latestWindow==window&&!Panel(menu.root),"The current layout's row only closes the menu");
+        Check(toolsUi::ChooseLayout("notebook",1)&&owner.settings.notebookCompact&&latestWindow==window,"Choosing the current layout changes nothing");
+        menu=OpenMenu(window);
+        Check(Pick(menu,4)&&!owner.settings.notebookCompact&&latestWindow==window&&Panel(window),"« Version complète » from the menu restores the full layout in the same window");
+        auto slot=Get(channelRow).fields.at("parent"),editor=Get(useRow).fields.at("parent"),actions=Get(FindText(window,"Enregistrer")).fields.at("parent");
+        Check(Get(window).dimensions["width"]==660&&Get(window).dimensions["minWidth"]==560&&Get(Get(detail).fields.at("parent")).enums["display"]==0&&Get(add).enums["display"]==0,
+            "Full layout restored: wide window, editor and new-entry button shown");
+        Check(Get(slot).fields.at("parent")==editor&&Get(actions).fields.at("parent")==editor&&IndexIn(editor,slot)<IndexIn(editor,actions)&&Get(editor).children.back()==useRow&&FindText(detail,"Copier"),
+            "Full: the channel row is back above the save actions and the use actions at the end of the editor");
+        Check(FindText(window,"Choisis une entrée dans la liste de gauche.")!=nullptr,"Full status explains the layout");
+        Check(Get(window).dimensions["left"]==230&&Get(window).dimensions["top"]==140,"A window inside the screen keeps its position");
+        Check(std::none_of(logs.begin(),logs.end(),[](const std::string& line){return line.starts_with("TOOL_PANEL_");}),"The notebook menu is populated and dispatched without error");
+        // A pending delete confirmation does not survive a layout change.
+        const auto kept=notebook::Read(path).entries.size();
+        Click(FindText(window,"Supprimer"));Check(FindText(window,"Confirmer la suppression")!=nullptr,"Delete armed");
+        Check(toolsUi::ChooseLayout("notebook",1)&&toolsUi::ChooseLayout("notebook",0),"Layout round trip");
+        Check(FindText(window,"Supprimer")&&!FindText(window,"Confirmer la suppression"),"A layout change drops the pending delete confirmation");
+        Click(FindText(window,"Supprimer"));Check(notebook::Read(path).entries.size()==kept&&FindText(window,"Confirmer la suppression"),"One click after a layout change only re-arms the delete");
+        // Another tab and its entry are kept across both layouts.
+        ClickTab(window,"Notes");auto noteRow=FindType(window,"ListElementBasic","Plan");Check(!!noteRow,"The saved note is listed");Click(noteRow);
+        Check(toolsUi::ChooseLayout("notebook",1),"Compact from the Notes tab");TickNotebookPanel();
+        Check(TabOn(window,"Notes")&&!TabOn(window,"Positions")&&Get(noteRow).enums["set_isActivated"]==1&&Get(window).dimensions["left"]==230&&Get(window).dimensions["top"]==140,
+            "Compact keeps the Notes tab, its entry and the dragged position");
+        Check(toolsUi::ChooseLayout("notebook",0),"Full from the Notes tab");TickNotebookPanel();
+        Check(TabOn(window,"Notes")&&Get(inputs[0]).text=="Plan"&&Get(noteRow).enums["set_isActivated"]==1,"Full keeps the Notes tab and its entry");
+        // A compact window docked at the right and bottom edges stays inside the screen in the wider layout.
+        Check(toolsUi::ChooseLayout("notebook",1),"Compact before docking");Get(window).dimensions["left"]=1280-360;Get(window).dimensions["top"]=720-240;
+        Check(toolsUi::ChooseLayout("notebook",0)&&Get(window).dimensions["left"]==1280-660&&Get(window).dimensions["top"]==720-360,"The full layout is moved back inside the screen");
+        // A window opened while the compact layout is saved is built compact.
+        Check(toolsUi::ChooseLayout("notebook",1),"Compact again");Click(CloseButton(window));TickNotebookPanel();Check(!Panel(window),"Compact window closed");
+        OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
+        Check(Panel(window)&&Get(window).dimensions["width"]==360&&Get(Get(FindText(window,"Copier")).fields.at("parent")).fields.at("parent")==Get(FindText(window,"Nouvelle entrée")).fields.at("parent"),
+            "A window opened in the compact layout is built compact");
+        // An unreadable notebook keeps its warning across layout and tab changes.
+        RestoreNotebookPanel();owner.settings.notebookCompact=false;
+        const auto backup=directory/"notebook-backup.json";std::filesystem::copy_file(path,backup,std::filesystem::copy_options::overwrite_existing);
+        {std::ofstream corrupt(path,std::ios::binary|std::ios::trunc);corrupt<<"{";}
+        OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
+        const std::string unreadable="Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.";
+        Check(FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"An unreadable notebook is reported at opening, saving disabled");
+        Check(toolsUi::ChooseLayout("notebook",1)&&latestWindow==window&&FindText(window,unreadable),"The warning survives the compact layout");
+        Check(toolsUi::ChooseLayout("notebook",0)&&FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"The warning survives the return to the full layout");
+        ClickTab(window,"Notes");Check(FindText(window,unreadable)!=nullptr,"The warning survives a tab change");
+        RestoreNotebookPanel();std::filesystem::copy_file(backup,path,std::filesystem::copy_options::overwrite_existing);
+        // A settings save that fails after the setting changed: the open window
+        // follows the setting the menu marks, and one choice brings it back.
+        OpenNotebookPanel();TickNotebookPanel();window=latestWindow;Check(Panel(window)&&Get(window).dimensions["width"]==660,"Full window before a failed save");
+        changeFailures=1;bool threw=false;
+        try{toolsUi::ChooseLayout("notebook",1);}catch(const std::runtime_error&){threw=true;}
+        Check(threw&&owner.settings.notebookCompact&&Get(window).dimensions["width"]==360&&Get(Get(FindType(window,"SectionHeader","Détail")).fields.at("parent")).enums["display"]==1,
+            "After a failed save the window still follows the setting the menu marks");
+        Check(toolsUi::ChooseLayout("notebook",0)&&!owner.settings.notebookCompact&&Get(window).dimensions["width"]==660,"One choice brings the full layout back");
         RestoreNotebookPanel();Check(!NotebookPanelCleanupPending()&&!Panel(window),"Layout scenario releases its window");
         toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
         std::filesystem::remove_all(directory);

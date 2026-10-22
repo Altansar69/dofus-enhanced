@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.8.0** (révision r104).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.8.1** (révision r105).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -80,11 +80,14 @@ de titre ferme le carnet (une modification non enregistrée demande un second
 clic). Le menu ⋯ des modules ne le liste plus non plus, sauf dans **Réduire les
 titres des modules**.
 La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat.
-Son menu ⋯ propose **Version compacte** : une fenêtre étroite avec les onglets,
-la liste des entrées, la pagination et les actions (Voyager, Envoyer, Préparer
-dans le chat, Copier, canal des messages) sous la liste, sans formulaire ;
-**Version complète** ramène la grande fenêtre, seule à permettre de créer et
-modifier les entrées. Le choix est enregistré.
+Son menu ⋯ liste les deux dispositions comme des choix à puce du jeu, la
+disposition active cochée : **Version complète** (la grande fenêtre, seule à
+permettre de créer et modifier les entrées) et **Version compacte** (une
+fenêtre étroite avec les onglets, la liste des entrées, la pagination et les
+actions Voyager, Envoyer, Préparer dans le chat, Copier et canal des messages
+sous la liste, sans formulaire). Le choix est enregistré et appliqué aussitôt
+à la fenêtre ouverte, qui garde l’onglet et l’entrée choisis et reste à sa
+place (ramenée dans l’écran si la version complète, plus large, en dépasserait).
 Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
 **Notes** et **Messages**, la liste des entrées sans en-tête (entrée courante
 surlignée, pagination et compteur) et une section **Détail**

@@ -43,6 +43,7 @@ Obj failOwner = nullptr;
 Obj dependencies = nullptr, input = nullptr, contextService = nullptr;
 int hides = 0, nativePopulates = 0;
 Obj lastMenuRoot = nullptr;
+int changeFailures = 0; // Module::Change: settings assigned, then the save throws (module.cpp order).
 int snapCleanups = 0, removedInputs = 0, initFailures = 0;
 std::string failMethod;
 bool globalDragging = false;
@@ -150,7 +151,8 @@ void Initialize() {
     api.object_new = [](Klass k)->Obj { return Make(static_cast<Class*>(k)->name); };
     api.class_from_type = [](const void* t)->Klass { return const_cast<void*>(t); };
     api.method_get_param = [](Method m,uint32_t index)->const void* {
-        Check(static_cast<const MethodInfo*>(m)->name=="AppendDefaultItem"&&(index==7||index==10),"Menu value argument metadata");
+        const auto& name=static_cast<const MethodInfo*>(m)->name;
+        Check((name=="AppendDefaultItem"&&(index==7||index==10))||(name=="AppendRadioButtonItem"&&index==4),"Menu value argument metadata");
         return Type("Box");
     };
     api.object_unbox = [](Obj o)->void* { return Get(o).value.data(); };
@@ -195,6 +197,13 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
         Check(!*static_cast<bool*>(args[2])&&*static_cast<bool*>(args[3])&&*static_cast<int*>(args[9])==137,"Enabled native closing row with eye-slash icon");
         Check(!Get(args[4]).text.empty(),"Explain how to show the module again");
         auto item=Make("MenuItem"),callback=Make("MenuCallback");Get(item).fields["m_callback"]=callback;
+        Get(obj.fields.at("menuItems")).children.push_back(item);return nullptr;
+    }
+    if(m.name=="AppendRadioButtonItem") {
+        Check(args.size()==12&&!args[1]&&*static_cast<int*>(args[3])==0&&!*static_cast<bool*>(args[5])&&*static_cast<bool*>(args[7])&&!*static_cast<bool*>(args[11])&&!Get(args[8]).text.empty(),
+            "Layout rows: one native radio group, null callback, no switch-off, closing on select, explained");
+        auto item=Make("MenuItem"),callback=Make("MenuCallback");Get(item).text=Get(args[0]).text;
+        Get(item).enums["isOn"]=*static_cast<bool*>(args[2])?1:0;Get(item).enabled=!*static_cast<bool*>(args[6]);Get(item).fields["m_callback"]=callback;
         Get(obj.fields.at("menuItems")).children.push_back(item);return nullptr;
     }
     if(m.name=="RemoveMenu") {Check(!*static_cast<bool*>(args[0]),"Close native menu immediately");Detach(self);return nullptr;}
@@ -379,7 +388,7 @@ void* Api::Native(Method method,uintptr_t rva) const {
     const auto& m=*static_cast<const fake::MethodInfo*>(method);
     if(rva==0x11E7EC0&&m.name=="get_menu"&&m.count==0)return reinterpret_cast<void*>(rva);
     const std::map<uintptr_t,std::pair<std::string,int>> expected={
-        {0x17D83F0,{"AddPresetContextualMenuItems",1}},{0x16D63D0,{"AppendCheckboxItem",9}},
+        {0x17D83F0,{"AddPresetContextualMenuItems",1}},{0x16D63D0,{"AppendCheckboxItem",9}},{0x16D72F0,{"AppendRadioButtonItem",12}},
         {0x5742BD0,{".ctor",0}},{0x5742BE0,{"get_contentContainer",0}},
         {0x55E08E0,{"BringToFront",0}},{0x1593FB0,{"set_isSingleLine",1}},
         {0x178E150,{"set_isMultiline",1}},{0x564B1E0,{"set_enableRichText",1}},
@@ -416,7 +425,10 @@ void* Api::Native(Method method,uintptr_t rva) const {
 }
 Module* module = nullptr;
 Module::Module(std::filesystem::path): features(nullptr),ui(nullptr) {}
-void Module::Change(Settings value,bool) {settings=std::move(value);}
+void Module::Change(Settings value,bool) {
+    settings=std::move(value);
+    if(fake::changeFailures>0){--fake::changeFailures;throw std::runtime_error("Cannot replace settings");}
+}
 managed::Obj Module::FindService(const char* name) const {
     if(std::string(name)=="fpz")return fake::contextService;
     if(std::string(name)=="fqp")return fake::Get(fake::nativeRoot).fields.at("layersService");

@@ -1,4 +1,20 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 104 — VERSION 1.8.0
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 105 — VERSION 1.8.1
+
+R105 — VERSION 1.8.1 : DISPOSITION DU CARNET PAR CHOIX À PUCE, SANS DISPARITION
+- Carnet personnel : le menu ⋯ de la fenêtre liste les deux dispositions,
+  « Version complète » et « Version compacte », comme des choix à puce du
+  jeu (la disposition active est cochée), au lieu d’une seule ligne qui
+  changeait de nom.
+- Passer d’une disposition à l’autre ne fait plus disparaître le carnet : la
+  fenêtre n’est plus détruite puis reconstruite au passage suivant du mod,
+  avec tous ses composants du jeu ; elle est réorganisée sur place. Elle garde
+  l’onglet et l’entrée choisis et reste à sa place, ramenée dans l’écran si la
+  version complète, plus large, en dépasserait ; seuls sa largeur, la colonne
+  du formulaire et la place des boutons Voyager, Envoyer, Préparer, Copier et
+  du canal changent. Une modification non enregistrée demande toujours un
+  second choix avant de passer en version compacte, et une suppression en
+  attente de confirmation est annulée.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R104 — VERSION 1.8.0 : REPÈRES NATIFS AVEC LES ÉLÉMENTS DU JEU, DOUBLE-CLIC, SURBRILLANCE
 - Ressources sur les cartes : retour aux repères natifs et aux groupes de

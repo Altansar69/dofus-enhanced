@@ -1,12 +1,16 @@
 #pragma once
 #include "runtime.hpp"
+#include <string>
 #include <vector>
 namespace toolsUi {
+// Optional layouts of a panel, listed as the game's radio rows in its ⋯ menu
+// (the current one marked; a click on another one applies it), e.g. the
+// notebook's full and compact versions.
+struct Layout {std::string label,help;};
+struct Layouts {std::vector<Layout> choices;int (*current)()=nullptr;bool (*choose)(int)=nullptr;};
 // Registered once at installation; visibility is changed only by an explicit UI action.
-// extraLabel/extraToggle: an optional extra row in the panel's ⋯ menu (label
-// read when the menu opens, action when clicked), e.g. the notebook's layout.
-void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)(), const char* (*extraLabel)() = nullptr, bool (*extraToggle)() = nullptr);
-bool ToggleExtra(const char* key);
+void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)(), Layouts layouts = {});
+bool ChooseLayout(const char* key, int layout);
 struct Shortcut {std::string key,title;int icon=0;};
 std::vector<Shortcut> Shortcuts();
 bool Visible(const char* key);

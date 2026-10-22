@@ -7,6 +7,7 @@
 #include "module.hpp"
 #include <algorithm>
 #include <array>
+#include <cmath>
 namespace {
 using namespace managed;
 constexpr const char* Ui="UnityEngine.UIElementsModule.dll";
@@ -19,6 +20,7 @@ constexpr int IconPin=225,IconText=305,IconChat=78,IconPlus=230,IconSave=148,Ico
 struct State {
     Ref root,window,header,dragger,dependencies,cached,compositor,closeButton;
     Ref title,body,x,y,world,coordinates,status,save,remove,add,travel,prepare,copy,current,previous,next,reload,count,useRow,useDivider,send,channelButton,channelRow;
+    Ref library,entries,editorColumn,editor,channelSlot; // Layouts: the two columns and the places of the use actions.
     int channelChoice=0; // Messages: notebook::Channels value shown on the channel button.
     Ref worldDropdown; int worldChoice=1; std::vector<notebook::World> worlds; // Positions: native dropdown of the game's worlds.
     std::array<Ref,3> tabs;
@@ -32,7 +34,7 @@ struct State {
     notebook::Kind kind=notebook::Kind::Position;
     size_t offset=0;
     bool cleanup=false,confirmDelete=false,confirmDiscard=false,readable=true;
-    bool compact=false; // Compact layout: entries and use actions only, no editor (settings.notebookCompact at creation).
+    bool compact=false; // Compact layout: entries and use actions only, no editor (settings.notebookCompact, applied in place).
     std::filesystem::path path;
 } state;
 bool installed=false,wanted=false;
@@ -253,8 +255,11 @@ void Reload() {
     try {state.document=notebook::Read(state.path);state.readable=true;ShowRows();}
     catch(...){state.readable=false;Enabled(state.save.get(),false);Enabled(state.remove.get(),false);throw;}
 }
-// What to do next in the current tab and layout (shown at opening and on tab change).
+// A read failure stays reported until Actualiser succeeds (saving stays disabled meanwhile).
+constexpr const char* Unreadable="Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.";
+// What to do next in the current tab and layout (shown at opening, on tab and layout changes).
 void TabStatus() {
+    if(!state.readable){Status(Unreadable);return;}
     if(state.compact)Status(state.visible.empty()?"Aucune entrée ici. Passe en Version complète (menu ⋯) pour en créer.":"Choisis une entrée, puis Voyager, Envoyer ou Copier.");
     else Status(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche.");
 }
@@ -302,6 +307,78 @@ bool Action(Obj owner) {
     }catch(const std::exception& error){Status(error.what());Log("NOTEBOOK_ACTION_ERROR operation_failed");}
     return true;
 }
+// Window size of each layout (full, compact); the native resizers start from it.
+struct LayoutSize { float width, minWidth, minHeight; };
+constexpr LayoutSize Sizes[2]={{660,560,360},{360,300,240}};
+void WindowSize(bool compact) {
+    const auto& size=Sizes[compact];
+    Pixels(state.window.get(),"width",size.width);
+    Pixels(state.window.get(),"minWidth",size.minWidth); Pixels(state.window.get(),"minHeight",size.minHeight);
+}
+// Inline position of the window (the native dragger writes it), else its resolved one.
+float WindowPosition(const char* property) {
+    Ref box(Style(state.window.get(),property));
+    if(api.Value<int>(api.Call(box.get(),"get_keyword"))==0) {
+        struct LengthValue { float value; int unit; };
+        const auto length=api.Value<LengthValue>(api.Call(box.get(),"get_value"));
+        if(length.unit==0&&std::isfinite(length.value))return length.value;
+    }
+    Ref resolved(api.Call(state.window.get(),"get_resolvedStyle"));
+    return api.Value<float>(api.Call(resolved.get(),(std::string("get_")+property).c_str()));
+}
+// The game keeps a window inside the screen only while it is dragged
+// (ElementDraggerWithBounds): after a layout change the window is moved back
+// inside its layer by the new layout's width and minimum height (its resolved
+// size still holds the old layout until the next layout pass).
+void KeepInRoot(bool compact) {
+    Ref resolved(api.Call(state.root.get(),"get_resolvedStyle"));
+    const float limits[]={api.Value<float>(api.Call(resolved.get(),"get_width")),api.Value<float>(api.Call(resolved.get(),"get_height"))};
+    const float sizes[]={Sizes[compact].width,Sizes[compact].minHeight};
+    const char* properties[]={"left","top"};
+    for(size_t i=0;i<2;++i) {
+        const float position=WindowPosition(properties[i]);
+        if(!std::isfinite(limits[i])||limits[i]<=0||!std::isfinite(position))continue;
+        const float kept=std::clamp(position,0.f,std::max(0.f,limits[i]-sizes[i]));
+        if(kept!=position)Pixels(state.window.get(),properties[i],kept);
+    }
+}
+// Moves a built element to the end of another parent.
+void Move(Obj element, Obj parent) { api.Call(element,"RemoveFromHierarchy"); Add(parent,element); }
+// Full layout: the entries, then the editor (channel row above its save
+// actions, use actions below them). Compact: a narrow window, the editor
+// hidden but built (the use actions read it), the use actions under the list.
+// Applied in place: the window, its position, tab and entry stay on screen.
+void ApplyLayout(bool compact) {
+    state.compact=compact; WindowSize(compact);
+    Float(state.library.get(),"flexGrow",compact?1.f:0.f); Float(state.library.get(),"flexShrink",compact?1.f:0.f);
+    Pixels(state.library.get(),"marginRight",compact?0.f:12.f);
+    Enum(state.add.get(),"display",compact?1:0); Enum(state.editorColumn.get(),"display",compact?1:0);
+    Move(state.channelRow.get(),compact?state.entries.get():state.channelSlot.get());
+    for(Obj use:{state.useDivider.get(),state.useRow.get()}) Move(use,compact?state.entries.get():state.editor.get());
+}
+// The open window in another layout: in place, kept inside its layer, status updated.
+void Relayout(bool compact) { ApplyLayout(compact); KeepInRoot(compact); TabStatus(); }
+// Layout chosen in the panel's ⋯ menu (0 full, 1 compact): saved, and applied
+// to the open window in place. Unsaved edits need the confirming second
+// choice, as for a tab change, and are then dropped.
+bool SelectLayout(int layout) {
+    if(!Session()||layout<0||layout>1)return false;
+    const bool compact=layout==1;
+    if(compact==module->settings.notebookCompact)return true;
+    const bool open=wanted&&Current();
+    if(open) {
+        // Like every other panel control (Action): a pending delete confirmation is dropped.
+        state.confirmDelete=false;Text(state.remove.get(),"Supprimer");
+        const bool dirty=Dirty();if(!CanDiscard())return false;if(dirty)Fill(state.editing);
+    }
+    Settings next=module->settings;next.notebookCompact=compact;
+    // Module::Change assigns the setting before saving it: when the save throws,
+    // the open window still follows the setting the ⋯ menu marks.
+    try{module->Change(next);}
+    catch(...){if(open&&state.compact!=module->settings.notebookCompact)Relayout(module->settings.notebookCompact);throw;}
+    if(open)Relayout(compact);
+    return true;
+}
 void Retain(const char* field) {
     Ref list(api.Field(state.window.get(),field));
     const int count=api.Value<int>(api.Call(list.get(),"get_Count"));
@@ -329,9 +406,7 @@ void Create(Obj root) {
         api.Call(state.window.get(),setter,{&yes});
     api.Call(state.window.get(),"set_hasBackground",{&yes});
     Enum(state.window.get(),"position",1); Float(state.window.get(),"flexGrow",0);
-    const bool compact=module->settings.notebookCompact; state.compact=compact;
-    Pixels(state.window.get(),"width",compact?360.f:660.f); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
-    Pixels(state.window.get(),"minWidth",compact?300.f:560.f); Pixels(state.window.get(),"minHeight",compact?240.f:360.f);
+    WindowSize(module->settings.notebookCompact); Pixels(state.window.get(),"left",80); Pixels(state.window.get(),"top",90);
     state.header.reset(api.Call(state.window.get(),"get_headerWidget"));
     state.closeButton.reset(api.Field(state.header.get(),"closeButton"));
     if(!state.closeButton.get()) throw std::runtime_error("Notebook native close button unavailable");
@@ -352,25 +427,22 @@ void Create(Obj root) {
     Divider(content.get());
     // Two columns: the entries, then the editor.
     Ref columns(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Enum(columns.get(),"flexDirection",2); Add(content.get(),columns.get());
-    Ref library(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(library.get(),"flexShrink",0); Add(columns.get(),library.get());
-    if(compact) Float(library.get(),"flexGrow",1); else { Pixels(library.get(),"width",250); Pixels(library.get(),"marginRight",12); }
+    state.library.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Pixels(state.library.get(),"width",250); Add(columns.get(),state.library.get());
     // The entries list has no section header: rows, paging and (compact) the
     // use actions sit directly in the column.
-    Ref entries(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Add(library.get(),entries.get());
-    state.add.reset(Button(entries.get(),"Nouvelle entrée",IconPlus,1,0,"Commencer une nouvelle entrée dans cet onglet."));
-    if(compact)Enum(state.add.get(),"display",1);
+    state.entries.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Add(state.library.get(),state.entries.get());
+    state.add.reset(Button(state.entries.get(),"Nouvelle entrée",IconPlus,1,0,"Commencer une nouvelle entrée dans cet onglet."));
     Pixels(state.add.get(),"marginBottom",8);
-    for(auto& row:state.rows)row.reset(ListRow(entries.get()));
-    Ref paging(Row(entries.get()));Pixels(paging.get(),"marginTop",4);
+    for(auto& row:state.rows)row.reset(ListRow(state.entries.get()));
+    Ref paging(Row(state.entries.get()));Pixels(paging.get(),"marginTop",4);
     state.previous.reset(Button(paging.get(),"",IconPrevious,2,0,"Entrées précédentes"));
     state.count.reset(Label(paging.get(),"",true));Float(state.count.get(),"flexGrow",1);Enum(state.count.get(),"unityTextAlign",4);
     state.next.reset(Button(paging.get(),"",IconNext,2,0,"Entrées suivantes"));Pixels(state.next.get(),"marginRight",0);
-    Ref editorColumn(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(editorColumn.get(),"flexGrow",1); Pixels(editorColumn.get(),"minWidth",300); Add(columns.get(),editorColumn.get());
-    if(compact)Enum(editorColumn.get(),"display",1); // Compact: the editor stays built (actions read it) but hidden.
-    Obj useParent=compact?entries.get():nullptr; // Compact: the use actions sit under the entries list.
-    Ref editor(Section(editorColumn.get(),"Détail",IconEdit));
-    state.title.reset(Input(editor.get(),"Titre de l’entrée","",80));Pixels(state.title.get(),"marginBottom",8);
-    state.coordinates.reset(Row(editor.get()));
+    state.editorColumn.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(state.editorColumn.get(),"flexGrow",1); Pixels(state.editorColumn.get(),"minWidth",300); Add(columns.get(),state.editorColumn.get());
+    state.editor.reset(Section(state.editorColumn.get(),"Détail",IconEdit));
+    Obj editor=state.editor.get();
+    state.title.reset(Input(editor,"Titre de l’entrée","",80));Pixels(state.title.get(),"marginBottom",8);
+    state.coordinates.reset(Row(editor));
     state.x.reset(Input(state.coordinates.get(),"X","0",5));Pixels(state.x.get(),"width",64);Float(state.x.get(),"flexGrow",0);Pixels(state.x.get(),"marginRight",6);
     state.y.reset(Input(state.coordinates.get(),"Y","0",5));Pixels(state.y.get(),"width",64);Float(state.y.get(),"flexGrow",0);Pixels(state.y.get(),"marginRight",6);
     // Native dropdown of the game's worlds (replaces the numeric world field).
@@ -383,16 +455,17 @@ void Create(Obj root) {
     for(const auto& world:state.worlds)AddWorldItem(world.id);
     Add(state.coordinates.get(),state.worldDropdown.get());
     state.current.reset(Button(state.coordinates.get(),"Ma position",IconPlayer,2,0,"Reprendre les coordonnées de la carte où tu te trouves."));Pixels(state.current.get(),"marginBottom",0);
-    state.body.reset(Input(editor.get(),"","",8000));Pixels(state.body.get(),"marginBottom",8);
+    state.body.reset(Input(editor,"","",8000));Pixels(state.body.get(),"marginBottom",8);
     // Messages: the chat channel the entry is sent to (kept with the entry).
-    if(!useParent)useParent=editor.get();
-    state.channelRow.reset(Row(useParent));
+    // Its place in the full layout is this slot, above the save actions.
+    state.channelSlot.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Add(editor,state.channelSlot.get());
+    state.channelRow.reset(Row(state.channelSlot.get()));
     state.channelButton.reset(Button(state.channelRow.get(),"Canal : actuel",IconChannel,2,0,"Canal du chat où ce message est envoyé. Clique pour passer au suivant ; « actuel » garde le canal en cours du chat."));
-    Ref actions(Row(editor.get()));
+    Ref actions(Row(editor));
     state.save.reset(Button(actions.get(),"Enregistrer",IconSave,0,0,"Conserver cette entrée dans le carnet."));
     state.remove.reset(Button(actions.get(),"Supprimer",IconTrash,2,1,"Supprimer cette entrée (confirmation au second clic)."));
-    state.useDivider.reset(Divider(useParent,"Utiliser"));
-    state.useRow.reset(Row(useParent));Pixels(state.useRow.get(),"marginBottom",0);
+    state.useDivider.reset(Divider(editor,"Utiliser"));
+    state.useRow.reset(Row(editor));Pixels(state.useRow.get(),"marginBottom",0);
     state.travel.reset(Button(state.useRow.get(),"Voyager",IconZaap,1,0,"Lancer le trajet vers cette position : zaaps, bateaux puis /travel."));
     state.send.reset(Button(state.useRow.get(),"Envoyer",IconSend,1,0,"Envoyer ce message dans le chat, sur le canal choisi (ou le canal en cours du chat)."));
     state.prepare.reset(Button(state.useRow.get(),"Préparer dans le chat",IconChat,1,0,"Placer ce message dans le brouillon du chat, sans l’envoyer."));
@@ -400,9 +473,10 @@ void Create(Obj root) {
     Ref footer(Row(content.get()));Pixels(footer.get(),"marginTop",6);Pixels(footer.get(),"marginBottom",0);
     state.status.reset(Label(footer.get(),"Le carnet est vide. Clique sur « Nouvelle entrée » pour commencer.",true));Float(state.status.get(),"flexGrow",1);Float(state.status.get(),"flexShrink",1);Pixels(state.status.get(),"marginRight",8);
     state.reload.reset(Button(footer.get(),"Actualiser",0,2,0,"Relire le fichier du carnet."));Pixels(state.reload.get(),"marginRight",0);Pixels(state.reload.get(),"marginBottom",0);
+    ApplyLayout(module->settings.notebookCompact);
     state.path=notebook::DataPath(module->settingsPath);
     Fill({});
-    try {Reload();TabStatus();}catch(...){Status("Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.");}
+    try {Reload();TabStatus();}catch(...){Status(Unreadable);}
     Add(root,state.window.get());Log("NOTEBOOK_PANEL_OPEN native=true");
 }
 }
@@ -431,14 +505,13 @@ void InstallNotebookPanel(){
     api.FindVerified(dropdown,"get_selectedElement",0,0x155DB30);api.FindVerified(dropdown,"set_choiceText",1,0x1728550);
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15BFB50);
     notebook::InstallNative();soul::SetAuxiliaryPanelAction(Action);nativeClick::AddHandler(Action);
-    // The panel's ⋯ menu offers the other layout (compact: entries and use
-    // actions only, like the game's own compact spell bar); the choice is saved
-    // and the window is rebuilt in the new layout.
+    // The panel's ⋯ menu lists its two layouts as the game's radio rows
+    // (compact: entries and use actions only, like the game's own compact
+    // spell bar); the choice is saved and applied to the open window in place.
     toolsUi::Register("notebook","Carnet personnel",IconPin,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;},
-        []{return module&&module->settings.notebookCompact?"Version complète":"Version compacte";},
-        []{if(!Session())return false;if(wanted&&Current()&&!CanDiscard())return false;
-           Settings next=module->settings;next.notebookCompact=!next.notebookCompact;module->Change(next);
-           if(wanted){RestoreNotebookPanel();wanted=true;}return true;});
+        {{{"Version complète","Grande fenêtre : la liste des entrées et le formulaire pour les créer et les modifier."},
+          {"Version compacte","Fenêtre étroite : la liste des entrées et les boutons pour les utiliser, sans formulaire."}},
+         []{return module&&module->settings.notebookCompact?1:0;},SelectLayout});
     installed=true;
 }
 void OpenNotebookPanel(){if(!installed||!Session())return;wanted=true;if(Current())api.Call(state.window.get(),"BringToFront");}
