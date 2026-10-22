@@ -60,6 +60,8 @@ struct Api {
     Obj Call(Obj self, const char* name, std::initializer_list<void*> args = {}) const;
     Obj New(Klass klass, std::initializer_list<void*> args = {}) const;
     Obj Field(Obj self, const char* name) const;
+    // Field metadata of a class or one of its parents, resolved once.
+    void* FieldInfo(Klass klass, const char* name) const;
     Obj StaticField(Klass klass, const char* name) const;
     void* FieldAddress(Obj self, const char* name) const;
     std::string String(Obj self) const;

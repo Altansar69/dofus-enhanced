@@ -32,8 +32,8 @@ struct Object {
     Obj parent{},panel{},styleOwner{};
     Rect bound{0,0,1000,1000},clip{0,0,600,600};
     Vec2 origin{},scale{1,1};
-    double zoom=1; int world=1;
-    bool owned=false,visible=true;
+    double zoom=1,duge=1; int world=1;
+    bool owned=false,visible=true,clusterable=false,expanded=false;
     int picking=0;
 };
 std::map<std::string,std::unique_ptr<Class>> classes;
@@ -42,13 +42,17 @@ std::vector<std::unique_ptr<MethodInfo>> methods;
 std::map<GCHandle,Obj> handles;
 std::map<std::string,Obj> services;
 GCHandle next=0xA987000000ULL;
-bool nativeRemoveFails=false; int creates=0,disposes=0,nativeWrites=0,writes=0;
+bool nativeRemoveFails=false; int creates=0,disposes=0,nativeWrites=0,writes=0,groupJoins=0,groupLeaves=0,placements=0;
 std::vector<Obj> centeredViews;
-Vec2 pointer{-1,-1}; Obj pointerPanel{};
 std::function<void()> onConvert;
 std::map<std::string,size_t> offsets{{"dueo",0x98},{"dugq",0x68},{"dugv",0x90},{"dugy",0xA8},
-    {"<dugi>k__BackingField",0x38},{"<dugk>k__BackingField",0x48},{"<dugf>k__BackingField",0x20},
-    {"id",0x10},{"<dtwe>k__BackingField",0x10},{"dttw",0x10},{"dttx",0x18}};
+    {"<dugi>k__BackingField",0x38},{"<dugk>k__BackingField",0x48},{"<dugf>k__BackingField",0x20},{"<duge>k__BackingField",0x18},
+    {"id",0x10},{"<dtwe>k__BackingField",0x10},{"dttw",0x10},{"dttx",0x18},{"dtty",0x20},{"dtwz",0x2D8},{"<dtwx>k__BackingField",0x2D0},{"<dtww>k__BackingField",0x2C8}};
+// Style properties written through Length boxes (value, unit) by the renderer.
+bool LengthProperty(const std::string& p){
+    for(const char* name:{"width","height","left","top","right","bottom","fontSize","borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})if(p==name)return true;
+    return false;
+}
 Class* Type(const std::string& n){auto& p=classes[n];if(!p)p=std::make_unique<Class>(Class{n});return p.get();}
 Object& Get(Obj o){Check(o!=nullptr,"Null fake object");return *static_cast<Object*>(o);}
 Obj Make(const std::string& n,bool owned=false){auto p=std::make_unique<Object>();p->type=Type(n);p->owned=owned;auto result=p.get();objects.push_back(std::move(p));return result;}
@@ -59,7 +63,11 @@ void Detach(Obj o){auto& p=Get(o);if(p.parent){auto& siblings=Get(p.parent).chil
 void Attach(Obj parent,Obj child){Detach(child);Get(parent).children.push_back(child);Get(child).parent=parent;}
 Obj Group(Obj manager,const std::string& name,bool create=false){auto groups=Get(manager).refs["dttw"];auto& list=Get(groups).strings;if(!list.contains(name)){if(!create)return nullptr;list[name]=Make("StringDict");}return list[name];}
 std::vector<Obj> LiveMarkers(Obj owner){auto manager=Get(owner).refs["<dugk>k__BackingField"];std::vector<Obj> result;for(auto& [_,g]:Get(Get(manager).refs["dttw"]).strings)for(auto& [__,m]:Get(g).strings)if(Get(m).owned)result.push_back(m);return result;}
+std::map<std::string,Obj>& PositionGroups(Obj owner){auto manager=Get(owner).refs["<dugk>k__BackingField"];return Get(Get(manager).refs["dtty"]).strings;}
+Obj GroupLayer(Obj owner){return Get(owner).refs["layer24"];}
 std::vector<Obj> AllOwned(const std::string& type){std::vector<Obj> result;for(auto& p:objects)if(p->owned&&p->type->name==type&&Panel(p.get()))result.push_back(p.get());return result;}
+std::string Key(const Vec2& v){return std::to_string(int(v.x))+","+std::to_string(int(v.y));}
+int IndexIn(Obj parent,Obj child){const auto& c=Get(parent).children;for(size_t i=0;i<c.size();++i)if(c[i]==child)return int(i);return -1;}
 void Initialize(){
     api.object_get_class=[](Obj o)->Klass{return Get(o).type;};
     api.class_is_assignable_from=[](Klass a,Klass b){return a==b || (static_cast<Class*>(a)->name=="fhw"&&static_cast<Class*>(b)->name=="CartographyBannerView");};
@@ -81,10 +89,13 @@ Method Api::FindVerified(Klass type,const char* n,int argc,uintptr_t rva)const{
 }
 Obj Api::New(Klass type,std::initializer_list<void*> a)const{
     auto result=fake::Make(static_cast<fake::Class*>(type)->name,true);
-    if(static_cast<fake::Class*>(type)->name=="Length")std::memcpy(fake::Get(result).value.data(),*a.begin(),sizeof(float));return result;
+    if(static_cast<fake::Class*>(type)->name=="Length"){std::memcpy(fake::Get(result).value.data(),*a.begin(),sizeof(float));std::memcpy(fake::Get(result).value.data()+4,*(a.begin()+1),sizeof(int));}
+    return result;
 }
 Obj Api::Field(Obj o,const char* n)const{return fake::Get(o).refs[n];}
-void* Api::FieldAddress(Obj o,const char* n)const{auto& p=fake::Get(o);std::string name=n;if(name=="id")return &p.world;if(name=="<dugf>k__BackingField")return &p.zoom;throw std::runtime_error("Unexpected raw field");}
+std::string Api::String(Obj o)const{return o?fake::Get(o).text:std::string{};}
+void* Api::FieldAddress(Obj o,const char* n)const{auto& p=fake::Get(o);std::string name=n;if(name=="id")return &p.world;if(name=="<dugf>k__BackingField")return &p.zoom;if(name=="<duge>k__BackingField")return &p.duge;
+    if(name=="<dtwx>k__BackingField"){fake::Check(p.type->name=="fgk","Only position groups expose the spread flag");return &p.expanded;}throw std::runtime_error("Unexpected raw field");}
 Obj Api::Call(Obj self,const char* n,std::initializer_list<void*> args)const{
     using namespace fake;auto& o=Get(self);std::string name=n;std::vector<void*> a(args);
     if(name=="get_Count")return Box(int(o.type->name=="IntDict"?o.indexed.size():o.strings.size()));
@@ -104,13 +115,15 @@ Obj Api::Call(Obj self,const char* n,std::initializer_list<void*> args)const{
     const std::string get="UnityEngine.UIElements.IStyle.get_",set="UnityEngine.UIElements.IStyle.set_";
     if(name.starts_with(get)){auto p=Make("StyleBox");Get(p).property=name.substr(get.size());Get(p).value.fill(0);auto& previous=Get(o.styleOwner).styles[Get(p).property];std::memcpy(Get(p).value.data(),previous.data(),16);return p;}
     if(name.starts_with(set)){Check(Get(o.styleOwner).owned,"Style mutation of native map");std::memcpy(Get(o.styleOwner).styles[name.substr(set.size())].data(),a[0],16);++writes;return nullptr;}
-    if(name=="set_value"){std::memcpy(o.value.data(),a[0],o.property=="color"||o.property.ends_with("Color")?16:sizeof(float));return nullptr;}
+    if(name=="set_value"){std::memcpy(o.value.data(),a[0],o.property=="color"||o.property.ends_with("Color")?16:LengthProperty(o.property)?8:sizeof(float));return nullptr;}
     if(name=="set_pickingMode"){Check(o.owned,"Native picking mutation");o.picking=*static_cast<int*>(a[0]);return nullptr;}
     if(name=="set_focusable")return nullptr;
     if(name=="set_name"||name=="set_text"){Check(o.owned,"Native text mutation");o.text=Get(a[0]).text;++writes;return nullptr;}
+    if(name=="get_text")return Str(o.text);
     if(name=="Add"){Check(Get(a[0]).owned,"Attach only owned UI");Attach(self,a[0]);return nullptr;}
+    if(name=="IndexOf")return Box(IndexIn(self,a[0]));
+    if(name=="Insert"){Check(Get(a[1]).owned,"Insert only owned UI");const int index=*static_cast<int*>(a[0]);Check(index>=0&&index<=int(o.children.size()),"Insert index in range");Detach(a[1]);o.children.insert(o.children.begin()+index,a[1]);Get(a[1]).parent=self;return nullptr;}
     if(name=="RemoveFromHierarchy"){Check(o.owned,"Detach only owned UI");if(nativeRemoveFails)throw std::runtime_error("Synthetic detach failure");Detach(self);return nullptr;}
-    if(name=="BringToFront"){Check(o.owned&&o.parent,"Only attached owned markers are reordered");auto parent=o.parent;Detach(self);Attach(parent,self);return nullptr;}
     throw std::runtime_error("Unexpected fake call: "+name);
 }
 Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
@@ -128,30 +141,71 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         auto result=Box(Vec2{float(std::floor((p.x-root.origin.x)/root.scale.x/(100*root.zoom))),float(std::floor((p.y-root.origin.y)/root.scale.y/(100*root.zoom)))});
         if(onConvert)onConvert();return result;
     }
-    if(m.name=="GetPointerPosition"||m.name=="GetPanel"){
-        Check(!self&&a.size()==2&&*static_cast<int*>(a[0])==0&&*static_cast<int*>(a[1])==0,"Mouse pointer of the runtime player context");
-        Check(m.rva==(m.name=="GetPanel"?0x577C3A0:0x577C600),"Pointer state RVA");
-        if(m.name=="GetPanel")return pointerPanel;
-        struct Vec3{float x,y,z;};return Box(Vec3{pointer.x,pointer.y,0});
-    }
     auto& o=Get(self);
     if(m.name=="beus"){
         Check(m.rva==0x1BFA370&&a.size()==1&&*static_cast<bool*>(a[0]),"Native centering must request current player position");
         Check(o.type->name=="CartographyBannerView","Never center the full map from the mini-map control");
         centeredViews.push_back(self);return nullptr;
     }
-    if(m.name==".ctor"&&m.type->name=="fgh"){
-        Check(m.rva==0x1C3C420&&*static_cast<int*>(a[6])==-1,"Native marker ctor ABI");
-        auto root=Make("VisualElement",true);Get(root).picking=1;o.refs["<dtwe>k__BackingField"]=root;
-        o.refs["id"]=a[0];o.refs["group"]=a[7];o.refs["manager"]=a[8];o.refs["layer"]=a[9];
+    if(m.name=="bedd"){Check(m.rva==0x1B92EF0&&a.empty(),"Native hint size ABI");return Box(32.0f);} // fhw.bedd: the game's hint size, both views
+    if(m.name=="bexb"){
+        // fhw.bexb: the game's layer of a hint category, created on demand as a child of the map content.
+        Check(m.rva==0x1C04C70&&*static_cast<int*>(a[0])==24,"Only the game's position group layer is requested");
+        if(!o.refs["layer24"]){auto layer=Make("VisualElement");Attach(o.refs["dugq"],layer);o.refs["layer24"]=layer;Get(o.refs["<dugk>k__BackingField"]).refs["groupLayer"]=layer;}
+        return o.refs["layer24"];
+    }
+    if(m.name==".ctor"&&m.type->name=="fgm"){
+        Check(m.rva==0x1C40D70&&a.size()==15&&*static_cast<int*>(a[6])==-1,"Native icon marker ctor ABI");
+        const float width=*static_cast<float*>(a[3]),height=*static_cast<float*>(a[4]);
+        Check(width==32&&height==32,"The constructor receives the game's own hint size (fhw.bedd): the native placement sizes the root from it");
+        o.numbers["size"]=width;
+        const int icon=*static_cast<int*>(a[7]);Check(icon==101||icon==102,"Icon marker must receive the native item icon address");
+        const float* tint=static_cast<const float*>(a[10]);Check(tint[0]==1&&tint[1]==1&&tint[2]==1&&tint[3]==1,"Item images stay untinted");
+        Check(Get(a[11]).text.empty()&&*static_cast<uint32_t*>(a[12])==0&&*static_cast<bool*>(a[14]),"No caption or reference id; marker shown");
+        Check(Get(a[13]).owned&&Get(a[13]).type->name=="VisualElement","The marker's layer is the mod's own hint layer");
+        // The native constructor loads the item image onto the root itself.
+        auto root=Make("VisualElement",true);Get(root).picking=1;Get(root).numbers["icon"]=icon;o.refs["<dtwe>k__BackingField"]=root;o.numbers["icon"]=icon;o.clusterable=true;
+        o.refs["id"]=a[0];o.refs["group"]=a[8];o.refs["manager"]=a[9];o.refs["layer"]=a[13];
         o.origin={*static_cast<float*>(a[1]),*static_cast<float*>(a[2])};o.zoom=*static_cast<double*>(a[5]);
-        Get(Group(a[8],Get(a[7]).text,true)).strings[Get(a[0]).text]=self;++creates;return nullptr;
+        Get(Group(a[9],Get(a[8]).text,true)).strings[Get(a[0]).text]=self;++creates;return nullptr;
     }
     if(m.name=="beem"){Check(m.rva==0x1B9F530,"Native group enable ABI");Get(o.refs["dttx"]).strings[Get(a[0]).text]=a[0];return nullptr;}
     if(m.name=="beec"){auto group=Group(self,Get(a[1]).text);return group?Get(group).strings[Get(a[0]).text]:nullptr;}
-    if(m.name=="beft"){Check(m.rva==0x1C3CBB0,"Native reposition ABI");Attach(a[0],o.refs["<dtwe>k__BackingField"]);return nullptr;}
+    if(m.name=="bedx"){
+        Check(m.rva==0x1B9E370&&o.type->name=="fga","Native position group registration ABI");
+        auto& marker=Get(a[1]);Check(marker.clusterable,"Position groups accept only opted-in markers");
+        Check(Key(*static_cast<Vec2*>(a[0]))==Key(Vec2{float(std::round(marker.origin.x/100-.5)),float(std::round(marker.origin.y/100-.5))}),"Group key must be the marker's map coordinates");
+        Check(a[2]==o.refs["groupLayer"]&&a[2]!=nullptr,"Position groups live in the game's own group layer");
+        auto& groups=Get(o.refs["dtty"]).strings;auto& cluster=groups[Key(*static_cast<Vec2*>(a[0]))];
+        if(!cluster){cluster=Make("fgk",true);Get(cluster).refs["dtwz"]=Make("Label",true);Get(Get(cluster).refs["dtwz"]).text="";Get(cluster).refs["<dtww>k__BackingField"]=cluster;Attach(a[2],cluster);}
+        Get(Get(cluster).refs["dtwz"]).text=std::to_string(Get(cluster).strings.size()+1); // native: member count
+        Check(!marker.refs["cluster"],"A marker joins one position group");
+        Get(cluster).strings[Get(marker.refs["id"]).text]=a[1];marker.refs["cluster"]=cluster;++groupJoins;return nullptr;
+    }
+    if(m.name=="bedz"){
+        Check(m.rva==0x1B9E780&&o.type->name=="fga","Native position group lookup ABI");
+        auto& groups=Get(o.refs["dtty"]).strings;auto it=groups.find(Key(*static_cast<Vec2*>(a[0])));return it==groups.end()?nullptr:it->second;
+    }
+    if(m.name=="bedy"){
+        Check(m.rva==0x1B9E5C0&&o.type->name=="fga","Native position group removal ABI");
+        auto& marker=Get(a[0]);auto cluster=marker.refs["cluster"];if(!cluster)return nullptr; // native: no group contains it, nothing to do
+        Get(cluster).strings.erase(Get(marker.refs["id"]).text);marker.refs["cluster"]=nullptr;++groupLeaves;
+        if(Get(cluster).strings.empty()){Detach(cluster);std::erase_if(Get(o.refs["dtty"]).strings,[&](const auto& entry){return entry.second==cluster;});}
+        return nullptr;
+    }
+    if(m.name=="beft"){
+        Check(m.rva==0x1C410D0&&o.type->name=="fgm"&&a.size()==3,"Native icon marker placement ABI");
+        Check(o.refs["cluster"]!=nullptr,"Position after joining the group so the group is placed too");
+        Check(a[0]==o.refs["layer"],"The placement layer is the one given to the constructor (the native code ignores any other)");
+        const double zoom=*static_cast<double*>(a[1]),scale=*static_cast<double*>(a[2]);
+        Check(std::isfinite(zoom)&&zoom>0&&std::isfinite(scale)&&scale>0,"Finite positive zoom and scale");
+        o.numbers["zoom"]=zoom;o.numbers["scale"]=scale;++placements;
+        Attach(a[0],o.refs["<dtwe>k__BackingField"]);return nullptr;
+    }
     if(m.name=="begd"){
+        Check(m.rva==0x1C411D0&&o.type->name=="fgm","Native icon marker dispose ABI");
         if(nativeRemoveFails)throw std::runtime_error("Synthetic dispose failure");
+        Check(!o.refs["cluster"],"Dispose must follow position group removal");
         auto root=o.refs["<dtwe>k__BackingField"];Detach(root);
         auto group=Group(o.refs["manager"],Get(o.refs["group"]).text);if(group)Get(group).strings.erase(Get(o.refs["id"]).text);++disposes;return nullptr;
     }
@@ -165,7 +219,8 @@ void Log(const std::string&){}
 namespace resourceMap {
 std::vector<Placement> fakePlacements;
 void InstallIcons(){}
-void LoadItemIcon(managed::Obj element,int id){fake::Check(id==101||id==102,"Use native item icon ID, not item ID");fake::Get(element).numbers["icon"]=id;}
+managed::Obj ItemIconAddress(int id){fake::Check(id==101||id==102,"Use native item icon ID, not item ID");return fake::Box(id);}
+void LoadItemIcon(managed::Obj,int){throw std::runtime_error("The native marker loads its own image; the mod must not load a second one");}
 std::span<const Resource> Catalog(){static const Resource catalog[]{{1,2,1,101,"Frêne"},{2,24,1,102,"Fer"}};return catalog;}
 std::span<const Placement> Placements(){return fakePlacements;}
 }
@@ -176,48 +231,121 @@ struct Fixture {
     Fixture(){module=&state;state.ready=true;state.servicesReady=true;state.settings.resourceMapEnabled=true;state.settings.resourceMapItems={1,2};
         state.compositor.reset(Make("Compositor"));services["fng"]=Make("Player");
         service=services["fkc"]=Make("fhk");dictionary=Make("IntDict");Get(service).refs["dueo"]=dictionary;
-        banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=0;onConvert={};centeredViews.clear();pointer={-1,-1};pointerPanel=nullptr;
+        banner=View(0);full=View(1);nativeRemoveFails=false;creates=disposes=nativeWrites=groupJoins=groupLeaves=placements=0;onConvert={};centeredViews.clear();
         fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,3,2,1,5,true},{20,2,1,1,1,99,false}};
     }
     Obj View(int key){auto owner=Make(key?"fhw":"CartographyBannerView");auto root=Make("NativeRoot"),host=Make("NativeHost");Get(host).panel=Make("Panel");Attach(host,root);
-        auto world=Make("WorldMapData"),manager=Make("fga");Get(manager).refs["dttw"]=Make("StringDict");Get(manager).refs["dttx"]=Make("StringDict");
+        auto world=Make("WorldMapData"),manager=Make("fga");Get(manager).refs["dttw"]=Make("StringDict");Get(manager).refs["dttx"]=Make("StringDict");Get(manager).refs["dtty"]=Make("StringDict");
         Get(owner).refs={{"dugq",root},{"<dugi>k__BackingField",world},{"<dugk>k__BackingField",manager},{"dugv",service},{"dugy",services["fng"]}};
         Get(dictionary).indexed[key]=owner;return owner;}
     Obj Root(Obj view){return Get(view).refs["dugq"];}
     void Tick(){now+=250;PumpRender(now);}
     ~Fixture(){nativeRemoveFails=false;onConvert={};RestoreRender();Check(!RenderCleanupPending(),"Renderer cleanup pending");state.compositor.reset();module=nullptr;Check(handles.empty(),"Renderer leaked GC roots");}
 };
-void BothMapsAndCounts(){Fixture f;f.Tick();Check(LiveMarkers(f.banner).size()==2&&LiveMarkers(f.full).size()==2,"Both maps must display exact cells");
+Obj MarkerRoot(Obj m){return Get(m).refs.at("<dtwe>k__BackingField");}
+Obj MarkerLabel(Obj m){const auto& children=Get(MarkerRoot(m)).children;Check(children.size()==1,"One quantity label per native marker: the image is the root's own background");auto c=children.front();Check(Get(c).type->name=="Label","Quantity label missing");return c;}
+Obj ModLayer(Obj owner){for(auto c:Get(Get(owner).refs["dugq"]).children)if(Get(c).owned&&Get(c).type->name=="VisualElement")return c;return nullptr;}
+int Display(Obj element){int value=0;const auto& styles=Get(element).styles;if(!styles.contains("display"))return 0;std::memcpy(&value,styles.at("display").data(),4);return value;}
+float StyleValue(Obj element,const char* name){float value=0;std::memcpy(&value,Get(element).styles.at(name).data(),4);return value;}
+int StyleUnit(Obj element,const char* name){int unit=0;std::memcpy(&unit,Get(element).styles.at(name).data()+4,4);return unit;}
+void BothMapsAndCounts(){Fixture f;f.Tick();Check(LiveMarkers(f.banner).size()==3&&LiveMarkers(f.full).size()==3,"Both maps must display one native marker per resource and cell");
     auto labels=AllOwned("Label");bool first=false,second=false,interior=false;
-    for(auto l:labels){Check(Get(l).picking==1,"Labels must preserve travel picking");first|=Get(l).text=="4";second|=Get(l).text=="6";interior|=Get(l).text=="5*";Check(Get(l).text.find("99")==std::string::npos,"Other world leaked");
-        Check(Get(l).text.find("Ressources en intérieur incluses")==std::string::npos,"Interior banner must be removed");}
-    Check(first&&second&&interior,"Own count (hidden under the stack), stacked total and interior marker missing");
-    for(auto l:labels)if(Get(l).text=="4"||Get(l).text=="6"||Get(l).text=="5*"){
+    for(auto l:labels){Check(Get(l).picking==1,"Labels must preserve travel picking");first|=Get(l).text=="4";second|=Get(l).text=="2";interior|=Get(l).text=="5*";Check(Get(l).text.find("99")==std::string::npos,"Other world leaked");}
+    Check(first&&second&&interior,"Per-resource counts and interior marker missing");
+    for(auto l:labels)if(Get(l).text=="4"||Get(l).text=="2"||Get(l).text=="5*"){
         const auto& style=Get(l).styles;
-        float foreground[4]{},background[4]{},font=0;
+        float foreground[4]{},background[4]{};
         std::memcpy(foreground,style.at("color").data(),16);std::memcpy(background,style.at("backgroundColor").data(),16);
-        std::memcpy(&font,style.at("fontSize").data(),4);
-        Check(foreground[0]<.15f&&foreground[3]==1&&background[0]>.9f&&background[3]==1&&font==14,"Quantity badges need large dark text on a fully opaque light background");
+        const float font=StyleValue(l,"fontSize"),height=StyleValue(l,"height");
+        // Marker of 32*zoom/0.6 local units at display scale 1: badge of 0.34 of it, font 0.26.
+        Check(foreground[0]<.15f&&foreground[3]==1&&background[0]>.9f&&background[3]==1&&font>13&&font<15&&height>17&&height<19,"Quantity badges need large dark text on a fully opaque light background, proportional to the marker");
         int weight=0;std::memcpy(&weight,style.at("unityFontStyleAndWeight").data(),4);Check(weight==1,"Quantity text must be bold");
+        Check(StyleValue(l,"right")==0&&StyleValue(l,"bottom")==0,"Quantity badge anchors to the native marker's bottom-right corner");
     }
-    int icons=0;for(auto e:AllOwned("VisualElement"))if(Get(e).numbers.contains("icon")){++icons;Check(Get(e).picking==1,"Resource images must not consume map clicks");}
-    Check(icons==6,"Every visible resource must use its item image");
+    int icons=0;for(auto m:LiveMarkers(f.full))if(Get(m).numbers.contains("icon")){++icons;Check(Get(MarkerRoot(m)).picking==1,"Resource markers must not consume map clicks");
+        Check(Get(MarkerRoot(m)).numbers.at("icon")==Get(m).numbers.at("icon"),"The native constructor loads the catalog image onto the marker root");}
+    Check(icons==3&&creates==6,"Every marker must use its item image through the native icon marker");
     auto before=creates,previousWrites=writes;f.Tick();Check(creates==before&&writes==previousWrites,"Unchanged frames must reuse markers without UI writes");
-    for(auto m:LiveMarkers(f.full))Check(Get(Get(m).refs["<dtwe>k__BackingField"]).picking==1,"Native marker root must ignore picking");
+}
+void NativeLayersAndSizes(){Fixture f;f.Tick();
+    for(auto owner:{f.banner,f.full}){
+        auto root=f.Root(owner),layer=ModLayer(owner),groupLayer=GroupLayer(owner);
+        Check(layer&&groupLayer&&Get(layer).parent==root&&Get(groupLayer).parent==root,"The mod's hint layer and the game's group layer are children of the map content");
+        Check(IndexIn(root,layer)+1==IndexIn(root,groupLayer),"The mod's layer sits just below the game's group layer so native badges draw above the stacks");
+        Check(StyleValue(layer,"width")==100&&StyleUnit(layer,"width")==1&&StyleValue(layer,"height")==100&&StyleUnit(layer,"height")==1,"The layer is 100% x 100% like the game's own hint layers: a zero layout would exclude its markers from the native spread");
+        Check(Display(layer)==0&&Get(layer).picking==1,"The layer is displayed and unpickable");
+        for(auto m:LiveMarkers(owner)){
+            Check(Get(m).numbers.at("size")==32,"Markers use the game's hint size on both maps");
+            Check(Get(m).numbers.at("scale")==0.6&&Get(m).numbers.at("zoom")==1,"Placement uses the scale the game's own refresh applies (0.6 at display scale 1)");
+            Check(Get(MarkerRoot(m)).parent==layer,"Marker roots live in the mod's layer");
+            Check(Get(Get(m).refs.at("cluster")).parent==groupLayer,"Cell groups live in the game's group layer");
+        }
+    }
+    // A smaller display scale: the game's refresh formula follows it.
+    Get(f.full).duge=0.35;Get(f.Root(f.full)).scale={.35f,.35f};const auto before=placements;f.Tick();
+    for(auto m:LiveMarkers(f.full))Check(std::abs(Get(m).numbers.at("scale")-0.3)<1e-9,"Display scales under 0.7 shrink the marker scale like the game's own formula");
+    Check(placements==before+3&&creates==6,"Existing markers are re-placed, not recreated");
+    // No display scale yet (the map's first layout): nothing is created.
+    Get(f.banner).duge=0;f.Tick();Check(LiveMarkers(f.banner).empty(),"A map without display scale is not rendered (the native placement would divide by zero)");
+    Get(f.banner).duge=1;f.Tick();Check(LiveMarkers(f.banner).size()==3,"Rendering resumes with the display scale");
+}
+void NativePositionGroups(){Fixture f;f.Tick();
+    auto& groups=PositionGroups(f.full);
+    Check(groups.size()==2&&groups.contains("1,1")&&groups.contains("3,2"),"One native position group per cell with resources");
+    const auto shared=groups.at("1,1"),single=groups.at("3,2");
+    Check(Get(shared).strings.size()==2&&Get(single).strings.size()==1,"Same-cell markers share the game's position group");
+    for(auto m:LiveMarkers(f.full)){Check(Get(m).clusterable,"Markers opt into position groups like native hints");
+        Check(Get(m).refs.at("cluster")!=nullptr,"Every marker joined its cell group");}
+    Check(groupJoins==6&&groupLeaves==0,"Each marker joins exactly one group");
+    f.state.settings.resourceMapItems={1};f.Tick();
+    Check(Get(shared).strings.size()==1&&groups.size()==2&&groupLeaves==2,"Deselecting a resource removes only its markers from the groups");
+    f.state.settings.resourceMapItems={2};f.Tick();
+    Check(groups.size()==1&&groups.contains("1,1")&&!Get(single).parent,"Emptied position groups leave the manager and the layer");
+    f.state.settings.resourceMapEnabled=false;f.Tick();
+    Check(groups.empty()&&PositionGroups(f.banner).size()==1,"Disabling one map releases its position groups only");
+}
+void GroupTotalsAndSpread(){Fixture f;f.Tick();
+    auto& groups=PositionGroups(f.full);const auto shared=groups.at("1,1"),single=groups.at("3,2");
+    Check(Get(Get(shared).refs["dtwz"]).text=="6","The collapsed group badge shows the cell's total quantity instead of the member count");
+    std::vector<Obj> sharedMarkers,singleMarkers;
+    for(auto m:LiveMarkers(f.full))(Get(m).refs.at("cluster")==shared?sharedMarkers:singleMarkers).push_back(m);
+    Check(sharedMarkers.size()==2&&singleMarkers.size()==1,"Markers found per group");
+    for(auto m:sharedMarkers)Check(Display(MarkerLabel(m))==1,"Per-resource badges stay hidden while the group is collapsed");
+    Check(Display(MarkerLabel(singleMarkers.front()))==0&&Get(Get(single).refs["dtwz"]).text=="1","A lone resource keeps its own badge and the game's own group badge");
+    Get(shared).expanded=true;const auto before=writes;f.Tick();
+    for(auto m:sharedMarkers)Check(Display(MarkerLabel(m))==0,"Per-resource badges show while the game spreads the group");
+    Check(writes==before+2,"Spreading rewrites only the two badge displays");
+    Get(Get(shared).refs["dtwz"]).text="2";f.Tick();
+    Check(Get(Get(shared).refs["dtwz"]).text=="6","The game's own member-count refresh is overridden again by the total");
+    Get(shared).expanded=false;f.Tick();
+    for(auto m:sharedMarkers)Check(Display(MarkerLabel(m))==1,"Collapsing hides the per-resource badges again");
+    const auto settled=writes;f.Tick();Check(writes==settled,"A settled group causes no writes");
+    // One of the game's own hints (a drill) shares the cell: its group count stays the game's.
+    Get(shared).strings["drill"]=Make("fgm",true);Get(Get(shared).refs["dtwz"]).text="3";f.Tick();
+    Check(Get(Get(shared).refs["dtwz"]).text=="3","With a game hint in the group, the game's own member count badge is left alone");
+    Get(shared).strings.erase("drill");f.Tick();Check(Get(Get(shared).refs["dtwz"]).text=="6","Our total returns once the group is ours again");
+    // The game's own map reset (Display) empties its groups and disposes the markers of the active groups.
+    const auto created=creates;
+    for(auto m:LiveMarkers(f.full)){auto group=Group(Get(m).refs["manager"],Get(Get(m).refs["group"]).text);Get(group).strings.erase(Get(Get(m).refs["id"]).text);Get(m).refs["cluster"]=nullptr;}
+    groups.clear();f.Tick();
+    Check(creates==created+3&&LiveMarkers(f.full).size()==3&&groups.size()==2&&Get(Get(groups.at("1,1")).refs["dtwz"]).text=="6","After a native reset the markers and their groups are recreated with the total");
 }
 void PanZoomAndWorld(){Fixture f;f.Tick();auto old=LiveMarkers(f.full).front();
     Get(f.Root(f.full)).origin={-5000,-5000};f.Tick();Check(LiveMarkers(f.full).empty(),"Viewport pan must cull offscreen cells");
     Get(f.Root(f.full)).origin={};Get(Get(f.full).refs["<dugi>k__BackingField"]).world=2;f.Tick();Check(LiveMarkers(f.full).size()==1,"Viewed world must select correct map data");
-    Get(f.Root(f.banner)).scale={2,2};Get(f.Root(f.banner)).clip={0,0,300,300};f.Tick();Check(LiveMarkers(f.banner).size()==1,"Native panel scale/viewport query must cull correctly");
+    Get(f.Root(f.banner)).scale={2,2};Get(f.Root(f.banner)).clip={0,0,300,300};f.Tick();Check(LiveMarkers(f.banner).size()==2,"Native panel scale/viewport query must cull correctly");
     Check(!Get(old).refs["<dtwe>k__BackingField"]||!Panel(Get(old).refs["<dtwe>k__BackingField"]),"Old marker remained attached");
+    // A level of detail change (zoom) re-places the reused markers like the game's refresh.
+    const auto before=placements,created=creates;Get(f.full).zoom=2;f.Tick();
+    Check(creates==created&&placements>before,"A zoom change re-places the existing markers without recreating them");
 }
 void HiddenReplacedStopped(){Fixture f;f.Tick();auto oldRoot=f.Root(f.banner);Get(oldRoot).visible=false;f.Tick();Check(LiveMarkers(f.banner).empty(),"Hidden map kept markers");
-    f.banner=f.View(0);f.Tick();Check(LiveMarkers(f.banner).size()==2,"Recreated map not discovered");
+    f.banner=f.View(0);f.Tick();Check(LiveMarkers(f.banner).size()==3,"Recreated map not discovered");
     f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=false;f.Tick();Check(!RenderCleanupPending(),"Disabled filters did not clean both views");
 }
 void FailClosedAndRetry(){Fixture f;f.Tick();nativeRemoveFails=true;f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=false;f.Tick();Check(RenderCleanupPending(),"Failed cleanup must retain ownership");auto before=creates;
     f.state.settings.resourceMapEnabled=true;f.state.settings.resourceMiniMapEnabled=true;f.Tick();Check(creates==before,"No replacements while cleanup is pending");
-    nativeRemoveFails=false;f.Tick();Check(LiveMarkers(f.banner).size()==2,"Cleanup recovery did not restore rendering");
+    nativeRemoveFails=false;f.Tick();Check(LiveMarkers(f.banner).size()==3,"Cleanup recovery did not restore rendering");
     onConvert=[&]{services["fkc"]=nullptr;};f.Tick();Check(!RenderCleanupPending(),"Stale service snapshot must clean rendered markers");
 }
 void NativeRefreshAndCollision(){Fixture f;f.Tick();auto m=LiveMarkers(f.banner).front();auto& marker=Get(m);auto group=Group(marker.refs["manager"],Get(marker.refs["group"]).text);
@@ -227,7 +355,13 @@ void NativeRefreshAndCollision(){Fixture f;f.Tick();auto m=LiveMarkers(f.banner)
 }
 void LimitsAndInvalidGeometry(){Fixture f;fakePlacements.clear();for(int x=0;x<60;++x)for(int y=0;y<60;++y)fakePlacements.push_back({x*100+y,1,x,y,1,1,false});
     Get(f.Root(f.full)).scale={.05f,.05f};Get(f.Root(f.full)).bound={0,0,300,300};Get(f.Root(f.full)).clip={0,0,300,300};f.Tick();
-    Check(LiveMarkers(f.full).size()<=384,"Visible resource budget exceeded");for(auto l:AllOwned("Label"))Check(Get(l).text.find("zoomez")==std::string::npos,"Dense maps must not display the removed zoom warning");
+    // Creation is budgeted per pass and continued on the following frames.
+    Check(LiveMarkers(f.full).size()==32,"A pass creates at most 32 native markers");
+    f.now+=1;PumpRender(f.now);Check(LiveMarkers(f.full).size()==64,"A cut pass continues on the very next frame");
+    for(int i=0;i<40;++i)f.Tick();
+    const auto settled=LiveMarkers(f.full).size();Check(settled>64&&settled<=384,"Visible resource budget exceeded");
+    f.Tick();Check(LiveMarkers(f.full).size()==settled,"A complete pass settles");
+    for(auto l:AllOwned("Label"))Check(Get(l).text.find("zoomez")==std::string::npos,"Dense maps must not display the removed zoom warning");
     Get(f.Root(f.full)).scale.x=std::numeric_limits<float>::quiet_NaN();f.Tick();Check(LiveMarkers(f.full).empty(),"Invalid transform must fail closed");
 }
 void MiniSurfaceIndependentOfSelection(){Fixture f;
@@ -266,21 +400,18 @@ void IndependentMapVisibility(){Fixture f;f.Tick();
     Check(LiveMarkers(f.banner).empty()&&LiveMarkers(f.full)==full,"Mini-map opt-out removes only mini-map markers");
     Check(ReadMiniMapSurface().root.get()==Get(f.Root(f.banner)).parent,"Disabled mini-map keeps its picker accessible");
     f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMiniMapEnabled=true;f.Tick();
-    Check(LiveMarkers(f.full).empty()&&LiveMarkers(f.banner).size()==2,"Mini-map markers can display independently of the full map");
+    Check(LiveMarkers(f.full).empty()&&LiveMarkers(f.banner).size()==3,"Mini-map markers can display independently of the full map");
     f.state.settings.resourceMapEnabled=true;f.Tick();
-    Check(LiveMarkers(f.full).size()==2&&LiveMarkers(f.banner).size()==2,"Both switches can be restored without losing the selection");
+    Check(LiveMarkers(f.full).size()==3&&LiveMarkers(f.banner).size()==3,"Both switches can be restored without losing the selection");
 }
-void ResourceImageVisibility(){Fixture f;f.Tick();
-    auto style=[](Obj element,const char* name){float value=0;std::memcpy(&value,Get(element).styles.at(name).data(),4);return value;};
-    for(auto element:AllOwned("VisualElement"))if(Get(element).numbers.contains("icon")){
-        const auto parent=Get(element).parent;
-        const auto label=Get(parent).children.back();
-        const float imageWidth=style(element,"width"),imageHeight=style(element,"height");
-        const float overlapWidth=std::max(0.0f,std::min(imageWidth,style(label,"left")+style(label,"width"))-style(label,"left"));
-        const float overlapHeight=std::max(0.0f,std::min(imageHeight,style(label,"top")+style(label,"height"))-style(label,"top"));
-        Check(imageWidth>=40&&imageHeight>=40,"Both maps need recognisable resource images");
-        Check(overlapWidth*overlapHeight<imageWidth*imageHeight*.25f,"Quantity badge must leave at least three quarters of the image unobscured");
+void QuantityBadgeStaysCompact(){Fixture f;f.Tick();
+    for(auto owner:{f.banner,f.full})for(auto m:LiveMarkers(owner)){
+        const auto label=MarkerLabel(m);
+        Check(StyleValue(label,"width")<=22&&StyleValue(label,"height")>17&&StyleValue(label,"height")<19,"Quantity badge must stay a small corner pastille over the native image");
+        Check(Get(label).picking==1,"Badges never intercept map clicks");
     }
+    // The panel scale alone (wheel zoom) never rewrites the badge: the game scales the marker.
+    const auto before=writes;Get(f.Root(f.full)).scale={1.5f,1.5f};f.Tick();Check(writes==before,"A panel scale change rewrites no badge geometry");
 }
 void AddingMineralKeepsSameAndNeighbouringCells(){Fixture f;
     fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,2,1,1,5,true}};
@@ -291,56 +422,12 @@ void AddingMineralKeepsSameAndNeighbouringCells(){Fixture f;
         f.state.settings.resourceMapItems=selection;f.Tick();
         for(auto owner:{f.banner,f.full}){
             const auto markers=LiveMarkers(owner);
-            Check(markers.size()==(selection.size()==2?2:1),"Selecting another mineral must not cull a neighbouring selected location");
-            for(auto marker:markers){
-                const auto root=Get(marker).refs.at("<dtwe>k__BackingField");
-                const auto& badges=Get(root).children;
-                const bool sharedCell=Get(Get(marker).refs.at("id")).text=="cell_1_1";
-                Check(badges.size()==(sharedCell?selection.size():1),"All selected minerals at the same coordinates need separate badges");
-                if(badges.size()==2){
-                    float left0=0,left1=0,width0=0;
-                    std::memcpy(&left0,Get(badges[0]).styles.at("left").data(),4);
-                    std::memcpy(&left1,Get(badges[1]).styles.at("left").data(),4);
-                    std::memcpy(&width0,Get(badges[0]).styles.at("width").data(),4);
-                    Check(left1>left0&&left1<left0+width0-.001f,"Shared-cell resource images stack with a visible cascade until hovered");
-                }
-            }
+            Check(markers.size()==(selection.size()==2?3:1),"Selecting another mineral must not cull a neighbouring selected location");
+            auto& groups=PositionGroups(owner);
+            Check(groups.contains("1,1")&&Get(groups.at("1,1")).strings.size()==selection.size(),"All selected minerals at the same coordinates share one native position group");
+            Check(groups.contains("2,1")==(selection.size()==2),"Neighbouring single-resource cells keep their own group only while selected");
         }
     }
-}
-void StackedBadgesExpandOnHover(){Fixture f;
-    fakePlacements={{10,1,1,1,1,4,false},{10,1,1,1,2,2,false},{11,1,2,1,1,5,true}};
-    f.Tick();
-    auto marker=[&](Obj owner,const char* id)->Obj{for(auto m:LiveMarkers(owner))if(Get(Get(m).refs.at("id")).text==id)return m;throw std::runtime_error("Missing marker");};
-    auto root=[](Obj m)->Obj{return Get(m).refs.at("<dtwe>k__BackingField");};
-    auto style=[](Obj e,const char* n){float v=0;std::memcpy(&v,Get(e).styles.at(n).data(),4);return v;};
-    auto stacked=[&](Obj m){const auto& b=Get(root(m)).children;Check(b.size()==2,"Shared cell keeps two badges");
-        return style(b[1],"left")>style(b[0],"left")&&style(b[1],"left")<style(b[0],"left")+style(b[0],"width")-.001f&&style(b[1],"top")>style(b[0],"top");};
-    auto spread=[&](Obj m){const auto& b=Get(root(m)).children;return style(b[1],"left")>=style(b[0],"left")+style(b[0],"width")-.001f&&style(b[1],"top")==style(b[0],"top");};
-    auto shared=marker(f.full,"cell_1_1"),mini=marker(f.banner,"cell_1_1");
-    Check(stacked(shared)&&stacked(mini),"Shared-cell badges stack by default on both maps");
-    auto labelOf=[&](Obj badge)->Obj{for(auto c:Get(badge).children)if(Get(c).type->name=="Label")return c;throw std::runtime_error("Badge label missing");};
-    auto display=[&](Obj e){int v=0;if(!Get(e).styles.contains("display"))return 0;std::memcpy(&v,Get(e).styles.at("display").data(),4);return v;};
-    {const auto& b=Get(root(shared)).children;Check(Get(labelOf(b[1])).text=="6"&&display(labelOf(b[1]))==0&&display(labelOf(b[0]))==1,"A stacked cell shows the cell total on its top badge and hides the other counts");}
-    const auto writesBefore=writes;f.Tick();Check(writes==writesBefore,"Idle hover must not rewrite styles");
-    // Cell (1,1) is centred at pixel (150,150) with this fixture's unit zoom and scale.
-    pointer={150,150};pointerPanel=Panel(f.Root(f.full));f.Tick();
-    Check(stacked(shared)&&Get(labelOf(Get(root(shared)).children[0])).text=="4"&&display(labelOf(Get(root(shared)).children[0]))==0,"Hovering starts a glide: the own counts show at once while the badges still sit at the stack");
-    PumpRender(f.now+=80);
-    {const auto& b=Get(root(shared)).children;const float left=style(b[1],"left");Check(left>-19&&left<-0.5f,"Halfway through, the second badge sits between its stacked (-20) and grid (0) positions (ease-out)");}
-    PumpRender(f.now+=100);
-    Check(spread(shared)&&stacked(mini),"Hovering a stack spreads it side by side on the hovered map only");
-    {const auto& b=Get(root(shared)).children;Check(Get(labelOf(b[0])).text=="4"&&Get(labelOf(b[1])).text=="2"&&display(labelOf(b[0]))==0&&display(labelOf(b[1]))==0,"A spread cell shows each resource's own count");}
-    Check(Get(Get(root(shared)).parent).children.back()==root(shared),"A spread stack is raised above neighbouring markers");
-    Check(Get(root(marker(f.full,"cell_2_1"))).children.size()==1,"Single badge cells are never spread");
-    pointer={195,170};f.Tick();Check(spread(shared),"The spread stack stays open while the pointer remains inside its grid");
-    pointer={400,400};f.Tick();Check(spread(shared)&&Get(labelOf(Get(root(shared)).children[1])).text=="2","Leaving the stack starts the closing glide with the own counts still shown");
-    f.Tick();Check(stacked(shared),"Leaving the stack collapses it again");
-    {const auto& b=Get(root(shared)).children;Check(Get(labelOf(b[1])).text=="6"&&display(labelOf(b[0]))==1,"Collapsing restores the total on the top badge once closed");}
-    const auto settled=writes;f.Tick();Check(writes==settled,"A settled stack causes no writes");
-    pointer={150,150};pointerPanel=Make("OtherPanel");f.Tick();f.Tick();Check(stacked(shared),"A pointer over another panel never spreads a stack");
-    pointerPanel=Panel(f.Root(f.full));f.Tick();f.Tick();Check(spread(shared),"Returning spreads the stack again");
-    f.state.settings.resourceMapItems={1};f.Tick();Check(Get(root(marker(f.full,"cell_1_1"))).children.size()==1,"Selection changes rebuild badges while hovered");
 }
 void CenterOnlyCurrentMiniMap(){Fixture f;
     f.state.settings.resourceMiniMapEnabled=false;f.state.settings.resourceMapEnabled=false;f.state.settings.resourceMapItems.clear();
@@ -350,7 +437,7 @@ void CenterOnlyCurrentMiniMap(){Fixture f;
     Check(f.state.settings==preferences&&Get(f.banner).zoom==1,"Center does not change selection or zoom");
     MiniMapSurface foreign;foreign.root.reset(Get(f.Root(f.full)).parent);foreign.mapRoot.reset(f.Root(f.full));
     Check(!CenterMiniMap(foreign),"Reject the full map surface");
-    auto oldBanner=f.banner;(void)oldBanner;f.banner=f.View(0);
+    f.banner=f.View(0);
     Check(!CenterMiniMap(surface)&&centeredViews.size()==1,"Reject a replaced mini-map");
     surface=ReadMiniMapSurface();Get(f.Root(f.banner)).visible=false;
     Check(!CenterMiniMap(surface),"Reject hidden mini-map");Get(f.Root(f.banner)).visible=true;
@@ -359,4 +446,4 @@ void CenterOnlyCurrentMiniMap(){Fixture f;
     surface.root.reset();surface.mapRoot.reset();foreign.root.reset();foreign.mapRoot.reset();
 }
 }
-int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,ResourceImageVisibility,AddingMineralKeepsSameAndNeighbouringCells,StackedBadgesExpandOnHover,CenterOnlyCurrentMiniMap})test();std::cout<<"ResourceMapRenderTests: 12 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+int main(){try{fake::Initialize();resourceMap::InstallRender();for(auto test:{BothMapsAndCounts,NativeLayersAndSizes,NativePositionGroups,GroupTotalsAndSpread,PanZoomAndWorld,HiddenReplacedStopped,FailClosedAndRetry,NativeRefreshAndCollision,LimitsAndInvalidGeometry,MiniSurfaceIndependentOfSelection,IndependentMapVisibility,QuantityBadgeStaysCompact,AddingMineralKeepsSameAndNeighbouringCells,CenterOnlyCurrentMiniMap})test();std::cout<<"ResourceMapRenderTests: 14 suites passed\n";return 0;}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

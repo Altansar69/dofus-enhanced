@@ -1,6 +1,6 @@
 # Dofus Miniatures
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.7.1** (révision r103).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.8.0** (révision r104).
 
 Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
 raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
@@ -86,8 +86,8 @@ dans le chat, Copier, canal des messages) sous la liste, sans formulaire ;
 **Version complète** ramène la grande fenêtre, seule à permettre de créer et
 modifier les entrées. Le choix est enregistré.
 Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
-**Notes** et **Messages**, deux sections **Mes entrées** (liste à l’icône de
-l’onglet, entrée courante surlignée, pagination et compteur) et **Détail**
+**Notes** et **Messages**, la liste des entrées sans en-tête (entrée courante
+surlignée, pagination et compteur) et une section **Détail**
 (titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
 **Ma position**, puis **Voyager**, **Envoyer**, **Préparer dans le chat** et
 **Copier** selon l’onglet), et une ligne d’état avec **Actualiser**.
@@ -135,8 +135,12 @@ puis éléments interactifs.
 Les mêmes cases sont disponibles dans **clic droit → Surbrillance**, sous les
 quatre modes. Elles sont indépendantes et le menu reste ouvert après sélection.
 Les objets doivent être visibles et proposer une action disponible dans le jeu.
+Aucun contour n’est dessiné pendant un combat. Le contour est calculé en fin
+d’image, après l’animation de zoom du jeu, et dessiné dans la même image : il
+suit la caméra image par image pendant un zoom ou un déplacement de la vue, et
+environ 30 fois par seconde quand la vue est immobile.
 Les grandes fenêtres restent devant les contours et les clics restent natifs.
-Le budget existant de huit contours simultanés est partagé entre les catégories.
+Ce budget de 32 contours simultanés est partagé entre les catégories.
 
 ## Ressources sur les cartes
 
@@ -168,17 +172,18 @@ L’option **Bouton de recentrage sur la mini-carte** permet de masquer le bouto
 Les filtres de transport restent à leur place. 86 ressources dont 16 minerais
 sont disponibles, avec leur icône et leur niveau.
 
-Les repères mesurent 44 px sur la mini-carte et 50 px sur la grande carte, avec
-des images de 40 et 46 px. Les quantités en gras à 14 px occupent une petite
-pastille dorée claire dans le coin inférieur droit, pour dégager l’image.
-Chaque repère est dessiné par le mod avec l’image de l’objet (catalogue du jeu)
-et sa pastille de quantité. Plusieurs ressources sur une même case s’empilent
-avec un léger décalage, centrées sur la case : la pastille du dessus affiche
-alors le total de la case (3 cuivre et 11 fer donnent 14). Au survol de la
-souris, la pile glisse en un sixième de seconde vers une grille côte à côte où
-chaque ressource montre sa propre quantité, puis glisse de même vers la pile
-quand le curseur s’éloigne. Les éléments du jeu posés sur la même case (une
-foreuse, un indice) ne sont pas déplacés par le mod.
+Chaque repère est un repère natif du jeu (le composant de ses propres indices
+de carte : foreuse, indice de chasse), avec la taille des indices du jeu sur les
+deux cartes et l’image de l’objet chargée par le jeu depuis son catalogue. Les
+quantités en gras occupent une petite pastille dorée claire dans le coin
+inférieur droit, proportionnelle au repère. Les ressources d’une même case
+rejoignent le groupe de position du jeu de cette case, avec ses éléments
+(foreuse, indice) : la pastille de nombre native affiche le total de la case
+quand le groupe ne contient que des ressources du mod (3 cuivre et 11 fer
+donnent 14), et le compte du jeu sinon ; au survol de la souris, le groupe
+s’étale avec l’animation native de Dofus, foreuse comprise, chaque ressource
+montrant alors sa propre quantité, puis se replie quand le curseur s’éloigne.
+Les repères apparaissent par lots de 32 par image pour ne pas figer le jeu.
 Un repère n’est plus masqué lorsque l’ajout d’une ressource provoque un chevauchement.
 Un astérisque signale des points en intérieur ; le bandeau explicatif a été retiré. Les repères laissent passer
 les clics de navigation. Le message demandant de zoomer a été retiré ; les
@@ -188,7 +193,7 @@ de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
 [Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
-n’est pas connue. La 1.3.0 (r95) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.

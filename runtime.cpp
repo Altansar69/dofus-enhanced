@@ -2,10 +2,25 @@
 #include "signatures.hpp"
 #include <array>
 #include <cstring>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 namespace managed {
 Api api{};
 uintptr_t gameBase = 0;
+namespace {
+// Lookups by name are stable for the lifetime of the runtime (classes,
+// methods and fields are static IL2CPP metadata), so each one is resolved
+// once. Called from the worker and the main thread.
+std::mutex lookupMutex;
+std::unordered_map<std::string, Klass> classCache;
+std::unordered_map<std::string, Method> methodCache;
+std::unordered_map<std::string, void*> fieldCache;
+std::string Key(const void* owner, const char* name, int argc = -1) {
+    return std::to_string(reinterpret_cast<uintptr_t>(owner)) + "|" + name + "|" + std::to_string(argc);
+}
+}
 void Api::Load(HMODULE game) {
     gameBase = reinterpret_cast<uintptr_t>(game);
 #define LOAD(name) name = reinterpret_cast<decltype(name)>(GetProcAddress(game, "il2cpp_" #name)); if (!name) throw std::runtime_error("Missing IL2CPP export: " #name)
@@ -24,6 +39,12 @@ void Api::Load(HMODULE game) {
 #undef LOAD
 }
 Klass Api::Class(const char* imageName, const char* space, const char* name) const {
+    const auto key = std::string(imageName) + "|" + space + "|" + name;
+    {
+        std::lock_guard<std::mutex> guard(lookupMutex);
+        auto found = classCache.find(key);
+        if (found != classCache.end()) return found->second;
+    }
     size_t count = 0;
     auto list = domain_get_assemblies(domain_get(), &count);
     if (!list || count > 4096) throw std::runtime_error("Invalid assembly list");
@@ -31,7 +52,7 @@ Klass Api::Class(const char* imageName, const char* space, const char* name) con
         auto image = assembly_get_image(list[i]);
         if (std::string(image_get_name(image)) == imageName) {
             auto klass = class_from_name(image, space, name);
-            if (klass) return klass;
+            if (klass) { std::lock_guard<std::mutex> guard(lookupMutex); classCache.emplace(key, klass); return klass; }
             break;
         }
     }
@@ -52,9 +73,15 @@ Klass Api::NestedClass(Klass declaringClass, const char* name) const {
     throw std::runtime_error("Nested class enumeration exceeds supported limit");
 }
 Method Api::Find(Klass klass, const char* name, int argc) const {
+    const auto key = Key(klass, name, argc);
+    {
+        std::lock_guard<std::mutex> guard(lookupMutex);
+        auto found = methodCache.find(key);
+        if (found != methodCache.end()) return found->second;
+    }
     for (auto current = klass; current; current = class_get_parent(current)) {
         auto method = class_get_method_from_name(current, name, argc);
-        if (method) return method;
+        if (method) { std::lock_guard<std::mutex> guard(lookupMutex); methodCache.emplace(key, method); return method; }
     }
     throw std::runtime_error(std::string("Method unavailable: ") + class_get_name(klass) + "." + name);
 }
@@ -100,17 +127,24 @@ Obj Api::New(Klass klass, std::initializer_list<void*> args) const {
     Invoke(Find(klass, ".ctor", static_cast<int>(args.size())), class_is_valuetype(klass) ? object_unbox(obj.get()) : obj.get(), args);
     return obj.get();
 }
-Obj Api::Field(Obj self, const char* name) const {
-    if (!self) return nullptr;
-    for (auto c = object_get_class(self); c; c = class_get_parent(c)) {
-        if (auto field = class_get_field_from_name(c, name)) {
-            // Native boxing handles both references and inline value types.
-            // field_get_value copies the entire field: an Obj-sized destination
-            // corrupts the stack for structs such as WidgetManagerBinding.
-            return field_get_value_object(field, self);
-        }
+void* Api::FieldInfo(Klass klass, const char* name) const {
+    const auto key = Key(klass, name);
+    {
+        std::lock_guard<std::mutex> guard(lookupMutex);
+        auto found = fieldCache.find(key);
+        if (found != fieldCache.end()) return found->second;
+    }
+    for (auto c = klass; c; c = class_get_parent(c)) {
+        if (auto field = class_get_field_from_name(c, name)) { std::lock_guard<std::mutex> guard(lookupMutex); fieldCache.emplace(key, field); return field; }
     }
     throw std::runtime_error(std::string("Field unavailable: ") + name);
+}
+Obj Api::Field(Obj self, const char* name) const {
+    if (!self) return nullptr;
+    // Native boxing handles both references and inline value types.
+    // field_get_value copies the entire field: an Obj-sized destination
+    // corrupts the stack for structs such as WidgetManagerBinding.
+    return field_get_value_object(FieldInfo(object_get_class(self), name), self);
 }
 Obj Api::StaticField(Klass klass, const char* name) const {
     auto field = class_get_field_from_name(klass, name);
@@ -121,11 +155,7 @@ Obj Api::StaticField(Klass klass, const char* name) const {
 }
 void* Api::FieldAddress(Obj self, const char* name) const {
     if (!self) throw std::runtime_error("Null field owner");
-    for (auto c = object_get_class(self); c; c = class_get_parent(c)) {
-        if (auto field = class_get_field_from_name(c, name))
-            return static_cast<char*>(self) + field_get_offset(field);
-    }
-    throw std::runtime_error(std::string("Field unavailable: ") + name);
+    return static_cast<char*>(self) + field_get_offset(FieldInfo(object_get_class(self), name));
 }
 std::string Api::String(Obj self) const {
     if (!self) return {};

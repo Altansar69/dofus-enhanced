@@ -18,7 +18,7 @@ ULONGLONG now = 1000;
 ULONGLONG FakeTick() { return now; }
 Obj Ptr(uintptr_t value) { return reinterpret_cast<Obj>(value); }
 Obj context = Ptr(1), camera = Ptr(2);
-bool valid = true, combat = true, uiValid = true, throwRender = false, failShow = false;
+bool valid = true, combat = false, uiValid = true, throwRender = false, failShow = false;
 bool pendingCleanup = false, loadingMap = false;
 bool worldValid = true, worldCovered = false, worldSelectionValid = true, worldThrows = false;
 unsigned worldReads = 0, wallCaptures = 0, interactiveReads = 0;
@@ -29,7 +29,7 @@ uint64_t generation = 1;
 std::vector<int64_t> roster{10};
 std::unordered_set<int64_t> missingRenderers;
 bool occluded = true;
-unsigned reads = 0, projects = 0, renders = 0, ends = 0, uiResets = 0, gpuResets = 0;
+unsigned reads = 0, projects = 0, renders = 0, ends = 0, uiResets = 0, gpuResets = 0, cameraMoves = 0, poseReads = 0;
 std::vector<int64_t> current, visible;
 std::array<bool,32> slots{};
 std::unordered_map<GCHandle,Obj> handles;
@@ -43,6 +43,7 @@ Module* module = nullptr;
 bool MapTransitionLoading() { return fake::loadingMap; }
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string& text) { fake::log.push_back(text); }
+bool Module::InCombat() const { return fake::combat; }
 namespace monsterGlow {
 void InstallEntities() {}
 void InstallGlowInteractives() {}
@@ -134,6 +135,10 @@ void ResetGlowUi() {
 bool GlowUiCleanupPending() { return fake::pendingCleanup; }
 std::string DescribeGlowUi() { return "overlay=fixture"; }
 void ReleaseGlowSlot(size_t slot) { fake::slots.at(slot) = false; }
+CameraPose ReadCameraPose(managed::Obj camera) {
+    ++fake::poseReads; fake::Check(camera == fake::camera,"Pose of the current camera only");
+    CameraPose pose; pose.view[0] = static_cast<float>(fake::cameraMoves); pose.valid = true; return pose;
+}
 void ResetGlowRender() {
     fake::Check(!fake::pendingCleanup,"Textures released before pending UI bindings detached");
     ++fake::gpuResets; fake::slots.fill(false);
@@ -152,6 +157,8 @@ int main() {
         Module fixture(L"offline-only"); module=&fixture;
         fixture.ready=true; fixture.servicesReady=true;
         InstallMonsterGlow();
+        Check(RunGlowFrame(false,false) && !RunGlowFrame(true,false) && !RunGlowFrame(false,true),
+            "End-of-frame tick only for the on-screen repaint and never re-entered");
         fixture.settings.monsterGlowMode=false;
         TickMonsterGlow(); Check(reads==0 && renders==0,"Explicit opt-out must do no scene or GPU work");
         fixture.settings.monsterGlowMode=true; Step();
@@ -165,6 +172,12 @@ int main() {
         Check(fake::log.back().find("ui=camera-target-texture")!=std::string::npos,"Invalid UI must report precise skip gate");
         uiValid=true; now+=10000; Step();
         Check(fake::log.back().find("stage=frame")!=std::string::npos,"Recovery must be visible in bounded diagnostics");
+        combat=true; Step();
+        Check(visible.empty() && handles.empty(),"Fights never show a contour");
+        const auto beforeCombatReads=reads, beforeCombatRenders=renders; Step(); Step();
+        Check(reads==beforeCombatReads && renders==beforeCombatRenders,"No entity, HUD or GPU work during a fight");
+        combat=false; Step();
+        Check(visible==std::vector<int64_t>{10},"The contour returns right after the fight");
         const auto beforeLoadingReads=reads, beforeLoadingRenders=renders;
         loadingMap=true; Step();
         Check(visible.empty() && handles.empty(),"Loading must detach old map glow");
@@ -178,6 +191,10 @@ int main() {
         loadingMap=false;Step();
         const auto beforeThrottle = reads;
         TickMonsterGlow(); Check(reads==beforeThrottle,"Duplicate frame must respect throttle");
+        ++cameraMoves; TickMonsterGlow(); Check(reads==beforeThrottle+1,"A camera that moved (zoom, pan) is followed without waiting for the throttle");
+        TickMonsterGlow(); Check(reads==beforeThrottle+1,"A still camera respects the throttle again");
+        now+=16; TickMonsterGlow(); Check(reads==beforeThrottle+1,"One 15.6 ms clock step keeps a still view throttled");
+        now+=15; TickMonsterGlow(); Check(reads==beforeThrottle+2,"Two clock steps refresh a still view: about 30 Hz with GetTickCount64");
         roster={10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43}; Step();
         Check(visible.size()==32 && visible[1]==11 && visible.back()==41,"Duplicates and max32 capture budget");
         roster={11}; Step();

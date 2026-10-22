@@ -13,34 +13,35 @@ namespace {
 using namespace managed;
 constexpr const char* UiAssembly = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
-constexpr size_t CellBudget = 384, BadgeBudget = 384;
-constexpr float FullBadgeSize=50, MiniBadgeSize=44;
-// Several resources on one cell stack with a small cascade so the cell stays
-// identifiable; hovering the stack spreads it into a two-column grid.
-constexpr float StackStepRatio=.2f;
-constexpr uint64_t HoverInterval=80;
-// A hovered stack glides open into its grid, and closed again, in this time
-// (ease-out); the hover pump runs every frame while a stack is moving.
-constexpr uint64_t SpreadDurationMs=160;
+constexpr size_t CellBudget = 384, MarkerBudget = 384;
+// Native markers are created and removed in bounded batches, continued on
+// the next frames: one pass never stalls a frame with hundreds of them.
+constexpr size_t CreateBudget = 32, RemoveBudget = 64;
+// The game's own layer of position groups (fia 24): the group of a cell and
+// its count badge live there, above the mod's layer of markers.
+constexpr int GroupLayerId = 24;
 struct Vec2 { float x, y; };
-struct Vec3 { float x, y, z; };
 struct Rect { float x, y, width, height; };
 struct Color { float r, g, b, a; };
-struct Badge { Ref root, label, icon; int item = 0; std::string quantity; };
+// One native icon marker (fgm) per resource and cell, created exactly like
+// the game's own hints (fhw.beup): the item image is loaded by the native
+// constructor, the marker joins the game's position group (fgk) of its cell,
+// so count badge, hover spread and collapse are the native cartography
+// behaviour shared with the game's hints (a drill, a clue) on the same cell.
 struct Marker {
-    Ref native, root, id;
-    std::vector<Badge> badges;
-    int x = 0, y = 0;
-    bool used = false, expanded = false;
-    // Stacked: the top badge carries the cell's total quantity and the others
-    // hide their count; spread: every badge shows its own count.
-    std::string content, total;
-    Vec2 scale{}, center{};
-    float size = 0;
-    float spread = 0; uint64_t spreadAt = 0; bool animating = false; // 0 = stacked, 1 = grid
+    Ref native, root, id, label;
+    int x = 0, y = 0, item = 0;
+    bool used = false;
+    std::string content;
+    float localSize = 0; // Quantity badge geometry applied, in the root's local units.
+    double zoom = 0, hintScale = 0; // Placement arguments last given to the native marker.
+    // Cell summary for the native position group: total quantity shown on the
+    // group's own count badge while collapsed; per-resource badges while spread.
+    bool grouped = false, interior = false;
+    int total = 0, labelDisplay = -1, members = 0; // members: our markers in the cell
 };
 struct View {
-    Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer;
+    Ref compositor, service, dictionary, owner, world, root, panel, manager, group, groupItems, layer, groupLayer;
     std::vector<Marker> markers;
     bool cleaning = false;
     int worldId=0;
@@ -55,18 +56,19 @@ struct Frame {
     Bounds bounds{};
     Rect viewport{};
     Vec2 origin{}, scale{};
-    double zoom = 0;
+    double zoom = 0, duge = 0, hintScale = 0;
+    float hintSize = 0, localSize = 0;
     int worldId = 0, key = 0;
     bool valid = false;
 };
 struct Methods {
     Klass view{}, service{}, marker{}, world{}, element{}, label{};
-    Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{}, centerPlayer{};
-    Method pointerPosition{}, pointerPanel{};
+    Method markerCtor{}, position{}, dispose{}, find{}, enableGroup{}, cluster{}, uncluster{}, group{}, layer{}, hintSize{};
+    Method mapToPixel{}, pixelToMap{}, toWorld{}, toLocal{}, centerPlayer{};
 } methods;
 std::array<View, 2> views;
 bool installed = false, reported = false;
-uint64_t nextPump = 0, nextHover = 0, serial = 0;
+uint64_t nextPump = 0, serial = 0;
 bool Session() {
     return installed && module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested &&
         module->compositor.get();
@@ -133,8 +135,22 @@ Frame ReadFrame(int key) {
     if (!f.root.get() || !Is(f.world.get(),methods.world) || !f.manager.get() || !Visible(f.root.get())) return f;
     f.panel.reset(api.Call(f.root.get(),"get_panel"));
     f.zoom = *static_cast<double*>(api.FieldAddress(f.owner.get(),"<dugf>k__BackingField"));
+    // The display scale (duge) the game applies to its map content and, with
+    // the zoom, to every marker it places: zero until its first layout.
+    f.duge = *static_cast<double*>(api.FieldAddress(f.owner.get(),"<duge>k__BackingField"));
     f.worldId = *static_cast<int*>(api.FieldAddress(f.world.get(),"id"));
     if (!std::isfinite(f.zoom) || f.zoom <= 0 || f.zoom > 10000) return f;
+    if (!std::isfinite(f.duge) || f.duge <= 0 || f.duge > 10000) return f;
+    // The game's hint size (fhw.bedd, 32) and the marker scale its own refresh
+    // (fhw.bewi) applies to every marker of the active groups, ours included:
+    // giving the same values up front means the same size as a drill and no
+    // jump at the next native refresh.
+    f.hintSize = api.Value<float>(api.Invoke(methods.hintSize,f.owner.get()));
+    if (!std::isfinite(f.hintSize) || f.hintSize <= 0 || f.hintSize > 1024) return f;
+    f.hintScale = ((std::clamp(f.duge/0.7,0.0,1.0)*1.2)*double(f.hintSize))*0.015625;
+    if (!std::isfinite(f.hintScale) || f.hintScale <= 0) return f;
+    f.localSize = float(double(f.hintSize)*f.zoom/f.hintScale);
+    if (!std::isfinite(f.localSize) || f.localSize <= 0) return f;
     const Rect bound = api.Value<Rect>(api.Call(f.root.get(),"get_worldBound"));
     const Rect clip = api.Value<Rect>(api.Call(f.root.get(),"get_worldClip"));
     f.viewport = Intersect(bound,clip);
@@ -165,18 +181,16 @@ void WriteStyle(Obj element,const char* name,Obj value) {
 template<class T> void Style(Obj element,const char* name,T value) {
     Ref box(ReadStyle(element,name)); api.Call(box.get(),"set_value",{&value}); WriteStyle(element,name,box.get());
 }
-void Pixels(Obj element,const char* name,float value) {
-    int unit=0; Ref length(api.New(api.Class(UiAssembly,UiSpace,"Length"),{&value,&unit}));
+void Length(Obj element,const char* name,float value,int unit) {
+    Ref length(api.New(api.Class(UiAssembly,UiSpace,"Length"),{&value,&unit}));
     Ref box(ReadStyle(element,name)); api.Call(box.get(),"set_value",{api.object_unbox(length.get())}); WriteStyle(element,name,box.get());
 }
+void Pixels(Obj element,const char* name,float value) { Length(element,name,value,0); }
+void Percent(Obj element,const char* name,float value) { Length(element,name,value,1); }
 void Name(Obj element,const std::string& name) { Ref text(api.string_new(name.c_str())); api.Call(element,"set_name",{text.get()}); }
 void Ignore(Obj element) { int ignore=1; bool no=false; api.Call(element,"set_pickingMode",{&ignore}); api.Call(element,"set_focusable",{&no}); }
 Obj Element(bool label=false) { Ref e(api.New(label?methods.label:methods.element)); Ignore(e.get()); return e.get(); }
 void SetText(Obj label,const std::string& text) { Ref s(api.string_new(text.c_str())); api.Call(label,"set_text",{s.get()}); }
-void Place(Obj element,Rect rect) {
-    Style(element,"position",1);
-    Pixels(element,"left",rect.x); Pixels(element,"top",rect.y); Pixels(element,"width",rect.width); Pixels(element,"height",rect.height);
-}
 Obj MarkerRegistered(const View& v,const Marker& m) {
     return v.manager.get() && m.id.get() && v.group.get() ? api.Invoke(methods.find,v.manager.get(),{m.id.get(),v.group.get()}) : nullptr;
 }
@@ -184,9 +198,14 @@ void RemoveMarker(View& v,Marker& m) {
     if (!m.native.get()) return;
     // A replaced dictionary entry belongs to its new owner. Detach only our
     // visual in that case; native begd would remove the replacement by key.
-    if (MarkerRegistered(v,m) == m.native.get()) api.Invoke(methods.dispose,m.native.get());
+    if (MarkerRegistered(v,m) == m.native.get()) {
+        // Leave the native position group first so an emptied group is dropped
+        // from the manager and never retained for a later layer.
+        api.Invoke(methods.uncluster,v.manager.get(),{m.native.get()});
+        api.Invoke(methods.dispose,m.native.get());
+    }
     else if (m.root.get()) api.Call(m.root.get(),"RemoveFromHierarchy");
-    m.badges.clear(); m.root.reset(); m.id.reset(); m.native.reset();
+    m.label.reset(); m.root.reset(); m.id.reset(); m.native.reset();
 }
 bool Cleanup(View& v) {
     v.cleaning=true;
@@ -217,7 +236,8 @@ bool SameView(const View& v,const Frame& f) {
     return !v.cleaning && v.compositor.get() == module->compositor.get() && v.service.get() == f.service.get() &&
         v.dictionary.get() == f.dictionary.get() && v.owner.get() == f.owner.get() && v.root.get() == f.root.get() &&
         v.world.get() == f.world.get() && v.worldId==f.worldId && v.manager.get() == f.manager.get() && v.panel.get() == f.panel.get() &&
-        v.layer.get() && api.Call(v.layer.get(),"get_parent")==v.root.get();
+        v.layer.get() && api.Call(v.layer.get(),"get_parent")==v.root.get() &&
+        v.groupLayer.get() && api.Call(v.groupLayer.get(),"get_parent")==v.root.get();
 }
 void CreateView(View& v,const Frame& f) {
     v.compositor.reset(module->compositor.get()); v.service.reset(f.service.get()); v.dictionary.reset(f.dictionary.get());
@@ -227,155 +247,143 @@ void CreateView(View& v,const Frame& f) {
     v.group.reset(api.string_new(group.c_str()));
     Ref groups(api.Field(v.manager.get(),"dttw"));
     if (StringItem(groups.get(),v.group.get())) throw std::runtime_error("Resource map group collision");
-    v.layer.reset(Element()); Name(v.layer.get(),group); Place(v.layer.get(),{0,0,0,0});
-    api.Call(v.root.get(),"Add",{v.layer.get()});
+    // The game's own layer of position groups (created on demand like for its
+    // hints): the groups of our cells go there, with their native badges.
+    int fia=GroupLayerId;
+    v.groupLayer.reset(api.Invoke(methods.layer,f.owner.get(),{&fia}));
+    if (!v.groupLayer.get() || api.Call(v.groupLayer.get(),"get_parent")!=v.root.get()) throw std::runtime_error("Resource map group layer unavailable");
+    // Our layer of markers is the exact native hint layer (fhw.bewt): a full
+    // size, visible, unpickable child of the map content. The game only
+    // counts and spreads the members of a group whose layer has a layout.
+    v.layer.reset(Element()); Name(v.layer.get(),group);
+    Style(v.layer.get(),"position",1); Pixels(v.layer.get(),"left",0); Pixels(v.layer.get(),"top",0);
+    Percent(v.layer.get(),"width",100); Percent(v.layer.get(),"height",100); Style(v.layer.get(),"display",0);
+    // Just below the group layer, so the native badges draw above our stacks.
+    int index=api.Value<int>(api.Call(v.root.get(),"IndexOf",{v.groupLayer.get()}));
+    if (index>=0) api.Call(v.root.get(),"Insert",{&index,v.layer.get()});
+    else api.Call(v.root.get(),"Add",{v.layer.get()});
 }
-Marker& NewMarker(View& v,const Frame& f,const Cell& cell) {
-    v.markers.emplace_back(); auto& m=v.markers.back(); m.x=cell.x; m.y=cell.y;
-    m.id.reset(api.string_new(("cell_"+std::to_string(cell.x)+"_"+std::to_string(cell.y)).c_str()));
-    float x=float(cell.x),y=float(cell.y),zero=0; int layer=-1;
+void Place(View& v,Marker& m,const Frame& f) {
+    // Native placement: the marker joins our layer, sized hintSize*zoom/scale
+    // in local units, like the game's own hints after its refresh.
+    double scale=f.hintScale;
+    api.Invoke(methods.position,m.native.get(),{v.layer.get(),const_cast<double*>(&f.zoom),&scale});
+    m.zoom=f.zoom; m.hintScale=f.hintScale;
+}
+Marker& NewMarker(View& v,const Frame& f,const Cell& cell,const Count& count) {
+    const auto* resource=LookupResource(Catalog(),count.itemId);
+    if(!resource)throw std::runtime_error("Unknown selected map resource");
+    v.markers.emplace_back(); auto& m=v.markers.back(); m.x=cell.x; m.y=cell.y; m.item=count.itemId;
+    m.id.reset(api.string_new(("cell_"+std::to_string(cell.x)+"_"+std::to_string(cell.y)+"_"+std::to_string(count.itemId)).c_str()));
+    float x=float(cell.x),y=float(cell.y); int layer=-1;
     auto point=api.Value<Vec2>(api.Invoke(methods.mapToPixel,nullptr,{&x,&y,f.world.get(),const_cast<double*>(&f.zoom)}));
+    // Native icon marker, with the game's hint size: the constructor loads the
+    // item image itself (catalog address), centres the root on the point,
+    // makes it unpickable and opts it into position groups. Untinted, without
+    // caption or reference id; no layer id so the game's tooltips skip it.
+    Ref address(ItemIconAddress(resource->iconId)),caption(api.string_new(""));
+    Color tint{1,1,1,1}; uint32_t reference=0; bool shown=true; float size=f.hintSize;
     m.native.reset(api.object_new(methods.marker));
-    api.Invoke(methods.markerCtor,m.native.get(),{m.id.get(),&point.x,&point.y,&zero,&zero,const_cast<double*>(&f.zoom),&layer,v.group.get(),v.manager.get(),v.layer.get()});
+    api.Invoke(methods.markerCtor,m.native.get(),{m.id.get(),&point.x,&point.y,&size,&size,const_cast<double*>(&f.zoom),&layer,
+        api.object_unbox(address.get()),v.group.get(),v.manager.get(),&tint,caption.get(),&reference,v.layer.get(),&shown});
     m.root.reset(api.Field(m.native.get(),"<dtwe>k__BackingField"));
     if (!m.root.get()) throw std::runtime_error("Resource map native marker root unavailable");
-    Ignore(m.root.get());
     Ref groups(api.Field(v.manager.get(),"dttw"));
     v.groupItems.reset(StringItem(groups.get(),v.group.get()));
-    api.Invoke(methods.enableGroup,v.manager.get(),{v.group.get()});
-    double iconScale=1;
-    api.Invoke(methods.position,m.native.get(),{v.layer.get(),const_cast<double*>(&f.zoom),&iconScale});
+    // The position group of the cell (the game's own, keyed by map
+    // coordinates like its hints), in the game's group layer; then the native
+    // placement, which also lays the group out.
+    Vec2 key{x,y};
+    api.Invoke(methods.cluster,v.manager.get(),{&key,m.native.get(),v.groupLayer.get()});
+    Place(v,m,f);
     return m;
 }
-Rect BadgeOffset(size_t index,size_t count,float size,bool expanded) {
-    if(count<2)return {-size/2,-size/2,size,size};
-    if(!expanded){const float step=size*StackStepRatio,extent=size+float(count-1)*step;return {-extent/2+float(index)*step,-extent/2+float(index)*step,size,size};}
-    const int columns=2,rows=int((count+1)/2);
-    return {float(index%columns)*size-columns*size/2,float(index/columns)*size-rows*size/2,size,size};
-}
-Rect StackExtent(size_t count,float size,bool expanded) {
-    if(count<2)return {-size/2,-size/2,size,size};
-    if(!expanded){const float extent=size+float(count-1)*size*StackStepRatio;return {-extent/2,-extent/2,extent,extent};}
-    const int columns=2,rows=int((count+1)/2);
-    return {-columns*size/2,-rows*size/2,columns*size,rows*size};
-}
-void PlaceBadges(Marker& marker,Vec2 scale) {
-    for(size_t i=0;i<marker.badges.size();++i) {
-        const auto a=BadgeOffset(i,marker.badges.size(),marker.size,false),b=BadgeOffset(i,marker.badges.size(),marker.size,true);
-        const Rect r{a.x+(b.x-a.x)*marker.spread,a.y+(b.y-a.y)*marker.spread,a.width,a.height};
-        Place(marker.badges[i].root.get(),{r.x/scale.x,r.y/scale.y,r.width/scale.x,r.height/scale.y});
-    }
-}
-void RefreshBadgeTexts(Marker& marker);
-// Moves every gliding stack one frame further; returns whether any still moves.
-bool AnimateBadges(View& v,uint64_t now) {
-    bool active=false;
-    for(auto& m:v.markers) {
-        if(!m.animating||!m.native.get())continue;
-        const float t=std::min(1.f,float(now-m.spreadAt)/float(SpreadDurationMs)),eased=1-(1-t)*(1-t)*(1-t);
-        m.spread=m.expanded?eased:1-eased;
-        PlaceBadges(m,v.scale);
-        if(t>=1){m.animating=false;if(!m.expanded)RefreshBadgeTexts(m);}
-        else active=true;
-    }
-    return active;
-}
-void RefreshBadgeTexts(Marker& marker) {
-    const bool stacked=marker.badges.size()>1&&!marker.expanded;
-    for(size_t i=0;i<marker.badges.size();++i) {
-        auto& badge=marker.badges[i];
-        const bool top=i+1==marker.badges.size();
-        SetText(badge.label.get(),stacked&&top?marker.total:badge.quantity);
-        Style(badge.label.get(),"display",stacked&&!top?1:0);
-    }
-}
-bool Inside(Vec2 p,Rect r) { return p.x>=r.x&&p.x<=r.x+r.width&&p.y>=r.y&&p.y<=r.y+r.height; }
-bool ReadPointer(const View& v,Vec2& pointer) {
-    int mouse=0,player=0; // PointerId.mousePointerId, ContextType.Player
-    if(api.Invoke(methods.pointerPanel,nullptr,{&mouse,&player})!=v.panel.get())return false;
-    const auto position=api.Value<Vec3>(api.Invoke(methods.pointerPosition,nullptr,{&mouse,&player}));
-    if(!std::isfinite(position.x)||!std::isfinite(position.y))return false;
-    pointer={position.x,position.y};
-    return Inside(pointer,v.viewport);
-}
-void UpdateHover(View& v,uint64_t now) {
-    if(!v.cached||v.cleaning||v.markers.empty())return;
-    Vec2 pointer{};Marker* best=nullptr;float bestDistance=0;
-    if(ReadPointer(v,pointer))for(auto& m:v.markers) {
-        if(!m.native.get()||m.badges.size()<2)continue;
-        const auto e=StackExtent(m.badges.size(),m.size,m.expanded);
-        if(!Inside(pointer,{m.center.x+e.x,m.center.y+e.y,e.width,e.height}))continue;
-        const float distance=(pointer.x-m.center.x)*(pointer.x-m.center.x)+(pointer.y-m.center.y)*(pointer.y-m.center.y);
-        if(!best||distance<bestDistance){best=&m;bestDistance=distance;}
-    }
-    for(auto& m:v.markers) {
-        const bool expand=&m==best;
-        if(!m.native.get()||expand==m.expanded)continue;
-        // The glide starts now (AnimateBadges moves it); the counts follow:
-        // each resource's own count as soon as the stack opens, the cell total
-        // once it has closed again.
-        m.expanded=expand;m.spreadAt=now;m.animating=true;
-        if(expand){RefreshBadgeTexts(m);api.Call(m.root.get(),"BringToFront");}
-    }
-}
-void UpdateBadges(Marker& marker,const Frame& f,const Cell& cell) {
-    const auto content=Describe(Catalog(),cell);
-    if(marker.content==content&&Same(marker.scale,f.scale))return;
-    bool replaced=marker.badges.size()!=cell.counts.size();
-    for(size_t i=0;!replaced&&i<cell.counts.size();++i)replaced=marker.badges[i].item!=cell.counts[i].itemId;
-    if (replaced) {
-        for(auto& b:marker.badges) api.Call(b.root.get(),"RemoveFromHierarchy");
-        marker.badges.clear();
-        for(const auto& count:cell.counts) {
-            marker.badges.emplace_back(); auto& b=marker.badges.back(); b.item=count.itemId;
-            b.root.reset(Element()); b.label.reset(Element(true)); b.icon.reset(Element());
-            Name(b.root.get(),"resource_"+std::to_string(count.itemId));
-            const auto* resource=LookupResource(Catalog(),count.itemId);
-            if(!resource)throw std::runtime_error("Unknown selected map resource");
-            api.Call(b.root.get(),"Add",{b.icon.get()}); api.Call(b.root.get(),"Add",{b.label.get()}); api.Call(marker.root.get(),"Add",{b.root.get()});
-            LoadItemIcon(b.icon.get(),resource->iconId);
-        }
-    }
-    const float size=marker.size;
-    int sum=0;bool interior=false;
-    for(const auto& count:cell.counts){sum+=count.count;interior=interior||count.interiorCount;}
-    marker.total=std::to_string(sum)+(interior?"*":"");
-    for(size_t i=0;i<cell.counts.size();++i) {
-        const auto& count=cell.counts[i]; auto& badge=marker.badges[i];
-        const auto* resource=LookupResource(Catalog(),count.itemId);
-        if (!resource) throw std::runtime_error("Unknown selected map resource");
-        Place(badge.icon.get(),{0,0,(size-4)/f.scale.x,(size-4)/f.scale.y});
-        const auto quantity=std::to_string(count.count)+(count.interiorCount?"*":"");
-        badge.quantity=quantity;
-        const float countWidth=(std::max)(18.0f,8.0f*float(quantity.size())+6.0f);
-        Place(badge.label.get(),{(size-countWidth)/f.scale.x,(size-18)/f.scale.y,countWidth/f.scale.x,18/f.scale.y});
-        Pixels(badge.label.get(),"fontSize",14/f.scale.y);
-        Style(badge.label.get(),"unityFontStyleAndWeight",1);
-        Style(badge.label.get(),"color",Color{.09f,.10f,.08f,1});
-        Style(badge.label.get(),"backgroundColor",Color{.98f,.87f,.55f,1});
+void UpdateLabel(Marker& marker,const Frame& f,const Count& count) {
+    const auto quantity=std::to_string(count.count)+(count.interiorCount?"*":"");
+    if(!marker.label.get()){
+        // Bottom-right quantity badge inside the native marker, styled once.
+        marker.label.reset(Element(true));api.Call(marker.root.get(),"Add",{marker.label.get()});
+        Style(marker.label.get(),"position",1);
+        Pixels(marker.label.get(),"right",0);Pixels(marker.label.get(),"bottom",0);
+        Style(marker.label.get(),"unityFontStyleAndWeight",1);
+        Style(marker.label.get(),"color",Color{.09f,.10f,.08f,1});
+        Style(marker.label.get(),"backgroundColor",Color{.98f,.87f,.55f,1});
         for(auto side:{"borderTopColor","borderBottomColor","borderLeftColor","borderRightColor"})
-            Style(badge.label.get(),side,Color{.18f,.15f,.08f,1});
-        for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})
-            Style(badge.label.get(),side,1/f.scale.y);
-        for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
-            Pixels(badge.label.get(),corner,5/f.scale.y);
-        for(auto edge:{"paddingLeft","paddingRight","paddingTop","paddingBottom"})Pixels(badge.label.get(),edge,0);
-        Style(badge.label.get(),"unityTextAlign",4);
-        SetText(badge.label.get(),quantity);
+            Style(marker.label.get(),side,Color{.18f,.15f,.08f,1});
+        Style(marker.label.get(),"unityTextAlign",4);
     }
-    PlaceBadges(marker,f.scale);RefreshBadgeTexts(marker);
-    marker.content=content;marker.scale=f.scale;
+    // Geometry in the root's local units, proportional to the marker: the
+    // game scales the root (and the badge with it), so only a changed marker
+    // size (level of detail, small display scales) rewrites it.
+    if(marker.localSize!=f.localSize||marker.content.size()!=quantity.size()){
+        const float L=f.localSize;
+        Pixels(marker.label.get(),"height",0.34f*L);
+        Pixels(marker.label.get(),"width",(std::max)(0.34f*L,0.15f*L*float(quantity.size())+0.1f*L));
+        Pixels(marker.label.get(),"fontSize",0.26f*L);
+        for(auto side:{"borderTopWidth","borderBottomWidth","borderLeftWidth","borderRightWidth"})
+            Style(marker.label.get(),side,0.02f*L);
+        for(auto corner:{"borderTopLeftRadius","borderTopRightRadius","borderBottomLeftRadius","borderBottomRightRadius"})
+            Pixels(marker.label.get(),corner,0.1f*L);
+        marker.localSize=f.localSize;
+    }
+    if(marker.content!=quantity){SetText(marker.label.get(),quantity);marker.content=quantity;}
 }
-void Render(View& v,const Frame& f) {
+// Native position groups (the game's own stack/spread of same-cell hints): the
+// group's count badge shows the cell's total quantity while it is collapsed and
+// the per-resource badges only while it is spread. The game rewrites the badge
+// with its member count on its own refreshes, so this runs every pump, once
+// per grouped cell.
+void SyncGroups(View& v) {
+    struct CellState { int x, y; bool expanded; bool found; };
+    std::vector<CellState> cells;
+    for(auto& m:v.markers) {
+        if(!m.native.get()||!m.label.get()||!m.grouped)continue;
+        if(std::any_of(cells.begin(),cells.end(),[&](const CellState& c){return c.x==m.x&&c.y==m.y;}))continue;
+        CellState state{m.x,m.y,false,false};
+        Vec2 key{float(m.x),float(m.y)};
+        Ref group(api.Invoke(methods.group,v.manager.get(),{&key}));
+        if(group.get()) {
+            state.found=true;
+            state.expanded=*static_cast<bool*>(api.FieldAddress(group.get(),"<dtwx>k__BackingField"));
+            // The group's own count badge shows the cell's total quantity only
+            // while every member is one of ours; with one of the game's own
+            // hints in the group (a drill, a clue) its member count stays.
+            Ref members(api.Field(group.get(),"<dtww>k__BackingField"));
+            const int memberCount=members.get()?api.Value<int>(api.Call(members.get(),"get_Count")):0;
+            if(memberCount==m.members) {
+                Ref badge(api.Field(group.get(),"dtwz"));
+                const auto text=std::to_string(m.total)+(m.interior?"*":"");
+                if(badge.get()&&api.String(api.Call(badge.get(),"get_text"))!=text)SetText(badge.get(),text);
+            }
+        }
+        // A native reset (the map's own Display) empties the manager's groups:
+        // the next pass recreates the markers of that cell.
+        else v.cached=false;
+        cells.push_back(state);
+    }
+    for(auto& m:v.markers) {
+        if(!m.native.get()||!m.label.get())continue;
+        int display=0;
+        if(m.grouped) {
+            auto cell=std::find_if(cells.begin(),cells.end(),[&](const CellState& c){return c.x==m.x&&c.y==m.y;});
+            display=cell!=cells.end()&&cell->found&&!cell->expanded?1:0;
+        }
+        if(m.labelDisplay!=display){Style(m.label.get(),"display",display);m.labelDisplay=display;}
+    }
+}
+// One rendering pass. Returns true when the pass was cut by a budget and must
+// continue on the next frame.
+bool Render(View& v,const Frame& f) {
     if(v.cached&&Same(v.viewport,f.viewport)&&Same(v.scale,f.scale)&&Same(v.origin,f.origin)&&v.zoom==f.zoom&&
             v.selection==module->settings.resourceMapItems) {
         Ref groups(api.Field(v.manager.get(),"dttw")),enabled(api.Field(v.manager.get(),"dttx"));
         auto existing=StringItem(groups.get(),v.group.get());
         if((v.markers.empty()&&!existing)||(existing==v.groupItems.get()&&existing&&
                 api.Value<int>(api.Call(existing,"get_Count"))==int(v.markers.size())&&
-                api.Value<bool>(api.Call(enabled.get(),"Contains",{v.group.get()}))))return;
+                api.Value<bool>(api.Call(enabled.get(),"Contains",{v.group.get()})))){SyncGroups(v);return false;}
     }
     v.cached=false;
+    const auto started=GetTickCount64();
     auto result=Query(Catalog(),Placements(),module->settings.resourceMapItems,f.worldId,f.bounds,CellBudget);
     const double cx=(double(f.bounds.minX)+f.bounds.maxX)/2,cy=(double(f.bounds.minY)+f.bounds.maxY)/2;
     std::stable_sort(result.cells.begin(),result.cells.end(),[&](const Cell& a,const Cell& b) {
@@ -383,33 +391,60 @@ void Render(View& v,const Frame& f) {
         return std::tuple(distance(a),a.x,a.y)<std::tuple(distance(b),b.x,b.y);
     });
     for(auto& m:v.markers)m.used=false;
-    size_t badgeCount=0;
+    // Our group is one of the manager's active groups for this pass (the
+    // game's own refresh re-places the markers of the active groups).
+    api.Invoke(methods.enableGroup,v.manager.get(),{v.group.get()});
+    size_t markerCount=0,created=0,removed=0,cells=0;
+    bool partial=false;
     for(const auto& cell:result.cells) {
         if(cell.counts.empty())continue;
-        if(badgeCount+cell.counts.size()>BadgeBudget) {result.limited=true;continue;}
+        if(markerCount+cell.counts.size()>MarkerBudget) {result.limited=true;continue;}
         float x=float(cell.x),y=float(cell.y);
         auto local=api.Value<Vec2>(api.Invoke(methods.mapToPixel,nullptr,{&x,&y,f.world.get(),const_cast<double*>(&f.zoom)}));
         auto screen=api.Value<Vec2>(api.Invoke(methods.toWorld,nullptr,{f.root.get(),&local}));
-        const float size=f.key==0?MiniBadgeSize:FullBadgeSize;
-        const auto extent=StackExtent(cell.counts.size(),size,true);
-        const Rect bounds{screen.x+extent.x,screen.y+extent.y,extent.width,extent.height};
+        const float size=f.localSize*f.scale.x;
+        const Rect bounds{screen.x-size/2,screen.y-size/2,size,size};
         if(!Finite(bounds) || !Overlaps(bounds,f.viewport))continue;
-        // Each cell keeps its complete resource grid. Overlap with another
-        // cell must not delete minerals when the selection changes.
-        if(badgeCount%16==0&&!Current(f))throw std::runtime_error("Cartography changed during resource rendering");
-        auto found=std::find_if(v.markers.begin(),v.markers.end(),[&](const Marker& m){return m.x==cell.x && m.y==cell.y && m.native.get();});
-        if(found!=v.markers.end() && MarkerRegistered(v,*found)!=found->native.get()) {RemoveMarker(v,*found);found=v.markers.end();}
-        auto& marker=found==v.markers.end()?NewMarker(v,f,cell):*found;
-        marker.center=screen;marker.size=size;
-        UpdateBadges(marker,f,cell); marker.used=true;
-        badgeCount+=cell.counts.size();
+        ++cells;
+        // Each cell keeps every selected resource. Overlap with another cell
+        // must not delete minerals when the selection changes.
+        if(markerCount%16==0&&!Current(f))throw std::runtime_error("Cartography changed during resource rendering");
+        int total=0;bool interior=false;
+        for(const auto& count:cell.counts){total+=count.count;interior=interior||count.interiorCount;}
+        for(const auto& count:cell.counts) {
+            auto found=std::find_if(v.markers.begin(),v.markers.end(),[&](const Marker& m){return m.x==cell.x && m.y==cell.y && m.item==count.itemId && m.native.get();});
+            if(found!=v.markers.end() && MarkerRegistered(v,*found)!=found->native.get()) {
+                // Disposed by a native reset: recreated below, within the budget.
+                if(removed>=RemoveBudget){partial=true;break;}
+                RemoveMarker(v,*found);++removed;found=v.markers.end();
+            }
+            if(found==v.markers.end()&&created>=CreateBudget){partial=true;break;}
+            const bool fresh=found==v.markers.end();
+            auto& marker=fresh?NewMarker(v,f,cell,count):*found;
+            if(fresh)++created;
+            // A level of detail or display scale change re-places the reused
+            // markers like the game's own refresh does for its hints.
+            else if(marker.zoom!=f.zoom||marker.hintScale!=f.hintScale)Place(v,marker,f);
+            UpdateLabel(marker,f,count); marker.used=true;
+            marker.grouped=cell.counts.size()>1; marker.total=total; marker.interior=interior; marker.members=int(cell.counts.size());
+            ++markerCount;
+        }
+        if(partial)break;
     }
-    for(auto& marker:v.markers)if(!marker.used)RemoveMarker(v,marker);
+    if(!partial) {
+        for(auto& marker:v.markers)if(!marker.used&&marker.native.get()) {
+            if(removed>=RemoveBudget){partial=true;break;}
+            RemoveMarker(v,marker);++removed;
+        }
+    }
     std::erase_if(v.markers,[](const Marker& m){return !m.native.get();});
     if(!Current(f))throw std::runtime_error("Cartography changed before resource render commit");
-    // Re-enable only our group if a native filter refresh cleared its active list.
-    if(!v.markers.empty())api.Invoke(methods.enableGroup,v.manager.get(),{v.group.get()});
+    SyncGroups(v);
+    if(created||removed)Log("RESOURCE_MAP_RENDER pass view="+std::to_string(f.key)+" created="+std::to_string(created)+" removed="+std::to_string(removed)+
+        " cells="+std::to_string(cells)+" markers="+std::to_string(v.markers.size())+(partial?" continued":"")+" ms="+std::to_string(GetTickCount64()-started));
+    if(partial)return true;
     v.cached=true;v.viewport=f.viewport;v.scale=f.scale;v.origin=f.origin;v.zoom=f.zoom;v.selection=module->settings.resourceMapItems;
+    return false;
 }
 void RequireField(Klass type,const char* name,size_t offset) {
     auto field=api.class_get_field_from_name(type,name);
@@ -420,34 +455,47 @@ void InstallRender() {
     if(installed)return;
     InstallIcons();
     methods.service=api.Class("Core.dll","","fhk"); methods.view=api.Class("Core.dll","","fhw");
-    methods.marker=api.Class("Core.dll","","fgh"); auto manager=api.Class("Core.dll","","fga");
+    methods.marker=api.Class("Core.dll","","fgm"); auto manager=api.Class("Core.dll","","fga");
     methods.world=api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.World","WorldMapData");
     methods.element=api.Class(UiAssembly,UiSpace,"VisualElement"); methods.label=api.Class(UiAssembly,UiSpace,"Label");
     RequireField(methods.service,"dueo",0x98); RequireField(methods.view,"dugq",0x68);
     RequireField(methods.view,"dugv",0x90); RequireField(methods.view,"dugy",0xA8);
     RequireField(methods.view,"<dugi>k__BackingField",0x38); RequireField(methods.view,"<dugk>k__BackingField",0x48);
-    RequireField(methods.view,"<dugf>k__BackingField",0x20); RequireField(methods.world,"id",0x10);
-    RequireField(methods.marker,"<dtwe>k__BackingField",0x10); RequireField(manager,"dttw",0x10); RequireField(manager,"dttx",0x18);
+    RequireField(methods.view,"<dugf>k__BackingField",0x20); RequireField(methods.view,"<duge>k__BackingField",0x18);
+    RequireField(methods.world,"id",0x10);
+    auto baseMarker=api.Class("Core.dll","","fgh"); // fgm : fgg : fgh owns the root element field.
+    RequireField(baseMarker,"<dtwe>k__BackingField",0x10);
+    RequireField(manager,"dttw",0x10); RequireField(manager,"dttx",0x18); RequireField(manager,"dtty",0x20);
     methods.centerPlayer=api.FindVerified(methods.view,"beus",1,0x1BFA370);
-    methods.markerCtor=api.FindVerified(methods.marker,".ctor",10,0x1C3C420);
-    methods.position=api.FindVerified(methods.marker,"beft",3,0x1C3CBB0);
-    methods.dispose=api.FindVerified(methods.marker,"begd",0,0x1C3D370);
+    // The game's hint geometry: the layer of a hint category (created on
+    // demand) and the hint size its own markers get.
+    methods.layer=api.FindVerified(methods.view,"bexb",1,0x1C04C70);
+    methods.hintSize=api.FindVerified(methods.view,"bedd",0,0x1B92EF0);
+    // Icon marker (fgm): native item image, position group opt-in, and its
+    // overrides of the base marker's placement and disposal.
+    methods.markerCtor=api.FindVerified(methods.marker,".ctor",15,0x1C40D70);
+    methods.position=api.FindVerified(methods.marker,"beft",3,0x1C410D0);
+    methods.dispose=api.FindVerified(methods.marker,"begd",0,0x1C411D0);
     methods.find=api.FindVerified(manager,"beec",2,0x1B9EAE0);
     methods.enableGroup=api.FindVerified(manager,"beem",1,0x1B9F530);
+    // Position groups keyed by map coordinates: the same calls the game makes
+    // for its hints; the view's own mouse-move handler spreads a hovered group.
+    methods.cluster=api.FindVerified(manager,"bedx",3,0x1B9E370);
+    methods.uncluster=api.FindVerified(manager,"bedy",1,0x1B9E5C0);
+    // The group of a cell (fgk): spread flag and the native count badge.
+    methods.group=api.FindVerified(manager,"bedz",1,0x1B9E780);
+    auto groupClass=api.Class("Core.dll","","fgk");
+    RequireField(groupClass,"<dtww>k__BackingField",0x2C8); RequireField(groupClass,"<dtwx>k__BackingField",0x2D0); RequireField(groupClass,"dtwz",0x2D8);
     auto conversion=api.Class("Core.dll","","fhl");
     methods.mapToPixel=api.FindVerified(conversion,"bepx",4,0x1C4EB30);
     methods.pixelToMap=api.FindVerified(conversion,"bepv",3,0x1C4E8D0);
     auto extensions=api.Class(UiAssembly,UiSpace,"VisualElementExtensions");
     methods.toWorld=api.FindVerified(extensions,"LocalToWorld",2,0x56766A0);
     methods.toLocal=api.FindVerified(extensions,"WorldToLocal",2,0x56776A0);
-    // Last mouse position/panel known to UI Toolkit; no input hook and no
-    // pickable marker is needed to spread a hovered resource stack.
-    auto pointerState=api.Class(UiAssembly,UiSpace,"PointerDeviceState");
-    methods.pointerPosition=api.FindVerified(pointerState,"GetPointerPosition",2,0x577C600);
-    methods.pointerPanel=api.FindVerified(pointerState,"GetPanel",2,0x577C3A0);
     api.FindVerified(methods.label,".ctor",0,0x5729760);
     struct Guard {const char* name;int argc;uintptr_t rva;};
-    for(const auto& g:std::array<Guard,14>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"RemoveFromHierarchy",0,0x55E7BD0},{"BringToFront",0,0x55E08E0},
+    for(const auto& g:std::array<Guard,15>{{{".ctor",0,0x55F50B0},{"Add",1,0x55DFAD0},{"Insert",2,0x55E5710},{"IndexOf",1,0x55E55B0},
+        {"RemoveFromHierarchy",0,0x55E7BD0},
         {"get_contentContainer",0,0x3153690},{"get_panel",0,0x55F7170},{"get_parent",0,0x55F7180},{"get_worldBound",0,0x55F7CC0},{"get_worldClip",0,0x55F7EE0},
         {"get_visible",0,0x55F7BC0},{"get_resolvedStyle",0,0x55F72E0},{"set_name",1,0x55F9670},
         {"set_pickingMode",1,0x55F97B0},{"get_style",0,0x55F74A0}}}) api.FindVerified(methods.element,g.name,g.argc,g.rva);
@@ -457,7 +505,7 @@ bool RenderCleanupPending() {
     for(const auto& v:views)if(v.owner.get() || v.layer.get() || !v.markers.empty())return true;
     return false;
 }
-void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; nextHover=0; }
+void RestoreRender() { for(auto& v:views)Cleanup(v); nextPump=0; }
 MiniMapSurface ReadMiniMapSurface() {
     MiniMapSurface surface;
     if(!Session())return surface;
@@ -495,30 +543,21 @@ bool CenterMiniMap(const MiniMapSurface& expected) {
 }
 void PumpRender(uint64_t now) {
     if(!Session()||(!module->settings.resourceMapEnabled&&!module->settings.resourceMiniMapEnabled)||module->settings.resourceMapItems.empty()) {RestoreRender();return;}
-    const bool render=now>=nextPump,hover=now>=nextHover;
-    if(!render&&!hover)return;
-    if(render)nextPump=now+200;
-    bool animating=false;
+    if(now<nextPump)return;
+    bool more=false;
     for(int key=0;key<2;++key) {
         auto& v=views[key];
         try {
             if(v.cleaning && !Cleanup(v))continue;
             const bool enabled=key==0?module->settings.resourceMiniMapEnabled:module->settings.resourceMapEnabled;
             if(!enabled){Cleanup(v);continue;}
-            if(!render) {
-                // Hover re-places badges only on the geometry of the last render.
-                if(v.cached&&v.layer.get()&&v.compositor.get()==module->compositor.get()&&
-                    api.Call(v.root.get(),"get_panel")==v.panel.get()&&api.Call(v.layer.get(),"get_parent")==v.root.get()){UpdateHover(v,now);animating=AnimateBadges(v,now)||animating;}
-                continue;
-            }
             auto f=ReadFrame(key);
             if(!f.valid) {Cleanup(v);continue;}
             if(!SameView(v,f)) {if(!Cleanup(v))continue;CreateView(v,f);}
-            Render(v,f);
-            UpdateHover(v,now);animating=AnimateBadges(v,now)||animating;
+            if(Render(v,f))more=true;
         } catch(const std::exception& error) {Report(error);Cleanup(v);}
     }
-    // A moving stack is re-placed every frame; idle hover is sampled at 80 ms.
-    if(animating)nextHover=now+16; else if(hover)nextHover=now+HoverInterval;
+    // A pass cut by its creation or removal budget continues next frame.
+    nextPump=more?now:now+200;
 }
 }

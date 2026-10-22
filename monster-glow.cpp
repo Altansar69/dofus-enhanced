@@ -15,13 +15,16 @@ using namespace managed;
 using namespace monsterGlow;
 constexpr size_t MaxGlows = 32;
 constexpr size_t MaxProjectedTargets = 128;
-constexpr ULONGLONG FrameInterval = 33;
+// GetTickCount64 advances in 15.6 ms steps: 31 ms is two steps (about 30 Hz
+// for a still view); 33 ms needed three (about 20 Hz).
+constexpr ULONGLONG FrameInterval = 31;
 bool installed = false, enabled = false, failed = false;
 bool worldAvailable = false, interactivesAvailable = false;
 bool previousNpcs = false, previousInteractives = false;
 int previousMode = 0;
 bool hadResources = false, previousCombat = false, cleanupPending = false;
 Ref previousContext, previousCamera;
+CameraPose lastPose;
 uint64_t previousUiGeneration = 0;
 ULONGLONG nextFrame = 0;
 ULONGLONG nextCleanup = 0;
@@ -64,7 +67,7 @@ void Clear() {
         return;
     }
     try { ResetGlowRender(); } catch (const std::exception& e) { Log(std::string("GLOW_RENDER_RESET_ERROR ") + e.what()); }
-    previousContext.reset(); previousCamera.reset(); previousUiGeneration = 0;
+    previousContext.reset(); previousCamera.reset(); previousUiGeneration = 0; lastPose = {};
     hadResources = false;
 }
 }
@@ -82,7 +85,7 @@ void InstallMonsterGlow() {
         try { monsterGlow::InstallGlowInteractives(); interactivesAvailable = true; }
         catch (const std::exception& e) { Log(std::string("GLOW_INTERACTIVES_UNAVAILABLE ") + e.what()); }
         installed = true;
-        Log("GLOW_READY configurable contour; default UI; max8 targets at30Hz");
+        Log("GLOW_READY configurable contour; default UI; every frame while the camera moves, 30 Hz when still");
     } catch (const std::exception& e) {
         installed = false;
         Log(std::string("GLOW_UNAVAILABLE ") + e.what());
@@ -119,7 +122,22 @@ void TickMonsterGlow() {
         nextFrame = 0;
         return;
     }
-    if (now < nextFrame) return;
+    if (module->InCombat()) {
+        // No contour on fighters: the glow is a roleplay aid only.
+        if (hadResources) Clear();
+        nextFrame = 0;
+        return;
+    }
+    if (now < nextFrame) {
+        // A camera that moved since the last capture (zoom, pan) is followed
+        // this very frame; the throttle only applies to a still scene.
+        bool moved = false;
+        if (previousCamera.get()) {
+            try { moved = !SameCameraPose(ReadCameraPose(previousCamera.get()), lastPose); }
+            catch (const std::exception&) { moved = true; }
+        }
+        if (!moved) return;
+    }
     nextFrame = now + FrameInterval;
     try {
         auto entities = ReadEntities();
@@ -152,6 +170,7 @@ void TickMonsterGlow() {
         }
         previousContext.reset(entities.context.get()); previousCombat = entities.combat;
         previousCamera.reset(frame.camera.get()); previousUiGeneration = frame.generation;
+        try { lastPose = ReadCameraPose(frame.camera.get()); } catch (const std::exception&) { lastPose = {}; }
         size_t slot = 0, projected = 0, captures = 0, textures = 0;
         size_t walls = 0;
         WorldFrame world;

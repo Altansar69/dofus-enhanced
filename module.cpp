@@ -41,6 +41,13 @@ using UpdateFn = void(*)(Obj, Method);
 static UpdateFn originalUpdate;
 static ULONGLONG nextPump = 0, nextRestore = 0;
 static unsigned restoreFailures = 0;
+// End-of-frame glow: UIElementsRuntimeUtility.RepaintPanels runs once per
+// rendered frame, after every Update and LateUpdate (the game's camera zoom
+// tween included) and before the UI Toolkit repaint of that frame.
+using RepaintPanelsFn = void(*)(bool, Method);
+static RepaintPanelsFn originalRepaintPanels;
+static bool glowFrameHook = false, inGlowFrame = false, glowFrameError = false;
+static ULONGLONG lastGlowFrame = 0;
 static std::unordered_map<Obj, ULONGLONG> nextDiscovery;
 
 void Log(const std::string& message) {
@@ -291,6 +298,20 @@ void Module::Stop() {
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
 }
+static void RepaintPanelsHook(bool onlyOffscreen, Method method) {
+    if (RunGlowFrame(onlyOffscreen, inGlowFrame) && module && module->ready.load() && !module->stopped) {
+        inGlowFrame = true;
+        lastGlowFrame = GetTickCount64();
+        try { TickMonsterGlow(); }
+        catch (...) { if (!glowFrameError) Log("GLOW_FRAME_ERROR"); glowFrameError = true; }
+        inGlowFrame = false;
+    }
+    // Always the engine's own repaint, whatever happened above.
+    originalRepaintPanels(onlyOffscreen, method);
+}
+// The glow ticks from the compositor only when the end-of-frame hook is
+// unavailable or idle (no rendered frame for a second).
+static bool CompositorGlowTick(ULONGLONG now) { return !glowFrameHook || now - lastGlowFrame >= 1000; }
 static void UpdateHook(Obj self, Method method) {
     originalUpdate(self, method);
     auto now = GetTickCount64();
@@ -332,14 +353,14 @@ static void UpdateHook(Obj self, Method method) {
     } else if (self != module->compositor.get()) return;
     if (module->servicesReady) TickMapPreload();
     if (module->servicesReady) TickChatTravelPlanning();
-    if (module->servicesReady && now < nextPump) { TickMonsterGlow(); return; }
+    if (module->servicesReady && now < nextPump) { if (CompositorGlowTick(now)) TickMonsterGlow(); resourceMap::PumpRender(now); return; }
     nextPump = now + 200;
     try { module->Pump(self); }
     catch (const std::exception& error) {
         Log(std::string("PUMP_ERROR ") + error.what());
         if (++module->pumpErrors >= 3) module->Stop();
     }
-    TickMonsterGlow();
+    if (CompositorGlowTick(now)) TickMonsterGlow();
 }
 static DWORD WINAPI Worker(void*) {
     logPath = ModulePath(selfModule).parent_path() / L"module.log";
@@ -362,6 +383,13 @@ static DWORD WINAPI Worker(void*) {
         if (MH_Initialize() != MH_OK) throw std::runtime_error("Cannot initialize hook library");
         auto compositor = api.Class("Core.dll", "Core.Engine.Compositor", "Compositor");
         AddHook(api.Find(compositor, "Update", 0), 0x20F9080, reinterpret_cast<void*>(UpdateHook), reinterpret_cast<void**>(&originalUpdate));
+        try {
+            auto panels = api.Class("UnityEngine.UIElementsModule.dll", "UnityEngine.UIElements", "UIElementsRuntimeUtility");
+            AddHook(api.FindVerified(panels, "RepaintPanels", 1, 0x5660750), 0x5660750,
+                reinterpret_cast<void*>(RepaintPanelsHook), reinterpret_cast<void**>(&originalRepaintPanels));
+            glowFrameHook = true;
+            Log("GLOW_FRAME_HOOK RepaintPanels");
+        } catch (const std::exception& error) { Log(std::string("GLOW_FRAME_HOOK_UNAVAILABLE ") + error.what()); }
         module->features->Install();
         module->ui->Install();
         InstallFastMapTransitions();

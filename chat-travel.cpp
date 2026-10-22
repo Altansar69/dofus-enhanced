@@ -4,6 +4,8 @@
 #include "module.hpp"
 #include "map-transitions.hpp"
 
+// Ends the journey but keeps the passive trip watch (defined below).
+void EndJourney();
 namespace {
 using namespace managed;
 using chat_travel::Phase;
@@ -11,7 +13,17 @@ chat_travel::Journey journey;
 Ref character, teleports, cached, compositor, freshList, cartography;
 Ref routeService;
 Klass routeClass{}, mapServiceClass{};
-Method mapReady{}, mapData{}, routeActive{};
+Method mapReady{}, mapData{}, routeActive{}, following{};
+// Passive record of the native trip after the onward request: the route
+// service keeps no destination after a cancel, so any restart comes from a
+// new native request (the party follow) and shows up here in the log.
+struct Watch {
+    Ref route, character;
+    uint64_t started=0, until=0;
+    std::string last;
+    int lines=0;
+} watch;
+constexpr uint64_t WatchMs=120000; constexpr int WatchLines=24;
 int64_t quotedMap=0;
 int quotedCost=-1;
 bool quoteReceived=false;
@@ -65,6 +77,31 @@ void Notice(const std::string& message) {
         Ref rendered(api.Invoke(noticeConvert,nullptr,{action.get()}));
         if(rendered.get())api.Invoke(noticeDisplay,chat.get(),{rendered.get()});
     } catch(const std::exception& e) {Log(std::string("CHAT_TRAVEL_NOTICE_ERROR ")+e.what());}
+}
+bool Following() {
+    // The game's party follow (the character follows a member): its own trip
+    // requests replace ours at each map load or member position update.
+    return character.get() && following && api.Value<bool>(api.Invoke(following,character.get()));
+}
+void StartWatch() {
+    watch=Watch{}; watch.route.reset(routeService.get()); watch.character.reset(character.get());
+    watch.started=GetTickCount64(); watch.until=watch.started+WatchMs;
+}
+void TickWatch() {
+    if (!watch.route.get()) return;
+    const auto now=GetTickCount64();
+    if (now>=watch.until || watch.lines>=WatchLines || !Available() ||
+        module->FindService("fjs")!=watch.route.get() || module->FindService("fng")!=watch.character.get()) { watch=Watch{}; return; }
+    const bool active=api.Value<bool>(api.Invoke(routeActive,watch.route.get()));
+    const bool pending=api.Value<bool>(api.Field(watch.route.get(),"dsjd"));
+    Ref destination(api.Field(watch.route.get(),"dsjs"));
+    const auto target=destination.get()?api.Value<uint32_t>(api.Field(destination.get(),"id")):0;
+    const bool follows=following && api.Value<bool>(api.Invoke(following,watch.character.get()));
+    const auto state="active="+std::to_string(active)+" pending="+std::to_string(pending)+
+        " target="+std::to_string(target)+" following="+std::to_string(follows);
+    if (state==watch.last) return;
+    watch.last=state; ++watch.lines;
+    Log("AUTOTRIP_WATCH "+state+" ms="+std::to_string(now-watch.started));
 }
 void Cancel(const char* reason,const char* message="trajet interrompu. Consulte le journal du mod pour le détail.") {
     Log(std::string("CHAT_TRAVEL ")+reason);RestoreChatTravel();Notice(message);
@@ -270,8 +307,11 @@ void ContinueOnward() {
         Cancel("onward replaced by another native destination","un autre trajet est actif ; la demande précédente est abandonnée."); return;
     }
     if (active && nativeTarget==targetMap) {
-        Log("CHAT_TRAVEL_ONWARD_ACTIVE target="+std::to_string(targetMap));
-        RestoreChatTravel(); Notice("autopilote lancé."); return;
+        const bool follows=Following();
+        Log("CHAT_TRAVEL_ONWARD_ACTIVE target="+std::to_string(targetMap)+" following="+std::to_string(follows));
+        StartWatch(); EndJourney();
+        Notice(follows?"autopilote lancé. Ton personnage suit un membre du groupe : le jeu relancera son propre trajet vers ce membre après une annulation ou un changement de carte. Arrête le suivi dans le groupe pour voyager seul.":"autopilote lancé.");
+        return;
     }
     if (Map()==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
     if (Map()!=journey.arrivalMap) { Cancel("left arrival before onward confirmation"); return; }
@@ -342,6 +382,9 @@ void StartHavenbagZaap(int64_t map) {
     }
 }
 void TickChatTravel() {
+    if (!dispatching) {
+        try { TickWatch(); } catch (const std::exception& e) { Log(std::string("AUTOTRIP_WATCH_ERROR ")+e.what()); watch=Watch{}; }
+    }
     if (journey.phase==Phase::Idle || dispatching) return;
     if (journey.phase==Phase::Planning) {
         const auto now=GetTickCount64();
@@ -387,7 +430,8 @@ void TickChatTravelPlanning() {
     // their existing cadence. The shared slice gate prevents double pumping.
     if(journey.phase==Phase::Planning)TickChatTravel();
 }
-void RestoreChatTravel() { chat_route::Clear(); journey.Clear(); freshList.reset(); freshSource=-1; character.reset(); teleports.reset(); cached.reset(); compositor.reset(); cartography.reset(); routeService.reset(); quotedMap=targetMap=0; quotedCost=-1; quoteReceived=false;directPlan=false;teleportOnly=havenbagDeparture=false;nextPlanningSlice=0; }
+void EndJourney() { chat_route::Clear(); journey.Clear(); freshList.reset(); freshSource=-1; character.reset(); teleports.reset(); cached.reset(); compositor.reset(); cartography.reset(); routeService.reset(); quotedMap=targetMap=0; quotedCost=-1; quoteReceived=false;directPlan=false;teleportOnly=havenbagDeparture=false;nextPlanningSlice=0; }
+void RestoreChatTravel() { EndJourney(); watch=Watch{}; }
 void InstallChatTravel() {
     chat_route::Install();
     const auto verify=[](const char* type,const char* name,int argc,uintptr_t rva) { return api.FindVerified(api.Class("Core.dll","",type),name,argc,rva); };
@@ -402,6 +446,9 @@ void InstallChatTravel() {
     routeActive=verify("faw","bcdi",0,0x7E1C10);
     currentMap=verify("esg","zeo",0,0x185C1E0); inBag=verify("esg","zfr",0,0x18BBA00);
     eligible=verify("esg","zhx",0,0x18BD400); walk=verify("esg","zhy",4,0x18BD470);
+    // Party follow state of the character (esg <dpzc>, set by the game's
+    // follow messages): the only native source of trips after a cancel.
+    following=verify("esg","zcl",0,0x18BAE60);
     funds=verify("esg","zdc",0,0x11EEB80);
     isKnown=verify("esg","zhr",1,0x18BCB30);
     quoteClass=api.Class("Core.dll","","dhw"); quoteCtor=verify("dhw",".ctor",1,0x68A590);

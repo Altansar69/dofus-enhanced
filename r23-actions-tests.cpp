@@ -44,9 +44,10 @@ struct Point { float x,y; };
 void (*mapMenuHook)(Obj,Obj,Point,Point,Method)=nullptr;
 void (*mapWalkHook)(Obj,Point,int,bool,Method)=nullptr;
 void (*mapAutoHook)(Obj,Point,Method)=nullptr;
-int nativeMenus=0,nativeWalks=0,nativeAutos=0;
+void (*mapMouseDownHook)(Obj,Obj,Method)=nullptr;
+int nativeMenus=0,nativeWalks=0,nativeAutos=0,nativeMouseDowns=0,stoppedEvents=0; float gameTime=100;
 Point nativeCoordinates{},nativeMouse{}; int nativeWorld=-1; bool nativeImmediate=false;
-bool sceneReady=true, loadingMap=false, acceptRoute=true, routeRunning=false, routePendingNative=false;
+bool sceneReady=true, loadingMap=false, acceptRoute=true, routeRunning=false, routePendingNative=false, followingMember=false;
 int loadedMapOverride=-1;
 int64_t plannedDeparture=104;
 bool routePending=false;
@@ -75,6 +76,8 @@ Obj OriginalCreate(Obj,Method) { lastMenu=Make("DofusContextualMenu");auto rows=
 void OriginalMapMenu(Obj,Obj,Point point,Point mouse,Method){++nativeMenus;nativeCoordinates=point;nativeMouse=mouse;}
 void OriginalMapWalk(Obj,Point point,int world,bool immediate,Method){++nativeWalks;nativeCoordinates=point;nativeWorld=world;nativeImmediate=immediate;}
 void OriginalMapAuto(Obj,Point point,Method){++nativeAutos;nativeCoordinates=point;}
+void OriginalMapMouseDown(Obj,Obj,Method){++nativeMouseDowns;}
+Obj MouseDown(int button,Point mouse,bool ctrl=false){auto e=Make("MouseDownEvent");Get(e).numbers["button"]=button;Get(e).numbers["ctrl"]=ctrl;Get(e).fields["mouse"]=Box(mouse);return e;}
 Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     const auto& m=*static_cast<const MethodData*>(method);std::vector<void*> a(args);const auto& name=m.name;
     if (name==".ctor") {
@@ -91,7 +94,13 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     if(name=="bmyc"){Check(Get(self).type=="hal","Only the local chat history receives feedback");notices.push_back(Get(a[0]).text);return nullptr;}
     if (name=="GetMapInformationById") return mapInfos.contains(*static_cast<int64_t*>(a[0]))?mapInfos[*static_cast<int64_t*>(a[0])]:nullptr;
     if (name=="GetById"&&m.type=="MonsterData") {auto id=*static_cast<int64_t*>(a[0]);return monsterInfos.contains(id)?monsterInfos[id]:nullptr;}
+    if (name=="get_time") return Box(gameTime);
+    if (name=="bepv") {auto p=*static_cast<Point*>(a[0]);return Box(Point{p.x/10,p.y/10});}
     auto& n=Get(self);
+    if (name=="get_button") return Box(int(n.numbers["button"]));
+    if (name=="get_ctrlKey") return Box(bool(n.numbers["ctrl"]));
+    if (name=="get_mousePosition") return n.fields["mouse"];
+    if (name=="StopPropagation") {++stoppedEvents;return nullptr;}
     if (name=="get_isBoss") return Box(bool(n.numbers["boss"]));
     if (name=="get_isMiniBoss") return Box(bool(n.numbers["arch"]));
     if (name=="get_soulCaptureForbidden") return Box(bool(n.numbers["forbidden"]));
@@ -112,6 +121,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     if (name=="xkj") return Box(sceneReady);
     if (name=="xkd") {auto d=Make("ClientMapData");Get(d).fields["id"]=Box<int>(loadedMapOverride<0?int(Get(currentMap).numbers["m_mapId"]):loadedMapOverride);return d;}
     if (name=="bcdi") return Box(routeRunning);
+    if (name=="zcl") return Box(followingMember);
     if (name=="zhx") return Box(eligible);
     if (name=="zid") {auto result=List();if(mapValid)for(auto map:resolvedMaps)Get(result).items.push_back(Box<int64_t>(map));return result;}
     if (name=="zdc") return n.fields["money"];
@@ -159,6 +169,8 @@ void Initialize() {
     api.gchandle_free=[](GCHandle id){handles.erase(id);};
     api.method_get_param=[](Method,uint32_t)->const void*{return api.Class("","","ValueStruct");};
     api.class_from_type=[](const void* type)->Klass{return const_cast<void*>(type);};
+    api.class_get_field_from_name=[](Klass,const char* name)->void*{static size_t dugt=0x80;return std::string(name)=="dugt"?static_cast<void*>(&dugt):nullptr;};
+    api.field_get_offset=[](void* field)->size_t{return *static_cast<size_t*>(field);};
 }
 struct Fixture {
     Module owner{"offline"};
@@ -167,11 +179,11 @@ struct Fixture {
         monsterInfos.clear();inventoryReads=0;auto monster=Make("MonsterData");Get(monster).numbers["boss"]=1;Get(monster).fields["souls"]=List({Make("MonsterSoulData")});monsterInfos[1]=monster;
         combat=false;ready=true;allowed=true;bag=false;eligible=true;mapValid=true;controlled=localId=7;fightState={soul::CombatState::Fighting,17,51};inventory={true,0,{{55,9687,3,true}}};
         entered=interacted=teleported=walked=cast=equipped=quotes=0;teleportSource=teleportCost=-1;requestedQuote=0;directKnown=true;synchronousQuote=false;
-        synchronousList=failAppend=false;resolvedMaps={123};nativeMenus=nativeWalks=nativeAutos=0;
+        synchronousList=failAppend=false;resolvedMaps={123};nativeMenus=nativeWalks=nativeAutos=nativeMouseDowns=stoppedEvents=0;gameTime=100;
         plannedDeparture=104;plannedChoices.clear();notices.clear();logs.clear();routePending=false;routeTicks=0;
         for(auto name:{"fng","fpf","fkc","frq","fro","frv","fsm","fmz","fnm","fnk","fnr","fjx","frs","fsf","fvq","fns","fsr","fmo"}) services[name]=Make(name);
         services["ham"]=Make("hal");services["fjs"]=Make("faw");services["fpm"]=Make("epf");
-        sceneReady=acceptRoute=true;loadingMap=routeRunning=routePendingNative=false;loadedMapOverride=-1;
+        sceneReady=acceptRoute=true;loadingMap=routeRunning=routePendingNative=followingMember=false;loadedMapOverride=-1;
         localCharacter=services["fng"];currentMap=Make("tk");Get(currentMap).numbers["m_mapId"]=10;
         auto money=Make("gb");Get(money).numbers["dcjl"]=100;Get(localCharacter).fields["money"]=money;
         banner=Make("BannerMenu");auto callback=Make("Action");Get(callback).fields["target"]=banner;auto event=Make("InputCustomEvent");Get(event).fields["m_input"]=List({callback});Get(services["frq"]).fields["event"]=event;
@@ -185,7 +197,7 @@ struct Fixture {
         failSpellEligibility=false;allowedChecks=0;
     }
     Obj Maker() { auto maker=Make("MonsterGroupMenuMaker");Get(maker).fields={{"m_data",entity},{"m_rolePlayEntitiesService",services["fns"]},{"m_staticInfoService",services["fsr"]}};return maker; }
-    Obj MapOwner(int world=1,const char* type="CartographyBannerView") {auto cartographer=Make(type),root=Make("MapRoot"),data=Make("WorldMapData");Get(root).fields["panel"]=root;Get(data).fields["id"]=Box(world);Get(cartographer).fields={{"dugy",localCharacter},{"dugv",services["fkc"]},{"dugq",root},{"world",data}};return cartographer;}
+    Obj MapOwner(int world=1,const char* type="CartographyBannerView") {auto cartographer=Make(type),root=Make("MapRoot"),data=Make("WorldMapData");Get(root).fields["panel"]=root;Get(data).fields["id"]=Box(world);Get(cartographer).fields={{"dugy",localCharacter},{"dugv",services["fkc"]},{"dugq",root},{"world",data},{"dugt",Box<float>(-1000.f)}};return cartographer;}
     Obj MapMenu(Obj cartographer) {auto menu=OriginalCreate(nullptr,nullptr);mapMenuHook(cartographer,menu,{9,10},{30,40},nullptr);return menu;}
     void Receive() { auto message=Make("hgq");Raw<int>(message,0x28,3);Check(receiveHook(services["fpf"],message,nullptr),"Preserve native list result"); }
     void Price(int cost=25,int64_t map=104) {auto message=Make("hgu");Raw<int64_t>(message,0x28,map);Raw<int>(message,0x30,cost);Check(quoteHook(services["fkc"],message,nullptr),"Preserve native price result");}
@@ -219,6 +231,7 @@ void AddHook(managed::Method,uintptr_t rva,void* replacement,void** original){
     else if(rva==0x1BF78A0){fake::mapMenuHook=reinterpret_cast<decltype(fake::mapMenuHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMenu);}
     else if(rva==0x1BF5E50){fake::mapWalkHook=reinterpret_cast<decltype(fake::mapWalkHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapWalk);}
     else if(rva==0x1BF8F40){fake::mapAutoHook=reinterpret_cast<decltype(fake::mapAutoHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapAuto);}
+    else if(rva==0x1BF88F0){fake::mapMouseDownHook=reinterpret_cast<decltype(fake::mapMouseDownHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMouseDown);}
     else throw std::runtime_error("Unexpected hook");
 }
 namespace soul {
@@ -243,6 +256,20 @@ Result Tick(){++fake::routeTicks;return fake::routePending?Result{}:result;}
 void MapTravelTests() {
     using namespace fake;
     const auto run=[](auto scenario) {const auto before=handles.size();{Fixture f;scenario(f);}Check(handles.size()==before,"Map travel must release managed references");};
+    // Map double-click: the game's mouse-down handler carries the travel itself.
+    run([](Fixture& f){auto owner=f.MapOwner();
+        mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);
+        Check(nativeMouseDowns==1&&!stoppedEvents&&!quotes&&!interacted&&!walked,"A single left click stays the game's own (drag start, selection)");
+        Get(owner).fields["dugt"]=Box<float>(gameTime-0.3f);
+        mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);
+        Check(nativeMouseDowns==1&&stoppedEvents==1&&quotes==1&&requestedQuote==104&&!nativeAutos&&!nativeWalks&&!walked,"A double-click within the game's window starts the TP planner, never the native handler");
+        Check(std::any_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("MAP_TRAVEL_ROUTE entry=double-click x=10 y=10 world=1")!=std::string::npos;}),"The map coordinates come from the game's own pixel conversion");});
+    run([](Fixture& f){auto owner=f.MapOwner();Get(owner).fields["dugt"]=Box<float>(gameTime-0.3f);
+        mapMouseDownHook(owner,MouseDown(0,{100,100},true),nullptr);Check(nativeMouseDowns==1&&!stoppedEvents&&!quotes,"Ctrl + double-click keeps the game's own direct autopilot");
+        mapMouseDownHook(owner,MouseDown(1,{100,100}),nullptr);Check(nativeMouseDowns==2&&!quotes,"Right clicks (context menu) are untouched");
+        Get(owner).fields["dugt"]=Box<float>(gameTime-0.5f);mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);Check(nativeMouseDowns==3&&!quotes,"A second click after the window is a plain click");
+        combat=true;Get(owner).fields["dugt"]=Box<float>(gameTime-0.3f);mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);Check(nativeMouseDowns==4&&!quotes,"In combat the handler stays native");combat=false;
+        services["fkc"]=Make("OtherCartography");mapMouseDownHook(owner,MouseDown(0,{100,100}),nullptr);Check(nativeMouseDowns==5&&!quotes,"A stale map owner stays native");});
     run([](Fixture& f){f.MapMenu(f.MapOwner());
         Check(nativeMenus==1&&nativeMouse.x==30&&nativeCoordinates.x==9,"Outside Havenbag direct-zaap menu fragment remains native");
         Check(!interacted&&!teleported&&!quotes&&!walked,"Opening map menu never starts travel");});
@@ -429,6 +456,21 @@ int main(){using namespace fake;try{
       sceneReady=false;TickChatTravel();sceneReady=true;TickChatTravel();Check(!walked,"Readiness loss resets stabilization");
       TickChatTravel();Check(walked==1,"Settled arrival dispatches onward exactly once");
       TickChatTravel();TickChatTravel();Check(walked==1 && notices.back().find("autopilote lancé")!=std::string::npos,"Only actual native route activation confirms success");}
+    // Party follow: the onward confirmation explains the game's own restarts, and a
+    // passive watch logs the native trip state after the mod's single request.
+    {Fixture f;followingMember=true;StartChatTravel({10,10,1});f.Price();TickChatTravel();
+      Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();TickChatTravel();
+      Check(walked==1&&notices.back().find("suit un membre du groupe")!=std::string::npos,"A following character is told the game will restart its own trip");
+      Check(std::any_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("CHAT_TRAVEL_ONWARD_ACTIVE target=123 following=1")!=std::string::npos;}),"Onward log records the follow state");
+      logs.clear();routeRunning=false;Get(services["fjs"]).fields["dsjs"]=nullptr;TickChatTravel();
+      Check(logs.size()==1&&logs[0].find("AUTOTRIP_WATCH active=0 pending=0 target=0 following=1")!=std::string::npos,"The watch logs a stopped trip");
+      auto other=Make("MapInformationData");Get(other).fields["id"]=Box<uint32_t>(456);Get(services["fjs"]).fields["dsjs"]=other;routeRunning=true;TickChatTravel();TickChatTravel();
+      Check(logs.size()==2&&logs[1].find("AUTOTRIP_WATCH active=1 pending=0 target=456 following=1")!=std::string::npos,"The watch logs a restart toward another map once");
+      Check(walked==1,"The mod never sends a second request");
+      RestoreChatTravel();logs.clear();routeRunning=false;TickChatTravel();Check(logs.empty(),"Restore releases the watch");}
+    {Fixture f;StartChatTravel({10,10,1});f.Price();TickChatTravel();Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();TickChatTravel();
+      Check(notices.back()=="TP : autopilote lancé."||notices.back().find("autopilote lancé.")!=std::string::npos,"Without party follow the confirmation stays short");
+      Check(notices.back().find("membre du groupe")==std::string::npos,"No follow notice when the character follows nobody");}
     {Fixture f;acceptRoute=false;StartChatTravel({10,10,1});f.Price();TickChatTravel();
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();Check(walked==1,"First onward request");
       TickChatTravel();Check(walked==1,"No repeated frame requests");Sleep(1050);

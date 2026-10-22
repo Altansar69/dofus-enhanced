@@ -13,8 +13,12 @@ static_assert(sizeof(Point)==8); // Native Vector2 travels in one x64 register.
 using MenuFn=void(*)(Obj,Obj,Point,Point,Method);
 using WalkFn=void(*)(Obj,Point,int,bool,Method);
 using AutoFn=void(*)(Obj,Point,Method);
-MenuFn originalMenu{}; WalkFn originalWalk{}; AutoFn originalAuto{};
-Method inBag{}, currentMap{}, currentWorld{}, resolve{}, known{}, append{};
+using MouseDownFn=void(*)(Obj,Obj,Method);
+MenuFn originalMenu{}; WalkFn originalWalk{}; AutoFn originalAuto{}; MouseDownFn originalMouseDown{};
+Method inBag{}, currentMap{}, currentWorld{}, resolve{}, known{}, append{}, pixelToMap{}, timeNow{};
+// The game's own double-click window in its map mouse-down handler (fhw.beud):
+// a second left click within 0.4 s of the previous one.
+constexpr float DoubleClickSeconds=0.4f;
 bool installed=false;
 struct Row { Ref item, callback; int64_t map=0; bool armed=false; };
 struct Menu {
@@ -138,6 +142,38 @@ void AutoHook(Obj owner,Point coordinates,Method method) {
         if (OwnerCurrent(owner)) RouteFromMap(owner,coordinates,World(owner),"double-click");
     } catch (const std::exception& e) { Log(std::string("MAP_TRAVEL_ROUTE_ERROR ")+e.what()); }
 }
+bool DoubleClick(Obj owner) {
+    // The game's own test: the previous left click (fhw.dugt, its Time.time)
+    // still lies within the double-click window.
+    const float last=api.Value<float>(api.Field(owner,"dugt")), now=api.Value<float>(api.Invoke(timeNow,nullptr));
+    return std::isfinite(last) && std::isfinite(now) && last+DoubleClickSeconds>now;
+}
+void MouseDownHook(Obj owner,Obj event,Method method) {
+    // The double-click travel is inlined in the map view's mouse-down handler
+    // (fhw.beuf is never called by the game), so the interception happens here:
+    // the game's own detection, then the TP planner instead of its autopilot.
+    // Ctrl + double-click keeps the game's direct autopilot; single clicks,
+    // drags and right clicks reach the native handler untouched.
+    bool intercept=false; Point mouse{};
+    try {
+        intercept=Available() && event && OwnerCurrent(owner) && api.Value<int>(api.Call(event,"get_button"))==0 &&
+            !api.Value<bool>(api.Call(event,"get_ctrlKey")) && DoubleClick(owner);
+        if (intercept) mouse=api.Value<Point>(api.Call(event,"get_mousePosition"));
+    } catch (const std::exception& e) { Log(std::string("MAP_TRAVEL_ROUTE_ERROR ")+e.what()); intercept=false; }
+    if (!intercept) { originalMouseDown(owner,event,method); return; }
+    try {
+        Ref world(api.Invoke(currentWorld,owner)); Ref root(api.Field(owner,"dugq"));
+        if (!world.get() || !root.get()) { originalMouseDown(owner,event,method); return; }
+        // Same panel-to-map conversion as the game (fhl.bepv), then the planner.
+        const auto point=api.Value<Point>(api.Invoke(pixelToMap,nullptr,{&mouse,world.get(),root.get()}));
+        api.Call(event,"StopPropagation");
+        RouteFromMap(owner,point,World(owner),"double-click");
+    } catch (const std::exception& e) { Log(std::string("MAP_TRAVEL_ROUTE_ERROR ")+e.what()); }
+}
+void RequireField(Klass type,const char* name,size_t offset) {
+    auto field=api.class_get_field_from_name(type,name);
+    if (!field || api.field_get_offset(field)!=offset) throw std::runtime_error(std::string("Map travel field mismatch: ")+name);
+}
 }
 bool HandleMapTravelCallback(managed::Obj callback,managed::Obj view) {
     if (!owned) return false;
@@ -183,4 +219,16 @@ void InstallMapTravel() {
     AddHook(verify("fhw","betn",3,0x1BF5E50),0x1BF5E50,reinterpret_cast<void*>(&WalkHook),reinterpret_cast<void**>(&originalWalk));
     AddHook(verify("fhw","beuf",1,0x1BF8F40),0x1BF8F40,reinterpret_cast<void*>(&AutoHook),reinterpret_cast<void**>(&originalAuto));
     installed=true;
+    // Map double-click: the game's mouse-down handler, its clock and the
+    // panel-to-map conversion it uses itself. The mouse getters (button,
+    // position, Ctrl) belong to the generic MouseEventBase<T> and are resolved
+    // by name on the event's own class. Optional: without it, the double-click
+    // stays the game's and the rest of map travel keeps working.
+    try {
+        pixelToMap=verify("fhl","bepv",3,0x1C4E8D0);
+        timeNow=api.FindVerified(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Time"),"get_time",0,0x54414E0);
+        api.FindVerified(api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","EventBase"),"StopPropagation",0,0x576D9C0);
+        auto view=api.Class("Core.dll","","fhw"); RequireField(view,"dugt",0x80);
+        AddHook(verify("fhw","beud",1,0x1BF88F0),0x1BF88F0,reinterpret_cast<void*>(&MouseDownHook),reinterpret_cast<void**>(&originalMouseDown));
+    } catch (const std::exception& e) { Log(std::string("MAP_DOUBLE_CLICK_UNAVAILABLE ")+e.what()); }
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime.hpp"
+#include <cstring>
 
 namespace monsterGlow {
 struct ScreenRect { float x = 0, y = 0, width = 0, height = 0; };
@@ -18,4 +19,13 @@ managed::Obj RenderGlow(size_t slot, managed::Obj camera,
     const GlowCoverage* coverage = nullptr);
 void ReleaseGlowSlot(size_t slot);
 void ResetGlowRender();
+// The camera as the game renders it this frame: view and projection matrices
+// and the pixel viewport. Any difference between two frames means the scene
+// moved under the glow (zoom, pan), which the contour must follow at once.
+struct CameraPose { float view[16]{}, projection[16]{}; ScreenRect rect{}; bool valid = false; };
+CameraPose ReadCameraPose(managed::Obj camera);
+inline bool SameCameraPose(const CameraPose& a, const CameraPose& b) {
+    return a.valid == b.valid && std::memcmp(a.view, b.view, sizeof a.view) == 0 &&
+        std::memcmp(a.projection, b.projection, sizeof a.projection) == 0 && std::memcmp(&a.rect, &b.rect, sizeof a.rect) == 0;
+}
 }

@@ -543,6 +543,16 @@ Obj RenderGlow(size_t slotIndex, Obj camera, const std::vector<Obj>& renderers, 
     return slot.present.get();
 }
 
+CameraPose ReadCameraPose(Obj camera) {
+    CameraPose pose;
+    if (!installed || !camera) return pose;
+    pose.rect = api.Value<ScreenRect>(api.Invoke(methods.cameraRect, camera));
+    const auto view = api.Value<Matrix>(api.Invoke(methods.cameraView, camera));
+    const auto projection = api.Value<Matrix>(api.Invoke(methods.cameraProjection, camera));
+    std::memcpy(pose.view, view.v, sizeof pose.view); std::memcpy(pose.projection, projection.v, sizeof pose.projection);
+    pose.valid = true;
+    return pose;
+}
 void ReleaseGlowSlot(size_t slot) {
     if (resources && slot < MaxSlots) ClearSlot(resources->slots[slot]);
 }

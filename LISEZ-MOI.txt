@@ -1,4 +1,46 @@
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 103 — VERSION 1.7.1
+DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 104 — VERSION 1.8.0
+
+R104 — VERSION 1.8.0 : REPÈRES NATIFS AVEC LES ÉLÉMENTS DU JEU, DOUBLE-CLIC, SURBRILLANCE
+- Ressources sur les cartes : retour aux repères natifs et aux groupes de
+  position du jeu, cette fois avec ce que le code du jeu attend réellement :
+  la taille de ses propres indices (32, sur les deux cartes) et l’échelle que
+  son rafraîchissement ré-applique à tous les repères, l’image chargée par le
+  constructeur natif lui-même, et une couche de repères identique à celle de
+  ses indices (pleine taille, visible) : sans elle, le jeu ne comptait pas
+  nos repères et n’étalait jamais le groupe. Les groupes vont dans la couche
+  des groupes du jeu, sous laquelle notre couche est insérée : la pastille
+  native se dessine au-dessus de la pile. Fer, cuivre et foreuse d’une même
+  case s’étalent ensemble, avec l’animation du jeu ; pastille native = total
+  de la case si le groupe est entièrement à nous, compte du jeu sinon.
+- Lenteur à l’apparition : les recherches de méthodes, de champs et de classes
+  du mod sont maintenant mémorisées (elles étaient refaites à chaque appel),
+  la pastille de quantité est stylée une fois et ne dépend plus du zoom à la
+  molette, et les repères sont créés et retirés par lots de 32 et 64 par
+  image, poursuivis à l’image suivante. Le journal donne le coût de chaque
+  passe (RESOURCE_MAP_RENDER pass …).
+- Double-clic sur la grande carte et la mini-carte : le jeu n’appelle jamais la
+  fonction que le mod accrochait (son code est recopié dans le gestionnaire de
+  clic de la carte), d’où l’autopilote classique. Le mod accroche maintenant ce
+  gestionnaire avec la détection du jeu (deux clics gauches en moins de 0,4 s)
+  et lance son trajet (zaaps, bateaux, /travel). Ctrl + double-clic garde
+  l’autopilote direct du jeu ; clics simples, glissers et clic droit restent
+  natifs.
+- Pilote automatique relancé en boucle après annulation : le journal montre une
+  seule demande de trajet par TP, et le service de trajet du jeu ne garde aucune
+  destination après une annulation. Le seul mécanisme du jeu qui relance seul un
+  trajet est le suivi d’un membre du groupe : à chaque changement de carte ou
+  déplacement du membre suivi, le jeu arrête le trajet en cours et en lance un
+  vers ce membre. Quand ton personnage suit un membre, le message « autopilote
+  lancé » le dit maintenant et explique d’arrêter le suivi pour voyager seul.
+  Pendant deux minutes après chaque TP, le journal du mod note l’état du trajet
+  du jeu (AUTOTRIP_WATCH : actif, destination, suivi) pour identifier toute
+  autre relance.
+- Surbrillance : plus aucun contour pendant un combat. Le contour est calculé en
+  fin d’image, après l’animation de zoom du jeu, et dessiné dans la même image ;
+  pendant un zoom ou un déplacement de la vue il est recalculé à chaque image
+  (environ 30 fois par seconde quand la vue est immobile).
+- Carnet : l’en-tête « Mes entrées » au-dessus de la liste est retiré.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R103 — VERSION 1.7.1 : REPÈRES DU MOD AVEC ÉTALEMENT ANIMÉ
 - Ressources sur les cartes : le regroupement natif de la 1.7.0 ne

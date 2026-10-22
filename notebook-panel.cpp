@@ -354,7 +354,9 @@ void Create(Obj root) {
     Ref columns(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Enum(columns.get(),"flexDirection",2); Add(content.get(),columns.get());
     Ref library(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Float(library.get(),"flexShrink",0); Add(columns.get(),library.get());
     if(compact) Float(library.get(),"flexGrow",1); else { Pixels(library.get(),"width",250); Pixels(library.get(),"marginRight",12); }
-    Ref entries(Section(library.get(),"Mes entrées",IconList));
+    // The entries list has no section header: rows, paging and (compact) the
+    // use actions sit directly in the column.
+    Ref entries(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Add(library.get(),entries.get());
     state.add.reset(Button(entries.get(),"Nouvelle entrée",IconPlus,1,0,"Commencer une nouvelle entrée dans cet onglet."));
     if(compact)Enum(state.add.get(),"display",1);
     Pixels(state.add.get(),"marginBottom",8);
