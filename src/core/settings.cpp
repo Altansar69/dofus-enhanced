@@ -107,6 +107,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "perfOverlayCorner" && ValidPerfOverlayCorner(value)) settings.perfOverlayCorner = value;
             else if (key == "coordsWorldChatMode" && ValidCoordsWorldChatMode(value)) { settings.coordsWorldChatMode = value; chatModeRead = true; }
             else if (key == "coordsWorldChat" && (value == 0 || value == 1)) legacyChatDimension = value;
+            else if (key == "statsEnabled" && (value == 0 || value == 1)) settings.statsEnabled = value != 0;
             else if (key == "perfOverlayX" && ValidPerfOverlayPlace(value)) settings.perfOverlayX = value;
             else if (key == "perfOverlayY" && ValidPerfOverlayPlace(value)) settings.perfOverlayY = value;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
@@ -211,6 +212,7 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         file << "\nperfOverlayCorner=" << perfOverlayCorner << "\nperfOverlayX=" << perfOverlayX << "\nperfOverlayY=" << perfOverlayY;
         // The 1.13.x checkbox too, for a client of that revision sharing this file.
         file << "\ncoordsWorldChatMode=" << coordsWorldChatMode << "\ncoordsWorldChat=" << (coordsWorldChatMode != 0 ? 1 : 0);
+        file << "\nstatsEnabled=" << (statsEnabled ? 1 : 0);
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

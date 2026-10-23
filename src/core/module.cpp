@@ -27,6 +27,10 @@
 #include "ui/tools-ui.hpp"
 #include "jobs/jobs-xp-panel.hpp"
 #include "maps/archi-zones.hpp"
+#include "stats/stats.hpp"
+#include "stats/stats-travel.hpp"
+#include "stats/stats-economy.hpp"
+#include "stats/stats-fights.hpp"
 #include "metamob/calendar-kralove.hpp"
 #include "metamob/metamob-sync.hpp"
 #include "souls/capture-detect.hpp"
@@ -308,6 +312,10 @@ void Module::Pump(Obj source) {
     startupStage("resource-map-ui", [] { resourceMap::TickUi(); });
     startupStage("map-info", [] { TickMapInfo(); });
     startupStage("perf-overlay", [] { TickPerfOverlay(); });
+    startupStage("stats-travel", [] { TickStatsTravel(); });
+    startupStage("stats-economy", [] { TickStatsEconomy(); });
+    startupStage("stats-fights", [] { TickStatsFights(); });
+    startupStage("stats", [] { TickStats(); });
     if (!startupConfirmed) {
         WriteStartupStatus(folder, GetCurrentProcessId(), "READY");
         startupConfirmed = true;
@@ -354,6 +362,10 @@ void Module::Stop() {
     RestoreCalendarKralove();
     RestoreMapInfo();
     RestorePerfOverlay();
+    RestoreStatsTravel();
+    RestoreStatsEconomy();
+    RestoreStatsFights();
+    FlushStats();
     RestoreSoulHelper();
     RestoreSoulWidget();
     RestoreDisplayShortcut();
@@ -509,6 +521,10 @@ static DWORD WINAPI Worker(void*) {
         InstallChatTpLinks(StartChatTravel);
         InstallMapInfo();
         InstallPerfOverlay();
+        InstallStats();
+        InstallStatsTravel();
+        InstallStatsEconomy();
+        InstallStatsFights();
         for (auto target : hookTargets) {
             auto result = MH_QueueEnableHook(target);
             if (result != MH_OK) throw std::runtime_error(MH_StatusToString(result));

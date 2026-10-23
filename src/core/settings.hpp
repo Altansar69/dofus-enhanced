@@ -48,6 +48,7 @@ struct Settings {
     // Chat : dimension des positions partagées, [x, y, dimension] (une liste, plus
     // une case depuis la 1.14.0) : 0 non, 1 oui sauf dans le Monde des Douze, 2 oui.
     int coordsWorldChatMode = 2;
+    bool statsEnabled = true; // Statistiques : compter les statistiques de mes personnages (1.15.0)
     bool perfOverlay = false; // Performances : images par seconde et mémoire dans un coin de l'écran
     int perfOverlayCorner = 0; // 0 en haut à gauche, 1 en haut à droite, 2 en bas à gauche, 3 en bas à droite
     // 1.14.0: the overlay's extra figures and its mouse placement (ExtraToggles).

@@ -286,6 +286,13 @@ int main() {
                 "An unknown chat dimension choice is never saved");
         }
         {
+            Require(defaults.statsEnabled, "Statistics are counted by default");
+            auto off = defaults; off.statsEnabled = false; off.Save(path);
+            Require(!Settings::Read(path).statsEnabled, "Turning the statistics off persists");
+            { std::ofstream bad(path, std::ios::app); bad << "statsEnabled=2\n"; }
+            Require(!Settings::Read(path).statsEnabled, "A malformed statistics value keeps the saved choice");
+        }
+        {
             auto corner = defaults; corner.perfOverlayCorner = 4;
             bool rejected = false;
             try { corner.Save(path); } catch (const std::runtime_error&) { rejected = true; }
