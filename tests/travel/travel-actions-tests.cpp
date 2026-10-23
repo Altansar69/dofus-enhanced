@@ -2,6 +2,9 @@
 #include "travel/map-travel.hpp"
 #include "travel/chat-travel-policy.hpp"
 #include "travel/chat-route.hpp"
+#include "travel/roublard-passage.hpp"
+#include "notebook/notebook-native.hpp"
+#include "notebook/notebook-panel.hpp"
 #include "souls/soul-group-menu.hpp"
 #include "souls/soul-spell.hpp"
 #include "souls/soul-combat.hpp"
@@ -253,14 +256,33 @@ void SetSpellClick(void(*click)(managed::Obj)){fake::spellClick=click;}
 // ChatRouteTests exercises the production graph bridge; isolate action gating here.
 namespace chat_route {
 Result result;
+// The shortcuts chat-travel offers (the Roublards' secret passage), and the one
+// this fake comparison reports as taken (-1: none).
+std::vector<Shortcut> passed;int chosen=-1;
+void SetShortcuts(std::vector<Shortcut> shortcuts) {passed=std::move(shortcuts);}
 void Install() {}
 void Clear() {result={Status::Unreachable};}
 void Begin(std::vector<chat_travel::Destination> choices,int64_t target,int64_t source,int zone,bool temple) {
     fake::Check(target>0,"Planner requires the resolved native destination map");
     fake::plannedChoices=choices;fake::plannedTarget=target;fake::plannedSource=source;fake::plannedZone=zone;fake::plannedTemple=temple;
-    Clear();for(auto choice:choices)if(choice.map==fake::plannedDeparture){result={Status::Found,choice,3};return;}
+    Clear();for(auto choice:choices)if(choice.map==fake::plannedDeparture){result={Status::Found,choice,3};result.shortcut=chosen;return;}
 }
 Result Tick(){++fake::routeTicks;return fake::routePending?Result{}:result;}
+}
+// « Ajouter aux positions »: the notebook's side (notebook-native), recorded.
+namespace fake {
+struct AddedPosition {int x=0,y=0,world=0;int64_t map=0;};
+std::vector<AddedPosition> addedPositions;bool duplicatePosition=false;std::string positionError,positionTitle;int panelChecks=0;
+void PositionReset(const std::string& title){addedPositions.clear();duplicatePosition=false;positionError.clear();positionTitle=title;panelChecks=0;}
+}
+void CheckNotebookPanel(){++fake::panelChecks;}
+namespace notebook {
+Added AddMapPosition(int x,int y,int world,int64_t map){
+    if(!fake::positionError.empty())throw std::runtime_error(fake::positionError);
+    Entry entry;entry.kind=Kind::Position;entry.x=x;entry.y=y;entry.world=world;entry.map=map;entry.title=fake::positionTitle;
+    if(fake::duplicatePosition)return {entry,false};
+    fake::addedPositions.push_back({x,y,world,map});entry.id=fake::addedPositions.size();return {entry,true};
+}
 }
 void MapTravelTests() {
     using namespace fake;
@@ -339,7 +361,7 @@ void MapTravelTests() {
         // Local chat deliberately throttles identical messages across repeated requests.
         Check(std::any_of(logs.begin(),logs.end(),[expected](const auto& line){return line.find(expected)!=std::string::npos;}),
             "Rejected map travel records the actual TP failure, including throttled repeat notices");});
-    run([](Fixture& f){bag=true;resolvedMaps={104};auto owner=f.MapOwner();auto menu=f.MapMenu(owner);
+    run([](Fixture& f){bag=true;f.owner.settings.mapAddPosition=false;resolvedMaps={104};auto owner=f.MapOwner();auto menu=f.MapMenu(owner);
         auto& rows=Get(Get(menu).fields["rows"]).items;Check(rows.size()==3&&!nativeMenus&&!interacted&&!teleported&&!quotes,"Opening menu appends one row without travel or quote");
         auto callback=Get(rows.back()).fields["callback"];auto view=lastView;Check(Get(rows.back()).numbers["icon"]==304,"Native teleport icon");
         Check(HandleMapTravelCallback(callback,view)&&interacted==1&&!teleported,"Explicit row click interacts with enabled Havenbag zaap");
@@ -348,8 +370,8 @@ void MapTravelTests() {
         Check(teleported==1&&teleportMap==104&&teleportSource==3&&teleportCost==20&&!walked&&!quotes&&routeTicks==0,"Exact selected zaap uses fresh native list source and cost without planning or direct quote");
         Get(currentMap).numbers["m_mapId"]=104;bag=false;TickChatTravel();TickChatTravel();Check(!walked,"Exact zaap click never starts autopilot");TickMapTravel();Check(rows.size()==2,"Only owned row removed after leaving Havre-Sac");});
     run([](Fixture& f){bag=true;eligible=false;services["fjs"]=nullptr;StartHavenbagZaap(104);f.Receive();TickChatTravel();Check(teleported==1&&!walked,"Exact native zaap does not depend on automatic route eligibility");});
-    run([](Fixture& f){bag=true;resolvedMaps={104,104,104};auto m=f.MapMenu(f.MapOwner());Check(Get(Get(m).fields["rows"]).items.size()==3,"Duplicate native map candidates yield one owned row");});
-    for(int invalid=0;invalid<7;++invalid)run([invalid](Fixture& f){bag=true;resolvedMaps={104};auto owner=f.MapOwner();auto m=f.MapMenu(owner);auto row=Get(Get(m).fields["rows"]).items.back();auto cb=Get(row).fields["callback"];auto view=lastView;
+    run([](Fixture& f){bag=true;f.owner.settings.mapAddPosition=false;resolvedMaps={104,104,104};auto m=f.MapMenu(f.MapOwner());Check(Get(Get(m).fields["rows"]).items.size()==3,"Duplicate native map candidates yield one owned row");});
+    for(int invalid=0;invalid<7;++invalid)run([invalid](Fixture& f){bag=true;f.owner.settings.mapAddPosition=false;resolvedMaps={104};auto owner=f.MapOwner();auto m=f.MapMenu(owner);auto row=Get(Get(m).fields["rows"]).items.back();auto cb=Get(row).fields["callback"];auto view=lastView;
         if(invalid==0)bag=false;
         if(invalid==1)combat=true;
         if(invalid==2)services["fng"]=Make("AnotherCharacter");
@@ -358,11 +380,11 @@ void MapTravelTests() {
         if(invalid==5)Get(view).fields["panel"]=nullptr;
         if(invalid==6)directKnown=false;
         Check(HandleMapTravelCallback(cb,view)&&!interacted&&!teleported,"Stale/closed/unknown/changed map callback is consumed without action");});
-    run([](Fixture& f){bag=true;resolvedMaps={104};auto owner=f.MapOwner();auto first=f.MapMenu(owner);auto cb=Get(Get(Get(first).fields["rows"]).items.back()).fields["callback"];auto view=lastView;
+    run([](Fixture& f){bag=true;f.owner.settings.mapAddPosition=false;resolvedMaps={104};auto owner=f.MapOwner();auto first=f.MapMenu(owner);auto cb=Get(Get(Get(first).fields["rows"]).items.back()).fields["callback"];auto view=lastView;
         f.MapMenu(owner);Check(!HandleMapTravelCallback(cb,view)&&!interacted,"Replaced owned callbacks stay inert with null native actions");
         Check(Get(Get(first).fields["rows"]).items.size()==2,"Old menu keeps its native rows");});
     run([](Fixture& f){bag=true;resolvedMaps={104};failAppend=true;auto menu=f.MapMenu(f.MapOwner());Check(Get(Get(menu).fields["rows"]).items.size()==2&&!interacted,"Failed native append cleans its partial row without travel");});
-    run([](Fixture& f){bag=true;directKnown=false;auto menu=f.MapMenu(f.MapOwner());Check(Get(Get(menu).fields["rows"]).items.size()==2&&!interacted,"No entry for unknown zaap");});
+    run([](Fixture& f){bag=true;f.owner.settings.mapAddPosition=false;directKnown=false;auto menu=f.MapMenu(f.MapOwner());Check(Get(Get(menu).fields["rows"]).items.size()==2&&!interacted,"No entry for unknown zaap");});
     for(int action=0;action<2;++action)run([action](Fixture& f){bag=true;auto owner=f.MapOwner();
         if(action)mapAutoHook(owner,{10,10},nullptr);else mapWalkHook(owner,{10,10},1,true,nullptr);
         Check(interacted==1&&!nativeAutos&&!nativeWalks&&!quotes,"Both native map-travel entrypoints use Havenbag interactive");f.Receive();TickChatTravel();
@@ -413,12 +435,64 @@ void MapTravelTests() {
         f.owner.settings.mapTravelPlanner=true;
         if(action)mapAutoHook(owner,{10,10},nullptr);else mapWalkHook(owner,{10,10},1,true,nullptr);
         Check(nativeWalks==1-action&&nativeAutos==action&&quotes==1&&requestedQuote==104,"Switched back on, the same entry is the mod's travel again at once");});
-    run([](Fixture& f){bag=true;resolvedMaps={104};f.owner.settings.mapTravelPlanner=false;auto menu=f.MapMenu(f.MapOwner());
+    run([](Fixture& f){bag=true;resolvedMaps={104};f.owner.settings.mapTravelPlanner=false;f.owner.settings.mapAddPosition=false;auto menu=f.MapMenu(f.MapOwner());
         auto& rows=Get(Get(menu).fields["rows"]).items;
         Check(rows.size()==3&&!nativeMenus&&Get(rows.back()).text=="Se téléporter à ce zaap (Havre-Sac)"&&Get(rows.back()).numbers["icon"]==304,
             "Option off keeps the Havre-Sac zaap row of the map menu");
         Check(HandleMapTravelCallback(Get(rows.back()).fields["callback"],lastView)&&interacted==1&&!teleported,"Option off keeps the Havre-Sac zaap click");
         f.Receive();TickChatTravel();Check(teleported==1&&teleportMap==104&&!walked&&!quotes,"Option off: the chosen Havre-Sac zaap still departs on its fresh list");});
+    // « Ajouter aux positions » (Settings::mapAddPosition, on by default): the
+    // right-clicked cell into the notebook, on both map views, in or out of the
+    // Havre-Sac, after the teleport rows; told in the local chat. The notebook's
+    // side (notebook::AddMapPosition) is recorded above.
+    run([](Fixture& f){Check(f.owner.settings.mapAddPosition,"« Ajouter aux positions » is on by default");});
+    for(const char* type:{"CartographyBannerView","CartographyMapView"})run([type](Fixture& f){
+        PositionReset(std::string("Zone ")+type);resolvedMaps={83104256,82313729};
+        auto owner=f.MapOwner(1,type);auto menu=f.MapMenu(owner);auto& rows=Get(Get(menu).fields["rows"]).items;
+        Check(nativeMenus==1&&rows.size()==3&&Get(rows.back()).text=="Ajouter aux positions"&&Get(rows.back()).numbers["icon"]==225&&!Get(rows.back()).numbers["disabled"],
+            "Outside the Havre-Sac: the game's own fragment, then « Ajouter aux positions »");
+        Check(addedPositions.empty()&&!quotes&&!interacted&&notices.empty(),"Opening the menu adds and starts nothing");
+        auto callback=Get(rows.back()).fields["callback"];auto view=lastView;
+        Check(HandleMapTravelCallback(callback,view)&&addedPositions.size()==1&&addedPositions[0].x==9&&addedPositions[0].y==10&&addedPositions[0].world==1&&addedPositions[0].map==82313729,
+            "The click adds the right-clicked cell, in the displayed world, with the game's own map for it");
+        Check(resolvedFor==ChatTpTarget{9,10,1}&&!quotes&&!interacted&&!teleported&&!walked,"Adding never travels");
+        Check(!notices.empty()&&notices.back()==std::string("Carnet : [9,10] « Zone ")+type+" » ajoutée aux positions."&&panelChecks==1,"Told in the local chat; an open notebook lists it at once");
+        Check(HandleMapTravelCallback(callback,view)&&addedPositions.size()==1,"A second click on the same row adds nothing more");});
+    run([](Fixture& f){PositionReset("Zone du Havre-Sac");bag=true;resolvedMaps={104};
+        auto menu=f.MapMenu(f.MapOwner());auto& rows=Get(Get(menu).fields["rows"]).items;
+        Check(!nativeMenus&&rows.size()==4&&Get(rows[2]).text=="Se téléporter à ce zaap (Havre-Sac)"&&Get(rows[3]).text=="Ajouter aux positions","In the Havre-Sac: its zaap rows, then « Ajouter aux positions »");
+        Check(HandleMapTravelCallback(Get(rows[3]).fields["callback"],lastView)&&addedPositions.size()==1&&addedPositions[0].map==104&&!interacted&&!teleported,"The position row adds the cell, no zaap trip");
+        Get(currentMap).numbers["m_mapId"]=104;bag=false;TickMapTravel();
+        Check(rows.size()==3&&Get(rows.back()).text=="Ajouter aux positions","Leaving the Havre-Sac retires the zaap rows only");});
+    for(int bagged=0;bagged<2;++bagged)run([bagged](Fixture& f){PositionReset("Zone");bag=bagged==1;resolvedMaps={104};f.owner.settings.mapAddPosition=false;
+        auto menu=f.MapMenu(f.MapOwner());const auto rows=Get(Get(menu).fields["rows"]).items;
+        Check(rows.size()==(bagged?3u:2u)&&std::none_of(rows.begin(),rows.end(),[](Obj row){return Get(row).text=="Ajouter aux positions";}),"Option off: no « Ajouter aux positions » row");
+        f.owner.settings.mapAddPosition=true;menu=f.MapMenu(f.MapOwner());
+        Check(Get(Get(menu).fields["rows"]).items.size()==(bagged?4u:3u),"Switched back on, the very next right-click has it again");});
+    run([](Fixture& f){PositionReset("Zone connue");duplicatePosition=true;auto menu=f.MapMenu(f.MapOwner());auto rows=Get(Get(menu).fields["rows"]).items;
+        Check(HandleMapTravelCallback(Get(rows.back()).fields["callback"],lastView)&&!notices.empty()&&notices.back()=="Carnet : [9,10] est déjà dans tes positions (« Zone connue »).",
+            "A cell already in the notebook is told, not added twice");Check(!panelChecks,"Nothing new for the notebook to list");});
+    run([](Fixture& f){PositionReset("Zone");positionError="Le carnet est plein (256 entrées).";auto menu=f.MapMenu(f.MapOwner());auto rows=Get(Get(menu).fields["rows"]).items;
+        Check(HandleMapTravelCallback(Get(rows.back()).fields["callback"],lastView)&&addedPositions.empty()&&!notices.empty()&&notices.back()=="Carnet : Le carnet est plein (256 entrées).",
+            "A refused save is told in the local chat");});
+    run([](Fixture& f){PositionReset("Hors carte");mapValid=false;auto menu=f.MapMenu(f.MapOwner());auto rows=Get(Get(menu).fields["rows"]).items;
+        Check(HandleMapTravelCallback(Get(rows.back()).fields["callback"],lastView)&&addedPositions.size()==1&&addedPositions[0].map==0,"A cell without a map of the game is still added, by its coordinates");});
+    for(int invalid=0;invalid<6;++invalid)run([invalid](Fixture& f){PositionReset("Zone");auto owner=f.MapOwner();auto menu=f.MapMenu(owner);
+        auto cb=Get(Get(Get(menu).fields["rows"]).items.back()).fields["callback"];auto view=lastView;
+        if(invalid==0)combat=true;
+        if(invalid==1)services["fng"]=Make("AnotherCharacter");
+        if(invalid==2)Get(owner).fields["world"]=Make("OtherWorld");
+        if(invalid==3)Get(view).fields["panel"]=nullptr;
+        if(invalid==4)Get(Get(owner).fields["dugq"]).fields["panel"]=nullptr;
+        if(invalid==5)f.owner.cached.reset(Make("OtherCache"));
+        Check(HandleMapTravelCallback(cb,view)&&addedPositions.empty()&&notices.empty(),"A stale, closed or changed map menu row is consumed without adding");});
+    run([](Fixture& f){PositionReset("Zone");combat=true;auto menu=f.MapMenu(f.MapOwner());
+        Check(nativeMenus==1&&Get(Get(menu).fields["rows"]).items.size()==2,"In combat the menu stays the game's");});
+    run([](Fixture& f){PositionReset("Zone");failAppend=true;auto menu=f.MapMenu(f.MapOwner());
+        Check(nativeMenus==1&&Get(Get(menu).fields["rows"]).items.size()==2,"A failed append leaves the game's rows only");});
+    run([](Fixture& f){PositionReset("Zone");auto menu=f.MapMenu(f.MapOwner());auto& rows=Get(Get(menu).fields["rows"]).items;
+        TickMapTravel();Check(rows.size()==3,"The shown menu keeps its row");
+        Get(Get(menu).fields["dofusContextualMenuRoot"]).fields["panel"]=nullptr;TickMapTravel();Check(rows.size()==2,"Closed, the menu loses its owned row");});
 }
 // r110: already there, the player's own zone, the Havre-Sac start, and the trip
 // toward the game's own destination map (the last map esg.zid gives).
@@ -521,11 +595,187 @@ void TravelFixTests() {
         Check(plannedZone==-1&&quotes==1&&logged("CHAT_TRAVEL_HERE_ZONE map=10 unknown=contracts"),"Without them every zone of the current map starts the search");});
     logs.clear();InstallChatTravel();Check(!logged("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE"),"The zone contracts install again");
 }
+// r112: the Roublards' secret passage inside the journey (roublard_passage is
+// the production code, on a scripted Bad Aboum; its native side has its own
+// tests). The comparison offers his trips, the autopilot walks to him, the mod
+// talks and answers, then plans again from the arrival without shortcuts.
+namespace fake {
+struct PassageGame final : roublard_passage::Game {
+    int64_t entity=-12,teleportTo=0,closed=0;int npcs=1,generation=0,marked=0,talks=0,replies=0,closes=0,finds=0,message=8722;
+    std::vector<int> offer{8758,8779,-1};roublard_passage::Dialog dialog;std::unordered_map<int64_t,std::pair<int,int>> coords;
+    int64_t Character() override {return 77;}
+    bool Locate(int64_t map,int& x,int& y) override {auto at=coords.find(map);if(at==coords.end())return false;x=at->second.first;y=at->second.second;return true;}
+    int FindNpc(int,int64_t& found) override {++finds;found=npcs>0?entity:0;return npcs;}
+    void Mark() override {marked=generation;}
+    // Shown as the native layer reads it: an NPC entity and a non-empty button.
+    roublard_passage::Dialog Read() override {auto read=dialog;
+        read.shown=dialog.shown&&dialog.entity!=-1&&std::any_of(dialog.replies.begin(),dialog.replies.end(),[](int id){return id!=0;});
+        read.fresh=dialog.shown&&generation!=marked;return read;}
+    bool Talk(int64_t) override {++talks;dialog={};dialog.shown=true;dialog.npc=1422;dialog.entity=entity;dialog.message=message;dialog.replies=offer;++generation;return true;}
+    bool Reply(int button,int reply) override {Check(button>=0&&button<static_cast<int>(dialog.replies.size())&&dialog.replies[static_cast<size_t>(button)]==reply,"The reply read on that button");
+        ++replies;dialog.locked=true;if(teleportTo){dialog.shown=false;Get(currentMap).numbers["m_mapId"]=teleportTo;}return true;}
+    bool Close(int64_t target) override {++closes;closed=target;return true;}
+    // The player opens another NPC's dialog (the chapel mercenary).
+    void Other() {dialog={};dialog.shown=true;dialog.npc=4351;dialog.entity=-40;dialog.message=30706;dialog.replies={37075,37073};++generation;}
+};
+}
+void RoublardPassageJourneyTests() {
+    using namespace fake;
+    static constexpr int64_t Street=10,Crypt=67372032,Door=67108864,Cemetery=82314240,Sewer=101716489;
+    const auto logged=[](const std::string& text) {return std::any_of(logs.begin(),logs.end(),[&](const std::string& l){return l.find(text)!=std::string::npos;});};
+    const auto noticed=[](const std::string& text) {return std::any_of(notices.begin(),notices.end(),[&](const std::string& n){return n.find(text)!=std::string::npos;});};
+    const auto offered=[](int id,int64_t from,int64_t to) {return std::any_of(chat_route::passed.begin(),chat_route::passed.end(),[&](const chat_route::Shortcut& s){return s.id==id&&s.from==from&&s.to==to&&s.cost==2;});};
+    const auto run=[](auto scenario) {const auto before=handles.size();
+        {Fixture f;PassageGame game;game.coords={{Street,{5,-14}},{Crypt,{5,-15}},{Door,{10,16}},{Cemetery,{10,16}}};
+         roublard_passage::UseGame(&game);roublard_passage::ResetKnowledge();chat_route::passed.clear();chat_route::chosen=-1;
+         Info(Street,5,-14,1);Info(Crypt,5,-15,1);Info(Door,10,16,-1);resolvedMaps={Cemetery};plannedDeparture=Street;
+         scenario(f,game);
+         RestoreChatTravel();roublard_passage::UseGame(nullptr);chat_route::chosen=-1;}
+        Check(handles.size()==before,"The passage journey releases managed references");};
+    // Walks to Bad Aboum: the comparison took the passage, the autopilot reached the crypt.
+    const auto reach=[](PassageGame& game) {
+        StartChatTravel({10,16,1});TickChatTravel();TickChatTravel();TickChatTravel();
+        Check(walked==1&&walkedMap==Crypt&&game.talks==0,"The game's autopilot walks to Bad Aboum first");
+        Get(currentMap).numbers["m_mapId"]=Crypt;routeRunning=false;Get(services["fjs"]).fields["dsjs"]=nullptr;
+        TickChatTravel();TickChatTravel();};
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;game.teleportTo=Door;
+        StartChatTravel({10,16,1});
+        Check(plannedTarget==Cemetery&&plannedSource==Street&&offered(101,Crypt,Door)&&offered(102,Crypt,67373056)&&!offered(110,Door,Crypt),
+            "Bad Aboum's trips are offered to the comparison (the temple side is not known yet)");
+        Check(logged("ROUBLARD_PASSAGE_ROUTE link=101 entrance=67372032 departure=10 target=82314240")&&
+            noticed("TP : le trajet passe par le passage secret des Roublards, d’Astrub au temple Roublard."),"The chosen passage is logged and told");
+        TickChatTravel();TickChatTravel();
+        Check(walked==1&&walkedMap==Crypt,"The game's autopilot walks to Bad Aboum's map, not to the destination");
+        TickChatTravel();TickChatTravel();
+        Check(logged("ROUBLARD_PASSAGE_WALK target=67372032")&&game.talks==0&&!noticed("autopilote lancé"),"The journey waits for the walk");
+        Get(currentMap).numbers["m_mapId"]=Crypt;TickChatTravel();TickChatTravel();TickChatTravel();
+        Check(game.talks==0,"On his map, the talk waits for the game's autopilot to finish");
+        routeRunning=false;Get(services["fjs"]).fields["dsjs"]=nullptr;
+        TickChatTravel();Check(game.talks==0,"One settled sample on his map is not enough");
+        TickChatTravel();TickChatTravel();Check(game.talks==1&&game.replies==0,"Spoken to on his map");
+        plannedDeparture=Door;
+        TickChatTravel();Check(game.replies==1&&Get(currentMap).numbers["m_mapId"]==Door,"The temple reply, then his teleport");
+        TickChatTravel();TickChatTravel();TickChatTravel();
+        Check(noticed("passage secret des Roublards emprunté ; suite du trajet.")&&plannedSource==Door&&chat_route::passed.empty(),
+            "Planned again from the arrival, without shortcuts");
+        Check(roublard_passage::Known().arrival[0][1]==Door&&roublard_passage::Known().npc[1]==Door,"The arrival, and Bad Aboum waiting there, are learned");
+        TickChatTravel();TickChatTravel();
+        Check(walked==2&&walkedMap==Cemetery,"Then the game's autopilot to the destination");
+        TickChatTravel();Check(noticed("autopilote lancé."),"And the trip ends as any other");});
+    // His trip is not offered to this character: nothing clicked, the trip goes on
+    // from the crypt without the passage, and the next trip does not plan it.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;game.offer={8779,-1};plannedDeparture=Street;
+        reach(game);plannedDeparture=Crypt;
+        TickChatTravel();TickChatTravel();
+        Check(game.talks==1&&game.replies==0&&game.closes==1,"Not offered: the dialog is closed, nothing clicked");
+        Check(noticed("Bad Aboum ne propose pas ce trajet à ce personnage ; le trajet continue sans le passage secret.")&&plannedSource==Crypt&&
+            chat_route::passed.empty()&&logged("CHAT_TRAVEL_REPLAN ROUBLARD_PASSAGE failed: reply absent"),"The trip goes on from the crypt");
+        TickChatTravel();TickChatTravel();Check(walked==2&&walkedMap==Cemetery,"Toward the destination by the game's own route");
+        RestoreChatTravel();plannedDeparture=Street;Get(currentMap).numbers["m_mapId"]=Street;
+        StartChatTravel({10,16,1});Check(!offered(101,Crypt,Door)&&offered(102,Crypt,67373056),"No more temple trips for this character");});
+    // The player walks away during the dialog: the trip stops, no click.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;game.teleportTo=Door;game.offer={};reach(game);
+        TickChatTravel();Check(game.talks==1,"Spoken to");
+        Get(currentMap).numbers["m_mapId"]=Street;TickChatTravel();
+        Check(game.replies==0&&noticed("trajet interrompu pendant le passage secret des Roublards.")&&logged("passage aborted: left his map during the dialog"),
+            "Leaving his map stops the trip");
+        TickChatTravel();Check(walked==1&&game.talks==1,"Nothing more is started");});
+    // Combat during the passage: the journey's own guard stops everything.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;game.offer={};reach(game);TickChatTravel();
+        combat=true;TickChatTravel();combat=false;TickChatTravel();
+        Check(game.replies==0&&noticed("trajet annulé")&&logged("ROUBLARD_PASSAGE_STOPPED trip=astrub>temple phase=dialog")&&!roublard_passage::Running(),
+            "Combat cancels the trip and the passage, without a click");});
+    // While his teleport is awaited, the player's own actions stop the trip: the
+    // mod never closes the player's dialog nor starts a new autopilot.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;reach(game);TickChatTravel();TickChatTravel();
+        Check(game.replies==1,"Replied, no teleport yet");
+        game.Other();TickChatTravel();
+        Check(game.closes==0&&noticed("trajet interrompu pendant le passage secret des Roublards.")&&logged("passage aborted: another dialog npc=4351"),
+            "Another NPC's dialog: the trip stops, that dialog stays");
+        TickChatTravel();TickChatTravel();Check(walked==1,"No new autopilot");});
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;reach(game);TickChatTravel();TickChatTravel();
+        game.dialog.shown=false;Get(currentMap).numbers["m_mapId"]=Sewer;
+        for(int i=0;i<4;++i)TickChatTravel();
+        Check(noticed("arrivée inattendue après le passage secret : trajet arrêté.")&&walked==1&&game.closes==0,"Walking into the sewers stops the trip");});
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;reach(game);TickChatTravel();
+        auto other=Make("MapInformationData");Get(other).fields["id"]=Box<uint32_t>(456);Get(services["fjs"]).fields["dsjs"]=other;routeRunning=true;
+        TickChatTravel();
+        Check(game.replies==0&&noticed("trajet interrompu pendant le passage secret des Roublards.")&&logged("passage aborted: the game's autopilot started"),
+            "The game's autopilot started meanwhile: stop, no click");});
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;reach(game);TickChatTravel();
+        routePendingNative=true;TickChatTravel();
+        Check(game.replies==0&&logged("passage aborted: the game's autopilot started"),"The game's autopilot requested meanwhile: stop, no click");});
+    // The arrival's scene is awaited before the trip goes on.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;game.teleportTo=Door;reach(game);TickChatTravel();
+        sceneReady=false;TickChatTravel();
+        Check(game.replies==1&&Get(currentMap).numbers["m_mapId"]==Door,"Teleported");
+        for(int i=0;i<4;++i)TickChatTravel();
+        Check(!noticed("emprunté")&&roublard_passage::Running(),"The arrival waits for its scene");
+        sceneReady=true;for(int i=0;i<3;++i)TickChatTravel();
+        Check(noticed("passage secret des Roublards emprunté ; suite du trajet."),"Then the trip goes on");});
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;reach(game);TickChatTravel();
+        bag=true;TickChatTravel();bag=false;
+        Check(game.replies==0&&logged("passage aborted: Havre-Sac"),"Into the Havre-Sac: stop");});
+    // « Passage secret et temple des Roublards » unticked during the walk or the passage.
+    run([&](Fixture& f,PassageGame& game){chat_route::chosen=101;StartChatTravel({10,16,1});for(int i=0;i<4;++i)TickChatTravel();
+        f.owner.settings.travelRoublardTemple=false;TickChatTravel();
+        Check(noticed("option du passage secret des Roublards décochée : trajet arrêté.")&&game.talks==0,"Unticked during the walk: stop");});
+    run([&](Fixture& f,PassageGame& game){chat_route::chosen=101;reach(game);TickChatTravel();
+        f.owner.settings.travelRoublardTemple=false;TickChatTravel();
+        Check(noticed("option du passage secret des Roublards décochée")&&game.replies==0,"Unticked during the passage: stop, no click");});
+    // The walk to him stops before his map, or the game travels elsewhere.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;StartChatTravel({10,16,1});
+        for(int i=0;i<4;++i)TickChatTravel();
+        routeRunning=false;Get(services["fjs"]).fields["dsjs"]=nullptr;TickChatTravel();TickChatTravel();
+        Check(!noticed("trajet interrompu avant"),"A short pause is tolerated");
+        TickChatTravel();
+        Check(noticed("trajet interrompu avant le passage secret des Roublards.")&&game.talks==0,"An interrupted walk ends the trip");});
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;StartChatTravel({10,16,1});
+        for(int i=0;i<4;++i)TickChatTravel();
+        auto other=Make("MapInformationData");Get(other).fields["id"]=Box<uint32_t>(456);Get(services["fjs"]).fields["dsjs"]=other;TickChatTravel();
+        Check(noticed("un autre trajet est actif")&&game.talks==0,"Another native destination replaces the walk");});
+    // The passage no longer available when the walk ends: the trip goes on without it.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;StartChatTravel({10,16,1});TickChatTravel();TickChatTravel();TickChatTravel();
+        Get(currentMap).numbers["m_mapId"]=Crypt;routeRunning=false;Get(services["fjs"]).fields["dsjs"]=nullptr;
+        roublard_passage::UseGame(nullptr);plannedDeparture=Crypt;TickChatTravel();TickChatTravel();
+        Check(noticed("le passage secret des Roublards n’est pas disponible ; le trajet continue sans lui.")&&plannedSource==Crypt&&
+            logged("CHAT_TRAVEL_REPLAN ROUBLARD_PASSAGE start refused")&&game.talks==0,"Planned again from his map, without it");});
+    // Already on his map: no autopilot before the passage.
+    run([&](Fixture&,PassageGame& game){chat_route::chosen=101;game.offer={};Get(currentMap).numbers["m_mapId"]=Crypt;plannedDeparture=Crypt;
+        StartChatTravel({10,16,1});for(int i=0;i<5;++i)TickChatTravel();
+        Check(walked==0&&game.talks==1,"Departing from the crypt itself, Bad Aboum is spoken to directly");});
+    // From the Havre-Sac: its zaap, then the walk to him; the Havre-Sac guard
+    // does not take the walk for a departure abandoned.
+    run([&](Fixture& f,PassageGame& game){chat_route::chosen=101;game.offer={};bag=true;plannedDeparture=104;
+        StartChatTravel({10,16,1});f.Receive();TickChatTravel();
+        Check(teleported==1&&teleportMap==104&&offered(101,Crypt,Door),"The Havre-Sac zaap first");
+        Get(currentMap).numbers["m_mapId"]=104;bag=false;TickChatTravel();TickChatTravel();TickChatTravel();TickChatTravel();
+        Check(walked==1&&walkedMap==Crypt&&logged("ROUBLARD_PASSAGE_WALK")&&!logged("left Havenbag"),"Then the walk to Bad Aboum");
+        Get(currentMap).numbers["m_mapId"]=Crypt;routeRunning=false;Get(services["fjs"]).fields["dsjs"]=nullptr;
+        for(int i=0;i<4;++i)TickChatTravel();
+        Check(game.talks==1,"Spoken to after a Havre-Sac departure");});
+    // Option off: no shortcut is offered, a reported one is ignored, the temple flag is off.
+    run([&](Fixture& f,PassageGame& game){chat_route::chosen=101;f.owner.settings.travelRoublardTemple=false;
+        StartChatTravel({10,16,1});
+        Check(chat_route::passed.empty()&&!plannedTemple&&logged("ROUBLARD_PASSAGE_ROUTE_IGNORED link=101"),"Option off: no passage planned");
+        TickChatTravel();TickChatTravel();Check(walked==1&&walkedMap==Cemetery&&game.talks==0,"Straight to the destination");});
+    // Unavailable passage (contracts refused): nothing offered either.
+    run([&](Fixture&,PassageGame& game){roublard_passage::UseGame(nullptr);chat_route::chosen=101;
+        StartChatTravel({10,16,1});
+        Check(chat_route::passed.empty()&&logged("ROUBLARD_PASSAGE_ROUTE_IGNORED link=101")&&game.talks==0,"Unavailable: no passage");});
+    // The passive look for Bad Aboum (learning from the player's own passages)
+    // follows the option too: off, the maps are never looked at.
+    run([&](Fixture& f,PassageGame& game){
+        for(int on=0;on<2;++on){f.owner.settings.travelRoublardTemple=on==1;game.finds=0;
+            TickChatTravel();Sleep(250);TickChatTravel();Sleep(1300);TickChatTravel();Sleep(250);TickChatTravel();
+            Check(on?game.finds>0:game.finds==0,"The passive look follows the option");}});
+}
 int main(){using namespace fake;try{
     Initialize();InstallChatTravel();InstallMapTravel();InstallSoulGroupMenu();soul::InstallSpell();
     Check(std::none_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE")!=std::string::npos;}),"The player's zone contracts install");
     MapTravelTests();
     TravelFixTests();
+    RoublardPassageJourneyTests();
     {Fixture f;routePending=true;StartChatTravel({10,10,1});Check(!quotes,"Pending route must not request a price");
       TickChatTravelPlanning();auto slices=routeTicks;TickChatTravel();TickChatTravelPlanning();
       Check(routeTicks==slices,"Frame and normal pumps share a single planning-slice gate");

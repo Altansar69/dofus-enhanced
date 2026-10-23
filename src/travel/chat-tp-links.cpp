@@ -3,18 +3,21 @@
 #include "souls/chat-soul-status.hpp"
 #include "travel/chat-coordinate-policy.hpp"
 #include "metamob/metamob-sync.hpp"
+#include "maps/map-info.hpp"
 #include "core/module.hpp"
 #include <algorithm>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <set>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace chat_tp_links {
 using namespace managed;
 constexpr const char* Space = "Core.UILogic.Components.Hyperlink";
-constexpr size_t MaxLabels = 256, MaxTargets = 16;
+constexpr size_t MaxLabels = 256, MaxTargets = 16, MaxTyped = 64;
 constexpr std::string_view Separator = " · ";
 struct Color { float r, g, b, a; };
 // Pinned native constructor copies 20 bytes for Color?: presence byte, padding,
@@ -33,11 +36,19 @@ struct Link { Ref manager; ChatTpTarget target; std::string sourceId; int monste
 // A native position the parts follow: map link, shared monster group, or
 // plain coordinates converted for TP.
 struct Source { std::string id; ChatTpTarget target; int monster = 0; };
+// A native position link whose text shows its dimension (« Dimension avec les
+// coordonnées dans le chat »): its wrapper's own text field before this module
+// (usually none) and the game's text of the link, « [x,y] » with its element name.
+struct Renamed { Ref manager, original; std::string native; };
 struct Label {
     // clean holds the native content: no part, plain coordinates still text.
     Ref element, manipulator, clean, enhanced, rendered, cached;
     std::vector<Link> links;
     std::vector<Source> sources;
+    std::vector<Renamed> renamed; // Native links of this label showing their dimension.
+    // Ids of links made from typed coordinates (never a dimension), oldest
+    // first: the most recent ones, those of the shown text, are always kept.
+    std::vector<std::string> typed;
     bool coordinates = false; // The clean text holds plain coordinates TP can convert.
     std::string signature; // Signature (below) when enhanced was built.
 };
@@ -53,6 +64,10 @@ struct State {
     Method parseMapLinks = nullptr;
     Method tooltipPosition = nullptr, tooltipCtor = nullptr;
     Method questCtor = nullptr, questOpen = nullptr;
+    // Dimensions: verified apart, so a mismatch leaves only the positions' text native.
+    bool dimensions = false, dimensionLogged = false;
+    Method mapText = nullptr, groupText = nullptr, worldById = nullptr, worldName = nullptr;
+    std::map<int, std::string> worlds; // WorldMapData names read so far
     void (*clicked)(ChatTpTarget) = nullptr;
 } state;
 void InitializeColors(Method ctor) {
@@ -135,6 +150,88 @@ void Register(Obj element) {
     label->element.reset(element); label->cached.reset(module->cached.get());
     state.labels.push_back(std::move(label));
 }
+// « Dimension avec les coordonnées dans le chat », read live like the parts.
+bool Dimensions() { return state.dimensions && module->settings.coordsWorldChat; }
+std::string WorldName(int world) {
+    const auto found = state.worlds.find(world);
+    if (found != state.worlds.end()) return found->second;
+    Ref data(api.Invoke(state.worldById,nullptr,{&world}));
+    auto name = data.get() ? api.String(api.Invoke(state.worldName,data.get())) : std::string{};
+    if (state.worlds.size() < 64) state.worlds.emplace(world,name);
+    return name;
+}
+// The game's text of a position link with its dimension: its « [x,y] »
+// becomes « [x,y, Monde des Douze] ». Empty when the text holds no such pair
+// (a custom caption) or the world has no name: the game's text stays.
+std::string WithDimension(const std::string& text, int x, int y, const std::string& world) {
+    if (world.empty()) return {};
+    const auto pair = mapInfo::PositionText(x,y,{});
+    const auto at = text.rfind(pair);
+    if (at == std::string::npos) return {};
+    return text.substr(0,at) + mapInfo::PositionText(x,y,world) + text.substr(at+pair.size());
+}
+Obj* WrapperText(Obj data) { return static_cast<Obj*>(api.FieldAddress(data,"<text>k__BackingField")); }
+void RequireField(Klass type, const char* name, size_t offset) {
+    for (auto t = type; t; t = api.class_get_parent(t)) {
+        auto field = api.class_get_field_from_name(t,name);
+        if (!field) continue;
+        if (api.field_get_offset(field) == offset) return;
+        break;
+    }
+    throw std::runtime_error(std::string("Chat dimension field mismatch: ") + name);
+}
+// A native link shows `text` (null: the game's own text): its wrapper's text,
+// without the content GetTextContent cached, so BuildText reads it again.
+void SetLinkText(Obj manager, Obj text) {
+    Ref data(api.Call(manager,"get_m_dataContext"));
+    api.gc_wbarrier_set_field(data.get(),WrapperText(data.get()),text);
+    api.gc_wbarrier_set_field(manager,static_cast<Obj*>(api.FieldAddress(manager,"m_cachedTextContent")),nullptr);
+}
+// Every renamed link of the label gets its own text back. A failure keeps the
+// rest listed, for the next cleanup.
+void Unrename(Label& label) {
+    while (!label.renamed.empty()) {
+        SetLinkText(label.renamed.back().manager.get(),label.renamed.back().original.get());
+        label.renamed.pop_back();
+    }
+}
+// The label's position links, before BuildText: with their dimension while the
+// option is checked; the game's text for those that leave the list. A link
+// renamed before keeps the game's text it had then.
+void Rename(Label& label, const std::vector<std::pair<Obj, ChatTpTarget>>& positions) {
+    std::vector<Renamed> next;
+    std::vector<std::string> texts;
+    if (Dimensions()) for (const auto& [manager, target] : positions) {
+        const auto old = std::find_if(label.renamed.begin(),label.renamed.end(),[&](const Renamed& r) { return r.manager.get() == manager; });
+        Renamed entry;
+        if (old != label.renamed.end()) { entry.native = old->native; entry.original.reset(old->original.get()); }
+        else {
+            const auto text = api.object_get_class(manager) == state.groupClass ? state.groupText : state.mapText;
+            entry.native = api.String(api.Invoke(text,manager));
+            Ref data(api.Call(manager,"get_m_dataContext"));
+            entry.original.reset(*WrapperText(data.get()));
+        }
+        auto shown = WithDimension(entry.native,target.x,target.y,WorldName(target.world));
+        if (shown.empty()) continue;
+        entry.manager.reset(manager);
+        next.push_back(std::move(entry)); texts.push_back(std::move(shown));
+    }
+    for (auto it = label.renamed.begin(); it != label.renamed.end();) {
+        const auto kept = std::any_of(next.begin(),next.end(),[&](const Renamed& r) { return r.manager.get() == it->manager.get(); });
+        if (kept) { ++it; continue; }
+        SetLinkText(it->manager.get(),it->original.get());
+        it = label.renamed.erase(it);
+    }
+    label.renamed = std::move(next); // listed before any change: a failure below is undone by Forget or Restore
+    for (size_t i = 0; i < label.renamed.size(); ++i) {
+        Ref text(api.string_new(texts[i].c_str()));
+        SetLinkText(label.renamed[i].manager.get(),text.get());
+    }
+    if (!label.renamed.empty() && !state.dimensionLogged) {
+        state.dimensionLogged = true;
+        Log("CHAT_DIMENSION_SHOWN links=" + std::to_string(label.renamed.size()));
+    }
+}
 void ClearOwnedHover(Label& label) {
     if (!label.manipulator.get()) return;
     Ref manager(api.Field(label.manipulator.get(),"m_hoveredHyperlinkManager"));
@@ -149,6 +246,7 @@ void ClearOwnedHover(Label& label) {
     }
 }
 void Restore(Label& label) {
+    Unrename(label); // the clean content shows these links: their own text first
     if (!label.clean.get() || !label.manipulator.get()) return;
     ClearOwnedHover(label);
     if (api.Field(label.manipulator.get(),"m_textElementTarget") != label.element.get()) return;
@@ -221,8 +319,10 @@ bool ReadPieces(Obj result, std::vector<Piece>& pieces, std::set<std::string>& i
 // Plain coordinates become native map links, for TP only; without TP they stay
 // text. Only plain text tokens go through the native coordinate parser;
 // item/spell/URL and existing map hyperlink payloads are left intact.
+// The links made here are listed in `converted`: written by a player, their
+// world is the parser's default (1), not shared data.
 bool Convert(std::vector<Piece>& clean, std::vector<Piece>& pieces, std::set<std::string>& ids,
-    Obj service, Method decodeMethod, bool& coordinates) {
+    Obj service, Method decodeMethod, bool& coordinates, std::set<Obj>& converted) {
     const bool travel = Enabled(LinkPart::Travel);
     for (auto& piece : clean) {
         const auto text = piece.manager.get() || !piece.text.get() ? std::string{} : api.String(piece.text.get());
@@ -242,7 +342,9 @@ bool Convert(std::vector<Piece>& clean, std::vector<Piece>& pieces, std::set<std
             Ref parsedText(parsed); Obj decoded = nullptr;
             if (!originalDecode(service,parsedText.get(),&decoded,nullptr,decodeMethod) || !decoded) return false;
             Ref nested(decoded);
+            const auto first = pieces.size();
             if (!ReadPieces(nested.get(),pieces,ids)) return false;
+            for (auto i = first; i < pieces.size(); ++i) if (pieces[i].manager.get()) converted.insert(pieces[i].manager.get());
             offset = span.start + span.length;
         }
         literal(text.size());
@@ -276,6 +378,7 @@ std::string Caption(int monster, LinkPart part) {
 // plain coordinates, then each enabled part's caption for every source.
 std::string Signature(const Label& label) {
     std::string signature(label.coordinates && Enabled(LinkPart::Travel) ? "P" : "-");
+    signature += !label.sources.empty() && Dimensions() ? 'W' : '-'; // positions with their dimension
     for (const auto& source : label.sources) for (const auto part : LinkParts) {
         if (Enabled(part)) signature += Caption(source.monster, part);
         signature += '\x1F';
@@ -288,6 +391,9 @@ bool Stale(const Label& label) { return Signature(label) != label.signature; }
 // previous text, so neither a refresh nor a cleanup can bring that text back.
 void Forget(Label& label) {
     try { ClearOwnedHover(label); } catch (const std::exception& e) { Log(std::string("CHAT_TP_HOVER_ERROR ") + e.what()); }
+    // Its position links shown before get their own text back; on failure they
+    // stay out of sight, with the previous text.
+    try { Unrename(label); } catch (const std::exception& e) { Log(std::string("CHAT_DIMENSION_RESTORE_ERROR ") + e.what()); label.renamed.clear(); }
     label.clean.reset(); label.enhanced.reset(); label.rendered.reset();
     label.links.clear(); label.sources.clear(); label.coordinates = false; label.signature.clear();
 }
@@ -341,10 +447,12 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
             api.Invoke(piece.manager.get() ? state.addLink : state.addText,clean.get(),
                 {piece.manager.get() ? piece.manager.get() : piece.text.get()});
         bool coordinates = false;
-        if (!Convert(original,pieces,ids,service,method,coordinates)) { settle(); return success; }
+        std::set<Obj> converted;
+        if (!Convert(original,pieces,ids,service,method,coordinates,converted)) { settle(); return success; }
         Ref enhanced(api.New(state.resultClass)), separator(api.string_new(Separator.data()));
         std::vector<Link> links;
         std::vector<Source> sources;
+        std::vector<std::pair<Obj, ChatTpTarget>> positions; // pieces keeps their managers alive
         for (const auto& piece : pieces) {
             const auto append = piece.manager.get() ? state.addLink : state.addText;
             api.Invoke(append,enhanced.get(),{piece.manager.get() ? piece.manager.get() : piece.text.get()});
@@ -364,6 +472,18 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
                 monster = api.Value<int>(api.Call(data.get(),"get_leaderId"));
             }
             sources.push_back({sourceId,target,monster});
+            // Typed coordinates keep the player's text, also when a redraw brings
+            // their link back: their world is the parser's guess, not shared data.
+            // A typed link seen again becomes the most recent: those of the shown
+            // text (16 at most) are never the oldest of the 64 kept.
+            const auto known = std::find(label.typed.begin(),label.typed.end(),sourceId);
+            const bool typed = known != label.typed.end();
+            if (typed) label.typed.erase(known);
+            if (typed || converted.contains(piece.manager.get())) {
+                if (label.typed.size() >= MaxTyped) label.typed.erase(label.typed.begin());
+                label.typed.push_back(sourceId);
+            }
+            else positions.emplace_back(piece.manager.get(),target);
             for (const auto part : LinkParts) {
                 const auto caption = Enabled(part) ? Caption(monster, part) : std::string{};
                 if (caption.empty()) continue;
@@ -383,6 +503,15 @@ bool DecodeHook(Obj service, Obj input, Obj* output, Obj previous, Method method
                 api.Invoke(state.addLink,enhanced.get(),{manager.get()});
                 links.push_back({std::move(manager),target,sourceId,monster,caption,part});
             }
+        }
+        // The game's own link managers show « [x,y, dimension] »: their clicks,
+        // tooltips and the TP parts beside them are unchanged. A failure here
+        // leaves the game's texts and keeps the parts.
+        try { Rename(label,positions); }
+        catch (const std::exception& e) {
+            static uint64_t nextLog = 0; // every message may fail alike: one line per 10 s
+            if (const auto now = GetTickCount64(); now >= nextLog) { nextLog = now + 10000; Log(std::string("CHAT_DIMENSION_ERROR ") + e.what()); }
+            try { Unrename(label); } catch (const std::exception&) {} // the rest stays listed for the next cleanup
         }
         Ref rendered(api.Call(enhanced.get(),"BuildText",{nullptr}));
         ClearOwnedHover(label);
@@ -517,6 +646,22 @@ void InstallChatTpLinks(void (*clicked)(ChatTpTarget)) {
     auto manipulator = api.Class("Core.dll",Space,"HyperlinkManipulator");
     state.pointerOut = api.FindVerified(manipulator,"OnPointerOutLinkTagEvent",1,0x168C810);
     state.setTarget = api.FindVerified(manipulator,"set_m_targetText",1,0x168DF30);
+    // « Dimension avec les coordonnées dans le chat » is optional: a mismatch
+    // leaves the positions' text native and keeps TP and the statuses. The
+    // link's text is its wrapper's (BaseHyperlinkTextWrapper.text), else the
+    // game's CreateTextFromData; GetTextContent caches it in m_cachedTextContent.
+    state.dimensions = false;
+    try {
+        state.mapText = api.FindVerified(state.mapClass,"get_textFromData",0,0x3C88A00);
+        state.groupText = api.FindVerified(state.groupClass,"get_textFromData",0,0x3C88A00);
+        RequireField(api.Class("Core.dll",Space,"BaseHyperlinkTextWrapper"),"<text>k__BackingField",0x20);
+        RequireField(state.mapClass,"m_cachedTextContent",0x20);
+        RequireField(state.groupClass,"m_cachedTextContent",0x20);
+        auto world = api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.World","WorldMapData");
+        state.worldById = api.FindVerified(world,"GetWorldMapById",1,0x7D3D50);
+        state.worldName = api.FindVerified(world,"get_name",0,0x7D3DE0);
+        state.dimensions = true;
+    } catch (const std::exception& e) { Log(std::string("CHAT_DIMENSION_DISABLED ") + e.what()); }
     AddHook(api.Find(chat,"BindItem",2),0x2D8E4C0,reinterpret_cast<void*>(&BindHook),reinterpret_cast<void**>(&originalBind));
     AddHook(api.Find(manipulator,"TryDecodeText",1),0x168D990,reinterpret_cast<void*>(&TextHook),reinterpret_cast<void**>(&originalText));
     AddHook(api.Find(api.Class("Core.dll",Space,"HyperlinkService"),"TryDecode",3),0x169CE90,
@@ -586,7 +731,7 @@ void RestoreChatTpLinks() {
         catch (const std::exception& e) { Log(std::string("CHAT_TP_CLEANUP_ERROR ") + e.what()); ++i; }
     }
     if (state.labels.empty() && module && (module->stopped || module->stopRequested.load())) {
-        state.stringType.reset(); state.linkColor = {}; state.hoverColor = {};
+        state.stringType.reset(); state.linkColor = {}; state.hoverColor = {}; state.worlds.clear();
     }
     state.restoring = false;
     WantSoulStatus(SoulClient::Chat,false,false); // only the chat's needs: the maps keep theirs

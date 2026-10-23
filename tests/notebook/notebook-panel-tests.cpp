@@ -5,10 +5,14 @@
 #include "notebook/notebook-native.hpp"
 #include <algorithm>
 #include <fstream>
+#include <map>
 
 int travels=0,prepares=0,copies=0,sends=0,sentChannel=-1;
 std::string prepared,sent;
 notebook::Entry travelled;
+// Map pins and row menus (notebook-native): the game's flags by entry id, as placed.
+std::map<uint64_t,notebook::Entry> pinned;int pinShows=0,pinHides=0;bool failPin=false;notebook::Entry pinnedEntry;
+notebook::RowMenu rowMenu;std::vector<managed::Obj> menuRows;bool pinsAvailable=true,menusAvailable=true;
 namespace notebook {
 void InstallNative() {}
 Entry CurrentPosition(){Entry result;result.x=-25;result.y=36;result.world=1;result.map=987;return result;}
@@ -17,6 +21,14 @@ void PrepareMessage(const std::string& text){++prepares;prepared=text;}
 void SendChatMessage(const std::string& text,int channel){++sends;sent=text;sentChannel=channel;}
 std::vector<World> Worlds(){return {{1,"Monde des Douze"},{2,"Incarnam"},{3,"Srambad"}};}
 void Copy(const std::string&){++copies;}
+bool PinsAvailable(){return pinsAvailable;}
+bool PinShown(const Entry& entry){return pinned.contains(entry.id);}
+void ShowPin(const Entry& entry){if(failPin)throw std::runtime_error("La carte du jeu ne connaît pas ce monde : repère impossible.");++pinShows;pinnedEntry=entry;pinned[entry.id]=entry;}
+void HidePin(uint64_t id){++pinHides;pinned.erase(id);}
+std::vector<Entry> PlacedPins(){std::vector<Entry> result;for(const auto& pin:pinned)result.push_back(pin.second);return result;}
+void SetRowMenu(RowMenu menu){rowMenu=menu;}
+bool AttachRowMenu(managed::Obj row){if(!menusAvailable)return false;menuRows.push_back(row);return true;}
+void ReleaseRowMenus(){menuRows.clear();}
 }
 namespace soul {
 managed::Obj CreateSpellView(managed::Obj parent){auto slot=fake::Element("SpellSlot");fake::Add(parent,slot);return slot;}
@@ -91,8 +103,8 @@ int main(){
         Check(Get(window).enums["set_verticalResizable"]==1&&Get(window).enums["set_horizontalResizable"]==1&&Get(window).enums["set_cornerResizable"]==1,"The notebook window resizes like the game's own windows");
         Check(Count(window,"DofusTab")==3&&TabOn(window,"Positions")&&!TabOn(window,"Notes")&&!TabOn(window,"Messages"),"Three native tabs with Positions selected");
         Check(Get(FindType(window,"DofusTab","Notes")).enums["set_fontCase"]==1&&Get(FindType(window,"DofusTab","Notes")).enums["set_size"]==1,"Tabs use the game's capitalised medium style");
-        Check(Count(window,"DofusButtonCustom")==14&&Count(window,"SectionHeader")==1&&Count(window,"Divider")==2&&Count(window,"ListElementBasic")==9,"Native buttons, one titled section (the entries list has no header), dividers, six list rows and three world items");
-        Check(!FindText(window,"Fermer")&&FindText(window,"Nouvelle entrée")&&FindText(window,"Ma position")&&FindText(window,"Actualiser"),"No custom close row; native action buttons");
+        Check(Count(window,"DofusButtonCustom")==19&&Count(window,"SectionHeader")==1&&Count(window,"Divider")==1&&Count(window,"ListElementBasic")==9,"Native buttons (six of them map pins), one titled section (the entries list has no header), the tab divider only, six list rows and three world items");
+        Check(!FindText(window,"Fermer")&&FindText(window,"Nouvelle entrée")&&FindText(window,"Ma position")&&!FindText(window,"Actualiser")&&!FindType(window,"Divider","Utiliser"),"No custom close row, no Actualiser button, no Utiliser separator; native action buttons");
         Check(Get(FindText(window,"Enregistrer")).enums["set_mainStyle"]==0&&Get(FindText(window,"Supprimer")).enums["set_status"]==1&&Get(FindText(window,"Enregistrer")).enums["set_icon"]==148,"Primary save, negative delete, floppy icon");
         Check(!FindText(window,"Mes entrées")&&FindText(window,"Détail")&&FindText(window,"Aucune entrée"),"No entries header, the detail section title and an empty-list counter");
         for(const auto* title:{"Détail"}){auto section=FindType(window,"SectionHeader",title);Check(section&&Get(section).enums["set_isOpen"]==1&&Get(section).enums["set_canBeOpened"]==0,"Sections opened while openable, then locked: their content (new-entry button, rows, form) is shown");}
@@ -172,7 +184,7 @@ int main(){
             "Compact: narrow window, hidden editor, no new-entry button");
         auto channelRow=Get(FindText(window,"Canal : actuel")).fields.at("parent"),useRow=Get(FindText(window,"Copier")).fields.at("parent");
         const auto& listed=Get(entries).children;
-        Check(listed.size()>=3&&listed[listed.size()-3]==channelRow&&listed.back()==useRow&&!FindText(detail,"Copier")&&!FindText(detail,"Canal : actuel"),
+        Check(listed.size()>=3&&listed[listed.size()-2]==channelRow&&listed.back()==useRow&&!FindText(detail,"Copier")&&!FindText(detail,"Canal : actuel"),
             "Compact: the channel and use actions sit under the entries list");
         Check(FindText(window,"Choisis une entrée, puis Voyager, Envoyer ou Copier.")&&Get(savedRow).enums["set_isActivated"]==1,"Compact status explains the layout; the entry stays selected");
         const auto travelsBefore=travels;Click(FindText(window,"Voyager"));Check(travels==travelsBefore+1&&travelled.x==-25,"Compact travel uses the selected entry");
@@ -215,7 +227,7 @@ int main(){
         const auto backup=directory/"notebook-backup.json";std::filesystem::copy_file(path,backup,std::filesystem::copy_options::overwrite_existing);
         {std::ofstream corrupt(path,std::ios::binary|std::ios::trunc);corrupt<<"{";}
         OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
-        const std::string unreadable="Carnet illisible. Le fichier est conservé ; utilise Actualiser après correction.";
+        const std::string unreadable="Carnet illisible. Le fichier est conservé ; il sera relu dès qu’il aura été corrigé.";
         Check(FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"An unreadable notebook is reported at opening, saving disabled");
         Check(toolsUi::ChooseLayout("notebook",1)&&latestWindow==window&&FindText(window,unreadable),"The warning survives the compact layout");
         Check(toolsUi::ChooseLayout("notebook",0)&&FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"The warning survives the return to the full layout");
@@ -230,8 +242,102 @@ int main(){
             "After a failed save the window still follows the setting the menu marks");
         Check(toolsUi::ChooseLayout("notebook",0)&&!owner.settings.notebookCompact&&Get(window).dimensions["width"]==660,"One choice brings the full layout back");
         RestoreNotebookPanel();Check(!NotebookPanelCleanupPending()&&!Panel(window),"Layout scenario releases its window");
+        // r112: each position has its map pin button and the game's right-click
+        // menu; the file is read again by itself when it changes on disk.
+        owner.settings.notebookCompact=false;OpenNotebookPanel();TickNotebookPanel();window=latestWindow;inputs=Inputs(window);
+        Check(Panel(window)&&menuRows.size()==6&&rowMenu.entry&&rowMenu.done,"Every entry row gets the game's right-click menu");
+        auto zaap=FindText(window,"[-25,36]  Mon zaap <b>littéral</b>");Check(!!zaap,"The saved position is listed");
+        Check(Get(Get(zaap).fields.at("set_tooltip")).text=="Clic droit : Voyager, Afficher sur la carte ou Retirer de la carte.","A position's row tells its right-click menu");
+        auto line=Get(zaap).fields.at("parent");auto pin=Get(line).children.back();
+        Check(Get(pin).type->name=="DofusButtonCustom"&&Get(pin).enums["set_icon"]==145&&Get(pin).enums["display"]==0&&Get(pin).enums["set_mainStyle"]==2&&Get(line).children.front()==zaap,
+            "A flat flag button at the right of the position's name");
+        const auto zaapId=notebook::Read(path).entries.front().id;
+        Click(pin);
+        Check(pinShows==1&&pinned.contains(zaapId)&&Get(pin).enums["set_mainStyle"]==0&&FindText(window,"Repère placé sur la carte en [-25,36] : grande carte et mini-carte."),
+            "Clicked, the position's flag is placed and its button looks pressed");
+        Click(pin);Check(pinHides==1&&pinned.empty()&&Get(pin).enums["set_mainStyle"]==2&&FindText(window,"Repère retiré de la carte."),"Clicked again, the flag goes and the button is flat again");
+        failPin=true;Click(pin);
+        Check(pinned.empty()&&Get(pin).enums["set_mainStyle"]==2&&FindText(window,"La carte du jeu ne connaît pas ce monde : repère impossible."),"A refused pin is told and the button stays flat");failPin=false;
+        owner.settings.notebookPingButton=false;TickNotebookPanel();Check(Get(pin).enums["display"]==1,"Option off: no pin button, at once");
+        Click(pin);Check(pinShows==1&&pinned.empty(),"A hidden pin button does nothing");
+        owner.settings.notebookPingButton=true;TickNotebookPanel();Check(Get(pin).enums["display"]==0,"Option on again: the button is back without reopening the window");
+        ClickTab(window,"Notes");Check(Get(pin).enums["display"]==1,"Notes have no pin button");
+        notebook::Entry asked;auto note=FindType(window,"ListElementBasic","Plan");
+        Check(note&&!rowMenu.entry(note,asked)&&Get(Get(note).fields.at("set_tooltip")).text.empty(),"Notes have no right-click menu, nor its tooltip");
+        ClickTab(window,"Positions");
+        Check(rowMenu.entry(zaap,asked)&&asked.id==zaapId&&asked.x==-25&&asked.y==36&&asked.title=="Mon zaap <b>littéral</b>","A position's row gives its position to the right-click menu");
+        Check(!rowMenu.entry(Element("ForeignRow"),asked),"Another element has no position");
+        pinned[zaapId]=asked;rowMenu.done(asked,"Repère placé sur la carte en [-25,36] : grande carte et mini-carte.");
+        Check(Get(pin).enums["set_mainStyle"]==0&&FindText(window,"Repère placé sur la carte en [-25,36] : grande carte et mini-carte."),"After a menu action the button follows the flag and the status tells");
+        pinned.clear();CheckNotebookPanel();
+        Check(Get(pin).enums["set_mainStyle"]==2,"A flag removed from the map's own menu is seen at the next check");
+        // The file is checked every half second at the module's pump, not every frame.
+        notebook::Entry other;other.kind=notebook::Kind::Position;other.title="Ajoutée ailleurs";other.x=3;other.y=4;other.world=1;
+        CheckNotebookPanel();notebook::Save(path,other);TickNotebookPanel();
+        Check(!FindText(window,"[3,4]  Ajoutée ailleurs"),"Within the half second the file is not read again");
+        Sleep(550);TickNotebookPanel();
+        Check(FindText(window,"[3,4]  Ajoutée ailleurs")&&FindText(window,"Carnet mis à jour : le fichier a changé.")&&FindText(window,"2 entrées"),"Half a second later the position saved elsewhere appears");
+        // A pinned position moves its flag when saved here or elsewhere.
+        Click(pin);Click(zaap);Get(inputs[0]).text="Mon zaap déplacé";Get(inputs[1]).text="-24";Click(FindText(window,"Enregistrer"));
+        Check(pinShows==3&&pinnedEntry.id==zaapId&&pinnedEntry.title=="Mon zaap déplacé"&&pinnedEntry.x==-24&&pinned.contains(zaapId)&&FindText(window,"Enregistré dans le carnet."),
+            "Saving a pinned position moves its flag");
+        const auto entryNamed=[&](uint64_t id){auto entries=notebook::Read(path).entries;return *std::find_if(entries.begin(),entries.end(),[&](const notebook::Entry& entry){return entry.id==id;});};
+        auto edited=entryNamed(zaapId);edited.title="Renommé ailleurs";notebook::Save(path,edited);CheckNotebookPanel();
+        Check(Get(inputs[0]).text=="Renommé ailleurs"&&FindText(window,"[-24,36]  Renommé ailleurs"),"With no draft, the selected entry follows its saved version");
+        Check(pinShows==4&&pinnedEntry.title=="Renommé ailleurs","A pinned position edited elsewhere moves its flag too");
+        // Every save is a new file: one of the same size within the same clock tick is still seen.
+        CheckNotebookPanel();edited=entryNamed(zaapId);edited.title="Renommé ailleurZ";notebook::Save(path,edited);CheckNotebookPanel();
+        Check(Get(inputs[0]).text=="Renommé ailleurZ","A save of the same size right after the last check is seen");
+        // An unsaved draft is never replaced; after the notice, dropping it asks again.
+        auto otherRow=FindText(window,"[3,4]  Ajoutée ailleurs");
+        Get(inputs[0]).text="Mon brouillon";Click(otherRow);
+        Check(Get(inputs[0]).text=="Mon brouillon"&&FindText(window,"Modifications non enregistrées. Enregistre-les ou reclique pour les abandonner."),"A draft asks before being dropped");
+        edited=entryNamed(zaapId);edited.title="Encore changé";notebook::Save(path,edited);CheckNotebookPanel();
+        Check(Get(inputs[0]).text=="Mon brouillon"&&FindText(window,"Le carnet a changé ailleurs. Ton brouillon est conservé.")&&FindText(window,"[-24,36]  Encore changé"),
+            "The list follows the file, an unsaved draft is never replaced");
+        Click(otherRow);Check(Get(inputs[0]).text=="Mon brouillon"&&FindText(window,"Modifications non enregistrées. Enregistre-les ou reclique pour les abandonner."),
+            "After the notice one click asks again: the draft is not dropped silently");
+        Click(FindText(window,"Enregistrer"));
+        Check(Get(inputs[0]).text=="Mon brouillon"&&FindText(window,"Cette entrée a changé ailleurs. La resélectionner dans la liste charge sa nouvelle version et abandonne ton brouillon."),
+            "Saving the draft over the newer version is refused and the draft kept");
+        Click(zaap);Click(zaap);Check(Get(inputs[0]).text=="Encore changé","Selecting the entry again (confirmed) loads its new version");
+        // A draft of an entry deleted elsewhere becomes a new entry.
+        Get(inputs[0]).text="Brouillon orphelin";const auto doomed=entryNamed(zaapId);notebook::Delete(path,doomed.id,doomed.version);CheckNotebookPanel();
+        Check(Get(inputs[0]).text=="Brouillon orphelin"&&FindText(window,"Cette entrée a été supprimée ailleurs. Ton brouillon est conservé : Enregistrer en fera une nouvelle entrée.")&&
+            !Get(FindText(window,"Supprimer")).enabled,"A draft of an entry deleted elsewhere is kept as a new entry, which cannot be deleted");
+        Check(pinHides==2&&!pinned.contains(zaapId),"The deleted position's pin left the map");
+        Click(FindText(window,"Enregistrer"));
+        const auto revived=notebook::Read(path).entries.back();
+        Check(revived.id!=zaapId&&revived.title=="Brouillon orphelin"&&revived.x==-24&&FindText(window,"Enregistré dans le carnet."),"Enregistrer saves it as a new entry");
+        // A file held a moment by another program: unreadable, then read again unchanged.
+        notebook::Entry third;third.kind=notebook::Kind::Position;third.title="Pendant un verrou";third.x=5;third.y=6;third.world=1;notebook::Save(path,third);
+        const auto held=CreateFileW(path.c_str(),GENERIC_READ,0,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);Check(held!=INVALID_HANDLE_VALUE,"Fixture exclusive handle");
+        CheckNotebookPanel();Check(FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"A file held by another program is told, saving disabled");
+        CloseHandle(held);CheckNotebookPanel();
+        Check(!FindText(window,unreadable)&&Get(FindText(window,"Enregistrer")).enabled&&FindText(window,"[5,6]  Pendant un verrou"),"Released, it is read again at the next check though unchanged");
+        // A recreated file numbers from 1 again: another position taking a pinned id does not get its pin.
+        const auto listedNow=notebook::Read(path).entries;
+        const auto otherId=std::find_if(listedNow.begin(),listedNow.end(),[](const notebook::Entry& entry){return entry.title=="Ajoutée ailleurs";})->id;
+        otherRow=FindText(window,"[3,4]  Ajoutée ailleurs");auto otherPin=Get(Get(otherRow).fields.at("parent")).children.back();
+        Click(otherPin);Check(pinned.contains(otherId),"Fixture pin on the position added elsewhere");
+        {std::ofstream recreated(path,std::ios::binary|std::ios::trunc);
+            recreated<<R"({"schema":1,"nextId":)"<<otherId+1<<R"(,"entries":[{"id":)"<<otherId<<R"(,"version":1,"kind":"position","title":"Autre position","body":"","x":9,"y":9,"world":1,"map":0,"channel":0}]})";}
+        CheckNotebookPanel();
+        Check(FindText(window,"[9,9]  Autre position")&&!pinned.contains(otherId)&&pinHides==3,"The pin of the old entry does not stay on the new one");
+        auto lastRow=FindText(window,"[9,9]  Autre position");auto lastPin=Get(Get(lastRow).fields.at("parent")).children.back();
+        Click(lastPin);Click(lastRow);Click(FindText(window,"Supprimer"));Click(FindText(window,"Confirmer la suppression"));
+        Check(pinHides==4&&pinned.empty()&&notebook::Read(path).entries.empty()&&FindText(window,"Entrée supprimée."),"Deleting a pinned position here takes its flag off the map");
+        RestoreNotebookPanel();Check(!NotebookPanelCleanupPending()&&!Panel(window)&&menuRows.empty(),"The row menus are released with the window");
+        // The row tells its right-click menu only where it has one, naming what it offers.
+        notebook::Entry tip;tip.kind=notebook::Kind::Position;tip.title="Info-bulle";tip.x=7;tip.y=7;tip.world=1;notebook::Save(path,tip);
+        menusAvailable=false;OpenNotebookPanel();TickNotebookPanel();window=latestWindow;auto tipRow=FindText(window,"[7,7]  Info-bulle");
+        Check(tipRow&&menuRows.empty()&&Get(Get(tipRow).fields.at("set_tooltip")).text.empty(),"Without the game's menu a row tells none");
+        RestoreNotebookPanel();menusAvailable=true;pinsAvailable=false;OpenNotebookPanel();TickNotebookPanel();window=latestWindow;tipRow=FindText(window,"[7,7]  Info-bulle");
+        Check(tipRow&&Get(Get(tipRow).fields.at("set_tooltip")).text=="Clic droit : Voyager."&&Get(Get(Get(tipRow).fields.at("parent")).children.back()).enums["display"]==1,
+            "Without the game's flags the menu only travels and no pin button shows");
+        RestoreNotebookPanel();pinsAvailable=true;
         toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
         std::filesystem::remove_all(directory);
-        std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text and cleanup\n";return 0;
+        std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text, map pin buttons, row menus, automatic reload and cleanup\n";return 0;
     }catch(const std::exception& error){std::cerr<<"FAIL: "<<error.what()<<'\n';for(const auto& message:logs)std::cerr<<message<<'\n';return 1;}
 }

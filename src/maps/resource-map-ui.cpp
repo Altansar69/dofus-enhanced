@@ -319,8 +319,13 @@ void ApplyVisibility(State& state){
         const bool center=module->settings.miniMapCenterButton;
         if(state.centerShown!=center){Style(state.center.get(),"display",center?0:1);state.centerShown=center;}
     }
-    if(state.shown==state.enabled)return;
-    Style(state.resources.get(),"display",state.enabled?0:1);state.shown=state.enabled;
+    // The mini-map's bar of the six jobs, with the list it opens, also follows
+    // « Barre des ressources sur la mini-carte »: unchecked, it leaves while the
+    // markers of the chosen resources stay (resource-map-render follows
+    // resourceMiniMapEnabled only); the choice is then made on the big map.
+    const bool shown=state.enabled&&(!state.mini||module->settings.resourceMiniMapBar);
+    if(state.shown==shown)return;
+    Style(state.resources.get(),"display",shown?0:1);state.shown=shown;
 }
 void Poll(State& state){
     // External reload/reset wins over stale visual values. Native CheckboxCustom

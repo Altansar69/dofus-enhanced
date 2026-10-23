@@ -1,12 +1,14 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.12.0** (révision r111).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.13.0** (révision r112).
 
 Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
-raccourcis de trajet, ressources et archimonstres manquants sur la carte, ouvertures
-Kralamoure dans le calendrier et panneau natif de recherche manuelle DofusDB.
-Carnet personnel et planification de l’XP des métiers.
+trajets rapides (passage secret des Roublards compris), ressources, archimonstres
+manquants et infobulles enrichies sur les cartes, ouvertures Kralamoure dans le
+calendrier et panneau natif de recherche manuelle DofusDB. Carnet personnel avec
+repères sur la carte, planification de l’XP des métiers et affichage des performances.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](../package/LISEZ-MOI.txt).
+Les nouveautés de la 1.13.0 sont vérifiées hors jeu ; leur rendu en jeu reste à confirmer.
 
 ## Mises à jour
 
@@ -46,8 +48,8 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence, Animations,
-Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
-Chargement et mises à jour et À propos. La version chargée (x.y.z et
+Surbrillance, Cartes, Carnet, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
+Performances, Chargement et mises à jour et À propos. La version chargée (x.y.z et
 révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
 et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 étiquette `rN` pour le vérificateur de mises à jour.
@@ -98,8 +100,12 @@ Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
 **Notes** et **Messages**, la liste des entrées sans en-tête (entrée courante
 surlignée, pagination et compteur) et une section **Détail**
 (titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
-**Ma position**, puis **Voyager**, **Envoyer**, **Préparer dans le chat** et
-**Copier** selon l’onglet), et une ligne d’état avec **Actualiser**.
+**Ma position**, puis, juste en dessous, **Voyager**, **Envoyer**, **Préparer
+dans le chat** et **Copier** selon l’onglet), et une ligne d’état.
+Le fichier du carnet est relu de lui-même quand il change (un autre client, une
+position ajoutée depuis une carte, une correction à la main) : la liste suit
+sans bouton à presser, et un brouillon en cours n’est jamais remplacé. Un
+fichier illisible est signalé et conservé ; il est relu dès qu’il est corrigé.
 Un brouillon modifié demande une confirmation avant d’être abandonné.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
@@ -110,6 +116,26 @@ Entrée), sur le canal choisi avec le bouton **Canal** : actuel (celui du chat),
 Général, Équipe, Guilde, Alliance, Groupe, Commerce ou Recrutement. Ce canal est
 enregistré avec le message. **Préparer dans le chat** place le texte dans le
 brouillon sans l’envoyer.
+
+Dans l’onglet **Positions**, le petit bouton drapeau à droite de chaque nom place
+un repère sur cette position : le drapeau du jeu, au nom de l’entrée
+(« Carnet : … »), visible sur la grande carte et la mini-carte. Le bouton reste
+enfoncé tant que le repère est affiché ; un second clic le retire. Le repère
+suit la position quand elle est modifiée et disparaît avec elle quand elle est
+supprimée ; il se retire aussi par le menu du drapeau sur la carte. Seul le
+repère du carnet est retiré, jamais les drapeaux posés par le joueur. Le bouton
+se masque dans **Options → Dofus Enhanced → Carnet**.
+Un clic droit sur une position de la liste ouvre le menu du jeu : **Voyager**
+(le trajet du mod, comme le bouton du même nom) et **Afficher sur la carte** ou
+**Retirer de la carte**.
+
+Au clic droit sur une case de la grande carte ou de la mini-carte, l’entrée
+**Ajouter aux positions**, placée après les entrées de téléportation, enregistre
+cette case dans les positions du carnet : coordonnées, monde, carte du jeu et,
+pour titre, le nom de sa zone. Le carnet n’a pas besoin d’être ouvert ; le chat
+local le confirme (« Carnet : … »). Une case déjà enregistrée n’est pas ajoutée
+deux fois. Cette entrée se retire dans les mêmes options ; **Voyager jusqu’à
+cette position** et les entrées du Havre-Sac ne changent pas.
 
 Le carnet est enregistré localement à côté des préférences partagées, hors des
 dossiers de révision. Une modification concurrente de la même entrée est signalée
@@ -242,6 +268,27 @@ n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu r
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
 
+## Infobulles des cartes et dimension
+
+Au survol d’une case, la grande carte et la mini-carte affichent l’infobulle du
+jeu avec ses coordonnées [x,y]. Le mod ne réécrit que ce texte : **Dimension
+avec les coordonnées sur la grande carte** et **… sur la mini-carte** y ajoutent
+la dimension de la carte affichée, par exemple [4,-19, Monde des Douze] ou
+Incarnam ; **Nom de la zone au survol de la mini-carte** affiche au-dessus le
+nom de la zone de la case (par exemple Village d’Amakna). Le clic, le glisser,
+le zoom, le double-clic et le clic droit des cartes ne changent pas ; toutes les
+cases décochées, l’infobulle redevient celle du jeu.
+
+**Barre des ressources sur la mini-carte** décochée retire de la mini-carte la
+barre des six métiers et sa liste ; les repères des ressources choisies restent
+affichés tant que **Ressources sur la mini-carte** est cochée, et le choix se
+fait depuis la grande carte.
+
+Dans le chat, **Options → Dofus Enhanced → Chat → Dimension avec les coordonnées
+dans le chat** affiche les positions et les groupes de monstres partagés sous la
+forme [x,y, dimension] ; le lien reste celui du jeu (clic, infobulle), le bouton
+TP ne change pas, et les coordonnées tapées à la main restent telles quelles.
+
 ## Mode « Ocre » de la carte
 
 Avec **Options → Dofus Enhanced → Cartes → Archimonstres manquants sur la
@@ -251,29 +298,36 @@ active le mode Ocre et quitte Anomalies ou Conquête ; un second clic, la croix 
 panneau, le choix d’un autre mode ou la fermeture de la carte le quitte,
 comme pour les modes du jeu.
 
-Les zones colorées sont celles où il te manque des archimonstres ou des boss de
-donjon de L’éternelle moisson. Un monstre manque quand il n’est pas validé dans
-la quête, qu’il n’est pas dans ton sac et que Metamob (avec une clé enregistrée)
-n’en indique aucun. La couleur suit le nombre de manquants dans la zone : 1, 2,
-3, 4 à 5, puis 6 et plus, du jaune au pourpre. Tant que l’avancement de la quête
-n’est pas connu, rien n’est coloré et le panneau dit d’ouvrir le journal de
-quêtes.
+Toutes les zones qui abritent des archimonstres ou des boss de donjon de
+L’éternelle moisson sont colorées. Un monstre manque quand il n’est pas validé
+dans la quête, qu’il n’est pas dans ton sac et que Metamob (avec une clé
+enregistrée) n’en indique aucun. La couleur suit le nombre de manquants dans la
+zone : 1, 2, 3, 4 à 5, puis 6 et plus, du jaune au pourpre ; une zone où il ne
+te manque rien est bleue (« Complet »), un peu plus légère. Tant que
+l’avancement de la quête n’est pas connu, rien n’est coloré et le panneau dit
+d’ouvrir le journal de quêtes.
 
 Le panneau **Ocre** reprend celui des anomalies : **Rechercher** (une zone, un
-territoire ou un monstre manquant, sans tenir compte des accents), **Tous les
+territoire ou un monstre, sans tenir compte des accents), **Tous les
 territoires**, **Niveau** de … à … (le niveau de la zone) et **Tous /
 Archimonstres / Boss de donjon** (uniquement les 286 archimonstres et 51 boss de
-la quête). Les colonnes Territoire, Niveau et Manquants se trient ; l’infobulle
-d’une ligne liste les monstres manquants. Un clic sur une ligne centre la carte
-sur la zone : sur son entrée pour un donjon, en changeant de monde si besoin. Le
-bas du panneau donne la légende des couleurs et l’état des lectures (Ocre, sac,
-Metamob).
+la quête). La liste donne d’abord les zones où il te manque des monstres, puis
+les zones complètes ; les colonnes Territoire, Niveau et Manquants se trient. Un
+clic sur une ligne centre la carte sur la zone (sur son entrée pour un donjon,
+en changeant de monde si besoin) et ouvre sous la ligne **Il te manque** et **Tu
+as** : chaque monstre avec son icône d’archimonstre ou de boss et, pour ceux que
+tu as, pourquoi (validé dans l’Ocre, dans le sac, sur Metamob avec sa quantité
+quand elle dépasse 1).
+Un second clic sur la ligne la referme. Le bas du panneau donne la légende des
+couleurs, « Complet » compris, et l’état des lectures (Ocre, sac, Metamob).
 
 **Archimonstres manquants sur la mini-carte** (décoché par défaut) colore les
-mêmes zones sur la mini-carte, selon le choix Tous / Archimonstres / Boss de
-donjon du panneau (sans sa recherche ni ses filtres de territoire et de
-niveau). Les deux options décochées : ni carré, ni zones, ni lecture. La 1.12.0
-est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+mêmes zones sur la mini-carte, avec les mêmes couleurs, selon le choix Tous /
+Archimonstres / Boss de donjon du panneau (sans sa recherche ni ses filtres de
+territoire et de niveau). Les deux options décochées : ni carré, ni zones, ni
+lecture. La 1.13.0 corrige la coloration, invisible en 1.12.0 : le jeu crée ces
+zones transparentes et le mod ne les rendait pas visibles. La 1.13.0 est vérifiée
+hors jeu ; son rendu en jeu reste à confirmer.
 
 ## Trajets et chat
 
@@ -287,16 +341,38 @@ Déjà sur la carte que le jeu vise pour ces coordonnées (hors Havre-Sac) : pas
 de trajet, « TP : tu es déjà sur [x,y]. ». La carte actuelle compte toujours
 comme départ, même coupée en zones ; un zaap sur une carte coupée en zones
 compte une étape de plus. La destination reste la carte que le jeu choisit
-pour ces coordonnées.
+pour ces coordonnées. La recherche du départ est quasi instantanée : le graphe
+de déplacement du jeu est copié une fois (gardé tant que le jeu garde le même), et seules les
+conditions liées au personnage sont redemandées au jeu à chaque recherche.
 
-**Déplacements → Passer par le temple Roublard** (coché par défaut) laisse le
-trajet du mod passer par le temple Roublard, sous le cimetière d’Amakna, et par
-les téléportations de sa statue quand elles le raccourcissent. Les portes du
-temple sont ouvertes à tous ; le jeu réserve la statue aux Roublards : quête
-« Dévotion à Dralbour » pour le Temple des Douze, « La colère des dieux » pour
-le Domaine des dieux (chaque classe a la même statue dans son propre temple).
-Décoché, le mod choisit son départ sans passer par le temple ; l’autopilote du
-jeu, qui finit le trajet, garde ses propres chemins.
+**Déplacements → Passage secret et temple des Roublards** (coché par défaut).
+Bad Aboum, dans la crypte sous la vieille chapelle de la Cité d’Astrub [5,-15],
+conduit au temple Roublard [10,16] (sous le cimetière d’Amakna) et au village
+d’Amakna [3,3], et en revient. Aucune classe n’est demandée, mais ton personnage
+doit avoir fait ce qui lui ouvre ces trajets : le jeu en décide et le mod ne
+peut pas le savoir à l’avance. Quand ce passage raccourcit le trajet, le chat
+l’annonce (« TP : le trajet passe par le passage secret des Roublards, d’Astrub
+au temple Roublard. »), l’autopilote du jeu conduit ton personnage jusqu’à Bad
+Aboum (par les égouts d’Astrub pour la crypte), puis le mod lui parle, clique la
+destination comme toi, attend la téléportation et calcule la suite du trajet
+depuis l’arrivée. Il ne choisit jamais une réponse payante, n’agit pas en combat
+et s’arrête comme tout trajet si tu interromps l’autopilote, quittes la carte ou
+lances un autre trajet.
+
+Le mod ne sait pas d’avance ce que Bad Aboum proposera : il le lui demande
+pendant le trajet. S’il est introuvable, ne répond pas ou ne propose pas ce
+trajet à ce personnage, le chat l’explique (« TP : … ; le trajet continue sans
+le passage secret. ») et le trajet continue sans lui ; un refus est retenu pour
+ce personnage et ce sens, et un trajet qui a échoué n’est pas retenté pendant
+30 minutes. Toute action de ta part (un autre dialogue, le Havre-Sac,
+l’autopilote du jeu, l’option décochée) arrête le trajet. Le mod apprend en le
+voyant où Bad Aboum se tient côté temple (dès un premier passage dans ce sens,
+ou quand tu passes près de lui) et où arrive chaque trajet, y compris ceux que
+tu fais toi-même ; il le garde, par personnage, dans
+`DofusMiniatures-roublard-passage.json`, à côté des préférences partagées. Le
+trajet peut aussi traverser le temple ; sa statue reste réservée aux Roublards
+par le jeu. Décoché, le mod n’emprunte ni le passage ni le temple ; l’autopilote
+du jeu, qui finit le trajet, garde ses propres chemins.
 
 **Options → Dofus Enhanced → Chat** affiche ou masque séparément, à côté des
 positions et des archimonstres ou boss de L’éternelle moisson partagés dans le
@@ -381,21 +457,53 @@ renvoyées automatiquement pendant la session.
 
 **Options → Dofus Enhanced → Calendrier → Ouvertures Kralamoure dans le
 calendrier** (coché par défaut) n’agit qu’avec une clé Metamob enregistrée. Dans
-le calendrier du jeu, une rangée « Kralamoure · Metamob » s’insère sous les jours
-de la semaine. Pour chaque jour, elle montre jusqu’à trois ouvertures planifiées
-sur Metamob pour le serveur de ta quête Ocre, sous la forme « 21:00 · 12 persos »
-(heure de ce PC, changements d’heure compris), puis « +N autres ». Les ouvertures
-passées sont grisées. Le survol donne la date, l’organisateur, les inscrits et la
-description ; un clic ouvre l’événement sur metamob.fr. Les flèches de semaine
-sont suivies ; les semaines passées ne sont pas lues.
+le calendrier du jeu, « Mes calendriers » gagne une entrée « Kralamoure », en
+tête de liste, avec son icône (une vague et un monstre) et sa couleur violette.
+Sa case est cette option : la cocher ou la décocher dans le calendrier change
+l’option, et inversement.
 
-Les ouvertures ne sont lues que calendrier ouvert : à son ouverture, puis au plus
-toutes les 10 minutes, jamais avant une capture en attente d’envoi. Après un
-échec, nouvel essai 30 s plus tard, puis à intervalle doublé jusqu’à 15 minutes.
-Le serveur est celui de ta quête Ocre Dofus Unity sur Metamob (avec plusieurs
-quêtes, celle dont « Personnage à contacter » indique ce personnage). Aucun
-message dans le chat : un état court s’affiche dans la rangée (lecture, aucune
-ouverture cette semaine, Metamob injoignable…). Rendu en jeu à confirmer.
+Cochée, une ligne Kralamoure s’ajoute sous les jours de la semaine, comme celles
+des autres événements : la bannière à la couleur de Kralamoure, puis une carte
+par ouverture planifiée sur Metamob pour le serveur de ta quête Ocre, sur son
+jour, avec « Début : 21h00 » (heure de ce PC, changements d’heure compris) et le
+nombre de personnages inscrits. Un jour à plusieurs ouvertures ajoute des
+lignes, comme le jeu pour des événements simultanés ; au-delà de trois, la
+dernière carte indique « +N ouvertures » et ouvre la liste des ouvertures sur
+metamob.fr. Les ouvertures passées sont grisées.
+Le survol d’une carte donne la date, l’organisateur, les inscrits et la
+description ; un clic ouvre l’événement sur metamob.fr. Les flèches de semaine
+sont suivies ; les semaines passées ne sont pas lues. Sans ouverture à montrer,
+la ligne dit pourquoi (lecture en cours, aucune ouverture cette semaine, Metamob
+injoignable…).
+
+Les ouvertures ne sont lues que calendrier ouvert et Kralamoure coché : à
+l’ouverture, puis au plus toutes les 10 minutes, jamais avant une capture en
+attente d’envoi. Après un échec, nouvel essai 30 s plus tard, puis à intervalle
+doublé jusqu’à 15 minutes. Le serveur est celui de ta quête Ocre Dofus Unity sur
+Metamob (avec plusieurs quêtes, celle dont « Personnage à contacter » indique ce
+personnage). Sans clé Metamob utilisable, ni entrée ni ligne. Les calendriers du
+jeu, leurs cases et leurs couleurs ne sont pas modifiés.
+
+## Performances
+
+**Options → Dofus Enhanced → Performances → Afficher les FPS et la mémoire**
+(décoché par défaut) affiche dans un coin de l’écran un petit cadre sombre et
+semi-transparent, mis à jour deux fois par seconde. La première ligne donne les
+images par seconde (FPS) et la durée d’une image : la moyenne sur la dernière
+seconde et, entre parenthèses, la plus longue de cette seconde (un à-coup y
+reste visible une seconde). La deuxième ligne donne la mémoire vive occupée par
+le jeu (plage de travail) et sa mémoire privée. La troisième donne le tas géré,
+la mémoire des objets du jeu gérée par son ramasse-miettes (utilisée /
+réservée), et la part du processeur utilisée par le jeu sur l’ensemble des cœurs
+(100 % : tous les cœurs occupés).
+
+**Position de l’affichage des performances** choisit le coin ; en haut à droite,
+le cadre se place sous les boutons du menu du jeu. Le cadre suit l’échelle de
+l’interface et ne capte ni les clics ni le clavier ; il passe au-dessus du HUD
+et des fenêtres du jeu, mais les menus, fenêtres de confirmation, infobulles et
+écrans de chargement restent au-dessus de lui, et il disparaît avec l’interface
+quand le jeu la masque. Décoché, il disparaît aussitôt et plus rien n’est
+mesuré.
 
 ## Compilation et publication
 

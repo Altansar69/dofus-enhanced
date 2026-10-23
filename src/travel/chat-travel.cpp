@@ -1,8 +1,10 @@
 #include "travel/chat-travel.hpp"
 #include "travel/chat-travel-policy.hpp"
 #include "travel/chat-route.hpp"
+#include "travel/roublard-passage.hpp"
 #include "core/module.hpp"
 #include "maps/map-transitions.hpp"
+#include <algorithm>
 
 // Ends the journey but keeps the passive trip watch (defined below).
 void EndJourney();
@@ -37,6 +39,14 @@ uint64_t nextPlanningSlice=0;
 // and world, the one its autopilot travels to. The route search, already there,
 // the arrival and the onward trip use this map only.
 int64_t targetMap=0;
+// The Roublards' secret passage the route comparison chose (roublard_passage):
+// its shortcut id and Bad Aboum's map, the autopilot's target before it. After a
+// passage, or when one fails, the rest of the trip is planned without shortcuts.
+int passageLink=-1;
+int64_t passageMap=0;
+bool passageOff=false;
+std::vector<int> plannedLinks;
+uint64_t nextObservation=0;
 Method resolve{}, currentMap{}, inBag{}, eligible{}, travel{}, interactives{}, interact{}, interactCtor{};
 Method teleport{}, teleportCtor{}, funds{}, mapInfo{}, subarea{}, world{};
 Method isKnown{}, quote{}, quoteCtor{};
@@ -206,6 +216,13 @@ void Plan(std::vector<chat_travel::Destination> choices,bool direct) {
         choices.push_back(here); zone=HereZone();
     }
     directPlan=direct;
+    // « Passage secret et temple des Roublards »: Bad Aboum's trips are offered to
+    // the comparison as shortcuts, only while the option is on.
+    std::vector<chat_route::Shortcut> shortcuts;
+    if(module->settings.travelRoublardTemple&&!passageOff)shortcuts=roublard_passage::Shortcuts(GetTickCount64());
+    plannedLinks.clear();
+    for(const auto& link:shortcuts)plannedLinks.push_back(link.id);
+    chat_route::SetShortcuts(std::move(shortcuts));
     chat_route::Begin(std::move(choices),targetMap,journey.sourceMap,zone,module->settings.travelRoublardTemple);
     journey.phase=Phase::Planning;
     Log("CHAT_TRAVEL comparing native traversable routes (map changes, teleport penalty 1)");
@@ -328,6 +345,18 @@ void CompletePlan() {
             "aucun trajet accessible depuis ta position ou tes zaaps connus. Vérifie l'accès à cette zone.");return;
     }
     Log("CHAT_TRAVEL selected departure map="+std::to_string(result.departure.map)+" routeScore="+std::to_string(result.steps));
+    passageLink=-1;passageMap=0;
+    if(result.shortcut>=0){
+        // Only a shortcut this comparison was given: Bad Aboum's map becomes the
+        // autopilot's target, the passage then starts there.
+        const bool offered=std::find(plannedLinks.begin(),plannedLinks.end(),result.shortcut)!=plannedLinks.end();
+        const auto entrance=offered?roublard_passage::Entrance(result.shortcut):0;
+        if(entrance){
+            passageLink=result.shortcut;passageMap=entrance;
+            Log("ROUBLARD_PASSAGE_ROUTE link="+std::to_string(passageLink)+" entrance="+std::to_string(passageMap)+" departure="+std::to_string(result.departure.map)+" target="+std::to_string(targetMap));
+            Notice("le trajet passe par le passage secret des Roublards, "+roublard_passage::Describe(passageLink)+".");
+        } else Log("ROUBLARD_PASSAGE_ROUTE_IGNORED link="+std::to_string(result.shortcut));
+    }
     if(result.departure.map==journey.sourceMap)journey.Teleport(journey.sourceMap,GetTickCount64());
     else if(directPlan)QuoteDirect(result.departure);
     else RequestTeleport(freshSource,result.departure.map,result.departure.cost);
@@ -341,8 +370,11 @@ bool ArrivalReady() {
     return data.get() && api.Value<int>(api.Field(data.get(),"id"))==journey.arrivalMap &&
         api.Value<bool>(api.Invoke(eligible,character.get()));
 }
+// The autopilot's target: Bad Aboum's map before a passage, else the game's own
+// destination map.
+int64_t Goal() { return passageLink>=0?passageMap:targetMap; }
 void RequestOnward() {
-    auto map=targetMap;
+    auto map=Goal();
     journey.Walk(GetTickCount64()); // Commit before the native action can reenter.
     // esg.zhy resolves the coordinates again and sends their last map in the
     // game's autopilot request, which faw.bcdl hands to faw.bcdq. The same native
@@ -352,17 +384,24 @@ void RequestOnward() {
     api.Invoke(travel,routeService.get(),{&map,&immediate});
     journey.onwardAccepted=api.Value<bool>(api.Invoke(routeActive,routeService.get())) ||
         api.Value<bool>(api.Field(routeService.get(),"dsjd"));
-    Log("CHAT_TRAVEL_ONWARD_REQUEST attempt="+std::to_string(journey.onwardAttempts)+" target="+std::to_string(targetMap));
+    Log("CHAT_TRAVEL_ONWARD_REQUEST attempt="+std::to_string(journey.onwardAttempts)+" target="+std::to_string(map));
 }
 void ContinueOnward() {
+    const auto goal=Goal();
     const bool active=api.Value<bool>(api.Invoke(routeActive,routeService.get()));
     const bool pending=api.Value<bool>(api.Field(routeService.get(),"dsjd"));
     Ref destination(api.Field(routeService.get(),"dsjs"));
     const auto nativeTarget=destination.get()?api.Value<uint32_t>(api.Field(destination.get(),"id")):0;
-    if ((active || pending) && nativeTarget!=targetMap) {
+    if ((active || pending) && nativeTarget!=goal) {
         Cancel("onward replaced by another native destination","un autre trajet est actif ; la demande précédente est abandonnée."); return;
     }
-    if (active && nativeTarget==targetMap) {
+    if (passageLink>=0 && ((active && nativeTarget==goal) || Map()==goal)) {
+        // The journey goes on: the passage starts once the autopilot reached him.
+        Log("ROUBLARD_PASSAGE_WALK target="+std::to_string(goal)+" active="+std::to_string(active));
+        journey.WalkToPassage(goal,GetTickCount64());
+        return;
+    }
+    if (active && nativeTarget==goal) {
         const bool follows=Following();
         Log("CHAT_TRAVEL_ONWARD_ACTIVE target="+std::to_string(targetMap)+" following="+std::to_string(follows));
         StartWatch(); EndJourney();
@@ -383,6 +422,98 @@ void ContinueOnward() {
     }
     if (journey.onwardAccepted && journey.onwardAttempts==1) Log("CHAT_TRAVEL onward dropped right after acceptance; one retry");
     if (journey.Settled(ArrivalReady())) RequestOnward();
+}
+// The current map's scene is loaded (as ArrivalReady reads it, for any map).
+bool SceneReady(int64_t map) {
+    if (!map || MapTransitionLoading()) return false;
+    Ref scene(module->FindService("fpm"));
+    if (!scene.get() || api.object_get_class(scene.get())!=mapServiceClass ||
+        !api.Value<bool>(api.Invoke(mapReady,scene.get()))) return false;
+    Ref data(api.Invoke(mapData,scene.get()));
+    return data.get() && api.Value<int>(api.Field(data.get(),"id"))==map;
+}
+// A fresh trip toward the same destination from where the character is now,
+// without shortcuts: after the passage, or instead of it when it failed.
+void Replan(const std::string& reason) {
+    Log("CHAT_TRAVEL_REPLAN "+reason);
+    roublard_passage::Stop();
+    passageLink=-1;passageMap=0;passageOff=true;
+    const auto map=Map();
+    if (!map) { Cancel("no current map after the passage"); return; }
+    if (map==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
+    const auto target=journey.target;
+    journey.Clear(); journey.Begin(target,map,GetTickCount64());
+    freshList.reset(); freshSource=-1; quotedMap=0; quotedCost=-1; quoteReceived=false; directPlan=false; havenbagDeparture=false;
+    BeginDirect();
+}
+void BeginPassage() {
+    const auto now=GetTickCount64();
+    if (!roublard_passage::Start(passageLink,Map(),now)) {
+        Notice("le passage secret des Roublards n’est pas disponible ; le trajet continue sans lui.");
+        Replan("ROUBLARD_PASSAGE start refused"); return;
+    }
+    journey.Pass(now);
+}
+// The autopilot walks to Bad Aboum: its end on his map starts the passage, any
+// other end is the player's (or the game's) interruption, as for any trip.
+void ContinuePassageWalk() {
+    // « Passage secret et temple des Roublards » unticked meanwhile: no passage.
+    if (!module->settings.travelRoublardTemple) { Cancel("passage option unticked during the walk","option du passage secret des Roublards décochée : trajet arrêté."); return; }
+    const bool active=api.Value<bool>(api.Invoke(routeActive,routeService.get()));
+    const bool pending=api.Value<bool>(api.Field(routeService.get(),"dsjd"));
+    Ref destination(api.Field(routeService.get(),"dsjs"));
+    const auto nativeTarget=destination.get()?api.Value<uint32_t>(api.Field(destination.get(),"id")):0;
+    if ((active || pending) && nativeTarget!=passageMap) {
+        Cancel("passage walk replaced by another native destination","un autre trajet est actif ; la demande précédente est abandonnée."); return;
+    }
+    if (Map()==passageMap) {
+        journey.idleSamples=0;
+        if (!active && !pending && journey.Settled(ArrivalReady())) BeginPassage();
+        return;
+    }
+    journey.readySamples=0;
+    if (active || pending) { journey.idleSamples=0; return; }
+    if (++journey.idleSamples>=3) Cancel("passage walk interrupted before Bad Aboum","trajet interrompu avant le passage secret des Roublards.");
+}
+void ContinuePassage() {
+    constexpr const char* interrupted="trajet interrompu pendant le passage secret des Roublards.";
+    if (!module->settings.travelRoublardTemple) { Cancel("passage option unticked during the passage","option du passage secret des Roublards décochée : trajet arrêté."); return; }
+    // The player's own moves while Bad Aboum is talked to: the Havre-Sac, or a
+    // trip of the game's autopilot (his own, or the party follow).
+    if (api.Value<bool>(api.Invoke(inBag,character.get()))) { Cancel("passage aborted: Havre-Sac",interrupted); return; }
+    if (api.Value<bool>(api.Invoke(routeActive,routeService.get())) || api.Value<bool>(api.Field(routeService.get(),"dsjd"))) {
+        Cancel("passage aborted: the game's autopilot started",interrupted); return;
+    }
+    const auto map=Map();
+    const auto ready=map && SceneReady(map);
+    const auto result=roublard_passage::Step(map,ready,GetTickCount64());
+    switch (result.outcome) {
+    case roublard_passage::Outcome::Running: return;
+    case roublard_passage::Outcome::Arrived:
+        Notice("passage secret des Roublards emprunté ; suite du trajet.");
+        Replan("ROUBLARD_PASSAGE arrived map="+std::to_string(result.map)); return;
+    case roublard_passage::Outcome::Failed:
+        Notice(result.notice);
+        Replan("ROUBLARD_PASSAGE failed: "+result.reason); return;
+    case roublard_passage::Outcome::Aborted:
+        // The trip stops there: never a new autopilot after the player's own move.
+        Cancel(("passage aborted: "+result.reason).c_str(),result.notice.empty()?interrupted:result.notice.c_str()); return;
+    }
+}
+// Learning from the player's own passages, whatever the journey (read-only).
+void ObservePassage() {
+    if (!installed || !Available() || !module->settings.travelRoublardTemple ||
+        !roublard_passage::Available() || roublard_passage::Running()) return;
+    // The planning pump runs every frame: look at most every 200 ms.
+    const auto now=GetTickCount64();
+    if (now<nextObservation) return;
+    nextObservation=now+200;
+    Ref who(module->FindService("fng"));
+    if (!who.get()) return;
+    Ref location(api.Invoke(currentMap,who.get()));
+    const auto map=location.get()?*static_cast<int64_t*>(api.FieldAddress(location.get(),"m_mapId")):0;
+    const bool ready=map && !api.Value<bool>(api.Invoke(inBag,who.get())) && SceneReady(map);
+    roublard_passage::Observe(map,ready,now);
 }
 }
 void StartChatTravel(ChatTpTarget target) {
@@ -452,6 +583,7 @@ void StartHavenbagZaap(int64_t map) {
 void TickChatTravel() {
     if (!dispatching) {
         try { TickWatch(); } catch (const std::exception& e) { Log(std::string("AUTOTRIP_WATCH_ERROR ")+e.what()); watch=Watch{}; }
+        try { ObservePassage(); } catch (const std::exception& e) { Log(std::string("ROUBLARD_PASSAGE_OBSERVE_ERROR ")+e.what()); }
     }
     if (journey.phase==Phase::Idle || dispatching) return;
     if (journey.phase==Phase::Planning) {
@@ -464,6 +596,7 @@ void TickChatTravel() {
         if (!SameSession()) { Cancel("cancelled: session or combat","trajet annulé : le contexte du personnage a changé.");return; }
         if (journey.Expired(GetTickCount64())) { Cancel("cancelled: timeout","délai dépassé pendant la préparation du trajet."); return; }
         if (havenbagDeparture && journey.phase!=Phase::Arrival && journey.phase!=Phase::Onward &&
+            journey.phase!=Phase::PassageWalk && journey.phase!=Phase::Passage &&
             (!api.Value<bool>(api.Invoke(inBag,character.get())) || Map()!=journey.sourceMap)) {
             Cancel("left Havenbag during preparation"); return;
         }
@@ -486,9 +619,15 @@ void TickChatTravel() {
                 return;
             }
             if (journey.CanWalk(Map()) && Map()==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
+            // Departure on Bad Aboum's own map: no autopilot before the passage.
+            if (passageLink>=0 && journey.CanWalk(Map()) && Map()==passageMap) { journey.WalkToPassage(passageMap,GetTickCount64()); return; }
             if (journey.Settled(journey.CanWalk(Map()) && ArrivalReady())) RequestOnward();
         } else if (journey.phase==Phase::Onward) {
             ContinueOnward();
+        } else if (journey.phase==Phase::PassageWalk) {
+            ContinuePassageWalk();
+        } else if (journey.phase==Phase::Passage) {
+            ContinuePassage();
         }
     } catch (const std::exception& e) { Log(std::string("CHAT_TRAVEL_ERROR ")+e.what()); RestoreChatTravel();Notice("échec du calcul du trajet. Le détail est enregistré dans module.log."); }
 }
@@ -498,8 +637,9 @@ void TickChatTravelPlanning() {
     // their existing cadence. The shared slice gate prevents double pumping.
     if(journey.phase==Phase::Planning)TickChatTravel();
 }
-void EndJourney() { chat_route::Clear(); journey.Clear(); freshList.reset(); freshSource=-1; character.reset(); teleports.reset(); cached.reset(); compositor.reset(); cartography.reset(); routeService.reset(); quotedMap=targetMap=0; quotedCost=-1; quoteReceived=false;directPlan=false;teleportOnly=havenbagDeparture=false;nextPlanningSlice=0; }
-void RestoreChatTravel() { EndJourney(); watch=Watch{}; }
+void EndJourney() { chat_route::Clear(); journey.Clear(); freshList.reset(); freshSource=-1; character.reset(); teleports.reset(); cached.reset(); compositor.reset(); cartography.reset(); routeService.reset(); quotedMap=targetMap=0; quotedCost=-1; quoteReceived=false;directPlan=false;teleportOnly=havenbagDeparture=false;nextPlanningSlice=0;
+    roublard_passage::Stop(); passageLink=-1; passageMap=0; passageOff=false; plannedLinks.clear(); }
+void RestoreChatTravel() { EndJourney(); watch=Watch{}; roublard_passage::Restore(); }
 void PostChatNotice(const std::string& text) { PostNotice(text); }
 void InstallChatTravel() {
     chat_route::Install();
@@ -554,5 +694,8 @@ void InstallChatTravel() {
         localId=findEntity=entityCell=cellZone=nullptr;
         Log(std::string("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE ")+e.what());
     }
+    // The Roublards' secret passage: optional, its failure disables only itself
+    // (ROUBLARD_PASSAGE_UNAVAILABLE). Its learning lives beside the shared settings.
+    roublard_passage::Install(module?module->settingsPath:std::filesystem::path{});
     installed=true;
 }

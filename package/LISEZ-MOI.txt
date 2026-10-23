@@ -10,7 +10,58 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — RÉVISION 111 — VERSION 1.12.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — RÉVISION 112 — VERSION 1.13.0
+
+R112 — VERSION 1.13.0 : PASSAGE ROUBLARD, TRAJETS INSTANTANÉS, CARTE OCRE
+- Déplacements › « Passage secret et temple des Roublards » (coché par
+  défaut) : le trajet du mod peut emprunter le passage secret des Roublards.
+  Bad Aboum, dans la crypte sous la vieille chapelle de la Cité d’Astrub
+  [5,-15], conduit au temple Roublard [10,16] et au village d’Amakna [3,3],
+  et en revient. Quand c’est plus court, l’autopilote du jeu rejoint Bad
+  Aboum, puis le mod lui parle et choisit la destination comme un clic,
+  sans jamais rien payer, et le trajet continue depuis l’arrivée. Pas
+  besoin d’être Roublard : le jeu décide de l’accès, et un refus est retenu
+  pour ce personnage. Ce que le mod apprend (où se tient Bad Aboum, où
+  arrive chaque trajet) va dans DofusMiniatures-roublard-passage.json, à
+  côté des préférences partagées. Correction de la R111, qui ne traitait que
+  la statue du temple.
+- Trajets : la recherche du meilleur départ est désormais quasi instantanée
+  (elle pouvait prendre jusqu’à 5 secondes). Le mod copie une fois le graphe
+  de déplacement du jeu et y cherche lui-même le trajet ; il ne demande plus
+  au jeu, à chaque recherche, que les conditions liées au personnage
+  (quêtes, alignement…). Le trajet choisi ne change pas : même départ, même
+  nombre de cartes, mêmes règles (zones, temple, zones interdites à
+  l’autopilote).
+- Mode Ocre : la coloration des zones s’affiche enfin, sur la grande carte
+  comme sur la mini-carte (le jeu crée ses zones transparentes et la 1.12.0
+  ne les rendait pas visibles). Toutes les zones sont colorées, en bleu
+  « Complet » quand il ne te manque rien ; la liste donne les zones
+  incomplètes puis les complètes. Un clic sur une zone de la liste affiche,
+  sous la ligne, les monstres qu’il te manque et ceux que tu as (validé dans
+  l’Ocre, dans le sac ou sur Metamob).
+- Calendrier : les ouvertures Kralamoure de Metamob s’affichent comme les
+  événements du jeu (bannière, une carte par ouverture sur son jour,
+  infobulles du jeu) et « Kralamoure » rejoint « Mes calendriers » avec sa
+  couleur et son icône ; sa case est l’option du mod. Sans clé Metamob
+  utilisable, ni entrée ni ouverture.
+- Cartes : « Barre des ressources sur la mini-carte » masque la barre des
+  six métiers en gardant les repères ; « Nom de la zone au survol de la
+  mini-carte » ; « Dimension avec les coordonnées » sur la grande carte, sur
+  la mini-carte et dans le chat (trois options) : [x,y, Monde des Douze].
+  Les coordonnées tapées à la main dans le chat restent telles quelles.
+- Nouveau bloc Carnet : un bouton drapeau à droite de chaque position pose
+  le drapeau du jeu sur la carte (« Bouton de repère à côté des
+  positions ») ; clic droit sur une position : Voyager, Afficher sur la
+  carte ou Retirer de la carte ; « Ajouter aux positions » au clic droit
+  d’une case des deux cartes (option). « Utiliser » et « Actualiser »
+  disparaissent : le carnet se relit tout seul quand son fichier change,
+  sans jamais remplacer un brouillon.
+- Nouveau bloc Performances : « Afficher les FPS et la mémoire » (décoché
+  par défaut) et sa position : FPS, durée moyenne et la plus longue d’une
+  image, mémoire du jeu, tas géré et processeur, dans un coin de l’écran,
+  sans capter les clics.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R111 — VERSION 1.12.0 : MODE OCRE DE LA CARTE, KRALAMOURES, APPARENCE À LA CARTE
 - Cartes › « Archimonstres manquants sur la grande carte » (coché par

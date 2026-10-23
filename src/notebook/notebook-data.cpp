@@ -4,14 +4,15 @@
 #include <algorithm>
 #include <atomic>
 #include <charconv>
-#include <fstream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <stdexcept>
 
 namespace notebook {
 namespace {
 constexpr size_t MaxBytes = 4 * 1024 * 1024, MaxEntries = 256;
+constexpr int ReplaceRetries = 5; // 20 ms apart.
 using Json = nlohmann::json;
 struct Handle {
     HANDLE value = INVALID_HANDLE_VALUE;
@@ -77,17 +78,31 @@ int Integer(const Json& value) {
         throw std::runtime_error("Coordonnées du carnet invalides.");
     return static_cast<int>(number);
 }
+// The file's bytes, read through a handle that lets another client replace the
+// file meanwhile (FILE_SHARE_DELETE) and closed before anything is parsed;
+// nothing when the file is gone.
+std::optional<std::string> ReadBytes(const std::filesystem::path& path) {
+    Handle file(CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (file.value == INVALID_HANDLE_VALUE) {
+        if (GetLastError() == ERROR_FILE_NOT_FOUND) return std::nullopt;
+        throw std::runtime_error("Lecture du carnet impossible.");
+    }
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(file.value, &size) || size.QuadPart < 0 || static_cast<uint64_t>(size.QuadPart) > MaxBytes)
+        throw std::runtime_error("Fichier du carnet invalide ou trop volumineux.");
+    std::string bytes(static_cast<size_t>(size.QuadPart), '\0');
+    DWORD read = 0;
+    if (!bytes.empty() && (!ReadFile(file.value, bytes.data(), static_cast<DWORD>(bytes.size()), &read, nullptr) || read != bytes.size()))
+        throw std::runtime_error("Lecture du carnet impossible.");
+    return bytes;
+}
 Document LoadUnchecked(const std::filesystem::path& path) {
     if (!std::filesystem::exists(path)) return {};
-    if (!std::filesystem::is_regular_file(path) || std::filesystem::file_size(path) > MaxBytes)
-        throw std::runtime_error("Fichier du carnet invalide ou trop volumineux.");
-    std::ifstream file(path, std::ios::binary);
-    if (!file) throw std::runtime_error("Lecture du carnet impossible.");
-    std::string bytes(MaxBytes + 1, '\0');
-    file.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    bytes.resize(static_cast<size_t>(file.gcount()));
-    if (file.bad() || bytes.size() > MaxBytes) throw std::runtime_error("Lecture du carnet impossible.");
-    const auto json = Json::parse(bytes);
+    if (!std::filesystem::is_regular_file(path)) throw std::runtime_error("Fichier du carnet invalide ou trop volumineux.");
+    const auto bytes = ReadBytes(path);
+    if (!bytes) return {};
+    const auto json = Json::parse(*bytes);
     if (!json.is_object() || json.at("schema") != 1 || !json.at("entries").is_array() ||
         json.at("entries").size() > MaxEntries)
         throw std::runtime_error("Format du carnet inconnu. Le fichier est conservé.");
@@ -140,8 +155,23 @@ void Write(const std::filesystem::path& path, const Document& data) {
             throw std::runtime_error("Enregistrement du carnet impossible.");
     }
     Plain(path, true);
-    if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-        throw std::runtime_error("Remplacement du carnet impossible. Réessaie.");
+    // A reader of another client, a backup or a sync tool may hold the file for
+    // a moment: the replacement is tried again for about a tenth of a second.
+    for (int attempt = 0;; ++attempt) {
+        if (MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return;
+        const auto error = GetLastError();
+        if ((error != ERROR_ACCESS_DENIED && error != ERROR_SHARING_VIOLATION) || attempt >= ReplaceRetries)
+            throw std::runtime_error("Remplacement du carnet impossible. Réessaie.");
+        Sleep(20);
+    }
+}
+// Writers take the lock file, then reload, change and replace the notebook.
+template<class Change> auto Locked(const std::filesystem::path& path, Change change) {
+    auto lockPath = path; lockPath += L".lock"; Plain(lockPath, true);
+    Handle lock(CreateFileW(lockPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+    if (lock.value == INVALID_HANDLE_VALUE) throw std::runtime_error("Le carnet est utilisé par un autre client. Réessaie.");
+    return change();
 }
 }
 std::filesystem::path DataPath(const std::filesystem::path& settingsPath) {
@@ -189,33 +219,44 @@ Document Read(const std::filesystem::path& path) { return Load(Checked(path)); }
 Entry Save(const std::filesystem::path& input, Entry entry) {
     Validate(entry);
     const auto path = Checked(input);
-    auto lockPath = path; lockPath += L".lock"; Plain(lockPath, true);
-    Handle lock(CreateFileW(lockPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-    if (lock.value == INVALID_HANDLE_VALUE) throw std::runtime_error("Le carnet est utilisé par un autre client. Réessaie.");
-    auto data = Load(path);
-    if (!entry.id) {
-        if (entry.version || data.entries.size() >= MaxEntries || data.nextId >= UINT64_MAX - 1)
-            throw std::runtime_error("Le carnet est plein (256 entrées).");
+    return Locked(path, [&] {
+        auto data = Load(path);
+        if (!entry.id) {
+            if (entry.version || data.entries.size() >= MaxEntries || data.nextId >= UINT64_MAX - 1)
+                throw std::runtime_error("Le carnet est plein (256 entrées).");
+            entry.id = data.nextId++; entry.version = 1; data.entries.push_back(entry);
+        } else {
+            const auto found = std::find_if(data.entries.begin(), data.entries.end(), [&](const Entry& row) { return row.id == entry.id; });
+            if (found == data.entries.end()) throw std::runtime_error("Cette entrée a été supprimée ailleurs.");
+            if (found->version != entry.version || found->kind != entry.kind || entry.version >= UINT64_MAX - 1)
+                throw std::runtime_error("Cette entrée a changé ailleurs. La resélectionner dans la liste charge sa nouvelle version et abandonne ton brouillon.");
+            ++entry.version; *found = entry;
+        }
+        Write(path, data); return entry;
+    });
+}
+Entry AddPosition(const std::filesystem::path& input, Entry entry, bool& created) {
+    entry.kind = Kind::Position; entry.id = entry.version = 0; created = false;
+    Validate(entry);
+    const auto path = Checked(input);
+    return Locked(path, [&] {
+        auto data = Load(path);
+        // Checked under the lock: two clients adding the same cell keep one entry.
+        for (const auto& known : data.entries)
+            if (known.kind == Kind::Position && known.x == entry.x && known.y == entry.y && known.world == entry.world) return known;
+        if (data.entries.size() >= MaxEntries || data.nextId >= UINT64_MAX - 1) throw std::runtime_error("Le carnet est plein (256 entrées).");
         entry.id = data.nextId++; entry.version = 1; data.entries.push_back(entry);
-    } else {
-        const auto found = std::find_if(data.entries.begin(), data.entries.end(), [&](const Entry& row) { return row.id == entry.id; });
-        if (found == data.entries.end() || found->version != entry.version || found->kind != entry.kind || entry.version >= UINT64_MAX - 1)
-            throw std::runtime_error("Cette entrée a changé ailleurs. Recharge-la avant de modifier.");
-        ++entry.version; *found = entry;
-    }
-    Write(path, data); return entry;
+        Write(path, data); created = true; return entry;
+    });
 }
 void Delete(const std::filesystem::path& input, uint64_t id, uint64_t version) {
     const auto path = Checked(input);
-    auto lockPath = path; lockPath += L".lock"; Plain(lockPath, true);
-    Handle lock(CreateFileW(lockPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-    if (lock.value == INVALID_HANDLE_VALUE) throw std::runtime_error("Le carnet est utilisé par un autre client. Réessaie.");
-    auto data = Load(path);
-    const auto found = std::find_if(data.entries.begin(), data.entries.end(), [&](const Entry& row) { return row.id == id; });
-    if (found == data.entries.end() || found->version != version)
-        throw std::runtime_error("Cette entrée a changé ailleurs. Recharge-la avant de supprimer.");
-    data.entries.erase(found); Write(path, data);
+    Locked(path, [&] {
+        auto data = Load(path);
+        const auto found = std::find_if(data.entries.begin(), data.entries.end(), [&](const Entry& row) { return row.id == id; });
+        if (found == data.entries.end()) throw std::runtime_error("Cette entrée a déjà été supprimée ailleurs.");
+        if (found->version != version) throw std::runtime_error("Cette entrée a changé ailleurs. Resélectionne-la dans la liste avant de la supprimer.");
+        data.entries.erase(found); Write(path, data);
+    });
 }
 }

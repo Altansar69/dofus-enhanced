@@ -7,6 +7,7 @@
 
 namespace soul::detail {
 using namespace managed;
+bool populateHooked = false; // the hook on DofusContextualMenuManipulator.OnContextualMenuEvent is installed
 constexpr const char* UiImage = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr const char* FigmaSpace = "Core.UILogic.Components.Figma";
@@ -503,6 +504,7 @@ void SetAuxiliaryPanelMenus(bool (*populate)(managed::Obj, managed::Obj), bool (
     if (populate && callback && std::find(detail::auxiliaryMenus.begin(), detail::auxiliaryMenus.end(), pair) == detail::auxiliaryMenus.end())
         detail::auxiliaryMenus.push_back(pair);
 }
+bool PanelMenusReady() { return detail::populateHooked; }
 managed::Obj GetUiRoot() {
     using namespace managed;
     const auto klass = managed::api.Class("Core.dll", "", "pq");
@@ -552,6 +554,7 @@ void Panel::Install(void (*equip)(), void (*positionChanged)(int, int, uint64_t)
         api.FindVerified(manipulator, ".ctor", 4, 0x16D0BB0);
         AddHook(api.FindVerified(manipulator, "OnContextualMenuEvent", 1, 0x16D04D0), 0x16D04D0,
             reinterpret_cast<void*>(&PopulateMenuHook), reinterpret_cast<void**>(&originalPopulate));
+        populateHooked = true;
         auto menuClass = api.Class("Core.dll", menus, "DofusContextualMenu");
         state.appendTitle = api.FindVerified(menuClass, "AppendTitle", 1, 0x16D7F70);
         state.appendSeparator = api.FindVerified(menuClass, "AppendSeparator", 0, 0x16D76E0);

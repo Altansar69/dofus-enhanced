@@ -1,5 +1,7 @@
 #include "travel/map-travel.hpp"
 #include "travel/chat-travel.hpp"
+#include "notebook/notebook-native.hpp"
+#include "notebook/notebook-panel.hpp"
 #include "core/module.hpp"
 #include <cmath>
 #include <memory>
@@ -19,14 +21,18 @@ Method inBag{}, currentMap{}, currentWorld{}, resolve{}, known{}, append{}, pixe
 // The game's own double-click window in its map mouse-down handler (fhw.beud):
 // a second left click within 0.4 s of the previous one.
 constexpr float DoubleClickSeconds=0.4f;
+// FigmaIcons of the owned rows: teleport (Havre-Sac zaap), pin (the notebook's positions).
+constexpr int IconTeleport=304, IconPosition=225;
 bool installed=false;
-struct Row { Ref item, callback; int64_t map=0; bool armed=false; };
+// Owned rows of a map's right-click menu: Havre-Sac zaaps (map) and « Ajouter aux positions » (position).
+struct Row { Ref item, callback; int64_t map=0; bool armed=false, position=false; };
 struct Menu {
     Ref menu, owner, character, cached, compositor, world;
     std::vector<Row> rows;
-    int64_t source=0;
+    int64_t source=0;      // The character's map when the menu was built (zaap rows).
+    ChatTpTarget cell{};   // The right-clicked cell, in the displayed world.
     uint64_t created=0;
-    bool attached=false;
+    bool attached=false, havenbag=false;
 };
 std::unique_ptr<Menu> owned;
 bool Available() {
@@ -40,6 +46,9 @@ bool Available() {
 // planner. Checked first, so nothing else is read then. The Havre-Sac zaap rows
 // of the right-click menu (MenuHook) do not depend on it.
 bool Replacing() { return module && module->settings.mapTravelPlanner && Available(); }
+// « « Ajouter aux positions » au clic droit sur les cartes » (Settings::mapAddPosition,
+// on by default), read at each right-click: off, the menu gets no such row.
+bool AddingPositions() { return module && module->settings.mapAddPosition && Available(); }
 bool InHavenbag() {
     if (!Available()) return false;
     const auto character=module->FindService("fng");
@@ -80,53 +89,108 @@ int Index(const Menu& menu,Obj row) {
     for (int i=0,n=Count(rows.get());i<n;++i) if (api.Call(rows.get(),"get_Item",{&i})==row) return i;
     return -1;
 }
-bool Fresh(const Menu& menu) {
-    return InHavenbag() && module->cached.get()==menu.cached.get() && module->compositor.get()==menu.compositor.get() &&
+// The menu still belongs to the map view, world and session it was built for.
+bool Current(const Menu& menu) {
+    return Available() && module->cached.get()==menu.cached.get() && module->compositor.get()==menu.compositor.get() &&
         module->FindService("fng")==menu.character.get() && OwnerCurrent(menu.owner.get()) &&
-        api.Invoke(currentWorld,menu.owner.get())==menu.world.get() && Map(menu.character.get())==menu.source;
+        api.Invoke(currentWorld,menu.owner.get())==menu.world.get();
+}
+// Zaap rows also need the Havre-Sac and the map their list was made on.
+bool Fresh(const Menu& menu) {
+    return menu.havenbag && InHavenbag() && Current(menu) && Map(menu.character.get())==menu.source;
+}
+// Appends one owned row (null managed action: only HandleMapTravelCallback acts
+// on it), kept in the menu's rows before anything else can fail.
+void AppendRow(Menu& owner,const char* text,const char* help,int icon,int64_t map,bool position) {
+    const auto menu=owner.menu.get();
+    Ref rows(api.Call(menu,"get_menuItems")); int index=Count(rows.get());
+    Ref label(api.string_new(text)),tooltip(api.string_new(help)),empty(api.string_new(""));
+    Ref asset(api.object_new(api.class_from_type(api.method_get_param(append,7))));
+    Ref color(api.object_new(api.class_from_type(api.method_get_param(append,10))));
+    bool disabled=false,close=true; unsigned delay=1000; int style=1,figma=icon;
+    // Same native default-item ABI as the other owned map-menu entries.
+    try {
+        api.Invoke(append,menu,{label.get(),nullptr,&disabled,&close,tooltip.get(),&delay,empty.get(),
+            api.object_unbox(asset.get()),&style,&figma,api.object_unbox(color.get()),empty.get(),empty.get()});
+    } catch (...) {
+        if (Count(rows.get())==index+1) api.Call(menu,"RemoveItemAt",{&index});
+        throw;
+    }
+    owner.rows.emplace_back();
+    auto& row=owner.rows.back(); row.item.reset(api.Call(rows.get(),"get_Item",{&index}));
+    row.callback.reset(api.Call(row.item.get(),"get_m_callback")); row.map=map; row.position=position; row.armed=true;
+    if (!row.callback.get()) throw std::runtime_error("Map menu callback unavailable");
+}
+// The Havre-Sac rows: one per known zaap among the maps of the cell.
+void AppendZaaps(Menu& menu,ChatTpTarget target) {
+    Ref maps(api.Invoke(resolve,menu.character.get(),{&target.x,&target.y,&target.world}));
+    std::set<int64_t> added;
+    for (int i=Count(maps.get())-1;i>=0 && menu.rows.size()<8;--i) {
+        auto map=api.Value<int64_t>(api.Call(maps.get(),"get_Item",{&i}));
+        if (map<=0 || map==menu.source || !added.insert(map).second ||
+            !api.Value<bool>(api.Invoke(known,menu.character.get(),{&map}))) continue;
+        AppendRow(menu,"Se téléporter à ce zaap (Havre-Sac)","",IconTeleport,map,false);
+    }
+}
+// Removes the owned rows of one kind from the menu (zaap rows: position false).
+void RemoveRows(Menu& menu,bool position) {
+    for (auto& row:menu.rows) if (row.position==position) {
+        row.armed=false;
+        int index=Index(menu,row.item.get()); if (index>=0) api.Call(menu.menu.get(),"RemoveItemAt",{&index});
+    }
+    std::erase_if(menu.rows,[position](const Row& row){return row.position==position;});
 }
 void MenuHook(Obj owner,Obj menu,Point coordinates,Point mouse,Method method) {
+    bool bag=false;
+    try { bag=InHavenbag(); }
+    catch (const std::exception& e) { Log(std::string("MAP_HAVENBAG_MENU_ERROR ")+e.what()); }
+    // Outside the Havre-Sac, the game's own direct-zaap fragment; inside, the
+    // mod's zaap rows replace it. The parent still builds all its other native
+    // actions; no quote is requested here.
+    if (!bag) originalMenu(owner,menu,coordinates,mouse,method);
     try {
-        if (!InHavenbag()) { originalMenu(owner,menu,coordinates,mouse,method); return; }
-        // Replace only the direct-zaap fragment in this context. The parent
-        // still builds all its other native actions; no quote is requested here.
         RestoreMapTravel();
-        if (!menu || !OwnerCurrent(owner)) return;
+        const bool adding=AddingPositions();
+        if ((!bag && !adding) || !menu || !OwnerCurrent(owner)) return;
         ChatTpTarget target;
         if (!Target(coordinates,World(owner),target)) return;
         auto next=std::make_unique<Menu>();
         next->menu.reset(menu); next->owner.reset(owner); next->character.reset(module->FindService("fng"));
         next->cached.reset(module->cached.get()); next->compositor.reset(module->compositor.get());
         next->world.reset(api.Invoke(currentWorld,owner)); next->source=Map(next->character.get());
-        next->created=GetTickCount64();
-        if (!next->source) return;
-        Ref maps(api.Invoke(resolve,next->character.get(),{&target.x,&target.y,&target.world}));
-        std::set<int64_t> added;
+        next->cell=target; next->havenbag=bag && next->source; next->created=GetTickCount64();
         owned=std::move(next);
-        for (int i=Count(maps.get())-1;i>=0 && owned->rows.size()<8;--i) {
-            auto map=api.Value<int64_t>(api.Call(maps.get(),"get_Item",{&i}));
-            if (map<=0 || map==owned->source || !added.insert(map).second ||
-                !api.Value<bool>(api.Invoke(known,owned->character.get(),{&map}))) continue;
-            Ref rows(api.Call(menu,"get_menuItems")); int index=Count(rows.get());
-            Ref label(api.string_new("Se téléporter à ce zaap (Havre-Sac)")),empty(api.string_new(""));
-            Ref asset(api.object_new(api.class_from_type(api.method_get_param(append,7))));
-            Ref color(api.object_new(api.class_from_type(api.method_get_param(append,10))));
-            bool disabled=false,close=true; unsigned delay=1000; int style=1,icon=304;
-            // Same native default-item ABI as the other owned map-menu entries.
-            try {
-                api.Invoke(append,menu,{label.get(),nullptr,&disabled,&close,empty.get(),&delay,empty.get(),
-                    api.object_unbox(asset.get()),&style,&icon,api.object_unbox(color.get()),empty.get(),empty.get()});
-            } catch (...) {
-                if (Count(rows.get())==index+1) api.Call(menu,"RemoveItemAt",{&index});
-                throw;
-            }
-            owned->rows.emplace_back();
-            auto& row=owned->rows.back(); row.item.reset(api.Call(rows.get(),"get_Item",{&index}));
-            row.callback.reset(api.Call(row.item.get(),"get_m_callback")); row.map=map; row.armed=true;
-            if (!row.callback.get()) throw std::runtime_error("Map zaap callback unavailable");
-        }
+        if (owned->havenbag) AppendZaaps(*owned,target);
+        // After the teleport rows, right before the game's flag rows of this cell.
+        if (adding) AppendRow(*owned,"Ajouter aux positions","Enregistrer cette case (coordonnées et monde) dans les positions du Carnet personnel.",
+            IconPosition,0,true);
         if (owned->rows.empty()) owned.reset();
-    } catch (const std::exception& e) { Log(std::string("MAP_HAVENBAG_MENU_ERROR ")+e.what()); RestoreMapTravel(); }
+    } catch (const std::exception& e) {
+        Log(std::string(bag?"MAP_HAVENBAG_MENU_ERROR ":"MAP_ADD_POSITION_MENU_ERROR ")+e.what()); RestoreMapTravel();
+    }
+}
+// « Ajouter aux positions »: the clicked cell into the notebook, with the game's
+// own map for its coordinates (the last one esg.zid gives, the one its autopilot
+// travels to), told in the local chat.
+void AddPosition(const Menu& menu) {
+    auto cell=menu.cell; int64_t map=0;
+    try {
+        Ref maps(api.Invoke(resolve,menu.character.get(),{&cell.x,&cell.y,&cell.world}));
+        for (int i=Count(maps.get())-1;i>=0 && map<=0;--i) map=api.Value<int64_t>(api.Call(maps.get(),"get_Item",{&i}));
+    } catch (const std::exception& e) { Log(std::string("MAP_ADD_POSITION_MAP_ERROR ")+e.what()); map=0; }
+    const auto where="["+std::to_string(cell.x)+","+std::to_string(cell.y)+"]";
+    try {
+        const auto added=notebook::AddMapPosition(cell.x,cell.y,cell.world,map>0?map:0);
+        Log("MAP_ADD_POSITION x="+std::to_string(cell.x)+" y="+std::to_string(cell.y)+" world="+std::to_string(cell.world)+
+            " map="+std::to_string(added.entry.map)+" created="+(added.created?"1":"0"));
+        PostChatNotice(added.created?"Carnet : "+where+" « "+added.entry.title+" » ajoutée aux positions.":
+            "Carnet : "+where+" est déjà dans tes positions (« "+added.entry.title+" »).");
+        // An open notebook lists it at once.
+        if (added.created) CheckNotebookPanel();
+    } catch (const std::exception& e) {
+        Log(std::string("MAP_ADD_POSITION_ERROR ")+e.what());
+        PostChatNotice(std::string("Carnet : ")+e.what());
+    }
 }
 void RouteFromMap(Obj owner,Point coordinates,int world,const char* entry) {
     ChatTpTarget target;
@@ -194,14 +258,21 @@ void RequireField(Klass type,const char* name,size_t offset) {
 bool HandleMapTravelCallback(managed::Obj callback,managed::Obj view) {
     if (!owned) return false;
     for (auto& row:owned->rows) if (row.callback.get()==callback) {
+        const bool position=row.position;
         try {
             if (!row.armed || !view || !api.Call(view,"get_panel") ||
                 api.Call(view,"get_itemData")!=row.item.get() || Index(*owned,row.item.get())<0 ||
-                api.Value<bool>(api.Call(row.item.get(),"get_disabled")) || !Fresh(*owned) ||
-                !api.Value<bool>(api.Invoke(known,owned->character.get(),{&row.map}))) return true;
+                api.Value<bool>(api.Call(row.item.get(),"get_disabled"))) return true;
+            if (position) {
+                if (!Current(*owned)) return true;
+                row.armed=false;
+                AddPosition(*owned);
+                return true;
+            }
+            if (!Fresh(*owned) || !api.Value<bool>(api.Invoke(known,owned->character.get(),{&row.map}))) return true;
             row.armed=false;
             StartHavenbagZaap(row.map);
-        } catch (const std::exception& e) { Log(std::string("MAP_HAVENBAG_CLICK_ERROR ")+e.what()); }
+        } catch (const std::exception& e) { Log(std::string(position?"MAP_ADD_POSITION_ERROR ":"MAP_HAVENBAG_CLICK_ERROR ")+e.what()); }
         return true;
     }
     return false;
@@ -217,7 +288,12 @@ void RestoreMapTravel() {
 void TickMapTravel() {
     if (!owned) return;
     try {
-        if (!Fresh(*owned)) { RestoreMapTravel(); return; }
+        if (!Current(*owned)) { RestoreMapTravel(); return; }
+        // Leaving the Havre-Sac, or its map, retires the zaap rows only.
+        if (owned->havenbag && !Fresh(*owned)) {
+            RemoveRows(*owned,false); owned->havenbag=false;
+            if (owned->rows.empty()) { owned.reset(); return; }
+        }
         Ref root(Root(*owned)); const bool attached=root.get() && api.Call(root.get(),"get_panel");
         if (attached) owned->attached=true;
         else if (owned->attached || GetTickCount64()-owned->created>5000) RestoreMapTravel();

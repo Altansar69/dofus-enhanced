@@ -175,9 +175,18 @@ dofus_test(MapInfoTests tests/maps/map-info-tests.cpp)
 # Travel: chat coordinates, routes, TP links and the map autopilot.
 dofus_test(ChatRouteTests tests/travel/chat-route-tests.cpp src/travel/chat-route.cpp src/travel/route-graph.cpp)
 dofus_test(RouteGraphTests tests/travel/route-graph-tests.cpp src/travel/route-graph.cpp)
+# The route tests run on a synthetic world graph; on the game's own graph too when
+# its local fixture exists (derived from a game asset: never committed).
+get_filename_component(ROUTE_GRAPH_LOCAL_FIXTURE "${CMAKE_SOURCE_DIR}/../r112-analysis/world-graph-fixture.txt" ABSOLUTE)
+if(EXISTS "${ROUTE_GRAPH_LOCAL_FIXTURE}")
+  foreach(route IN ITEMS ChatRouteTests RouteGraphTests)
+    target_compile_definitions(${route} PRIVATE ROUTE_GRAPH_FIXTURE="${ROUTE_GRAPH_LOCAL_FIXTURE}")
+  endforeach()
+endif()
 dofus_test(RoublardPassageTests tests/travel/roublard-passage-tests.cpp)
 dofus_test(ChatTpLinksTests tests/travel/chat-tp-links-tests.cpp src/travel/chat-tp-links.cpp)
 add_test(NAME ChatTpColorFallbackTests COMMAND ChatTpLinksTests --missing-color-layout)
+add_test(NAME ChatDimensionFallbackTests COMMAND ChatTpLinksTests --missing-dimension-layout)
 dofus_test(TravelActionsTests tests/travel/travel-actions-tests.cpp src/travel/chat-travel.cpp
   src/travel/map-travel.cpp src/souls/soul-group-menu.cpp src/souls/soul-spell.cpp src/travel/roublard-passage.cpp)
 

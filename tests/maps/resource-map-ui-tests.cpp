@@ -532,6 +532,44 @@ void MiniMapIdentityChanges(){
     Check(Get(previousHost).children==std::vector<Obj>{oldMap}&&Get(miniMapRoot).fields["parent"]==newHost,
         "Reparent cleanup must leave both native host hierarchies intact");
 }
+// « Barre des ressources sur la mini-carte »: unchecked, the mini-map's bar of
+// the six jobs and the list it opens leave; the selection and the mini-map
+// display option (which draws the markers) are untouched, and neither the
+// centering button nor the full map's picker follows it.
+void MiniMapBarOption(){
+    Fixture f;miniRoot=Make("MiniHost");Get(miniRoot).fields["panel"]=Make("MiniPanel");Get(miniRoot).bound={0,0,300,300};
+    miniMapRoot=Make("MiniMapContent");Add(miniRoot,miniMapRoot);
+    f.state.settings.resourceMapEnabled=true;f.state.settings.resourceMiniMapEnabled=true;f.state.settings.resourceMapItems={312};
+    Check(f.state.settings.resourceMiniMapBar,"The bar is shown by default");
+    resourceMap::TickUi();auto drawer=MiniDrawer();auto center=MiniCenter();
+    Check(drawer&&center&&Get(drawer).styles["display"]==0&&Get(center).styles["display"]==0,"Bar and centering button shown by default");
+    auto tabs=Get(Get(drawer).children.front()).children;auto scroll=FindUnder(drawer,"ScrollView");
+    NativeToggle(tabs[2],true);resourceMap::TickUi();
+    Check(Get(scroll).styles["display"]==0,"A job's list is open");
+    auto expected=f.state.settings;expected.resourceMiniMapBar=false;
+    f.state.settings.resourceMiniMapBar=false;resourceMap::TickUi();
+    Check(Get(drawer).styles["display"]!=0&&Get(drawer).fields["parent"]==miniRoot,"Unchecked: the bar and its open list leave the mini-map");
+    Check(Get(center).styles["display"]==0&&Get(center).fields["parent"]==miniRoot,"The centering button keeps its own option");
+    Check(changes==0&&f.state.settings==expected&&f.state.settings.resourceMiniMapEnabled&&f.state.settings.resourceMapItems==std::vector<int>{312},
+        "The markers' option and the selection are untouched: the chosen resources stay on the mini-map");
+    for(int i=0;i<5;++i)resourceMap::TickUi();
+    Check(MiniDrawer()==drawer&&Get(drawer).styles["display"]!=0&&changes==0,"Stable while unchecked: no rebuild and no saved change");
+    f.Open();
+    Check(Get(f.Resources()).styles["display"]==0,"The full map's picker does not follow the mini-map bar");
+    f.state.settings.resourceMiniMapBar=true;resourceMap::TickUi();
+    Check(Get(drawer).styles["display"]==0&&Get(scroll).styles["display"]==0&&changes==0,"Checked again: the bar returns as it was");
+    f.state.settings.resourceMiniMapEnabled=false;resourceMap::TickUi();
+    Check(Get(drawer).styles["display"]!=0,"Mini-map resources off still hide the bar too");
+    f.state.settings.resourceMiniMapBar=false;resourceMap::TickUi();
+    f.state.settings.resourceMiniMapEnabled=true;resourceMap::TickUi();
+    Check(Get(drawer).styles["display"]!=0&&changes==0,"Resources back on the mini-map: the unchecked bar stays away");
+    const auto host=miniRoot;miniRoot=nullptr;resourceMap::TickUi();miniRoot=host;resourceMap::TickUi();
+    auto rebuilt=MiniDrawer();
+    Check(rebuilt&&rebuilt!=drawer&&Get(rebuilt).styles["display"]!=0&&Get(Get(rebuilt).children.front()).children.size()==6,
+        "A picker built while the bar is unchecked starts hidden");
+    f.state.settings.resourceMiniMapBar=true;resourceMap::TickUi();
+    Check(Get(rebuilt).styles["display"]==0&&changes==0,"And shows once checked");
+}
 }
 int main(){
     try{
@@ -551,6 +589,7 @@ int main(){
         fake::MiniMapCleanupRetries();std::cout<<"mini-map cleanup retry passed\n";
         fake::MiniMapPartialCursorRegistration();std::cout<<"mini-map partial cursor attachment recovery passed\n";
         fake::MiniMapIdentityChanges();std::cout<<"mini-map identity replacement and reparenting passed\n";
+        fake::MiniMapBarOption();std::cout<<"mini-map bar option passed\n";
         fake::Check(fake::handles.empty(),"Managed references leaked after fixture destruction");
         std::cout<<"Resource map UI production orchestration tests passed\n";return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';for(const auto& line:fake::logs)std::cerr<<line<<'\n';return 1;}

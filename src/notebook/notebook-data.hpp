@@ -33,6 +33,9 @@ Document Read(const std::filesystem::path& path);
 // Every mutation locks, reloads and preserves unrelated concurrent changes.
 Entry Save(const std::filesystem::path& path, Entry entry);
 void Delete(const std::filesystem::path& path, uint64_t id, uint64_t version);
+// A new position, unless one with the same coordinates and world is already
+// saved (checked under the writers' lock): that one is returned, created false.
+Entry AddPosition(const std::filesystem::path& path, Entry entry, bool& created);
 bool Coordinate(const std::string& text, int& value);
 void Validate(const Entry& entry);
 }

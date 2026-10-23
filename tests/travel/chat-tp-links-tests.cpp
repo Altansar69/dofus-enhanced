@@ -33,6 +33,12 @@ Obj panel = nullptr, service = nullptr;
 int clicks = 0, originalClicks = 0, rollouts = 0, parses = 0;
 bool decodeFails = false, cleanupFails = false, combat = false;
 bool colorLayoutAvailable = true, expectExplicitColors = true;
+// « Dimension avec les coordonnées dans le chat »: the wrapper text and content
+// cache layout, the worlds' names, and an injected native failure.
+bool dimensionLayoutAvailable = true, dimensionFails = false;
+int dataContextFailures = 0;
+std::map<int,std::string> worldNames{{1,"Monde des Douze"},{2,"Incarnam"},{3,""}};
+std::map<int,Obj> worlds;
 int nullableAllocations = 0;
 int questOpens = 0;
 bool questFailure = false;
@@ -85,11 +91,34 @@ Obj MonsterGroup(int x,int y,int world,const std::string& id,int leader=147) {
     Get(data).ints={{"x",x},{"y",y},{"worldMapId",world},{"leaderId",leader}};
     return manager;
 }
+// The game's text of a link (get_textFromData): its wrapper's own text when
+// set, else what CreateTextFromData gives (here the manager's caption).
+std::string NativeLinkText(Obj manager) {
+    auto& fields=Get(manager).fields;
+    if(fields.contains("data")) {
+        auto& data=Get(fields.at("data")).fields;
+        if(data.contains("<text>k__BackingField")&&data.at("<text>k__BackingField")&&!Get(data.at("<text>k__BackingField")).text.empty())
+            return Get(data.at("<text>k__BackingField")).text;
+    }
+    return Get(manager).text;
+}
+// A link sent with its own text in its protocol (the wrapper's text field), as
+// the game's coordinate parser makes them from typed coordinates.
+void SentText(Obj manager,const std::string& text) {
+    auto& data=Get(Get(manager).fields.at("data")).fields;
+    data["<text>k__BackingField"]=data["protocolText"]=Str(text);
+}
+// GetTextContent: the content cached in m_cachedTextContent, built once.
+std::string Content(Obj manager) {
+    auto& cache=Get(manager).fields["m_cachedTextContent"];
+    if(!cache)cache=Str(NativeLinkText(manager));
+    return Get(cache).text;
+}
 Obj Build(Obj result) {
     std::string text;
     for(auto value:Get(Get(result).fields["sequence"]).items) {
         auto token=*reinterpret_cast<Token*>(Get(value).bytes.data());
-        text+=token.type==0?Get(token.text).text:"<link="+Get(Get(token.manager).fields["data"]).text+">"+Get(token.manager).text+"</link>";
+        text+=token.type==0?Get(token.text).text:"<link="+Get(Get(token.manager).fields["data"]).text+">"+Content(token.manager)+"</link>";
     }
     auto p=Str(text);Get(p).fields["decoded"]=result;return p;
 }
@@ -104,9 +133,14 @@ bool NativeDecode(Obj,Obj input,Obj* result,Obj,Method) {
             if(token.type==0)Text(*result,token.text);
             else {
                 auto manager=Make(Get(token.manager).type->name);Get(manager)=Get(token.manager);
+                // Fresh from the protocol: no cached content, only the protocol's own
+                // text (none of the text this module set).
+                Get(manager).fields.erase("m_cachedTextContent");
                 if(Get(manager).fields.contains("data")) {
                     auto data=Get(manager).fields["data"],copy=Make(Get(data).type->name);
-                    Get(copy)=Get(data);Get(manager).fields["data"]=copy;
+                    Get(copy)=Get(data);Get(copy).fields.erase("<text>k__BackingField");
+                    if(Get(copy).fields.contains("protocolText"))Get(copy).fields["<text>k__BackingField"]=Get(copy).fields.at("protocolText");
+                    Get(manager).fields["data"]=copy;
                 }
                 Link(*result,manager);
             }
@@ -139,7 +173,10 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(n=="get_m_sequence")return Get(self).fields.at("sequence");
     if(n=="get_Count")return Box(static_cast<int>(Get(self).items.size()));
     if(n=="get_Item")return Get(self).items.at(*static_cast<int*>(args.at(0)));
-    if(n=="get_m_dataContext")return Get(self).fields.at("data");
+    if(n=="get_m_dataContext") {
+        if(dataContextFailures>0){--dataContextFailures;throw std::runtime_error("Injected link data failure");}
+        return Get(self).fields.at("data");
+    }
     if(n=="get_elementName")return Get(self).fields.at("elementName");
     if(n=="get_id")return Str(Get(self).fields.contains("data")?Get(Get(self).fields.at("data")).text:Get(self).text);
     if(n=="get_posX"||n=="get_posY"||n=="get_worldMapId"||n=="get_x"||n=="get_y"||n=="get_leaderId")return Box(Get(self).ints.at(n.substr(4)));
@@ -172,9 +209,25 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
         ++parses;auto input=Get(args[0]).text;auto spans=ChatCoordinateSpans(input);
         Check(spans.size()==1&&spans[0].length==input.size(),"Native lossy parser must receive only a strict candidate");
         int x=0,y=0;Check(sscanf_s(input.c_str(),"[%d,%d]",&x,&y)==2,"Fake expected coordinate pair");
-        auto result=Result();Link(result,Map(x,y,1,"plain-"+input));
+        // CreateLink(x, y, 1, null, the typed text): world 1, the typed text as the link's own text.
+        auto link=Map(x,y,1,"plain-"+input,"");SentText(link,input);
+        auto result=Result();Link(result,link);
         *static_cast<Obj*>(args[1])=Build(result);return Box(true);
     }
+    if(n=="get_textFromData") {
+        Check(m.rva==0x3C88A00&&args.empty(),"A link's native text comes from the verified get_textFromData");
+        if(dimensionFails)throw std::runtime_error("Injected link text failure");
+        return Str(NativeLinkText(self));
+    }
+    if(n=="GetWorldMapById") {
+        Check(m.rva==0x7D3D50&&!self&&args.size()==1,"Worlds come from the verified static WorldMapData lookup");
+        const int id=*static_cast<int*>(args[0]);
+        if(!worldNames.contains(id))return nullptr;
+        auto& world=worlds[id];
+        if(!world){world=Make("WorldMapData");Get(world).text=worldNames.at(id);}
+        return world;
+    }
+    if(n=="get_name") { Check(m.rva==0x7D3DE0&&Get(self).type->name=="WorldMapData","The verified WorldMapData name");return Str(Get(self).text); }
     if(n=="OnPointerOutLinkTagEvent"||n=="OnRollOutCallback") {
         ++rollouts;if(n=="OnPointerOutLinkTagEvent")Get(self).fields["m_hoveredHyperlinkManager"]=nullptr;return nullptr;
     }
@@ -235,11 +288,17 @@ void Initialize() {
     api.class_get_type=[](Klass k)->const void*{return k;};
     api.method_get_param=[](Method,uint32_t)->const void*{return Class("NullableColor");};
     api.class_get_field_from_name=[](Klass k,const char* name)->void* {
-        if(!colorLayoutAvailable||static_cast<Type*>(k)->name!="NullableColor")return nullptr;
-        if(std::string(name)=="hasValue")return reinterpret_cast<void*>(16);
-        if(std::string(name)=="value")return reinterpret_cast<void*>(20);
+        const auto& type=static_cast<Type*>(k)->name;const std::string field(name);
+        // Dimensions: the wrapper's text and the managers' content cache, each at 0x20.
+        if(type=="BaseHyperlinkTextWrapper"&&field=="<text>k__BackingField")return dimensionLayoutAvailable?reinterpret_cast<void*>(0x20):nullptr;
+        if((type=="HyperlinkMapInformation"||type=="HyperlinkLocalizeMonsterGroup")&&field=="m_cachedTextContent")
+            return reinterpret_cast<void*>(static_cast<uintptr_t>(dimensionLayoutAvailable?0x20:0x28));
+        if(!colorLayoutAvailable||type!="NullableColor")return nullptr;
+        if(field=="hasValue")return reinterpret_cast<void*>(16);
+        if(field=="value")return reinterpret_cast<void*>(20);
         return nullptr;
     };
+    api.class_get_parent=[](Klass)->Klass{return nullptr;};
     api.field_get_offset=[](void* field)->size_t{return reinterpret_cast<size_t>(field);};
     api.type_get_object=[](const void*)->Obj{return Make("RuntimeType");};
     api.string_new=[](const char* s)->Obj{return Str(s);};
@@ -760,6 +819,185 @@ void RejectedTextForgets() {
     Get(manip).fields["m_textElementTarget"]=label;RestoreChatTpLinks();
 }
 
+// The game's own position links a label shows (fixtures named dim-* and the
+// plain coordinates TP converted), by their wrapper id.
+std::map<std::string,Obj> Positions(Obj label) {
+    std::map<std::string,Obj> result;auto decoded=Get(Get(label).fields["manip"]).fields["m_hyperlinkResult"];
+    if(!decoded)return result;
+    for(auto value:Get(Get(decoded).fields["sequence"]).items) {
+        auto token=*reinterpret_cast<Token*>(Get(value).bytes.data());
+        if(!token.manager||!Get(token.manager).fields.contains("data"))continue;
+        const auto& id=Get(Get(token.manager).fields.at("data")).text;
+        if(id.starts_with("dim-")||id.starts_with("plain-"))result[id]=token.manager;
+    }
+    return result;
+}
+// The link's own text now, and the one its protocol brought (null: none, the
+// game's CreateTextFromData shows the link).
+Obj OwnText(Obj manager) {
+    auto& data=Get(Get(manager).fields.at("data")).fields;
+    return data.contains("<text>k__BackingField")?data.at("<text>k__BackingField"):nullptr;
+}
+Obj ProtocolText(Obj manager) {
+    auto& data=Get(Get(manager).fields.at("data")).fields;
+    return data.contains("protocolText")?data.at("protocolText"):nullptr;
+}
+bool OwnTextBack(Obj manager) { return OwnText(manager)==ProtocolText(manager); }
+size_t Count(const std::string& text,const std::string& part) {
+    size_t count=0;for(size_t at=text.find(part);at!=std::string::npos;at=text.find(part,at+part.size()))++count;return count;
+}
+// « Dimension avec les coordonnées dans le chat »: the game's own position links
+// (map positions, monster groups) read [x,y, dimension]; element names, the
+// link's own text, custom captions, typed coordinates (also once TP made them
+// links), the TP parts, clicks and tooltips stay the game's; unchecked,
+// recycled, rejected or cleaned up, every link gets its own text back.
+void DimensionLinks() {
+    auto& settings=module->settings;
+    const auto baseline=handles.size();const auto travels=clicks,nativeClicks=originalClicks;
+    const auto pump=[](int count){for(int i=0;i<count;++i)TickChatTpLinks();};
+    const auto shown=[](Obj label){return Get(Get(label).fields["text"]).text;};
+    auto view=Make("ChatView"),binding=Make("ChatItemBinding");Get(view).fields["binding"]=binding;
+    const auto bind=[&](Obj input){
+        auto label=MakeLabel(input);Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};
+        bindHook(view,Make("Row"),0,nullptr);return label;
+    };
+    settings.coordsWorldChat=true;
+    auto sent=Map(2,2,1,"dim-sent"," [2,2]");SentText(sent,"Ma maison [2,2]");
+    auto source=Result();Link(source,Map(3,4,1,"dim-map"," [3,4]"));Text(source,Str(" et "));
+    Link(source,MonsterGroup(20,-34,2,"dim-group",147));Text(source,Str(" puis [5,6], "));
+    Link(source,Map(5,-18,1,"dim-zaap","Zaap d'Astrub [5,-18]"));Text(source,Str(" "));
+    Link(source,Map(8,8,1,"dim-bracket","[Pandala] Village [8,8]"));Text(source,Str(" "));Link(source,sent);Text(source,Str(" "));
+    Link(source,Map(1,1,1,"dim-custom","Rendez-vous"));Text(source,Str(" "));
+    Link(source,Map(6,6,9,"dim-lost"," [6,6]"));Text(source,Str(" "));Link(source,Map(7,7,3,"dim-nameless"," [7,7]"));
+    auto input=Build(source);const auto native=Get(input).text;
+    auto label=bind(input);auto manip=Get(label).fields["manip"];
+    auto text=shown(label);
+    Check(text.find("<link=dim-map> [3,4, Monde des Douze]</link>")!=std::string::npos&&
+        text.find("<link=dim-group>[20,-34, Incarnam]</link>")!=std::string::npos,"Map positions and monster groups read [x,y, dimension]");
+    Check(text.find("<link=dim-zaap>Zaap d'Astrub [5,-18, Monde des Douze]</link>")!=std::string::npos&&
+        text.find("<link=dim-bracket>[Pandala] Village [8,8, Monde des Douze]</link>")!=std::string::npos&&
+        text.find("<link=dim-sent>Ma maison [2,2, Monde des Douze]</link>")!=std::string::npos,
+        "The element name and the link's own text around the coordinates are kept");
+    Check(text.find("<link=plain-[5,6]>[5,6]</link>")!=std::string::npos,"Typed coordinates keep the player's text, even as TP links");
+    Check(text.find("<link=dim-custom>Rendez-vous</link>")!=std::string::npos&&text.find("<link=dim-lost> [6,6]</link>")!=std::string::npos&&
+        text.find("<link=dim-nameless> [7,7]</link>")!=std::string::npos,
+        "A custom caption, an unknown world and a world without a name keep the game's text");
+    Check(Get(input).text==native&&native.find("Monde")==std::string::npos&&Count(text,"Monde des Douze")==4,"The original message is unchanged");
+    auto tp=TpManagers(label);auto links=Positions(label);
+    Check(tp.size()==9&&links.size()==9&&Get(OwnText(links.at("dim-map"))).text==" [3,4, Monde des Douze]"&&OwnTextBack(links.at("dim-custom"))&&
+        OwnTextBack(links.at("plain-[5,6]"))&&OwnTextBack(links.at("dim-lost"))&&OwnTextBack(links.at("dim-nameless")),
+        "Every position keeps its TP; only the links showing a dimension carry this module's text");
+    clickHook(tp[0],{},nullptr);
+    Check(clicks==travels+1&&clicked==ChatTpTarget{3,4,1},"TP keeps its exact destination");
+    clickHook(links.at("dim-map"),{},nullptr);clickHook(links.at("dim-group"),{},nullptr);
+    Check(originalClicks==nativeClicks+2&&clicks==travels+1,"A renamed position link keeps the game's own click");
+    Check(Get(tooltipHook(links.at("dim-map"),{},nullptr)).text=="Suivre la position","A renamed position link keeps the game's own tooltip");
+    // Unchanged redraws keep everything; serialized redraws with fresh managers rename them once.
+    const auto rooted=handles.size();
+    for(int i=0;i<50;++i)textHook(manip,Get(label).fields["text"],nullptr);
+    Check(shown(label)==text&&Positions(label)==links&&TpManagers(label)==tp&&handles.size()==rooted,"Unchanged redraws keep the texts, links and roots");
+    for(int i=0;i<20;++i) {
+        auto rebuilt=Result();Text(rebuilt,Str("refresh "));
+        for(auto token:Get(Get(Get(manip).fields["m_hyperlinkResult"]).fields["sequence"]).items)Get(Get(rebuilt).fields["sequence"]).items.push_back(token);
+        textHook(manip,Build(rebuilt),nullptr);
+        Check(Count(shown(label),"Monde des Douze")==4&&Count(shown(label),"Incarnam")==1&&Count(shown(label),"Douze, Monde")==0&&
+            shown(label).find("<link=plain-[5,6]>[5,6]</link>")!=std::string::npos&&TpManagers(label)==tp,
+            "Serialized redraws with fresh managers show each dimension once, never on typed coordinates, and keep TP");
+    }
+    for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Links left behind by a redraw get their own text back");
+    links=Positions(label);
+    // Unchecked: the game's text within a pump, TP untouched; checked again: back.
+    settings.coordsWorldChat=false;pump(1);
+    Check(Count(shown(label),"Monde des Douze")==0&&Count(shown(label),"Incarnam")==0&&shown(label).find("<link=dim-map> [3,4]</link>")!=std::string::npos&&
+        shown(label).find("<link=dim-sent>Ma maison [2,2]</link>")!=std::string::npos&&TpManagers(label)==tp,
+        "Unchecked: the positions show the game's text within a pump; TP stays");
+    for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Unchecked: every link has its own text back");
+    auto meanwhile=bind(input);
+    Check(Count(shown(meanwhile),"Monde des Douze")==0&&TpManagers(meanwhile).size()==9,"Unchecked: a new message keeps the game's position texts");
+    settings.coordsWorldChat=true;pump(1);
+    Check(Count(shown(label),"Monde des Douze")==4&&Count(shown(meanwhile),"Monde des Douze")==4&&TpManagers(label)==tp,
+        "Checked again: shown messages get their dimensions back within a pump");
+    // TP unchecked: plain coordinates are plain text again; the links keep their dimension.
+    settings.chatTravelLinks=false;pump(2);
+    Check(shown(meanwhile).find(" puis [5,6], ")!=std::string::npos&&Count(shown(meanwhile),"Monde des Douze")==4&&TpManagers(meanwhile).empty()&&
+        Count(shown(label),"Monde des Douze")==4&&TpManagers(label).empty(),"Without TP, plain coordinates stay text and the links keep their dimension");
+    // All four parts unchecked: the dimensions alone; then the game's text exactly.
+    settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=false;pump(2);
+    Check(Count(shown(meanwhile),"Monde des Douze")==4&&SeparatorCount(shown(meanwhile))==0&&SeparatorCount(shown(label))==0,
+        "The dimension does not depend on the four parts");
+    settings.coordsWorldChat=false;pump(2);
+    Check(shown(meanwhile)==native&&Count(shown(label),"Monde")==0,"Everything unchecked: the game's own text, exactly");
+    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=settings.coordsWorldChat=true;pump(2);
+    Check(Count(shown(label),"Monde des Douze")==4&&TpManagers(label).size()==9,"All checked again: dimensions and TP are back");
+    // A failure reading a link keeps TP and the game's position texts.
+    dimensionFails=true;auto failed=bind(input);dimensionFails=false;
+    Check(TpManagers(failed).size()==9&&Count(shown(failed),"Monde des Douze")==0&&
+        std::any_of(logs.begin(),logs.end(),[](const std::string& l){return l.starts_with("CHAT_DIMENSION_ERROR ");}),
+        "A failed dimension keeps TP and the game's texts, and is reported");
+    // A recycled row gives its previous links their own text back.
+    links=Positions(label);
+    textHook(manip,Str("recycled [9,10] "),nullptr);
+    for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Recycling a row gives the previous links their own text back");
+    Check(shown(label).find(">[9,10]</link>")!=std::string::npos&&Count(shown(label),"Monde")==0&&TpManagers(label).size()==1,
+        "The recycled row's typed coordinates keep their text and get TP");
+    // A text the game rejects: the previous links get their own text back too.
+    auto rejected=bind(input);links=Positions(rejected);
+    Check(links.size()==9&&!OwnTextBack(links.at("dim-map")),"The rejected row starts with its dimensions");
+    decodeFails=true;Invoke(MethodOf("set_m_targetText"),Get(rejected).fields["manip"],{Str("message illisible")});decodeFails=false;
+    for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"A rejected text gives the previous links their own text back");
+    Check(shown(rejected)=="message illisible","The rejected text stays");
+    // Cleanup: a failed restore is retried; everything back, every root released.
+    links=Positions(meanwhile);
+    dataContextFailures=1;RestoreChatTpLinks();
+    Check(ChatTpLinksCleanupPending(),"A failed link restore keeps its label for a retry");
+    RestoreChatTpLinks();
+    Check(!ChatTpLinksCleanupPending()&&shown(meanwhile)==native&&shown(failed)==native&&shown(label)=="recycled [9,10] ","Cleanup restores the game's texts");
+    for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Cleanup gives every link its own text back");
+    Check(handles.size()==baseline,"Cleanup releases every reference");
+    settings.coordsWorldChat=false;
+}
+// Typed coordinates are remembered per row, 64 ids, the oldest dropped first: a
+// row recycled through many messages never gives a dimension to the typed
+// coordinates of the message it shows, even when a redraw brings their links back.
+void TypedCoordinatesKept() {
+    auto& settings=module->settings;settings.coordsWorldChat=true;
+    const auto baseline=handles.size();
+    const auto shown=[](Obj label){return Get(Get(label).fields["text"]).text;};
+    auto label=MakeLabel(Str("")),view=Make("ChatView"),binding=Make("ChatItemBinding");
+    Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};Get(view).fields["binding"]=binding;
+    bindHook(view,Make("Row"),0,nullptr);auto manip=Get(label).fields["manip"];
+    for(int message=0;message<7;++message) {
+        std::string text="rdv";
+        for(int k=0;k<10;++k)text+=" ["+std::to_string(message*10+k)+",1]";
+        textHook(manip,Str(text),nullptr);
+        Check(TpManagers(label).size()==10&&Count(shown(label),"Monde")==0,"Typed coordinates get TP, never a dimension");
+    }
+    for(int i=0;i<3;++i) {
+        auto rebuilt=Result();Text(rebuilt,Str("refresh "));
+        for(auto token:Get(Get(Get(manip).fields["m_hyperlinkResult"]).fields["sequence"]).items)Get(Get(rebuilt).fields["sequence"]).items.push_back(token);
+        textHook(manip,Build(rebuilt),nullptr);
+        Check(Count(shown(label),"Monde")==0&&TpManagers(label).size()==10,
+            "After 70 typed coordinates in one row, a redraw of the shown message still gives them no dimension");
+    }
+    RestoreChatTpLinks();
+    Check(handles.size()==baseline,"Cleanup releases every reference");
+    settings.coordsWorldChat=false;
+}
+// Its natives unverified, the option leaves every position with the game's
+// text: TP and the statuses keep working.
+void DimensionsUnavailable() {
+    Check(std::any_of(logs.begin(),logs.end(),[](const std::string& l){return l.starts_with("CHAT_DIMENSION_DISABLED ");}),
+        "A dimension contract mismatch is reported");
+    module->settings.coordsWorldChat=true;
+    auto source=Result();Link(source,Map(3,4,1,"dim-map"," [3,4]"));
+    auto input=Build(source),label=MakeLabel(input),view=Make("ChatView"),binding=Make("ChatItemBinding");
+    Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};Get(view).fields["binding"]=binding;
+    bindHook(view,Make("Row"),0,nullptr);
+    Check(TpManagers(label).size()==1&&Get(Get(label).fields["text"]).text.find("<link=dim-map> [3,4]</link>")!=std::string::npos,
+        "Without its natives the dimension is left out, TP stays");
+    RestoreChatTpLinks();module->settings.coordsWorldChat=false;
+}
+
 }
 namespace managed {
 Api api;uintptr_t gameBase=0;
@@ -817,13 +1055,19 @@ void AddHook(managed::Method,uintptr_t rva,void* hook,void** original){
 int main(int argc,char** argv){
     try{fake::Initialize();Module owner("offline");module=&owner;owner.ready=true;owner.servicesReady=true;owner.cached.reset(fake::Make("Cached"));
         const bool fallback=argc==2&&std::string(argv[1])=="--missing-color-layout";
-        fake::colorLayoutAvailable=!fallback;fake::expectExplicitColors=!fallback;
+        const bool noDimension=argc==2&&std::string(argv[1])=="--missing-dimension-layout";
+        fake::colorLayoutAvailable=!fallback;fake::expectExplicitColors=!fallback;fake::dimensionLayoutAvailable=!noDimension;
+        // The TP and status scenarios read the game's position texts: the
+        // dimension (checked by default) has its own scenario below.
+        fake::Check(owner.settings.coordsWorldChat,"The chat dimension is checked by default");owner.settings.coordsWorldChat=false;
         InstallChatTpLinks(fake::OnClick);
         if(fallback)fake::Check(!fake::logs.empty()&&fake::logs.back().starts_with("CHAT_TP_COLOR_FALLBACK "),
             "Unavailable cosmetic layout must preserve chat TP with a diagnostic instead of aborting module startup");
-        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::OptionalParts();fake::MetamobPart();fake::RejectedTextForgets();fake::clicks=0;fake::Run();
+        fake::RecruitmentLinks();fake::SoulStatusLinks();fake::OutsideOcreTravelOnly();fake::OcreJournalClick();fake::OptionalParts();fake::MetamobPart();fake::RejectedTextForgets();
+        if(noDimension)fake::DimensionsUnavailable();else{fake::DimensionLinks();fake::TypedCoordinatesKept();}
+        fake::clicks=0;fake::originalClicks=0;fake::Run();
         fake::Check(fake::nullableAllocations==0,"Nullable<Color> must never be allocated or boxed");
         module=nullptr;
-        std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover, optional TP/bag/Ocre/Metamob parts (the Metamob catalog wanted for Ocre leaders only) and cleanup retries\n";return 0;
+        std::cout<<"PASS: native chat scope, coordinate preservation, explicit click, deduplication, hover, optional TP/bag/Ocre/Metamob parts (the Metamob catalog wanted for Ocre leaders only), [x,y, dimension] positions and cleanup retries\n";return 0;
     }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
 }

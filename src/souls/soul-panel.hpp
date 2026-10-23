@@ -30,6 +30,10 @@ bool HandlePanelMenuCallback(managed::Obj callback, managed::Obj view);
 void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj));
 void SetAuxiliaryPanelMenus(bool (*populate)(managed::Obj, managed::Obj),
     bool (*callback)(managed::Obj, managed::Obj));
+// True once the panel's hook on the menus' populate event is installed: only
+// then do auxiliary menus get their rows (without it a right-click would show
+// an empty menu).
+bool PanelMenusReady();
 class Panel {
 public:
     void Install(void (*equip)(), void (*positionChanged)(int, int, uint64_t), void (*hideModule)());
