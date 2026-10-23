@@ -213,19 +213,38 @@ int main() {
             { std::ofstream file(path); file << "noAnimations=" << legacyBool << "\n"; }
             Require(Settings::Read(path).LegacyAnimationMode() == legacyBool, "Oldest noAnimations migrates to Normal or Raccourcies");
         }
-        // The 1.13.0 checkboxes: map, notebook, chat and overlay additions on
-        // by default, the overlay off; each one persists alone and together.
+        // The 1.13.0 and 1.14.0 checkboxes: map, notebook, chat and overlay
+        // additions on by default, the overlay off and in its corner; each one
+        // persists alone and together, with the overlay's corner and place.
         Require(defaults.resourceMiniMapBar && defaults.miniMapZoneName && defaults.coordsWorldMap && defaults.coordsWorldMiniMap &&
             defaults.notebookPingButton && defaults.mapAddPosition && defaults.coordsWorldChat && !defaults.perfOverlay &&
-            defaults.perfOverlayCorner == 0, "The 1.13.0 additions start shown, the performance overlay hidden in the top left corner");
-        for (unsigned mask = 0; mask < (1u << std::size(ExtraToggles)); ++mask) {
+            defaults.perfOverlayCorner == 0 && defaults.perfOverlayGpu && defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
+            defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1,
+            "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden in the top left corner");
+        static_assert(std::size(ExtraToggles) == 11);
+        for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
-            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = ((mask >> i) & 1) != 0;
+            // Every combination of the first eight; the 1.14.0 ones follow inverted bits.
+            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = (((mask >> (i % 8)) & 1) != 0) != (i >= 8);
             extra.perfOverlayCorner = static_cast<int>(mask % 4);
+            if (mask % 3) {
+                extra.perfOverlayX = static_cast<int>(mask * 39 % 10001);
+                extra.perfOverlayY = static_cast<int>(10000 - mask * 23 % 10001);
+            }
             extra.Save(path);
-            Require(Settings::Read(path) == extra, "Each 1.13.0 checkbox and the overlay corner persist independently");
-            { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayCorner=4\nperfOverlayCorner=-1\nminiMapZoneName=2\nperfOverlay=x\n"; }
-            Require(Settings::Read(path) == extra, "Malformed 1.13.0 values preserve the saved choices");
+            Require(Settings::Read(path) == extra, "Each checkbox, the overlay corner and its place persist independently");
+            { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayCorner=4\nperfOverlayCorner=-1\nminiMapZoneName=2\nperfOverlay=x\n"
+                "perfOverlayX=10001\nperfOverlayY=-2\nperfOverlayGpu=2\nperfOverlayDrag=-1\n"; }
+            Require(Settings::Read(path) == extra, "Malformed values preserve the saved choices");
+        }
+        {
+            { std::ofstream half(path); half << "perfOverlayX=1200\n"; }
+            const auto read = Settings::Read(path);
+            Require(read.perfOverlayX == -1 && read.perfOverlayY == -1, "A lone overlay coordinate falls back to the corner");
+            auto lone = defaults; lone.perfOverlayY = 5;
+            bool rejected = false;
+            try { lone.Save(path); } catch (const std::exception&) { rejected = true; }
+            Require(rejected, "A lone overlay coordinate is never saved");
         }
         {
             auto corner = defaults; corner.perfOverlayCorner = 4;

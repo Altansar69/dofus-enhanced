@@ -49,10 +49,10 @@ struct OptionsUi {
     managed::Ref archiZonesSource, archiZonesOption, archiZonesMiniSource, archiZonesMiniOption;
     // « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
     managed::Ref calendarKraloveSource, calendarKraloveOption;
-    // The checkboxes added in 1.13.0 (Settings' ExtraToggles), spread over
-    // « Cartes », « Carnet », « Chat » and « Performances »; then the corner choice
-    // of the performance overlay.
-    std::array<managed::Ref, 8> extraSources, extraOptions;
+    // The checkboxes added in 1.13.0 and 1.14.0 (Settings' ExtraToggles), spread
+    // over « Cartes », « Carnet », « Chat » and « Performances »; then the corner
+    // choice of the performance overlay.
+    std::array<managed::Ref, 11> extraSources, extraOptions;
     managed::Ref perfCornerSource, perfCornerOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;

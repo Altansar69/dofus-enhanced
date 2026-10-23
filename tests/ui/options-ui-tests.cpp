@@ -25,7 +25,7 @@ enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, M
     CalendarSection, PerformanceSection, LoadingSection, AboutSection, SectionCount };
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra, NotebookPingExtra, MapAddPositionExtra,
-    ChatCoordsExtra, PerfOverlayExtra };
+    ChatCoordsExtra, PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
@@ -594,7 +594,8 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
         ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.extraSources[ChatCoordsExtra].get(),
-        ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.perfCornerSource.get(),
+        ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
+        ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.perfCornerSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
     appearance.insert(appearance.end(), rest.begin(), rest.end());
     return appearance;
@@ -655,10 +656,13 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.extraOptions[ChatCoordsExtra], ui.extraSources[ChatCoordsExtra], "Dimension avec les coordonnées dans le chat", true)}},
         {"Calendrier", {CheckRow(ui.calendarKraloveOption, ui.calendarKraloveSource, "Ouvertures Kralamoure dans le calendrier", true)}},
         {"Performances", {CheckRow(ui.extraOptions[PerfOverlayExtra], ui.extraSources[PerfOverlayExtra], "Afficher les FPS et la mémoire", false),
+            CheckRow(ui.extraOptions[PerfGpuExtra], ui.extraSources[PerfGpuExtra], "Charge du GPU", true),
+            CheckRow(ui.extraOptions[PerfDiskExtra], ui.extraSources[PerfDiskExtra], "Activité du disque", true),
+            CheckRow(ui.extraOptions[PerfDragExtra], ui.extraSources[PerfDragExtra], "Déplacer l’affichage à la souris", true),
             ChoiceRow(ui.perfCornerOption, ui.perfCornerSource, "Position de l’affichage des performances", 0)}},
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.13.1 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.14.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -764,7 +768,7 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.13.1" && std::string(ModVersion) == "r113",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.14.0" && std::string(ModVersion) == "r114",
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -809,13 +813,13 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.13.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.14.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r113") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r114") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 50 && optionModels == 52,
+    Check(sourceModels == 53 && optionModels == 55,
         "The UI must create fifty private sources and fifty-two rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
@@ -1240,7 +1244,7 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == CalendarSection) {
         settings.calendarKralamoure = defaults.calendarKralamoure;
     } else if (index == PerformanceSection) {
-        settings.*ExtraToggles[PerfOverlayExtra] = defaults.*ExtraToggles[PerfOverlayExtra];
+        for (auto extra : {PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
         settings.perfOverlayCorner = defaults.perfOverlayCorner;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;

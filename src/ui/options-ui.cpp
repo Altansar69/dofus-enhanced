@@ -44,9 +44,9 @@ constexpr const char* AnimationDescriptions[] = {
     "En combat, un combattant vaincu disparaît sans jouer son animation de mort. Sans effet quand Déplacements instantanés ou Sans attentes visuelles est coché : sa mort reste alors celle du jeu, qui retire ensuite le combattant. Expérimental. Désactivé par défaut.",
     "En combat, la marche, les poussées, les lancers de personnage porté et les sauts arrivent aussitôt à destination, cases intermédiaires comprises. Un trajet inhabituel garde son animation. Expérimental. Désactivé par défaut.",
     "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
-// The checkboxes added in 1.13.0, in the order of Settings' ExtraToggles.
+// The checkboxes added in 1.13.0 and 1.14.0, in the order of Settings' ExtraToggles.
 enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, MapCoordsRow, MiniMapCoordsRow, NotebookPingRow, MapAddPositionRow,
-    ChatCoordsRow, PerfOverlayRow };
+    ChatCoordsRow, PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow };
 constexpr CheckRow ExtraRows[] = {
     {"Barre des ressources sur la mini-carte", "Affiche sur la mini-carte la barre des six métiers qui ouvre le choix des ressources. Décochée, la barre et sa liste disparaissent, mais les repères des ressources choisies restent affichés si « Ressources sur la mini-carte » est cochée ; le choix se fait alors depuis la grande carte. Activé par défaut."},
     {"Nom de la zone au survol de la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche le nom de sa zone au-dessus de ses coordonnées. Activé par défaut."},
@@ -55,7 +55,10 @@ constexpr CheckRow ExtraRows[] = {
     {"Bouton de repère à côté des positions", "Dans les positions du carnet, un petit bouton drapeau à droite de chaque nom place un repère sur cette position : le drapeau du jeu, visible sur la grande carte et la mini-carte. Le bouton reste enfoncé tant que le repère est affiché ; un second clic le retire. Décochée, le bouton disparaît ; le clic droit sur une position permet toujours d’afficher ou de retirer son repère. Activé par défaut."},
     {"« Ajouter aux positions » au clic droit sur les cartes", "Au clic droit sur une case de la grande carte ou de la mini-carte, ajoute l’entrée « Ajouter aux positions » : elle enregistre cette case (coordonnées, dimension et nom de la zone) dans les positions du carnet, même fermé, et le chat le confirme. Une case déjà enregistrée n’est pas ajoutée deux fois. Activé par défaut."},
     {"Dimension avec les coordonnées dans le chat", "Les positions et les groupes de monstres partagés dans le chat s’affichent avec leur dimension : [x,y, dimension]. Le lien du jeu, son clic et le bouton TP ne changent pas ; des coordonnées simplement écrites [x,y] restent comme le joueur les a tapées. Activé par défaut."},
-    {"Afficher les FPS et la mémoire", "Affiche discrètement, dans un coin de l’écran, les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde. Le cadre ne capte ni les clics ni le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."}};
+    {"Afficher les FPS et la mémoire", "Affiche discrètement, dans un coin de l’écran, les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
+    {"Charge du GPU", "Ajoute à l’affichage des performances la charge de la carte graphique due au jeu, comme la colonne GPU du Gestionnaire des tâches. Activé par défaut."},
+    {"Activité du disque", "Ajoute à l’affichage des performances ce que le jeu lit et écrit sur le disque chaque seconde, et le temps d’activité du disque où il est installé, comme le Gestionnaire des tâches. Activé par défaut."},
+    {"Déplacer l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux sur l’écran ; sa place est gardée, même après un redémarrage. Ce clic ne va pas au jeu. Décochée, l’affichage reprend son coin et laisse passer les clics vers le jeu. Activé par défaut."}};
 constexpr const char* PerfCorners[] = {"En haut à gauche", "En haut à droite", "En bas à gauche", "En bas à droite"};
 constexpr const char* TempleTitle = "Passage secret et temple des Roublards";
 constexpr const char* TempleDescription = "Le trajet du mod peut emprunter le passage secret des Roublards : Bad Aboum, dans la crypte sous la vieille chapelle de la Cité d’Astrub [5,-15], conduit au temple Roublard [10,16] et au village d’Amakna [3,3], et en revient. Quand c’est plus court, l’autopilote du jeu le rejoint, puis le mod lui parle et choisit la destination comme un clic, sans jamais rien payer ; si Bad Aboum ne propose pas ce trajet à ton personnage, le trajet continue sans lui et ce refus est retenu. Le trajet peut aussi traverser le temple ; sa statue reste réservée aux Roublards par le jeu. Décoché, le mod n’emprunte ni le passage ni le temple. Activé par défaut.";
@@ -367,7 +370,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     Choices corners;
     for (int i = 0; i != static_cast<int>(std::size(PerfCorners)); ++i) corners.emplace_back(i, PerfCorners[i]);
     prepared.perfCornerOption.reset(MakeChoiceOption(prepared.perfCornerSource.get(), current.get(), "Position de l’affichage des performances",
-        "Coin de l’écran où s’affichent les FPS et la mémoire quand « Afficher les FPS et la mémoire » est coché. En haut à droite, le cadre se place sous les boutons du menu du jeu. En haut à gauche par défaut.", corners));
+        "Coin de l’écran où s’affichent les FPS et la mémoire quand « Afficher les FPS et la mémoire » est coché. En haut à droite, le cadre se place sous les boutons du menu du jeu. Choisir un autre coin y replace l’affichage déplacé à la souris. En haut à gauche par défaut.", corners));
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
@@ -943,7 +946,7 @@ bool OptionsUi::Attach(Obj page) {
         {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
         {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get(), extra(ChatCoordsRow)}},
         {"Calendrier", {calendarKraloveOption.get()}},
-        {"Performances", {extra(PerfOverlayRow), perfCornerOption.get()}},
+        {"Performances", {extra(PerfOverlayRow), extra(PerfGpuRow), extra(PerfDiskRow), extra(PerfDragRow), perfCornerOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
         {"À propos", {creditsOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
@@ -1028,6 +1031,8 @@ void OptionsUi::Tick() {
     for (size_t i = 0; i < extraSources.size(); ++i)
         next.*ExtraToggles[i] = api.Value<bool>(api.Call(extraSources[i].get(), "get_property"));
     next.perfOverlayCorner = api.Value<int>(api.Call(perfCornerSource.get(), "get_property"));
+    // Another corner, or the mouse placement turned off: back to the corner.
+    if (!next.perfOverlayDrag || next.perfOverlayCorner != module->settings.perfOverlayCorner) next.perfOverlayX = next.perfOverlayY = -1;
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
         !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidPerfOverlayCorner(next.perfOverlayCorner)) {
         Sync(); return;

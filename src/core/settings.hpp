@@ -48,6 +48,15 @@ struct Settings {
     bool coordsWorldChat = true; // Chat : [x, y, dimension] pour les positions partagées
     bool perfOverlay = false; // Performances : images par seconde et mémoire dans un coin de l'écran
     int perfOverlayCorner = 0; // 0 en haut à gauche, 1 en haut à droite, 2 en bas à gauche, 3 en bas à droite
+    // 1.14.0: the overlay's extra figures and its mouse placement (ExtraToggles).
+    bool perfOverlayGpu = true; // Performances : charge du GPU (part du jeu) dans l'affichage
+    bool perfOverlayDisk = true; // Performances : activité du disque (débit du jeu, temps d'activité de son disque)
+    bool perfOverlayDrag = true; // Performances : l'affichage se déplace en le faisant glisser au clic gauche
+    // Place choisie à la souris : le coin haut gauche du cadre, en dix-millièmes
+    // de la place libre (largeur ou hauteur de l'écran moins celle du cadre),
+    // donc indépendante de la définition et de la taille du cadre. -1 et -1 :
+    // le coin perfOverlayCorner. Jamais une seule des deux.
+    int perfOverlayX = -1, perfOverlayY = -1;
     // Apparence : avec le mode Miniatures, chaque catégorie cochée est réduite et
     // les autres gardent leur taille normale (Créatures reste pour tous). Par
     // défaut toutes cochées, comme avant ces cases.
@@ -91,6 +100,10 @@ struct Settings {
     }
     static bool ValidMonsterGlowMode(int value) { return value >= 0 && value <= 3; }
     static bool ValidPerfOverlayCorner(int value) { return value >= 0 && value <= 3; }
+    static bool ValidPerfOverlayPlace(int value) { return value >= -1 && value <= 10000; }
+    static bool ValidPerfOverlayPlace(int x, int y) {
+        return ValidPerfOverlayPlace(x) && ValidPerfOverlayPlace(y) && (x < 0) == (y < 0);
+    }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
     // metamobSync as the shared file holds it now; nullopt when the file is
     // unreadable or was last written by a revision that does not know it.
@@ -114,7 +127,8 @@ inline constexpr bool Settings::* CombatMiniatureToggles[] = {
 inline constexpr bool Settings::* RoleplayMiniatureToggles[] = {
     &Settings::roleplayMiniatureSelf, &Settings::roleplayMiniatureParty,
     &Settings::roleplayMiniaturePlayers, &Settings::roleplayMiniatureMonsters};
-// The checkboxes added in 1.13.0, in the order of OptionsUi's extra rows.
+// The checkboxes added in 1.13.0 and 1.14.0, in the order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName, &Settings::coordsWorldMap, &Settings::coordsWorldMiniMap,
-    &Settings::notebookPingButton, &Settings::mapAddPosition, &Settings::coordsWorldChat, &Settings::perfOverlay};
+    &Settings::notebookPingButton, &Settings::mapAddPosition, &Settings::coordsWorldChat, &Settings::perfOverlay,
+    &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag};
