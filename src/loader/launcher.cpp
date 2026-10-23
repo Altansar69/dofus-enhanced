@@ -22,7 +22,7 @@ static DWORD ChooseClient() {
         if (_wcsicmp(entry.szExeFile, L"Dofus.exe") == 0) clients.push_back(entry.th32ProcessID);
     } while (Process32NextW(snapshot.value, &entry));
     if (clients.empty()) throw std::runtime_error("Aucun client Dofus lance. Lance le jeu toi-meme puis reessaie.");
-    std::cout << ModDisplayName << " " << ModSemanticVersion << " (" << ModVersion << ") - lanceur pour 3.7.12.12\n"
+    std::cout << ModDisplayName << " " << ModSemanticVersion << " - lanceur pour 3.7.12.12\n"
                  "Le module sera charge en memoire dans le client choisi.\n"
                  "La compilation est verifiee, les fonctions en jeu restent a tester.\n"
                  "Aucun clic, touche ou changement de fenetre ne sera effectue.\n\nClients trouves (PID) :";

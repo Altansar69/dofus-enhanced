@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.parse
@@ -15,11 +16,14 @@ source = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("--package", type=Path, required=True)
 parser.add_argument("--notes", type=Path, required=True)
+# Updaters older than 1.13.1 only read rN tags: 1.13.1 alone was published as r113.
+parser.add_argument("--revision-tag", action="store_true", help="tag rN instead of vX.Y.Z (1.13.1 only)")
 args = parser.parse_args()
 package = json.loads(args.package.read_text(encoding="utf8"))
 asset = Path(package["asset"])
 assert hashlib.sha256(asset.read_bytes()).hexdigest() == package["sha256"]
 assert package["testsPassed"] >= 48
+assert re.fullmatch(r"(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})", package["version"])
 def git(*arguments):
     return subprocess.check_output(["git", "-C", str(source), *arguments], text=True).strip()
 
@@ -55,7 +59,12 @@ def request(method, path, data=None, upload=False):
 assert request("GET", "/user")["login"] == ACCOUNT, "Wrong GitHub account"
 repo = request("GET", f"/repos/{REPO}")
 assert not repo["private"] and repo["permissions"]["push"], "Public writable repository required"
-tag = f"r{package['revision']}"
+tag = f"r{package['revision']}" if args.revision_tag else f"v{package['version']}"
+# A revision is published once: every other release must hold an older archive.
+for other in request("GET", f"/repos/{REPO}/releases?per_page=100"):
+    for item in other["assets"] if other["tag_name"] != tag else []:
+        published = re.match(r"DofusMiniatures-r([1-9][0-9]*)-", item["name"])
+        assert not published or int(published.group(1)) < package["revision"], "Revision already published; increment ModRevision"
 try:
     release = request("GET", f"/repos/{REPO}/releases/tags/{tag}")
 except urllib.error.HTTPError as error:
@@ -63,8 +72,7 @@ except urllib.error.HTTPError as error:
         raise
     release = request("POST", f"/repos/{REPO}/releases", {
         "tag_name": tag, "target_commitish": commit,
-        "name": (f"Dofus Enhanced {package['version']} ({tag}) — Dofus {package['clientVersion']}" if package.get("version")
-                 else f"{tag} — Dofus {package['clientVersion']}"),
+        "name": f"Dofus Enhanced {package['version']} — Dofus {package['clientVersion']}",
         "body": args.notes.read_text(encoding="utf8"), "draft": True, "prerelease": False,
     })
 assets = request("GET", f"/repos/{REPO}/releases/{release['id']}/assets")

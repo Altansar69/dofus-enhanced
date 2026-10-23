@@ -371,7 +371,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
-        " (révision " + ModVersion + ", Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
+        " (Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
     prepared.creditsOption.reset(MakeTextButtonOption(tooltip.get(), creditsTitle.c_str(), creditsText.c_str(), "Ouvrir GitHub", 0, prepared.creditsMarker));
     // « Pierre d’âme », after the soul rows: the Metamob sync preference, then the key row, an owned
     // text button (see BindKeyField). The key itself stays in the capture sync, reached through ui.metamob only.

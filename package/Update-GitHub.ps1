@@ -68,11 +68,15 @@ function Test-Package([string]$Folder, [int]$Revision, [string]$GameHash, [strin
 function Select-Update($Releases, [string]$GameHash, [string]$MetadataHash) {
     $selected = $null
     foreach ($release in @($Releases)) {
-        if ($release.draft -or $release.prerelease -or $release.tag_name -cnotmatch '^r[1-9][0-9]{0,5}$') { continue }
+        # Since 1.13.1 a release is tagged with its public version (v1.13.1); an
+        # older revision tag (r112) must still name the archive's own revision.
+        $tag = [string]$release.tag_name
+        $versioned = $tag -cmatch '^v?(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})$'
+        if ($release.draft -or $release.prerelease -or (!$versioned -and $tag -cnotmatch '^r[1-9][0-9]{0,5}$')) { continue }
         foreach ($asset in @($release.assets)) {
             if ($asset.name -cnotmatch '^DofusMiniatures-r([1-9][0-9]{0,5})-([a-f0-9]{64})-([a-f0-9]{64})\.zip$') { continue }
             $revision = [int]$Matches[1]
-            if ($revision -lt 75 -or $release.tag_name -cne "r$revision" -or
+            if ($revision -lt 75 -or (!$versioned -and $tag -cne "r$revision") -or
                 $Matches[2] -cne $GameHash -or $Matches[3] -cne $MetadataHash) { continue }
             if ($asset.state -cne 'uploaded' -or $asset.size -le 0 -or $asset.size -gt 32MB) { continue }
             # GitHub computes the digest on upload; never trust a checksum from
@@ -80,7 +84,7 @@ function Select-Update($Releases, [string]$GameHash, [string]$MetadataHash) {
             if (!$asset.PSObject.Properties['digest'] -or $asset.digest -cnotmatch '^sha256:[a-f0-9]{64}$') { continue }
             $expected = $null
             foreach ($repository in $script:AssetRepositories) {
-                $candidate = "https://github.com/$repository/releases/download/r$revision/$($asset.name)"
+                $candidate = "https://github.com/$repository/releases/download/$tag/$($asset.name)"
                 if ($asset.browser_download_url -ceq $candidate) { $expected = $candidate }
             }
             if (!$expected) { continue }

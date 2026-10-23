@@ -43,6 +43,11 @@ function Make-Package([string]$Name, [int]$Revision = 75, [string]$Extra = '') {
     } finally { $zip.Dispose() }
     return $archive
 }
+function Retag($Release, [string]$Tag) {
+    $Release.tag_name = $Tag
+    $Release.assets[0].browser_download_url = "https://github.com/$script:Repository/releases/download/$Tag/$($Release.assets[0].name)"
+    return $Release
+}
 function Asset([int]$Revision, [string]$Game, [string]$Metadata, [string]$Digest) {
     $name = "DofusMiniatures-r$Revision-$Game-$Metadata.zip"
     return [pscustomobject]@{
@@ -83,6 +88,49 @@ try {
     $wrongTag = Asset 93 $gameHash $metadataHash $digest
     $wrongTag.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-enhanced/releases/download/r90/$($wrongTag.assets[0].name)"
     Check ($null -eq (Select-Update @($wrongTag) $gameHash $metadataHash)) 'Renamed asset under another tag accepted'
+    # Version tags (1.13.1 on): the archive still names its revision, and its
+    # download address sits under the release's own tag.
+    $tagged = Asset 95 $gameHash $metadataHash $digest
+    $tagged.tag_name = 'v1.3.0'
+    $tagged.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-enhanced/releases/download/v1.3.0/$($tagged.assets[0].name)"
+    $chosen = Select-Update @($legacy, $tagged) $gameHash $metadataHash
+    Check ($null -ne $chosen -and $chosen.revision -eq 95 -and $chosen.url -ceq $tagged.assets[0].browser_download_url) 'Version-tagged release rejected'
+    $bare = Asset 96 $gameHash $metadataHash $digest
+    $bare.tag_name = '1.3.1'
+    $bare.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-miniatures/releases/download/1.3.1/$($bare.assets[0].name)"
+    Check ((Select-Update @($bare) $gameHash $metadataHash).revision -eq 96) 'Version tag without its v rejected'
+    $newer = Asset 97 $gameHash $metadataHash $digest
+    Check ((Select-Update @($tagged, $newer, $bare) $gameHash $metadataHash).revision -eq 97) 'Highest revision not chosen across tag styles'
+    $older = Asset 94 $gameHash $metadataHash $digest
+    Check ((Select-Update @($older, $tagged) $gameHash $metadataHash).revision -eq 95) 'Older revision tag preferred over a newer version tag'
+    $revisionAddress = Asset 98 $gameHash $metadataHash $digest
+    $revisionAddress.tag_name = 'v1.4.0'
+    Check ($null -eq (Select-Update @($revisionAddress) $gameHash $metadataHash)) 'Version-tagged release downloaded from another tag'
+    foreach ($tag in @('v1.4', 'v1.4.0-beta', 'v01.4.0', 'V1.4.0', 'release-1.4.0', 'v1.4.0.1', 'v12345.0.0', 'r98.1', 'r098', '')) {
+        $odd = Asset 98 $gameHash $metadataHash $digest
+        $odd.tag_name = $tag
+        $odd.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-enhanced/releases/download/$tag/$($odd.assets[0].name)"
+        Check ($null -eq (Select-Update @($odd) $gameHash $metadataHash)) "Malformed tag '$tag' accepted"
+    }
+    $mislabeled = Retag (Asset 93 $gameHash $metadataHash $digest) 'r90'
+    Check ($null -eq (Select-Update @($mislabeled) $gameHash $metadataHash)) 'Revision tag holding another revision accepted'
+    # A version tag lifts none of the other rules.
+    $control = Retag (Asset 98 $gameHash $metadataHash $digest) 'v1.4.0'
+    Check ((Select-Update @($control) $gameHash $metadataHash).revision -eq 98) 'Version-tagged control release rejected'
+    $draftTagged = Retag (Asset 98 $gameHash $metadataHash $digest) 'v1.4.0'; $draftTagged.draft = $true
+    $previewTagged = Retag (Asset 98 $gameHash $metadataHash $digest) 'v1.4.0'; $previewTagged.prerelease = $true
+    $foreign = Retag (Asset 98 $gameHash $metadataHash $digest) 'v1.4.0'
+    $foreign.assets[0].browser_download_url = "https://github.com/Altansar69/other-repo/releases/download/v1.4.0/$($foreign.assets[0].name)"
+    $otherClient = Retag (Asset 98 ('d' * 64) $metadataHash $digest) 'v1.4.0'
+    $otherData = Retag (Asset 98 $gameHash ('d' * 64) $digest) 'v1.4.0'
+    $undigested = Retag (Asset 98 $gameHash $metadataHash $digest) 'v1.4.0'; $undigested.assets[0].digest = $null
+    $oversized = Retag (Asset 98 $gameHash $metadataHash $digest) 'v1.4.0'; $oversized.assets[0].size = 33MB
+    $ancient = Retag (Asset 74 $gameHash $metadataHash $digest) 'v0.74.0'
+    $cases = [ordered]@{ draft = $draftTagged; prerelease = $previewTagged; 'other repository' = $foreign; 'other client' = $otherClient
+        'other metadata' = $otherData; 'missing digest' = $undigested; oversized = $oversized; 'revision before 75' = $ancient }
+    foreach ($case in $cases.GetEnumerator()) {
+        Check ($null -eq (Select-Update @($case.Value) $gameHash $metadataHash)) "Version tag bypassed the $($case.Key) rule"
+    }
     $first.assets[0].digest = $null
     Check ($null -eq (Select-Update @($first) $gameHash $metadataHash)) 'Missing GitHub digest accepted'
     $first.assets[0].digest = "sha256:$digest"; $first.assets[0].size = 33MB
@@ -171,7 +219,7 @@ try {
     function Get-TrustedDownload { throw 'simulated offline' }
     Reject { Invoke-GitHubUpdate $root (Join-Path $client 'Dofus.exe') } 'Network failure must be reported'
     Test-Package (Join-Path $root "$script:Family`78") 78 $gameHash $metadataHash
-    Write-Output 'PASS: stable compatible selection, trusted assets, atomic install, no overwrite, no traversal, integrity, idempotence, future client, empty-listing fallback to the newest release, renamed repository assets, offline retention; fixtures only'
+    Write-Output 'PASS: stable compatible selection, version and revision tags, trusted assets, atomic install, no overwrite, no traversal, integrity, idempotence, future client, empty-listing fallback to the newest release, renamed repository assets, offline retention; fixtures only'
 } finally {
     if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($fixture)) -ne [IO.Path]::GetFullPath($build) -or
         [IO.Path]::GetFileName($fixture) -notmatch '^update-fixtures-[a-f0-9]{32}$') { throw 'Invalid fixture cleanup target' }

@@ -69,7 +69,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ## 🔨 Installation
 
-1. 📦 Sur la **[dernière version](../../releases/latest)** (page Releases), télécharge l’archive `DofusMiniatures-rN-….zip` (pas « Source code »).
+1. 📦 Sur la **[dernière version](../../releases/latest)** (page Releases), télécharge l’archive `DofusMiniatures-….zip` (pas « Source code »).
 2. 📂 Extrais **toute l’archive** dans un dossier que tu gardes, au chemin court et hors du dossier du jeu (par exemple `C:\DofusEnhanced`). Elle contient un dossier `DofusMiniatures-3.7.11.11-rN` : ce nom historique est normal, la version de Dofus visée est indiquée dans `release.ini`.
 3. ▶️ Ouvre un terminal dans ce dossier `DofusMiniatures-3.7.11.11-rN` (dans l’Explorateur, tape `powershell` dans la barre d’adresse puis Entrée), puis choisis l’une des deux méthodes :
 
@@ -112,7 +112,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ## 🔢 Versionnage
 
-Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, et une révision **rN** : l’étiquette GitHub (`r109`, `r110`…) que suit la mise à jour automatique. Exemple : 1.13.0 = r112.
+Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, qui est aussi son étiquette GitHub (`v1.13.0`, `v1.14.0`…), sauf la 1.13.1 publiée sous `r113` pour les anciennes mises à jour automatiques. Les révisions publiées avant la 1.0.0 sont numérotées 0.y.0 (`v0.75.0` à `v0.91.0`).
 
 ## 🤝 Crédits
 

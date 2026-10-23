@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.13.0** (révision r112).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.13.1**.
 
 Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
 trajets rapides (passage secret des Roublards compris), ressources, archimonstres
@@ -27,7 +27,10 @@ de réseau, il utilise une version locale compatible. Il ne remplace pas un modu
 dans un jeu déjà ouvert. Il laisse intact un client sans version compatible.
 Depuis la 1.9.2, si GitHub renvoie une liste de publications vide (service
 dégradé), il consulte la dernière publication avant de conclure qu’aucune
-version n’est compatible.
+version n’est compatible. Les publications portent leur numéro de version
+(`v1.13.0`, `v1.14.0`…), sauf la 1.13.1, publiée sous `r113` pour les lanceurs
+plus anciens ; les archives et les dossiers gardent la révision `rN`, que la
+mise à jour vérifie toujours.
 
 L’assistant de démarrage peut reconnaître une future version du jeu et lancer
 le chargeur livré avec son correctif. Cela ne rend pas les fonctions natives du mod
@@ -49,10 +52,9 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence, Animations,
 Surbrillance, Cartes, Carnet, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
-Performances, Chargement et mises à jour et À propos. La version chargée (x.y.z et
-révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
-et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
-étiquette `rN` pour le vérificateur de mises à jour.
+Performances, Chargement et mises à jour et À propos. La version chargée (x.y.z)
+figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
+**Ouvrir GitHub** vers le dépôt.
 
 ## Chasse au trésor
 

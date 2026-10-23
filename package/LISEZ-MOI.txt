@@ -10,7 +10,16 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — RÉVISION 112 — VERSION 1.13.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.13.1
+
+VERSION 1.13.1 : PUBLICATIONS NOMMÉES PAR VERSION
+- Les publications GitHub portent désormais le numéro de version (v1.13.0,
+  v1.14.0…) au lieu de la révision (r112…). La mise à jour automatique
+  reconnaît les deux ; le nom des archives et des dossiers garde la
+  révision, qu’elle vérifie toujours. Seule cette 1.13.1 est publiée sous
+  r113 : c’est la publication que les lanceurs plus anciens savent trouver.
+- Options → Dofus Enhanced → À propos n’affiche plus que la version.
+- Rien d’autre ne change en jeu : tout le contenu de la 1.13.0 est repris.
 
 R112 — VERSION 1.13.0 : PASSAGE ROUBLARD, TRAJETS INSTANTANÉS, CARTE OCRE
 - Déplacements › « Passage secret et temple des Roublards » (coché par
