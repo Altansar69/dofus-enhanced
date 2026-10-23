@@ -21,16 +21,26 @@ constexpr const char* Labels[] = {"Normal", "Cr\xC3\xA9" "atures", "Miniatures"}
 constexpr int DisplayIcon = 136; // eye
 constexpr int AnimationIcon = 226; // play
 struct Choice { Ref item, callback; };
+// « Animations »: one native checkbox per toggle, in the options block's order.
+constexpr size_t AnimationToggleCount = AnimationToggleLabels.size();
+static_assert(std::size(AnimationToggles) == AnimationToggleCount && AnimationToggleHelps.size() == AnimationToggleCount);
+using AnimationValues = std::array<bool, AnimationToggleCount>;
+AnimationValues AnimationToggleValues(const Settings& settings) {
+    AnimationValues values{};
+    for (size_t index = 0; index < AnimationToggleCount; ++index) values[index] = settings.*AnimationToggles[index];
+    return values;
+}
 struct OwnedMenu {
     Ref menu, maker, cached, option, original, before, after, replacement, submenu;
     Ref animationReplacement, animationSubmenu;
     Ref glowReplacement, glowSubmenu;
     std::array<Choice, 3> choices;
-    std::array<Choice, 4> animationChoices;
+    std::array<Choice, AnimationToggleCount> animationToggles;
+    AnimationValues animations{};
     std::array<Choice, 4> glowChoices;
     std::array<Choice, 2> glowCategories;
     std::array<bool, 2> glowIncludes{};
-    int originalIndex = 0, mode = 0, animationMode = 0, glowMode = 1;
+    int originalIndex = 0, mode = 0, glowMode = 1;
     bool combat = false, armed = false, seenRoot = false;
     ULONGLONG created = 0;
 };
@@ -143,24 +153,28 @@ void Fail(const char* reason) {
     Log(std::string("CONTEXT_DISPLAY_DISABLED ") + reason);
     RestoreOwned(true);
 }
-void SyncGlowCheckboxViews(OwnedMenu& owned) {
-    Ref root(Root(owned.glowSubmenu.get()));
+void SyncCheckboxViews(Obj submenu, const Choice* choices, bool* values, size_t count) {
+    Ref root(Root(submenu));
     if (!root.get() || !api.Call(root.get(), "get_panel")) return;
     Ref views(api.Call(root.get(), "GetChildItemsInMenu"));
-    for (int index = 0, count = Count(views.get()); index < count; ++index) {
+    for (int index = 0, total = Count(views.get()); index < total; ++index) {
         Ref view(api.Call(views.get(), "get_Item", {&index}));
         if (!Is(view.get(), state.viewClass) || !api.Call(view.get(), "get_panel")) continue;
         Ref item(api.Call(view.get(), "get_itemData"));
-        for (size_t category = 0; category < owned.glowCategories.size(); ++category) {
-            if (item.get() != owned.glowCategories[category].item.get()) continue;
-            if (api.Call(item.get(), "get_root") != owned.glowSubmenu.get()) continue;
+        for (size_t choice = 0; choice < count; ++choice) {
+            if (item.get() != choices[choice].item.get()) continue;
+            if (api.Call(item.get(), "get_root") != submenu) continue;
             // The model setter only writes ContextMenuItem.isOn. Native views
             // and their embedded CheckboxCustom have separate state, including
             // a native click handler that can run after our callback. Reconcile
-            // both owned checkboxes after dispatch as well as during selection.
-            api.Call(view.get(), "set_isOn", {&owned.glowIncludes[category]});
+            // every owned checkbox after dispatch as well as during selection.
+            api.Call(view.get(), "set_isOn", {&values[choice]});
         }
     }
+}
+void SyncCheckboxViews(OwnedMenu& owned) {
+    SyncCheckboxViews(owned.animationSubmenu.get(), owned.animationToggles.data(), owned.animations.data(), AnimationToggleCount);
+    SyncCheckboxViews(owned.glowSubmenu.get(), owned.glowCategories.data(), owned.glowIncludes.data(), owned.glowCategories.size());
 }
 void Sync(OwnedMenu& owned) {
     const int mode = ActiveDisplayMode(module->settings, owned.combat);
@@ -170,13 +184,9 @@ void Sync(OwnedMenu& owned) {
         api.Call(owned.choices[i].item.get(), "set_isOn", {&selected});
     }
     owned.mode = mode;
-    const int animationMode = module->settings.animationMode;
-    if (!Settings::ValidAnimationMode(animationMode)) throw std::runtime_error("Invalid context animation selection");
-    for (int i = 0; i < 4; ++i) {
-        bool selected = animationMode == i;
-        api.Call(owned.animationChoices[i].item.get(), "set_isOn", {&selected});
-    }
-    owned.animationMode = animationMode;
+    owned.animations = AnimationToggleValues(module->settings);
+    for (size_t i = 0; i < AnimationToggleCount; ++i)
+        api.Call(owned.animationToggles[i].item.get(), "set_isOn", {&owned.animations[i]});
     const int glowMode = module->settings.monsterGlowMode;
     if (!Settings::ValidMonsterGlowMode(glowMode)) throw std::runtime_error("Invalid context glow selection");
     for (int i = 0; i < 4; ++i) {
@@ -187,7 +197,36 @@ void Sync(OwnedMenu& owned) {
     owned.glowIncludes = {module->settings.glowNpcs, module->settings.glowInteractives};
     for (size_t i = 0; i < owned.glowCategories.size(); ++i)
         api.Call(owned.glowCategories[i].item.get(), "set_isOn", {&owned.glowIncludes[i]});
-    SyncGlowCheckboxViews(owned);
+    SyncCheckboxViews(owned);
+}
+// The parent row opening a submenu, built in a staging menu and detached from
+// it before the native list is touched.
+void SubmenuEntry(Obj submenu, Ref& replacement, const char* caption, bool disabled, int icon) {
+    Ref staging(api.New(state.menuClass));
+    Ref title(api.string_new(caption));
+    int style = 1; // ListElementStyleEnum.action; native menu renders iconLeft.
+    api.Call(staging.get(), "AppendSubMenu", {title.get(), submenu, nullptr, &disabled, &style, &icon});
+    replacement.reset(ItemAt(staging.get(), 0));
+    int index = 0;
+    api.Call(staging.get(), "RemoveItemAt", {&index});
+}
+// Native checkboxes that keep the menu open, each with its help tooltip.
+void AppendCheckboxes(Obj submenu, Choice* choices, const char* const* labels, const char* const* helps,
+    bool* values, size_t count, const char* unexpected) {
+    Ref empty(api.string_new(""));
+    bool disabled = false, close = false;
+    unsigned delay = 1000; int icon = 0;
+    for (size_t i = 0; i < count; ++i) {
+        Ref label(api.string_new(labels[i])), help(api.string_new(helps[i]));
+        Ref items(api.Call(submenu, "get_menuItems"));
+        const int index = Count(items.get());
+        api.Invoke(state.appendCheckbox, submenu, {label.get(), nullptr, &values[i],
+            &disabled, &close, help.get(), &delay, &icon, empty.get()});
+        auto& choice = choices[i];
+        choice.item.reset(ItemAt(submenu, index));
+        choice.callback.reset(api.Call(choice.item.get(), "get_m_callback"));
+        if (!Is(choice.callback.get(), state.callbackClass)) throw std::runtime_error(unexpected);
+    }
 }
 void BuildSubmenu(Ref& submenu, Ref& replacement, Choice* choices, int count,
     const char* const* labels, const char* caption, int selectedMode, bool disabled, int icon, bool close = true) {
@@ -214,13 +253,16 @@ void BuildSubmenu(Ref& submenu, Ref& replacement, Choice* choices, int count,
         if (!Is(choices[mode].callback.get(), state.callbackClass))
             throw std::runtime_error("Unexpected radio item callback handler");
     }
-    Ref staging(api.New(state.menuClass));
-    Ref title(api.string_new(caption));
-    int style = 1; // ListElementStyleEnum.action; native menu renders iconLeft.
-    api.Call(staging.get(), "AppendSubMenu", {title.get(), submenu.get(), nullptr, &disabled, &style, &icon});
-    replacement.reset(ItemAt(staging.get(), 0));
-    int index = 0;
-    api.Call(staging.get(), "RemoveItemAt", {&index});
+    SubmenuEntry(submenu.get(), replacement, caption, disabled, icon);
+}
+// « Animations »: the six toggles as checkboxes, available whatever the
+// native creature row's state (the setting is independent of it).
+void BuildAnimationSubmenu(OwnedMenu& owned) {
+    owned.animationSubmenu.reset(api.New(state.menuClass));
+    owned.animations = AnimationToggleValues(module->settings);
+    AppendCheckboxes(owned.animationSubmenu.get(), owned.animationToggles.data(), AnimationToggleLabels.data(),
+        AnimationToggleHelps.data(), owned.animations.data(), AnimationToggleCount, "Unexpected animation checkbox callback handler");
+    SubmenuEntry(owned.animationSubmenu.get(), owned.animationReplacement, "Animations", false, AnimationIcon);
 }
 void BuildGlowCategories(OwnedMenu& owned) {
     constexpr const char* labels[] = {"Inclure les PNJ", "Inclure les éléments interactifs"};
@@ -229,21 +271,8 @@ void BuildGlowCategories(OwnedMenu& owned) {
         "Ajoute les objets visibles avec une action disponible hors combat : ressources, portes, zaaps…"};
     owned.glowIncludes = {module->settings.glowNpcs, module->settings.glowInteractives};
     api.Call(owned.glowSubmenu.get(), "AppendSeparator");
-    Ref empty(api.string_new(""));
-    bool disabled = false, close = false;
-    unsigned delay = 1000; int icon = 0;
-    for (size_t i = 0; i < owned.glowCategories.size(); ++i) {
-        Ref label(api.string_new(labels[i])), help(api.string_new(helps[i]));
-        Ref items(api.Call(owned.glowSubmenu.get(), "get_menuItems"));
-        const int index = Count(items.get());
-        api.Invoke(state.appendCheckbox, owned.glowSubmenu.get(), {label.get(), nullptr, &owned.glowIncludes[i],
-            &disabled, &close, help.get(), &delay, &icon, empty.get()});
-        auto& choice = owned.glowCategories[i];
-        choice.item.reset(ItemAt(owned.glowSubmenu.get(), index));
-        choice.callback.reset(api.Call(choice.item.get(), "get_m_callback"));
-        if (!Is(choice.callback.get(), state.callbackClass))
-            throw std::runtime_error("Unexpected glow checkbox callback handler");
-    }
+    AppendCheckboxes(owned.glowSubmenu.get(), owned.glowCategories.data(), labels, helps, owned.glowIncludes.data(),
+        owned.glowCategories.size(), "Unexpected glow checkbox callback handler");
 }
 void Augment(Obj maker, Obj menu) {
     if (!Available() || state.busy || !menu || !maker ||
@@ -276,13 +305,11 @@ void Augment(Obj maker, Obj menu) {
     if (found > 0) owned->before.reset(ItemAt(menu, found - 1));
     if (found + 1 < count) owned->after.reset(ItemAt(menu, found + 1));
     owned->mode = ActiveDisplayMode(module->settings, owned->combat);
-    owned->animationMode = module->settings.animationMode;
     owned->glowMode = module->settings.monsterGlowMode;
     const bool disabled = api.Value<bool>(api.Call(owned->original.get(), "get_disabled"));
     // Allocate all owned rows before the first native list mutation.
     BuildSubmenu(owned->submenu, owned->replacement, owned->choices.data(), 3, Labels, "Affichage", owned->mode, disabled, DisplayIcon);
-    BuildSubmenu(owned->animationSubmenu, owned->animationReplacement, owned->animationChoices.data(), 4,
-        AnimationModeLabels.data(), "Animations", owned->animationMode, false, AnimationIcon);
+    BuildAnimationSubmenu(*owned);
     BuildSubmenu(owned->glowSubmenu, owned->glowReplacement, owned->glowChoices.data(), 4,
         GlowModeLabels.data(), "Surbrillance", owned->glowMode, false, DisplayIcon, false);
     BuildGlowCategories(*owned);
@@ -316,8 +343,8 @@ void CallbackHook(Obj callback, Obj view, Method method) {
     bool animation = false, glow = false;
     if (owned) for (int index = 0; index < 3; ++index)
         if (owned->choices[index].callback.get() == callback) { selected = index; break; }
-    if (owned && selected < 0) for (int index = 0; index < 4; ++index)
-        if (owned->animationChoices[index].callback.get() == callback) { selected = index; animation = true; break; }
+    if (owned && selected < 0) for (int index = 0; index < static_cast<int>(AnimationToggleCount); ++index)
+        if (owned->animationToggles[index].callback.get() == callback) { selected = index; animation = true; break; }
     if (owned && selected < 0) for (int index = 0; index < 4; ++index)
         if (owned->glowChoices[index].callback.get() == callback) { selected = index; glow = true; break; }
     if (owned && selected < 0) for (int index = 0; index < 2; ++index)
@@ -326,7 +353,7 @@ void CallbackHook(Obj callback, Obj view, Method method) {
     // Known handlers have null managed actions. Never forward a mismatched/stale
     // invocation to the native creature toggle, and never identify rows by their text.
     try {
-        const auto& choice = glowCategory >= 0 ? owned->glowCategories[glowCategory] : glow ? owned->glowChoices[selected] : animation ? owned->animationChoices[selected] : owned->choices[selected];
+        const auto& choice = glowCategory >= 0 ? owned->glowCategories[glowCategory] : glow ? owned->glowChoices[selected] : animation ? owned->animationToggles[selected] : owned->choices[selected];
         const auto submenu = glow ? owned->glowSubmenu.get() : animation ? owned->animationSubmenu.get() : owned->submenu.get();
         const auto replacement = glow ? owned->glowReplacement.get() : animation ? owned->animationReplacement.get() : owned->replacement.get();
         if (!owned->armed || state.busy || !SameContext(*owned) || !Is(view, state.viewClass) ||
@@ -339,7 +366,7 @@ void CallbackHook(Obj callback, Obj view, Method method) {
         if (glowCategory == 0) next.glowNpcs = !next.glowNpcs;
         else if (glowCategory == 1) next.glowInteractives = !next.glowInteractives;
         else if (glow) next.monsterGlowMode = selected;
-        else if (animation) next.animationMode = selected;
+        else if (animation) { auto field = AnimationToggles[selected]; next.*field = !(next.*field); }
         else (owned->combat ? next.mode : next.roleplayMode) = selected;
         module->Change(next);
         if (state.owned.get() == owned && SameContext(*owned)) Sync(*owned);
@@ -399,12 +426,12 @@ void TickContextDisplayMenu() {
         // Native views snapshot state during creation. Closing when preferences
         // change elsewhere avoids presenting stale radio marks, checkbox marks or a stale choice.
         if (ActiveDisplayMode(module->settings, state.owned->combat) != state.owned->mode ||
-            module->settings.animationMode != state.owned->animationMode ||
+            AnimationToggleValues(module->settings) != state.owned->animations ||
             module->settings.monsterGlowMode != state.owned->glowMode ||
             module->settings.glowNpcs != state.owned->glowIncludes[0] ||
             module->settings.glowInteractives != state.owned->glowIncludes[1])
             RestoreOwned(true);
-        else SyncGlowCheckboxViews(*state.owned);
+        else SyncCheckboxViews(*state.owned);
     } catch (const std::exception& e) { Fail(e.what()); }
     catch (...) { Fail("Unknown context menu lifecycle error"); }
 }

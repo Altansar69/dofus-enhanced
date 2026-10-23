@@ -166,5 +166,48 @@ int main(){using namespace fake;using namespace chat_route;try{InitApi();Install
         Begin({Choice(68552706,3,-5),Choice(185860609,-5,-8)},190841348,162791424);auto r=f.Finish();
         Check(r.status==Status::Found&&r.departure.map==185860609&&r.steps==7,"The closer split-map zaap of [-5,-8] wins (2+5 < 1+11)");
         Check(logged("CHAT_ROUTE_SEEDED target=190841348 candidates=2 starts=3 hereStarts=0 splitZaaps=1"),"Every zone of the split zaap starts the search");}
-    Check(handles.empty(),"Route roots leaked");std::cout<<"PASS: real route comparison, barriers, conditions, interactive edges, cycles, current and zaap maps split into zones, the player's own zone, only the game's destination map, loading and session changes\n";return 0;
+    // r111. The Roublard temple under the Amakna cemetery, with the game's own ids:
+    // door map 82314240 -> hall 67108864 -> 67110912 -> 67111936 -> statue room
+    // 67113984, whose statue teleports to the Domaine des dieux 188219392 and the
+    // Temple des Douze 192416776; the hall leads back out to 82314240. The statue's
+    // edges carry the game's criteria (PG=13...): `statue` is their native result.
+    const auto temple=[](bool statue){
+        auto cemetery=Vertex(82313729),door=Vertex(82314240),hall=Vertex(67108864),west=Vertex(67110912),inner=Vertex(67111936),room=Vertex(67113984);
+        auto domaine=Vertex(188219392),douze=Vertex(192416776);
+        Edge(cemetery,door);Edge(door,cemetery);Edge(door,hall,true,true,32);Edge(hall,door,true,true,8);
+        Edge(hall,west,true,true,8);Edge(west,hall,true,true,32);Edge(west,inner,true,true,32);Edge(inner,west,true,true,32);
+        Edge(inner,room,true,true,32);Edge(room,inner,true,true,32);
+        Edge(room,domaine,statue,true,32);Edge(room,douze,statue,true,32);Edge(domaine,room,statue,true,32);
+        Obj from=door;for(int i=0;i<8;++i){auto step=Vertex(900000+i);Edge(from,step);from=step;}Edge(from,douze); // the long way round (Astrub)
+    };
+    {Fixture f;temple(true);
+        Begin({Choice(82313729)},188219392,82313729);auto r=f.Finish();
+        Check(r.status==Status::Found&&r.departure.map==82313729&&r.steps==6&&logged("temple=1"),"Temple option on: its door and statue reach the Domaine des dieux");
+        Begin({Choice(82313729)},192416776,82313729);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==6,"Temple option on: the statue shortens the trip to the Temple des Douze");
+        Begin({Choice(82313729)},188219392,82313729,-1,false);r=f.Finish();
+        Check(r.status==Status::Unreachable&&logged("temple=0"),"Temple option off: no way into the temple, no statue teleport");
+        Begin({Choice(82313729)},192416776,82313729,-1,false);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==10,"Temple option off: the Temple des Douze by the long way round");}
+    {Fixture f;temple(true);
+        Begin({Choice(67113984)},82313729,67113984,-1,false);auto r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==5,"Temple option off: a character inside the temple still walks out through its door");
+        Begin({Choice(67113984)},192416776,67113984,-1,false);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==13,"Temple option off: no statue teleport, even from the statue room");
+        Begin({Choice(67113984)},192416776,67113984);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==1,"Temple option on: one teleport from the statue room");
+        Begin({Choice(188219392)},82313729,188219392);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==6,"Temple option on: the statue's return from the Domaine des dieux");
+        Begin({Choice(188219392)},82313729,188219392,-1,false);r=f.Finish();
+        Check(r.status==Status::Unreachable,"Temple option off: the statue's return is not used either");}
+    // A character the game's criteria refuse (not a Roublard, or the quest not
+    // done): the statue's edges fail ens.wvs, the doors stay open to everyone.
+    {Fixture f;temple(false);
+        Begin({Choice(82313729)},188219392,82313729);auto r=f.Finish();
+        Check(r.status==Status::Unreachable&&criteria>0,"The game's criteria refuse the statue: no temple shortcut for that character");
+        Begin({Choice(82313729)},192416776,82313729);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==10,"Without the statue, the long way round");
+        Begin({Choice(82313729)},67113984,82313729);r=f.Finish();
+        Check(r.status==Status::Found&&r.steps==5,"The temple's doors stay open to every character");}
+    Check(handles.empty(),"Route roots leaked");std::cout<<"PASS: real route comparison, barriers, conditions, interactive edges, cycles, current and zaap maps split into zones, the player's own zone, only the game's destination map, the Roublard temple option, loading and session changes\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

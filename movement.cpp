@@ -81,7 +81,7 @@ bool AllowLandingOverride(Obj behavior, Obj state) {
         (frame->state && state != frame->state) || Read<Obj>(state, 0x20) != frame->entity ||
         Read<int64_t>(frame->entity, 0x1C8) != frame->id ||
         Read<Obj>(state, 0x38) != frame->route || Read<Obj>(state, 0x30) != frame->callback) return false;
-    if (!frame->committed && (!InstantCombatEnabled() || !IsCurrentFightEntity(frame->entity) ||
+    if (!frame->committed && (!InstantMovementEnabled() || !IsCurrentFightEntity(frame->entity) ||
         Read<bool>(frame->entity, 0xB8))) return false;
     const auto dictionary = Read<Obj>(behavior, 0x38);
     if (!dictionary) return false;
@@ -121,7 +121,7 @@ void FinishHook(Obj behavior, Obj state, Method method) {
 
 bool SameState(Obj behavior, Obj dictionary, Method lookup, int64_t id,
                Obj state, Obj entity, Obj route, Obj callback, const Draining& frame) {
-    return (frame.committed || (InstantCombatEnabled() && IsCurrentFightEntity(entity) &&
+    return (frame.committed || (InstantMovementEnabled() && IsCurrentFightEntity(entity) &&
             (!frame.allowLanding || !Read<bool>(entity, 0xB8)))) &&
         OrdinaryBehavior(behavior, entity, frame.allowLanding) && Read<int64_t>(entity, 0x1C8) == id &&
         Read<Obj>(behavior, 0x38) == dictionary &&
@@ -135,7 +135,7 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     bool allowLanding = false;
     const bool busy = Draining::Busy(entity);
     try {
-        if (InstantCombatEnabled() && behavior && entity && route && !busy &&
+        if (InstantMovementEnabled() && behavior && entity && route && !busy &&
             api.object_get_class(behavior) == walkClass && api.object_get_class(route) == routeClass &&
             IsCurrentFightEntity(entity)) {
             // Slides, jumps and carried-character throws use other classes.

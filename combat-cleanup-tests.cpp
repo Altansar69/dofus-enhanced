@@ -81,10 +81,6 @@ void* Api::NativeAt(uintptr_t rva) const {
 Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
-bool InstantCombatEnabled() {
-    return module && fake::inCombat && module->settings.animationMode == 3 &&
-           !module->stopRequested.load() && !module->stopped.load();
-}
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
     fake::Check(rva == 0x2081890 && replacement, "Unexpected cleanup hook");
     *original = reinterpret_cast<void*>(fake::OriginalCtor);
@@ -97,8 +93,10 @@ Obj Construct(uintptr_t returnRva = 0x26CFAA9) {
                     expectedSuffix, true, expectedServices, false, expectedMethod, gameBase + returnRva);
     return step;
 }
+// animations.cpp: a step plays natively unless the toggles skip its provenance.
+bool Skipped(Obj step) { return SkipFighterAnimation(module->settings, ClassifyAnimationStep(step)); }
 void StartAsParentWould(Obj step) {
-    if (MustKeepNativeAnimation(step)) {
+    if (!Skipped(step)) {
         ++nativeStarts;
         // The native dwp sequence receives its normal end event before the
         // child completes. The production fallback preserves this whole path.
@@ -108,7 +106,7 @@ void StartAsParentWould(Obj step) {
 }
 void Reset() {
     ClearCombatCleanup(); Check(handles.empty(), "Cleanup roots leaked between cases");
-    module->settings.animationMode = 3; module->stopRequested = false; module->stopped = false;
+    module->settings.ApplyLegacyAnimationMode(3); module->stopRequested = false; module->stopped = false;
     inCombat = true; failHandle = throwConstructor = false;
     constructors = nativeStarts = completions = cleanups = 0;
 }
@@ -118,11 +116,13 @@ int main() {
     using namespace fake;
     try {
         Module instance(L"."); module = &instance; InitializeApi(); InstallCombatCleanup();
+        using Kind = AnimationStepKind;
         Reset(); auto death = Construct(), ordinary = Construct(0x26CFAA8);
-        Check(constructors == 2 && MustKeepNativeAnimation(death) && !MustKeepNativeAnimation(ordinary),
+        Check(constructors == 2 && ClassifyAnimationStep(death) == Kind::Death && ClassifyAnimationStep(ordinary) == Kind::Ordinary &&
+              !Skipped(death) && Skipped(ordinary),
               "Exact dwp provenance must stay native while a known neighboring call site may skip");
         auto preexisting = Make();
-        Check(MustKeepNativeAnimation(preexisting),
+        Check(ClassifyAnimationStep(preexisting) == Kind::Unknown && !Skipped(preexisting),
               "A step constructed before hook installation must retain its unknown native cleanup");
         StartAsParentWould(death); StartAsParentWould(ordinary);
         Check(nativeStarts == 1 && cleanups == 1 && completions == 2,
@@ -132,15 +132,28 @@ int main() {
               "Later pumping must not redispatch native cleanup or completion");
 
         for (int previousMode : {0, 1, 2}) {
-            Reset(); module->settings.animationMode = previousMode; death = Construct(); ordinary = Construct(0x26CFAA8);
-            Check(!MustKeepNativeAnimation(death), "Previous animation modes must retain their previous policy");
-            PumpCombatCleanup(true); module->settings.animationMode = 3;
-            Check(MustKeepNativeAnimation(death), "Switching to instant mode must preserve constructor provenance");
-            Check(!MustKeepNativeAnimation(ordinary), "Known ordinary steps must still skip after a mode change");
+            Reset(); module->settings.ApplyLegacyAnimationMode(previousMode); death = Construct(); ordinary = Construct(0x26CFAA8);
+            Check(ClassifyAnimationStep(death) == Kind::Death && ClassifyAnimationStep(ordinary) == Kind::Ordinary,
+                  "Provenance is recorded whatever the animation toggles");
+            Check(Skipped(death) == (previousMode == 2) && Skipped(ordinary) == (previousMode == 2),
+                  "Previous animation modes must retain their previous policy");
+            PumpCombatCleanup(true); module->settings.ApplyLegacyAnimationMode(3);
+            Check(!Skipped(death), "Switching to instant toggles must preserve constructor provenance");
+            Check(Skipped(ordinary), "Known ordinary steps must still skip after a toggle change");
+        }
+        // « Sans animations de mort » alone skips the death; with instant
+        // movements or waits it stays native, so its own end event disposes.
+        for (int config = 0; config < 4; ++config) {
+            Reset(); module->settings.ApplyLegacyAnimationMode(0); module->settings.noDeathAnimations = true;
+            module->settings.instantMovements = (config & 1) != 0; module->settings.noVisualWaits = (config & 2) != 0;
+            death = Construct(); ordinary = Construct(0x26CFAA8);
+            StartAsParentWould(death); StartAsParentWould(ordinary);
+            Check(nativeStarts == (config == 0 ? 1u : 2u) && completions == 2,
+                  "A death is skipped alone only without instant movements or waits; ordinary steps follow their own toggle");
         }
         Reset(); death = Construct(); inCombat = false;
-        Check(!MustKeepNativeAnimation(death), "The fallback must be combat-only");
         PumpCombatCleanup(false); Check(handles.empty(), "Combat end must release pending roots");
+        Check(ClassifyAnimationStep(death) == Kind::Unknown, "Released provenance is unknown again");
 
         Reset(); failHandle = true; death = Construct();
         Check(constructors == 1 && module->stopRequested && handles.empty(),
@@ -157,7 +170,7 @@ int main() {
               "Capacity exhaustion must stop acceleration instead of evicting pending provenance");
         ClearCombatCleanup(); Check(handles.empty(), "Shutdown must release every retained managed root");
         module = nullptr;
-        std::cout << "PASS: death provenance, constructor ABI, mode changes, native fallback, cleanup and failure bounds\n";
+        std::cout << "PASS: death provenance, constructor ABI, toggle changes, death toggle vs instant movements/waits, native fallback, cleanup and failure bounds\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n'; return 1;

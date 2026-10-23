@@ -24,6 +24,7 @@ Method getGraph{},init{},edgeAllowed{},areaAllowed{},initFilter{};
 Klass graphClass{},vertexClass{},edgeClass{},filterClass{},loaderClass{},serviceClass{};
 int64_t target=0,current=0;
 int currentZone=-1;
+bool templeAllowed=true;
 bool seeded=false,loading=false;
 size_t inspected=0;
 size_t slices=0;
@@ -33,6 +34,19 @@ std::chrono::steady_clock::time_point searchStarted;
 Ref pendingEdges;
 int edgeIndex=0,edgeCount=0,pendingDistance=0;
 size_t pendingSource=0;
+int64_t pendingMap=0;
+// The Roublard temple under the Amakna cemetery: its interior maps (world -1,
+// subarea 6, all at [10,16]) and the cemetery map of its door, as the game's own
+// graph names them. Its statue teleports to the Temple des Douze and the Domaine
+// des dieux; the game's criteria (ens.wvs) decide who may use them.
+constexpr int64_t TempleMaps[]={67108864,67109888,67110912,67111936,67112960,67113984,67110147};
+constexpr int64_t TempleDoorMap=82314240;
+bool InTemple(int64_t map) {return std::find(std::begin(TempleMaps),std::end(TempleMaps),map)!=std::end(TempleMaps);}
+// With « Passer par le temple Roublard » off: entering the temple (its cemetery
+// door, the statue's return from the Domaine des dieux) and leaving it by the
+// statue's teleports. Walking inside it and out through the cemetery door stays
+// allowed, so a character already inside can still leave.
+bool TempleShortcut(int64_t from,int64_t to) {return InTemple(to)?!InTemple(from):InTemple(from)&&to!=TempleDoorMap;}
 int Count(Obj list,int limit,const char* context) {
     if(!list)return 0;
     const int n=api.Value<int>(api.Call(list,"get_Count"));
@@ -100,7 +114,7 @@ void Seed() {
     }
     seeded=true;
     Log("CHAT_ROUTE_SEEDED target="+std::to_string(target)+" candidates="+std::to_string(choices.size())+" starts="+std::to_string(queue.size())+
-        " hereStarts="+std::to_string(hereStarts)+" splitZaaps="+std::to_string(splitZaaps));
+        " hereStarts="+std::to_string(hereStarts)+" splitZaaps="+std::to_string(splitZaaps)+" temple="+std::to_string(templeAllowed));
 }
 }
 void Install() {
@@ -116,11 +130,11 @@ void Install() {
 }
 void Clear() {
     queue={};visited.clear();best.clear();choices.clear();graph.reset();vertices.reset();outgoing.reset();filter.reset();loader.reset();
-    pathService.reset();dependencies.reset();target=current=0;currentZone=-1;seeded=loading=false;inspected=0;
-    pendingEdges.reset();edgeIndex=edgeCount=pendingDistance=0;pendingSource=0;slices=0;
+    pathService.reset();dependencies.reset();target=current=0;currentZone=-1;templeAllowed=true;seeded=loading=false;inspected=0;
+    pendingEdges.reset();edgeIndex=edgeCount=pendingDistance=0;pendingSource=0;pendingMap=0;slices=0;
 }
-void Begin(std::vector<chat_travel::Destination> candidates,int64_t destination,int64_t source,int sourceZone) {
-    Clear();target=destination;current=source;currentZone=sourceZone;searchStarted=std::chrono::steady_clock::now();
+void Begin(std::vector<chat_travel::Destination> candidates,int64_t destination,int64_t source,int sourceZone,bool roublardTemple) {
+    Clear();target=destination;current=source;currentZone=sourceZone;templeAllowed=roublardTemple;searchStarted=std::chrono::steady_clock::now();
     pathService.reset(module->FindService("fnf"));dependencies.reset(module->FindService("fkq"));
     if(!Exact(pathService.get(),serviceClass)||!dependencies.get())throw std::runtime_error("Native route conditions unavailable");
     for(auto value:candidates)if(value.map>0&&value.known&&value.type==0&&value.cost>=0)choices.push_back(value);
@@ -151,7 +165,8 @@ Result Tick() {
             if(best.at(node.uid)!=std::pair{node.distance,node.source})continue;
             if(!visited.insert(node.uid).second)continue;
             if(visited.size()>65536||node.distance>4096)throw std::runtime_error("World route search bounds");
-            if(*static_cast<int64_t*>(api.FieldAddress(node.vertex.get(),"m_mapId"))==target) {
+            const auto map=*static_cast<int64_t*>(api.FieldAddress(node.vertex.get(),"m_mapId"));
+            if(map==target) {
                 const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-searchStarted).count();
                 Log("CHAT_ROUTE_FOUND elapsedMs="+std::to_string(elapsed)+" slices="+std::to_string(slices)+
                     " vertices="+std::to_string(visited.size())+" edges="+std::to_string(inspected));
@@ -160,7 +175,7 @@ Result Tick() {
             Ref wrapper(Lookup(outgoing.get(),node.uid));if(!wrapper.get())continue;
             pendingEdges.reset(api.Field(wrapper.get(),"m_edgeList"));
             edgeCount=Count(pendingEdges.get(),1024,"outgoing edges");edgeIndex=0;
-            pendingDistance=node.distance;pendingSource=node.source;
+            pendingDistance=node.distance;pendingSource=node.source;pendingMap=map;
         }
         if(edgeIndex<edgeCount) {
             if(++inspected>262144)throw std::runtime_error("World route edge bounds");
@@ -173,6 +188,7 @@ Result Tick() {
             // Only skip when an already accepted path is as good or better.
             // A rejected edge never marks its destination reached.
             if(!Improves(uid,pendingDistance+1,pendingSource))continue;
+            if(!templeAllowed&&TempleShortcut(pendingMap,*static_cast<int64_t*>(api.FieldAddress(to.get(),"m_mapId"))))continue;
             Ref transitions(api.Field(edge.get(),"m_transitions"));
             if(Count(transitions.get(),128,"transitions")==0)continue;
             // The exact filters used by ens.wvq: character criteria, then

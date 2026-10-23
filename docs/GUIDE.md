@@ -1,9 +1,10 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.11.0** (révision r110).
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.12.0** (révision r111).
 
-Miniatures, options d’animations, surbrillance, aide à la capture d’âmes,
-raccourcis de trajet, ressources sur la carte et panneau natif de recherche manuelle DofusDB.
+Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
+raccourcis de trajet, ressources et archimonstres manquants sur la carte, ouvertures
+Kralamoure dans le calendrier et panneau natif de recherche manuelle DofusDB.
 Carnet personnel et planification de l’XP des métiers.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](../LISEZ-MOI.txt).
 
@@ -44,9 +45,9 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 ```
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
-L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence et animations,
-Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chat, Chargement et
-mises à jour et À propos. La version chargée (x.y.z et
+L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence, Animations,
+Surbrillance, Cartes, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
+Chargement et mises à jour et À propos. La version chargée (x.y.z et
 révision) figure dans le dernier bloc, **À propos**, avec l’auteur Altansar
 et un bouton **Ouvrir GitHub** vers le dépôt. Les publications gardent leur
 étiquette `rN` pour le vérificateur de mises à jour.
@@ -132,6 +133,40 @@ avec son image, son infobulle au survol et ses actions habituelles.
 Ce calcul ne choisit pas automatiquement la recette la moins chère et ne fabrique rien.
 Les requêtes sont anonymes et effectuées en arrière-plan ; une erreur reste visible.
 
+## Apparence et animations
+
+**Options → Dofus Enhanced → Apparence** : **En combat** et **Hors combat**
+choisissent chacun Normal, Créatures ou Miniatures. Avec Miniatures, les cases
+placées sous chaque choix disent qui est réduit : en combat **Moi**, **Joueurs
+alliés**, **Invocations alliées**, **Mes invocations**, **Ennemis** et
+**Invocations ennemies** ; hors combat **Moi**, **Membres du groupe**, **Autres
+joueurs** et **Monstres**. Une catégorie décochée garde sa taille normale. Hors
+combat, les PNJ et les autres éléments restent réduits ; Créatures s’applique à
+tous. Tout est coché par défaut, comme avant ces cases.
+
+**Options → Dofus Enhanced → Animations** (en combat uniquement) compte six
+cases indépendantes :
+
+- **Sans effets des sorts** (cochée par défaut) : le jeu fait comme si son
+  option des effets de sorts était désactivée, sans la modifier ;
+- **Lancers de sorts raccourcis** (cochée par défaut) : l’animation de lancer
+  réduite du jeu, pour les personnages joueurs ;
+- **Sans animations d’attaque et de sort** (expérimental) : attaques, lancers et
+  coups reçus ne sont plus joués, les déplacements restent animés ;
+- **Sans animations de mort** (expérimental) : un combattant vaincu disparaît
+  sans animation, seulement quand les deux cases suivantes sont décochées ;
+- **Déplacements instantanés** (expérimental) : marche, poussées, lancers de
+  personnage porté et sauts arrivent aussitôt ;
+- **Sans attentes visuelles** (expérimental) : le jeu n’attend plus certaines
+  fins d’animation.
+
+Les deux premières cases forment l’ancien mode Raccourcies ; Sans animations
+des combattants y ajoutait les deux suivantes, et Instantané les six. Les
+réglages d’une version antérieure sont convertis à l’identique, et le fichier
+reste lisible par ces versions. Le clic droit sur la carte → **Animations**
+propose les mêmes six cases. Les délais du serveur ne changent pas : toutes les
+animations ne disparaissent pas.
+
 ## Surbrillance
 
 **Options → Dofus Enhanced → Surbrillance** choisit le niveau : derrière
@@ -207,6 +242,39 @@ n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu r
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
 seulement le bouton TP ; les indicateurs d’âme en sac et d’Ocre sont masqués.
 
+## Mode « Ocre » de la carte
+
+Avec **Options → Dofus Enhanced → Cartes → Archimonstres manquants sur la
+grande carte** (coché par défaut), la colonne des modes de la grande carte (**M**)
+gagne un carré **Ocre** sous **Conquête**, du même type que ceux du jeu. Un clic
+active le mode Ocre et quitte Anomalies ou Conquête ; un second clic, la croix du
+panneau, le choix d’un autre mode ou la fermeture de la carte le quitte,
+comme pour les modes du jeu.
+
+Les zones colorées sont celles où il te manque des archimonstres ou des boss de
+donjon de L’éternelle moisson. Un monstre manque quand il n’est pas validé dans
+la quête, qu’il n’est pas dans ton sac et que Metamob (avec une clé enregistrée)
+n’en indique aucun. La couleur suit le nombre de manquants dans la zone : 1, 2,
+3, 4 à 5, puis 6 et plus, du jaune au pourpre. Tant que l’avancement de la quête
+n’est pas connu, rien n’est coloré et le panneau dit d’ouvrir le journal de
+quêtes.
+
+Le panneau **Ocre** reprend celui des anomalies : **Rechercher** (une zone, un
+territoire ou un monstre manquant, sans tenir compte des accents), **Tous les
+territoires**, **Niveau** de … à … (le niveau de la zone) et **Tous /
+Archimonstres / Boss de donjon** (uniquement les 286 archimonstres et 51 boss de
+la quête). Les colonnes Territoire, Niveau et Manquants se trient ; l’infobulle
+d’une ligne liste les monstres manquants. Un clic sur une ligne centre la carte
+sur la zone : sur son entrée pour un donjon, en changeant de monde si besoin. Le
+bas du panneau donne la légende des couleurs et l’état des lectures (Ocre, sac,
+Metamob).
+
+**Archimonstres manquants sur la mini-carte** (décoché par défaut) colore les
+mêmes zones sur la mini-carte, selon le choix Tous / Archimonstres / Boss de
+donjon du panneau (sans sa recherche ni ses filtres de territoire et de
+niveau). Les deux options décochées : ni carré, ni zones, ni lecture. La 1.12.0
+est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
+
 ## Trajets et chat
 
 Le bouton TP du chat, le double-clic sur la grande carte ou la mini-carte et
@@ -220,6 +288,15 @@ de trajet, « TP : tu es déjà sur [x,y]. ». La carte actuelle compte toujours
 comme départ, même coupée en zones ; un zaap sur une carte coupée en zones
 compte une étape de plus. La destination reste la carte que le jeu choisit
 pour ces coordonnées.
+
+**Déplacements → Passer par le temple Roublard** (coché par défaut) laisse le
+trajet du mod passer par le temple Roublard, sous le cimetière d’Amakna, et par
+les téléportations de sa statue quand elles le raccourcissent. Les portes du
+temple sont ouvertes à tous ; le jeu réserve la statue aux Roublards : quête
+« Dévotion à Dralbour » pour le Temple des Douze, « La colère des dieux » pour
+le Domaine des dieux (chaque classe a la même statue dans son propre temple).
+Décoché, le mod choisit son départ sans passer par le temple ; l’autopilote du
+jeu, qui finit le trajet, garde ses propres chemins.
 
 **Options → Dofus Enhanced → Chat** affiche ou masque séparément, à côté des
 positions et des archimonstres ou boss de L’éternelle moisson partagés dans le
@@ -299,6 +376,26 @@ côté des réglages, et n’est jamais affichée, journalisée ni publiée. Sup
 avec la corbeille, elle reste valable sur Metamob : régénère-la sur le site pour
 la révoquer. Les captures faites pendant que Metamob est injoignable sont
 renvoyées automatiquement pendant la session.
+
+## Kralamoures dans le calendrier
+
+**Options → Dofus Enhanced → Calendrier → Ouvertures Kralamoure dans le
+calendrier** (coché par défaut) n’agit qu’avec une clé Metamob enregistrée. Dans
+le calendrier du jeu, une rangée « Kralamoure · Metamob » s’insère sous les jours
+de la semaine. Pour chaque jour, elle montre jusqu’à trois ouvertures planifiées
+sur Metamob pour le serveur de ta quête Ocre, sous la forme « 21:00 · 12 persos »
+(heure de ce PC, changements d’heure compris), puis « +N autres ». Les ouvertures
+passées sont grisées. Le survol donne la date, l’organisateur, les inscrits et la
+description ; un clic ouvre l’événement sur metamob.fr. Les flèches de semaine
+sont suivies ; les semaines passées ne sont pas lues.
+
+Les ouvertures ne sont lues que calendrier ouvert : à son ouverture, puis au plus
+toutes les 10 minutes, jamais avant une capture en attente d’envoi. Après un
+échec, nouvel essai 30 s plus tard, puis à intervalle doublé jusqu’à 15 minutes.
+Le serveur est celui de ta quête Ocre Dofus Unity sur Metamob (avec plusieurs
+quêtes, celle dont « Personnage à contacter » indique ce personnage). Aucun
+message dans le chat : un état court s’affiche dans la rangée (lecture, aucune
+ouverture cette semaine, Metamob injoignable…). Rendu en jeu à confirmer.
 
 ## Compilation et publication
 

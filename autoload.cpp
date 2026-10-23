@@ -75,11 +75,11 @@ std::optional<LocalRelease::Candidate> VerifiedRelease(const std::filesystem::pa
                 if (split == std::string::npos || !hashes.emplace(line.substr(0, split), line.substr(split + 1)).second) return {};
             }
             if (hashes.size() != 5) return {};
-            for (const auto name : {"DofusMiniatures.dll", "ModuleLoader.exe", "ModuleAutoLoader.exe",
-                                   "TreasureOverlay.exe", "Update-GitHub.ps1"}) {
-                const auto item = folder / name;
+            for (const auto entry : {"DofusMiniatures.dll", "ModuleLoader.exe", "ModuleAutoLoader.exe",
+                                    "TreasureOverlay.exe", "Update-GitHub.ps1"}) {
+                const auto item = folder / entry;
                 if (!PlainPath(item, false) || std::filesystem::file_size(item) > 64ULL * 1024 * 1024 ||
-                    !LocalRelease::Hash(hashes[name]) || FileHash(item) != hashes[name]) return {};
+                    !LocalRelease::Hash(hashes[entry]) || FileHash(item) != hashes[entry]) return {};
             }
         }
         return candidate;

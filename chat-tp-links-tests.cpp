@@ -39,6 +39,7 @@ bool questFailure = false;
 std::vector<std::string> logs;
 std::map<std::pair<int,ChatSoulPart>,std::string> soulCaptions, richSoulCaptions;
 bool soulReaderNeeded = false, inventoryReader = false, questReader = false;
+int soulWants = 0; // Chat calls of the shared readers' needs.
 // The capture sync's quest cache as the Metamob part reads it: plain and rich
 // captions per game monster, reads, and the pumps that wanted the catalog.
 std::map<int,std::string> metamobCaptions, richMetamobCaptions;
@@ -553,7 +554,7 @@ void OptionalParts() {
     // Both statuses unchecked: no status area, no inventory or quest reading.
     settings.chatOcreStatus=false;pump(1);
     Check(InfoManagers(label).empty()&&InfoManagers(ocreOnly).empty()&&TpManagers(label)==tp&&TpManagers(ocreOnly).size()==1&&
-        !soulReaderNeeded&&!inventoryReader&&!questReader,"Both statuses unchecked: TickChatSoulStatus gets needed=false and the statuses leave");
+        !soulReaderNeeded&&!inventoryReader&&!questReader,"Both statuses unchecked: WantSoulStatus gets needed=false for the chat and the statuses leave");
 
     // All four unchecked (Metamob, which had no quantity here, too): native text.
     settings.chatTravelLinks=settings.chatMetamobStatus=false;const auto wants=metamobWants,reads=metamobReads;pump(1);
@@ -573,9 +574,11 @@ void OptionalParts() {
         TpManagers(quiet).size()==2&&InfoManagers(quiet).size()==2&&inventoryReader&&questReader,
         "Checked again, shown messages are enhanced again, those received while all were unchecked included");
     clickHook(TpManagers(quiet)[1],{},nullptr);Check(clicks==travels+2&&clicked==ChatTpTarget{7,7,1},"Re-enhanced plain coordinates travel");
-    RestoreChatTpLinks();
+    const auto wantsBeforeRestore=soulWants;RestoreChatTpLinks();
     Check(shown(label)==Get(input).text&&shown(quiet)==Get(laterInput).text&&shown(typed)=="rejoins-moi en [9,9]"&&handles.size()==baseline,
         "Cleanup restores native texts, plain coordinates included, and releases every reference");
+    Check(soulWants==wantsBeforeRestore+1&&!soulReaderNeeded&&!inventoryReader&&!questReader,
+        "Cleanup releases only the chat's reader needs (the shared readers stay with the maps' needs)");
     soulCaptions.clear();richSoulCaptions.clear();
 }
 
@@ -785,8 +788,11 @@ std::string ChatSoulCaption(int monster,ChatSoulPart part,bool colorStatus){
     auto it=captions.find({monster,part});return it==captions.end()?std::string{}:it->second;
 }
 std::string ChatSoulDetail(int monster,ChatSoulPart part){return std::string(part==ChatSoulPart::Inventory?"Inventory detail: ":"Ocre detail: ")+ChatSoulCaption(monster,part);}
-void TickChatSoulStatus(bool inventory,bool quest){fake::soulReaderNeeded=inventory||quest;fake::inventoryReader=inventory;fake::questReader=quest;}
-void RestoreChatSoulStatus(){fake::soulReaderNeeded=false;}
+void WantSoulStatus(SoulClient client,bool inventory,bool quest){
+    fake::Check(client==SoulClient::Chat,"The chat asks for the shared readers as the chat client");
+    ++fake::soulWants;fake::soulReaderNeeded=inventory||quest;fake::inventoryReader=inventory;fake::questReader=quest;
+}
+void RestoreChatSoulStatus(){throw std::runtime_error("The chat must never release the readers the maps still need");}
 namespace metamob {
 std::string MetamobChatCaption(int monsterId,bool colorStatus){
     ++fake::metamobReads;if(monsterId<=0)fake::metamobOutsideMonster=true;

@@ -188,7 +188,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
 Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
-bool InstantCombatEnabled() { return fake::enabled && !module->stopRequested; }
+bool InstantMovementEnabled() { return fake::enabled && !module->stopRequested; }
 bool IsCurrentFightEntity(managed::Obj entity) { return fake::member && entity == fake::activeEntity; }
 bool DeferInstantMovement(std::function<void()> finish) {
     if (!fake::allowDefer) return false;

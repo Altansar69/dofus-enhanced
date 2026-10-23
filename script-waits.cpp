@@ -43,7 +43,7 @@ Obj CurrentScriptFight(Obj context) {
         Read<Obj>(state, 0xE0) == context ? state : nullptr;
 }
 void RememberScriptWait(Obj step, Obj context, uintptr_t caller) {
-    if (!ScriptWaitCaller(caller) || !step || !InstantCombatEnabled() ||
+    if (!ScriptWaitCaller(caller) || !step || !InstantWaitsEnabled() ||
         api.object_get_class(step) != scriptWaitClass || Read<Obj>(step, 0x40) != context) return;
     auto fight = CurrentScriptFight(context);
     if (!fight) return;
@@ -80,7 +80,7 @@ void ScriptStartHook(Obj step, Method method) {
     bool finish = false;
     Ref heldStep;
     try {
-        if (step && InstantCombatEnabled() && api.object_get_class(step) == scriptWaitClass) {
+        if (step && InstantWaitsEnabled() && api.object_get_class(step) == scriptWaitClass) {
             if (Read<bool>(step, 0x1D)) return;
             // Never intervene after the native pause has scheduled its timer.
             if (!Read<Obj>(step, 0x30) && !Read<Obj>(step, 0x38)) {
@@ -119,7 +119,7 @@ void ScriptStartHook(Obj step, Method method) {
 
 void ClearScriptWaits() { scriptWaits.clear(); }
 void PumpScriptWaits(bool inCombat) {
-    if (!inCombat || !InstantCombatEnabled()) { ClearScriptWaits(); return; }
+    if (!inCombat || !InstantWaitsEnabled()) { ClearScriptWaits(); return; }
     ExpireScriptWaits(GetTickCount64());
 }
 void InstallScriptWaits() {

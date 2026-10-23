@@ -28,6 +28,9 @@ struct Object {
     int flags = 0;
     bool summoned = false, excluded = false, teamPresent = true;
     int8_t team = 0;
+    int64_t id = 0, summoner = 0;       // EntityInfo.bajh, long metadata key 2 (balc); lg.oab
+    bool summonerPresent = false;
+    std::vector<Obj> items;             // party member list (fti.bfmh)
     std::map<int64_t, Obj> fighters;
     std::string text;
     std::map<std::string, Obj> fields;
@@ -46,6 +49,8 @@ constexpr Declaration declarations[] = {
     {"AnimatedEntity", "rfa", 0, 0x2615260},
     {"AnimatedEntity", "rgx", 0, 0x26173C0},
     {"yh", "rmo", 1, 0x2652CF0}, {"yh", "rmp", 1, 0x2652E50},
+    {"EntityInfo", "bajh", 0, 0x1951440}, {"EntityInfo", "balc", 2, 0x1952710},
+    {"fti", "bfmh", 0, 0x752E20}, {"lg", "oab", 0, 0x68D2B0},
 };
 std::map<std::string, std::unique_ptr<Class>> classes;
 std::vector<std::unique_ptr<Object>> objects;
@@ -53,6 +58,9 @@ std::vector<std::unique_ptr<MethodInfo>> methods;
 std::unordered_map<GCHandle, Obj> handles;
 GCHandle nextHandle = 0x123456780000ULL;
 unsigned clones = 0, barriers = 0;
+// Category reads: entity IDs, summoners, local character lookups out of combat.
+unsigned idReads = 0, summonerReads = 0, characterLookups = 0;
+Obj characterService = nullptr, partyService = nullptr;
 unsigned nativeCreatureLookCalls = 0;
 unsigned nativeCacheClears = 0, nativeCacheComputations = 0;
 using CreatureLookFn = Obj(*)(Obj, Method);
@@ -133,6 +141,14 @@ void InitializeApi() {
     api.gc_wbarrier_set_field = [](Obj, void** address, Obj value) {
         ++barriers; lastBarrierAddress = address; *address = value;
     };
+    // lg.ddku, the accepted-member flag, verified at offset 0x20.
+    api.class_get_field_from_name = [](Klass type, const char* name) -> void* {
+        return static_cast<Class*>(type)->name == "lg" && std::string(name) == "ddku" ? reinterpret_cast<void*>(0x20) : nullptr;
+    };
+    api.field_get_offset = [](void* field) -> size_t { return reinterpret_cast<size_t>(field); };
+}
+Obj Member(int64_t id, bool accepted) {
+    auto member = Make("lg"); Get(member).id = id; Put(member, 0x20, accepted); return member;
 }
 }
 namespace managed {
@@ -152,6 +168,11 @@ Method Api::Find(Klass klass, const char* name, int argc) const {
 void* Api::Native(Method method, uintptr_t expectedRva) const {
     fake::Check(static_cast<const fake::MethodInfo*>(method)->rva == expectedRva, "Method RVA mismatch");
     return reinterpret_cast<void*>(expectedRva);
+}
+Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t expectedRva) const {
+    auto method = Find(klass, name, argc);
+    fake::Check(static_cast<const fake::MethodInfo*>(method)->rva == expectedRva, "Verified appearance contract mismatch");
+    return method;
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
     using namespace fake;
@@ -183,6 +204,15 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
         return Box(found != value.fighters.end());
     }
     if (call.name == "zcx") return BoxId(Read<int64_t>(Read<Obj>(self, 0x128), 0x10));
+    if (call.name == "bajh") { ++idReads; return BoxId(value.id); }
+    if (call.name == "balc") {
+        Check(*static_cast<int*>(parameters[0]) == 2, "The summoner is long metadata key 2");
+        ++summonerReads;
+        if (value.summonerPresent) *static_cast<int64_t*>(parameters[1]) = value.summoner;
+        return Box(value.summonerPresent);
+    }
+    if (call.name == "bfmh") { auto found = value.fields.find("members"); return found == value.fields.end() ? nullptr : found->second; }
+    if (call.name == "oab") return BoxId(value.id);
     if (call.name == "dbfj") {
         return CloneLook(self);
     }
@@ -214,6 +244,11 @@ Obj Api::Field(Obj self, const char* name) const {
 std::string Api::String(Obj self) const { return self ? fake::Get(self).text : ""; }
 Obj Api::Call(Obj self, const char* name, std::initializer_list<void*> args) const {
     using namespace fake;
+    if (Get(self).type->name == "PartyList") {
+        if (std::string(name) == "get_Count") { auto result = BoxId(static_cast<int64_t>(Get(self).items.size())); Get(result).type = Type("Int32"); return result; }
+        Check(std::string(name) == "get_Item", "Unexpected party list call");
+        return Get(self).items.at(*static_cast<int*>(*args.begin()));
+    }
     if (std::string(name) == "get_Length" || std::string(name) == "get_Count") {
         Check(Get(self).type->name == "Array" || Get(self).type->name == "Riders", "Length read from wrong type");
         auto result = BoxId(Get(self).integer); Get(result).type = Type("Int32"); return result;
@@ -236,7 +271,10 @@ Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 bool Module::InCombat() const { return servicesReady && fight.get() && managed::Read<bool>(fight.get(), 0xB0); }
 managed::Obj Module::FindService(const char* name) const {
-    fake::Check(std::string(name) == "fso", "Unexpected service lookup");
+    const std::string service = name;
+    if (service == "fng") { ++fake::characterLookups; return fake::characterService; }
+    if (service == "fne") return fake::partyService;
+    fake::Check(service == "fso", "Unexpected service lookup");
     return fake::activeRegistry;
 }
 void Log(const std::string&) {}
@@ -300,7 +338,8 @@ struct Fixture {
         state.servicesReady = true; state.ready.store(true);
         state.settings.mode = 2; state.settings.roleplayMode = 0;
         service = Make("exf"); fight = Make("fxc"); aggregate = Make("fyb"); character = Make("esg");
-        identity = Make("z"); registry = Make("evv"); local = Info(0x81, 0);
+        identity = Make("z"); registry = Make("evv"); local = Info(0x81, 0); Get(local).id = LocalId;
+        idReads = summonerReads = characterLookups = 0;
         Put(service, 0x48, true); Put(fight, 0xB0, true); Put(fight, 0x18, aggregate);
         Put(aggregate, 0xF0, character); Put(aggregate, 0x58, registry);
         Put(character, 0x128, identity); Put(identity, 0x10, LocalId);
@@ -310,6 +349,10 @@ struct Fixture {
         duringRefresh = beforeNativeLookReturn = {};
         context = Make("Context"); Put(service, 0x10, context);
         state.creatures.reset(service); state.fight.reset(fight);
+        // Out of combat: the same character service, and a party whose list
+        // starts empty (members added by the tests).
+        characterService = character;
+        partyService = Make("fti"); Get(partyService).fields["members"] = Make("PartyList");
     }
     ~Fixture() { module = nullptr; }
     Features& F() { return *state.features; }
@@ -323,8 +366,8 @@ void GroupsAndOriginalScale() {
     Fixture f;
     struct Case { int flags, team; bool summon; MiniatureGroup group; };
     const Case cases[] = {
-        {0x81, 0, false, MiniatureGroup::AlliedPlayer}, {0x81, 1, false, MiniatureGroup::EnemyPlayer},
-        {0x09, 1, false, MiniatureGroup::EnemyMonster}, {0x89, 1, true, MiniatureGroup::EnemySummon},
+        {0x81, 0, false, MiniatureGroup::AlliedPlayer}, {0x81, 1, false, MiniatureGroup::Enemy},
+        {0x09, 1, false, MiniatureGroup::Enemy}, {0x89, 1, true, MiniatureGroup::EnemySummon},
         {0x89, 0, true, MiniatureGroup::AlliedSummon},
     };
     for (const auto& item : cases) {
@@ -343,6 +386,7 @@ void GroupsAndOriginalScale() {
         Near(Read<float>(second, 0x2C), Read<float>(displayed, 0x2C));
     }
     Check(f.F().miniatureCount == 10, "Wrong conversion counter");
+    Check(idReads == 0 && summonerReads == 0, "With every category ticked no ID or summoner is read");
 }
 void UnknownAppearancesPreserved() {
     Fixture f;
@@ -777,12 +821,131 @@ void ProportionalReductionBeforeMeasurements() {
     displayed = giant; f.F().Convert(f.service, Info(0x0A, -1), &displayed);
     Near(Read<float>(displayed, 0x30), 0.6f);
 }
+// « Apparence » in combat: each fighter category keeps its native look once
+// its checkbox is unticked, for all 64 combinations; the own fighter and own
+// summons are only told apart (ID, summoner reads) when their box differs.
+void CombatCategoriesFollowTheirCheckbox() {
+    Fixture f;
+    constexpr int64_t AllyId = 0x1111, EnemyId = 0x2222;
+    auto me = Info(0x81, 0); Get(me).id = Fixture::LocalId;
+    auto allied = Info(0x81, 0); Get(allied).id = AllyId;
+    auto mine = Info(0x89, 0, true); Get(mine).summoner = Fixture::LocalId; Get(mine).summonerPresent = true;
+    auto theirs = Info(0x89, 0, true); Get(theirs).summoner = AllyId; Get(theirs).summonerPresent = true;
+    auto unsummoned = Info(0x89, 0, true); // no summoner metadata: an allied summon
+    auto enemyPlayer = Info(0x81, 1); Get(enemyPlayer).id = EnemyId;
+    auto enemyMonster = Info(0x09, 1);
+    auto enemySummon = Info(0x89, 1, true); Get(enemySummon).summoner = Fixture::LocalId; Get(enemySummon).summonerPresent = true;
+    auto alliedMonster = Info(0x09, 0); // Unknown: never reduced, as before
+    using G = MiniatureGroup;
+    struct Case { Obj info; G group; };
+    const Case cases[] = {{me, G::Self}, {allied, G::AlliedPlayer}, {mine, G::OwnSummon}, {theirs, G::AlliedSummon},
+        {unsummoned, G::AlliedSummon}, {enemyPlayer, G::Enemy}, {enemyMonster, G::Enemy}, {enemySummon, G::EnemySummon},
+        {alliedMonster, G::Unknown}};
+    for (unsigned mask = 0; mask < 64; ++mask) {
+        auto& settings = f.state.settings;
+        for (size_t i = 0; i < std::size(CombatMiniatureToggles); ++i) settings.*CombatMiniatureToggles[i] = ((mask >> i) & 1) != 0;
+        const auto reads = idReads + summonerReads;
+        for (const auto& item : cases) {
+            const auto group = f.F().Group(item.info);
+            const bool told = (item.group != G::Self || CombatSelfMatters(settings)) && (item.group != G::OwnSummon || CombatOwnSummonMatters(settings));
+            Check(told ? group == item.group : MiniatureGroupEnabled(settings, group) == MiniatureGroupEnabled(settings, item.group),
+                "Wrong combat category, or a skipped identity read changed the result");
+            const auto original = Look(); Obj displayed = original;
+            Check(f.F().Convert(f.service, item.info, &displayed), "Miniatures handles every fighter");
+            if (MiniatureGroupEnabled(settings, item.group)) {
+                Check(displayed != original, "A ticked category must be reduced");
+                Near(Read<float>(displayed, 0x2C), 1.2f); Near(Read<float>(displayed, 0x30), 1.8f);
+            } else Check(displayed == original, "An unticked category keeps its native appearance");
+        }
+        if (!CombatSelfMatters(settings) && !CombatOwnSummonMatters(settings))
+            Check(idReads + summonerReads == reads, "Matching ally boxes (the default included) read no ID or summoner");
+    }
+    Check(idReads != 0 && summonerReads != 0, "Own fighter and summons are told apart when it matters");
+    // Créatures ignores the categories: Convert leaves the native conversion.
+    f.state.settings.mode = 1; Obj displayed = Look();
+    Check(!f.F().Convert(f.service, me, &displayed), "Créatures must stay native for every category");
+}
+// « Apparence » out of combat: the local character, accepted party members,
+// other players and monster groups each follow their checkbox; NPCs and other
+// entities stay reduced. Identity is only read once a player box is unticked.
+void RoleplayCategoriesFollowTheirCheckbox() {
+    Fixture f; f.Combat(false); f.state.settings.roleplayMode = 2;
+    constexpr int64_t PartnerId = 0x3333, GuestId = 0x4444, StrangerId = 0x5555;
+    Get(Get(partyService).fields.at("members")).items = {Member(Fixture::LocalId, true), Member(PartnerId, true), Member(GuestId, false)};
+    auto me = Info(0x82, -1); Get(me).id = Fixture::LocalId;
+    auto partner = Info(0x82, -1); Get(partner).id = PartnerId;
+    auto guest = Info(0x82, -1); Get(guest).id = GuestId; // invited only: another player
+    auto stranger = Info(0x82, -1); Get(stranger).id = StrangerId;
+    auto monsters = Info(0x0A, -1); Get(monsters).id = -77;
+    auto npc = Info(0x02, -1); Get(npc).id = -88;
+    using G = MiniatureGroup;
+    struct Case { Obj info; G group; };
+    const Case cases[] = {{me, G::RoleplaySelf}, {partner, G::PartyMember}, {guest, G::OtherPlayer}, {stranger, G::OtherPlayer},
+        {monsters, G::Monster}, {npc, G::RoleplayOther}};
+    for (unsigned mask = 0; mask < 16; ++mask) {
+        auto& settings = f.state.settings;
+        for (size_t i = 0; i < std::size(RoleplayMiniatureToggles); ++i) settings.*RoleplayMiniatureToggles[i] = ((mask >> i) & 1) != 0;
+        f.F().roleplayIdentityKnown = false;
+        const auto lookups = characterLookups;
+        for (const auto& item : cases) {
+            const auto original = Look(); Obj displayed = original;
+            Check(f.F().Convert(f.service, item.info, &displayed), "Miniatures handles every roleplay entity");
+            if (MiniatureGroupEnabled(settings, item.group)) Check(displayed != original, "A ticked category must be reduced");
+            else Check(displayed == original, "An unticked category keeps its native appearance");
+        }
+        Check((characterLookups != lookups) == RoleplayIdentityMatters(settings) && characterLookups - lookups <= 1,
+            "The local identity is read once, and only when a player category is unticked");
+    }
+    // No party service or character: everyone is another player.
+    partyService = nullptr; characterService = nullptr; f.F().roleplayIdentityKnown = false;
+    f.state.settings.roleplayMiniaturePlayers = false; f.state.settings.roleplayMiniatureSelf = f.state.settings.roleplayMiniatureParty = true;
+    for (auto info : {me, partner}) { const auto original = Look(); Obj displayed = original;
+        Check(f.F().Convert(f.service, info, &displayed) && displayed == original, "Unknown identity: players follow Autres joueurs"); }
+}
+// A party change re-renders out of combat only while a player box is unticked,
+// read at most once a second, never in combat.
+void RoleplayIdentityChangesRefresh() {
+    Fixture f; f.Combat(false); f.state.settings.roleplayMode = 2; f.F().previousLocalTeam = -1;
+    auto& members = Get(Get(partyService).fields.at("members")).items;
+    members = {Member(0x3333, true)};
+    f.F().Tick();
+    Check(characterLookups == 0 && refreshes.empty(), "Default choices track no identity");
+    f.state.settings.roleplayMiniatureParty = false; f.F().Tick();
+    Check(characterLookups == 1 && refreshes.empty() && f.F().roleplayIdentityKnown &&
+        f.F().roleplayIdentity.self == Fixture::LocalId && f.F().roleplayIdentity.party == std::vector<int64_t>{0x3333},
+        "First identity read refreshes nothing");
+    f.F().Tick(); Check(characterLookups == 1, "Identity is read at most once a second");
+    members.push_back(Member(0x4444, true)); f.F().nextRoleplayIdentityRead = 0; f.F().Tick();
+    Check(characterLookups == 2 && refreshes.size() == 1, "A new party member re-renders the players");
+    f.F().nextRoleplayIdentityRead = 0; f.F().Tick();
+    Check(characterLookups == 3 && refreshes.size() == 1, "An unchanged party never refreshes");
+    members.push_back(Member(0x5555, false)); f.F().nextRoleplayIdentityRead = 0; f.F().Tick();
+    Check(characterLookups == 4 && refreshes.size() == 1, "An invited guest is not a party change");
+    f.Combat(true); f.F().previousLocalTeam = 0; f.F().Tick();
+    Check(!f.F().roleplayIdentityKnown && characterLookups == 4 && refreshes.size() == 1, "Combat keeps no roleplay identity");
+    f.Combat(false); f.state.settings.roleplayMiniatureParty = true; f.F().Tick();
+    Check(!f.F().roleplayIdentityKnown, "Default choices keep no roleplay identity");
+}
+// A checkbox changed before Module::Change's refresh still invalidates the
+// cached root look, as a display mode change does.
+void CategoryChangeInvalidatesCachedLooks() {
+    Fixture f; auto source = SizedLook(1, 100), root = f.Root(source);
+    CheckDisplayLook(creatureLookHook(root, nullptr), 2);
+    f.state.settings.miniatureSelf = false;
+    CheckDisplayLook(creatureLookHook(root, nullptr), 2, 1.0f);
+    Check(nativeCacheClears == 1 && nativeCacheComputations == 2, "Category change reused the old cached look");
+    f.state.settings.miniatureSelf = true;
+    CheckDisplayLook(creatureLookHook(root, nullptr), 2);
+    Check(nativeCacheClears == 2 && nativeCacheComputations == 3, "Category change back reused the normal look");
+}
 }
 int main() {
     try {
         fake::InitializeApi();
         const auto run = [](void (*test)()) { test(); fake::Check(fake::handles.empty(), "Test leaked GC handles"); };
         run(fake::GroupsAndOriginalScale); run(fake::UnknownAppearancesPreserved); run(fake::ContextAndEligibility);
+        run(fake::CombatCategoriesFollowTheirCheckbox); run(fake::RoleplayCategoriesFollowTheirCheckbox);
+        run(fake::RoleplayIdentityChangesRefresh); run(fake::CategoryChangeInvalidatesCachedLooks);
         run(fake::MountedSubentityKeepsItsOwnLook); run(fake::SubentityEligibilityAndNativeFallback);
         run(fake::MountedVisibilityNativePolicies);
         run(fake::RootCacheAllDisplayTransitions); run(fake::PreloadedRootCachePolicyChangesAndStop);
@@ -790,7 +953,7 @@ int main() {
         run(fake::LocalTeamAndLateArrival); run(fake::RefreshAndInvalidScale);
         run(fake::ProportionalHeightAndReference); run(fake::MinimumAcrossContexts); run(fake::MissingAssetsAndDeferredRefresh);
         run(fake::ProportionalReductionBeforeMeasurements);
-        std::cout << "PASS: actual Features conversion, mounted child looks, root cache generations/transitions/Stop/bounds, classification, reduction and deferred refresh\n";
+        std::cout << "PASS: actual Features conversion, per-category miniatures in combat (64 combinations) and out of combat (16, party and identity reads), mounted child looks, root cache generations/transitions/Stop/bounds/category changes, classification, reduction and deferred refresh\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
 }

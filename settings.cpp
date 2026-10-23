@@ -12,6 +12,21 @@ bool ParseInt(const std::string& text, int& value) {
     const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
     return result.ec == std::errc{} && result.ptr == text.data() + text.size();
 }
+struct Flag { const char* key; bool Settings::* field; };
+// The « Apparence » miniature categories and the « Animations » toggles, each
+// its own 0/1 line. An animation key the file does not hold takes the value of
+// the legacy animationMode (or noAnimations) the same file holds.
+constexpr Flag AppearanceFlags[] = {
+    {"miniatureSelf", &Settings::miniatureSelf}, {"miniatureAllies", &Settings::miniatureAllies},
+    {"miniatureAllySummons", &Settings::miniatureAllySummons}, {"miniatureOwnSummons", &Settings::miniatureOwnSummons},
+    {"miniatureEnemies", &Settings::miniatureEnemies}, {"miniatureEnemySummons", &Settings::miniatureEnemySummons},
+    {"roleplayMiniatureSelf", &Settings::roleplayMiniatureSelf}, {"roleplayMiniatureParty", &Settings::roleplayMiniatureParty},
+    {"roleplayMiniaturePlayers", &Settings::roleplayMiniaturePlayers}, {"roleplayMiniatureMonsters", &Settings::roleplayMiniatureMonsters}};
+constexpr Flag AnimationFlags[] = {
+    {"noSpellEffects", &Settings::noSpellEffects}, {"shortSpellCasts", &Settings::shortSpellCasts},
+    {"noAttackAnimations", &Settings::noAttackAnimations}, {"noDeathAnimations", &Settings::noDeathAnimations},
+    {"instantMovements", &Settings::instantMovements}, {"noVisualWaits", &Settings::noVisualWaits}};
+static_assert(std::size(AnimationFlags) == std::size(AnimationToggles));
 }
 
 Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecified) {
@@ -21,13 +36,15 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     std::string line;
     bool preferredRead = false, preferredRoleplayRead = false, animationModeRead = false, monsterGlowModeRead = false;
     bool resourceMiniMapRead = false;
+    int legacyAnimationMode = 1; // the default of every revision that had it
+    unsigned animationFlagsRead = 0;
     while (std::getline(file, line)) {
         if (line.size() > 256) throw std::runtime_error("Settings line too long");
         if (line == "mode=0") settings.mode = 0;
         else if (line == "mode=1") settings.mode = 1;
         else if (line == "mode=2") settings.mode = 2;
-        else if (line == "noAnimations=0" && !animationModeRead) settings.animationMode = 0;
-        else if (line == "noAnimations=1" && !animationModeRead) settings.animationMode = 1;
+        else if (line == "noAnimations=0" && !animationModeRead) legacyAnimationMode = 0;
+        else if (line == "noAnimations=1" && !animationModeRead) legacyAnimationMode = 1;
         else if (line == "autoLoad=0" || line == "autoLoad=1") {
             settings.autoLoad = line == "autoLoad=1";
             if (autoLoadSpecified) *autoLoadSpecified = true;
@@ -38,9 +55,18 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             const auto key = line.substr(0, split);
             int value = 0;
             if (!ParseInt(line.substr(split + 1), value)) continue;
+            bool flag = false;
+            for (const auto& [name, field] : AppearanceFlags)
+                if (key == name) { if (value == 0 || value == 1) settings.*field = value != 0; flag = true; }
+            for (size_t index = 0; index != std::size(AnimationFlags); ++index)
+                if (key == AnimationFlags[index].key) {
+                    if (value == 0 || value == 1) { settings.*AnimationFlags[index].field = value != 0; animationFlagsRead |= 1u << index; }
+                    flag = true;
+                }
+            if (flag) continue;
             if (key == "githubUpdates" && (value == 0 || value == 1)) settings.githubUpdates = value != 0;
             else if (key == "roleplayMode" && value >= 0 && value <= 2) settings.roleplayMode = value;
-            else if (key == "animationMode" && ValidAnimationMode(value)) { settings.animationMode = value; animationModeRead = true; }
+            else if (key == "animationMode" && ValidAnimationMode(value)) { legacyAnimationMode = value; animationModeRead = true; }
             else if (key == "soulAutoEquip" && (value == 0 || value == 1)) settings.soulAutoEquip = value != 0;
             else if (key == "soulReminder" && (value == 0 || value == 1)) settings.soulReminder = value != 0;
             else if (key == "glowNpcs" && (value == 0 || value == 1)) settings.glowNpcs = value != 0;
@@ -60,6 +86,10 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "chatSoulInventory" && (value == 0 || value == 1)) settings.chatSoulInventory = value != 0;
             else if (key == "chatOcreStatus" && (value == 0 || value == 1)) settings.chatOcreStatus = value != 0;
             else if (key == "chatMetamobStatus" && (value == 0 || value == 1)) settings.chatMetamobStatus = value != 0;
+            else if (key == "archiZonesMap" && (value == 0 || value == 1)) settings.archiZonesMap = value != 0;
+            else if (key == "travelRoublardTemple" && (value == 0 || value == 1)) settings.travelRoublardTemple = value != 0;
+            else if (key == "archiZonesMiniMap" && (value == 0 || value == 1)) settings.archiZonesMiniMap = value != 0;
+            else if (key == "calendarKralamoure" && (value == 0 || value == 1)) settings.calendarKralamoure = value != 0;
             else if (key == "mapTravelPlanner" && (value == 0 || value == 1)) settings.mapTravelPlanner = value != 0;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
             else if (key == "resourceMiniMapEnabled" && (value == 0 || value == 1)) { settings.resourceMiniMapEnabled = value != 0; resourceMiniMapRead = true; }
@@ -76,6 +106,12 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             // now always reduce, preserving the selected display modes.
         }
     }
+    // Revisions before 1.12.0 had one 0–3 animation mode: its toggles stand in
+    // for every animation key this file does not hold.
+    Settings legacy;
+    legacy.ApplyLegacyAnimationMode(legacyAnimationMode);
+    for (size_t index = 0; index != std::size(AnimationFlags); ++index)
+        if (!(animationFlagsRead & (1u << index))) settings.*AnimationFlags[index].field = legacy.*AnimationFlags[index].field;
     if (!preferredRead && settings.mode > 0) settings.preferredMode = settings.mode;
     if (!preferredRoleplayRead && settings.roleplayMode > 0) settings.preferredRoleplayMode = settings.roleplayMode;
     // Earlier revisions used one switch for both maps. Preserve that choice
@@ -95,7 +131,6 @@ std::optional<bool> Settings::ReadMetamobSync(const std::filesystem::path& path)
 }
 void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) const {
     if (mode < 0 || mode > 2) throw std::runtime_error("Invalid display mode");
-    if (!ValidAnimationMode(animationMode)) throw std::runtime_error("Invalid animation mode");
     if (!ValidMonsterGlowMode(monsterGlowMode)) throw std::runtime_error("Invalid monster glow mode");
     if (!ValidResourceSelection(resourceMapItems)) throw std::runtime_error("Invalid resource map selection");
     if (roleplayMode < -1 || roleplayMode > 2 || preferredMode < 1 || preferredMode > 2 ||
@@ -112,9 +147,11 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
     } cleanup{temporary};
     {
         std::ofstream file(temporary, std::ios::trunc);
+        // noAnimations and animationMode: for revisions before 1.12.0 only.
+        const int legacyAnimationMode = LegacyAnimationMode();
         file << "# Dofus Miniatures - 3.7.11.11\nmode=" << mode
-             << "\nnoAnimations=" << (animationMode != 0 ? 1 : 0)
-             << "\nanimationMode=" << animationMode
+             << "\nnoAnimations=" << (legacyAnimationMode != 0 ? 1 : 0)
+             << "\nanimationMode=" << legacyAnimationMode
              << "\nautoLoad=" << (autoLoad ? 1 : 0)
              << "\ngithubUpdates=" << (githubUpdates ? 1 : 0)
              << "\nroleplayMode=" << roleplayMode
@@ -138,7 +175,13 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\nchatSoulInventory=" << (chatSoulInventory ? 1 : 0)
              << "\nchatOcreStatus=" << (chatOcreStatus ? 1 : 0)
              << "\nchatMetamobStatus=" << (chatMetamobStatus ? 1 : 0)
+             << "\narchiZonesMap=" << (archiZonesMap ? 1 : 0)
+             << "\ntravelRoublardTemple=" << (travelRoublardTemple ? 1 : 0)
+             << "\narchiZonesMiniMap=" << (archiZonesMiniMap ? 1 : 0)
+             << "\ncalendarKralamoure=" << (calendarKralamoure ? 1 : 0)
              << "\nmapTravelPlanner=" << (mapTravelPlanner ? 1 : 0);
+        for (const auto& [name, field] : AppearanceFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
+        for (const auto& [name, field] : AnimationFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

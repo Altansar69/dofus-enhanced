@@ -166,7 +166,7 @@ void Reset() {
     Put(activeBehavior, 0x38, Make("Dictionary")); Put(activeBehavior, 0x48, 3);
     Put(activeEntity, 0x1C8, entityId); Put(activeEntity, 0x348, 10); Put(activeEntity, 0x2E0, 10);
     activeRoute = Route({11, 12, 13}); nestedRoute = Route({14, 15}); module->stopRequested = false;
-    module->settings.animationMode = 3;
+    module->settings.ApplyLegacyAnimationMode(3); // every « Animations » toggle on
 }
 }
 
@@ -222,7 +222,7 @@ bool ProbeLanding(uintptr_t rva) { return LandingAt(42, nullptr, managed::gameBa
 Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
-bool InstantCombatEnabled() { return fake::enabled && module->settings.animationMode == 3 && !module->stopRequested; }
+bool InstantMovementEnabled() { return fake::enabled && module->settings.instantMovements && !module->stopRequested; }
 bool IsCurrentFightEntity(managed::Obj entity) { return fake::member && entity == fake::activeEntity; }
 bool CanDeferInstantMovement() { return fake::canDefer; }
 bool DeferInstantMovement(std::function<void()> action) {
@@ -261,11 +261,13 @@ void LandingIsolation() {
     Reset(); landingBody = true;
     Check(ProbeLanding(0x263F03C) && ProbeLanding(0x263FB17) && landingHook(42, nullptr),
         "Recognized callers without a movement scope and all other callers must retain native landing");
-    for (int mode : {0, 1, 2}) {
-        Reset(); landingBody = engageLandingAtStart = true; Put(activeBehavior, 0x48, 5); module->settings.animationMode = mode;
+    for (int config : {0, 1, 2, 3}) {
+        // The former modes 0-2, then every other toggle on but Déplacements instantanés.
+        Reset(); landingBody = engageLandingAtStart = true; Put(activeBehavior, 0x48, 5);
+        if (config < 3) module->settings.ApplyLegacyAnimationMode(config); else module->settings.instantMovements = false;
         Dispatch(activeRoute);
         Check(starts == 1 && positions == 0 && landingStarts == 1,
-            "Every previous animation mode must retain its native landing predicate");
+            "Without Déplacements instantanés the native landing predicate stays");
     }
     for (int fallback : {0, 1, 2, 3}) {
         Reset(); landingBody = engageLandingAtStart = true; Put(activeBehavior, 0x48, 5);
@@ -314,7 +316,7 @@ void LandingIsolation() {
     for (int change : {0, 1, 2}) {
         Reset(); landingBody = true; Put(activeBehavior, 0x48, 5);
         afterLandingPredicate = [change] {
-            if (change == 0) module->settings.animationMode = 0;
+            if (change == 0) module->settings.instantMovements = false;
             if (change == 1) member = false;
             if (change == 2) module->stopRequested = true;
         };

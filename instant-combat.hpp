@@ -1,10 +1,16 @@
 #pragma once
 #include "runtime.hpp"
+#include "mode-policy.hpp"
 #include <functional>
 
 // Shared eligibility checks. These inspect only the active fight's own managed
 // registries; an ID match without object identity is insufficient.
-bool InstantCombatEnabled();
+// « Déplacements instantanés » (walk, push, throw, jump) and « Sans attentes
+// visuelles » (skipped-animation waiters, visual stagger, script pauses, the
+// waits before a movement or an appearance change): each its own toggle, in
+// combat only, while the module runs.
+bool InstantMovementEnabled();
+bool InstantWaitsEnabled();
 bool IsCurrentFightEntity(managed::Obj entity);
 
 void InstallInstantMovement();
@@ -25,6 +31,8 @@ void InstallScriptWaits();
 void PumpScriptWaits(bool inCombat);
 void ClearScriptWaits();
 void InstallCombatCleanup();
-bool MustKeepNativeAnimation(managed::Obj step);
+// The recorded provenance of a gpy step: Death for the dwp.uia call site,
+// Ordinary for any other recorded constructor, Unknown when none was recorded.
+AnimationStepKind ClassifyAnimationStep(managed::Obj step);
 void PumpCombatCleanup(bool inCombat);
 void ClearCombatCleanup();

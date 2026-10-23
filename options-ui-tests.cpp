@@ -3,6 +3,7 @@
 #include "module.hpp"
 #include "features.hpp"
 #include "glow-mode-labels.hpp"
+#include "animation-mode-labels.hpp"
 #include "treasure-launch.hpp"
 #include <algorithm>
 #include <iostream>
@@ -18,12 +19,15 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The eight native sections of the mod, in display order: section i has the id
+// The ten native sections of the mod, in display order: section i has the id
 // ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
-enum SectionIndex : size_t { DisplaySection, GlowSection, MapsSection, TravelSection, SoulSection, ChatSection, LoadingSection, AboutSection, SectionCount };
+enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, TravelSection, SoulSection, ChatSection, CalendarSection, LoadingSection, AboutSection, SectionCount };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows.
-constexpr int DisplayId = SectionId(DisplaySection), SoulId = SectionId(SoulSection);
+constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
+// « Apparence » checkbox titles, in Settings' category order.
+constexpr const char* CombatCategoryTitles[] = {"Moi", "Joueurs alliés", "Invocations alliées", "Mes invocations", "Ennemis", "Invocations ennemies"};
+constexpr const char* RoleplayCategoryTitles[] = {"Moi", "Membres du groupe", "Autres joueurs", "Monstres"};
 struct Class { std::string name; };
 struct MethodInfo { Class* klass; std::string name; int argc; };
 struct Choice { int id = 0; Obj label = nullptr; };
@@ -95,7 +99,7 @@ void Check(bool condition, const char* message) {
 Settings Config(int mode, int animations) {
     Settings settings;
     settings.mode = mode;
-    settings.animationMode = animations;
+    settings.ApplyLegacyAnimationMode(animations);
     settings.roleplayMode = 0;
     return settings;
 }
@@ -572,13 +576,20 @@ void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original)
 namespace fake {
 // Every private source, in section order (the text-button rows have none).
 std::vector<Obj> AllSources(OptionsUi& ui) {
-    return {ui.modeSource.get(), ui.roleplayModeSource.get(), ui.animationSource.get(),
+    std::vector<Obj> appearance{ui.modeSource.get()};
+    for (const auto& source : ui.combatMiniatureSources) appearance.push_back(source.get());
+    appearance.push_back(ui.roleplayModeSource.get());
+    for (const auto& source : ui.roleplayMiniatureSources) appearance.push_back(source.get());
+    for (const auto& source : ui.animationSources) appearance.push_back(source.get());
+    std::vector<Obj> rest{
         ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(),
-        ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(),
-        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(),
+        ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(), ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(),
+        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
-        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(),
+        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.calendarKraloveSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
+    appearance.insert(appearance.end(), rest.begin(), rest.end());
+    return appearance;
 }
 // Expected row: model, private source (none for a text button), label, native
 // control and the reset default of its source (choice id, or 1/0 for a checkbox).
@@ -593,20 +604,32 @@ ExpectedRow CheckRow(const Ref& option, const Ref& source, const char* label, bo
 ExpectedRow ButtonRow(const Ref& option, const char* label) { return {option.get(), nullptr, label, "TextButtonOption", 0}; }
 // The sections of the options tab, indexed by SectionIndex, with their rows.
 std::vector<ExpectedSection> Layout(OptionsUi& ui) {
+    // « Apparence »: each context's choice, then its category checkboxes (all
+    // ticked by default); « Animations »: one checkbox per toggle.
+    const Settings defaults;
+    ExpectedSection appearance{"Apparence", {ChoiceRow(ui.modeOption, ui.modeSource, "En combat", 2)}}, animations{"Animations", {}};
+    for (size_t i = 0; i < ui.combatMiniatureOptions.size(); ++i)
+        appearance.rows.push_back(CheckRow(ui.combatMiniatureOptions[i], ui.combatMiniatureSources[i], CombatCategoryTitles[i], true));
+    appearance.rows.push_back(ChoiceRow(ui.roleplayModeOption, ui.roleplayModeSource, "Hors combat", 0));
+    for (size_t i = 0; i < ui.roleplayMiniatureOptions.size(); ++i)
+        appearance.rows.push_back(CheckRow(ui.roleplayMiniatureOptions[i], ui.roleplayMiniatureSources[i], RoleplayCategoryTitles[i], true));
+    for (size_t i = 0; i < ui.animationOptions.size(); ++i)
+        animations.rows.push_back(CheckRow(ui.animationOptions[i], ui.animationSources[i], AnimationToggleLabels[i], defaults.*AnimationToggles[i]));
     return {
-        {"Apparence et animations", {ChoiceRow(ui.modeOption, ui.modeSource, "En combat", 2),
-            ChoiceRow(ui.roleplayModeOption, ui.roleplayModeSource, "Hors combat", 0),
-            ChoiceRow(ui.animationOption, ui.animationSource, "Animations", 1)}},
+        appearance, animations,
         {"Surbrillance", {ChoiceRow(ui.glowOption, ui.glowSource, "Surbrillance", 1),
             CheckRow(ui.glowNpcsOption, ui.glowNpcsSource, "Inclure les PNJ", false),
             CheckRow(ui.glowInteractivesOption, ui.glowInteractivesSource, "Inclure les éléments interactifs", false)}},
         {"Cartes", {CheckRow(ui.resourcesOption, ui.resourcesSource, "Ressources sur la grande carte", true),
             CheckRow(ui.resourcesMiniOption, ui.resourcesMiniSource, "Ressources sur la mini-carte", true),
-            CheckRow(ui.miniCenterOption, ui.miniCenterSource, "Bouton de recentrage sur la mini-carte", true)}},
+            CheckRow(ui.miniCenterOption, ui.miniCenterSource, "Bouton de recentrage sur la mini-carte", true),
+            CheckRow(ui.archiZonesOption, ui.archiZonesSource, "Archimonstres manquants sur la grande carte", true),
+            CheckRow(ui.archiZonesMiniOption, ui.archiZonesMiniSource, "Archimonstres manquants sur la mini-carte", false)}},
         {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
             CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true),
-            CheckRow(ui.travelPlannerOption, ui.travelPlannerSource, "Remplacer l’autopilote du jeu", true)}},
+            CheckRow(ui.travelPlannerOption, ui.travelPlannerSource, "Remplacer l’autopilote du jeu", true),
+            CheckRow(ui.templeOption, ui.templeSource, "Passer par le temple Roublard", true)}},
         {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
             CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true),
             CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
@@ -615,9 +638,10 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.chatSoulOption, ui.chatSoulSource, "Âme en sac dans le chat", true),
             CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true),
             CheckRow(ui.chatMetamobOption, ui.chatMetamobSource, "Metamob dans le chat", true)}},
+        {"Calendrier", {CheckRow(ui.calendarKraloveOption, ui.calendarKraloveSource, "Ouvertures Kralamoure dans le calendrier", true)}},
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.11.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.12.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -723,11 +747,11 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.11.0" && std::string(ModVersion) == "r110",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.12.0" && std::string(ModVersion) == "r111",
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its eight native sections, from Apparence et animations to À propos, and no row of its own");
+        "Mod must hold its ten native sections, from Apparence and Animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -768,13 +792,13 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.11.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
-        description.find("https://github.com/Altansar69/dofus-miniatures") != std::string::npos && description.find("r110") != std::string::npos,
+    Check(Label(credits).find("1.12.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+        description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos && description.find("r111") != std::string::npos,
         "Credits must name the version, the author, the project page and the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 22 && optionModels == 24,
-        "The UI must create twenty-two private sources and twenty-four rows");
+    Check(sourceModels == 41 && optionModels == 43,
+        "The UI must create forty-one private sources and forty-three rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -809,15 +833,15 @@ void ParentAndSectionSelection() {
     const auto savedSources = AllSources(f.Ui());
     initHook(f.page, false, true, DisplayId, nullptr);
     Check(Get(f.page).integers["lastSelection"] == DisplayId && AllSources(f.Ui()) == savedSources,
-        "Reopening Apparence et animations must retain the selection and existing controls");
+        "Reopening Apparence must retain the selection and existing controls");
     CheckLayout(f);
     f.StopAndRestore();
     Check(Get(f.page).integers["lastSelection"] == 0 &&
         f.Categories() == std::vector<Obj>({f.game, f.nativeCategory}),
-        "Restore from the Apparence et animations child must select Jeu and remove the owned parent");
+        "Restore from the Apparence child must select Jeu and remove the owned parent");
 }
 
-// Each section, from Apparence et animations to À propos, opens on its own rows and stable
+// Each section, from Apparence to À propos, opens on its own rows and stable
 // UID and keeps its controls when reopened; Restore from it selects Jeu.
 void EverySectionSelectionAndRestore() {
     for (size_t index = 0; index != SectionCount; ++index) {
@@ -880,6 +904,7 @@ void RegistrationAndValues() {
     f.state.settings.preloadNextMap = true;
     f.state.settings.spouseTeleport = false;
     f.state.settings.metamobSync = true;
+    f.state.settings.miniatureEnemies = false; f.state.settings.roleplayMiniaturePlayers = false;
     initHook(f.page, false, true, 12, nullptr);
     Check(f.Categories().size() == 3 && f.Ui().pages.size() == 1 &&
         Get(f.page).booleans["lastRebuild"], "Init must append Mod and rebuild its native summary once");
@@ -899,11 +924,16 @@ void RegistrationAndValues() {
     Check(f.Ui().metamobSyncSource.get() != f.nativeBool && sync.klass->name == "BoolSource" && sync.boolean && !sync.defaultBoolean,
         "Metamob sync shows its saved value on its own source and resets to off");
     Check(Get(f.Ui().modeSource.get()).integer == 2 && Get(f.Ui().roleplayModeSource.get()).integer == 1 &&
-        Get(f.Ui().animationSource.get()).integer == 1 &&
+        Get(f.Ui().animationSources[0].get()).boolean && Get(f.Ui().animationSources[1].get()).boolean &&
+        !Get(f.Ui().animationSources[2].get()).boolean && !Get(f.Ui().animationSources[5].get()).boolean &&
+        !Get(f.Ui().combatMiniatureSources[4].get()).boolean && Get(f.Ui().combatMiniatureSources[0].get()).boolean &&
+        !Get(f.Ui().roleplayMiniatureSources[2].get()).boolean && Get(f.Ui().roleplayMiniatureSources[3].get()).boolean &&
         Get(f.Ui().autoLoadSource.get()).boolean && !Get(f.Ui().soulSource.get()).boolean && !Get(f.Ui().soulAutoSource.get()).boolean && Get(f.Ui().glowSource.get()).integer == 2 && Get(f.Ui().transitionsSource.get()).boolean && Get(f.Ui().preloadSource.get()).boolean && !Get(f.Ui().spouseSource.get()).boolean, "Saved settings were not applied to the eleven native controls");
     Get(f.Ui().modeSource.get()).integer = 1;
     Get(f.Ui().roleplayModeSource.get()).integer = 2;
-    Get(f.Ui().animationSource.get()).integer = 3;
+    for (const auto& source : f.Ui().animationSources) Get(source.get()).boolean = true;
+    Get(f.Ui().combatMiniatureSources[0].get()).boolean = false; Get(f.Ui().combatMiniatureSources[4].get()).boolean = true;
+    Get(f.Ui().roleplayMiniatureSources[1].get()).boolean = false;
     Get(f.Ui().autoLoadSource.get()).boolean = false;
     Get(f.Ui().githubSource.get()).boolean = false;
     Get(f.Ui().soulSource.get()).boolean = true;
@@ -915,7 +945,9 @@ void RegistrationAndValues() {
     Get(f.Ui().metamobSyncSource.get()).boolean = false;
     f.Ui().Tick();
     Check(changes == 1 && f.state.settings.mode == 1 && f.state.settings.roleplayMode == 2 &&
-        f.state.settings.animationMode == 3 && !f.state.settings.autoLoad && !f.state.settings.githubUpdates && f.state.settings.soulReminder && f.state.settings.soulAutoEquip && f.state.settings.monsterGlowMode == 0 && !f.state.settings.fastMapTransitions && !f.state.settings.preloadNextMap && f.state.settings.spouseTeleport && !f.state.settings.metamobSync,
+        f.state.settings.LegacyAnimationMode() == 3 && !f.state.settings.miniatureSelf && f.state.settings.miniatureEnemies &&
+        !f.state.settings.roleplayMiniatureParty && !f.state.settings.roleplayMiniaturePlayers && f.state.settings.roleplayMiniatureSelf &&
+        !f.state.settings.autoLoad && !f.state.settings.githubUpdates && f.state.settings.soulReminder && f.state.settings.soulAutoEquip && f.state.settings.monsterGlowMode == 0 && !f.state.settings.fastMapTransitions && !f.state.settings.preloadNextMap && f.state.settings.spouseTeleport && !f.state.settings.metamobSync,
         "Ten native controls failed to commit independent settings together");
     f.NativePreferencesUnchanged();
     Select(f.page, 12);
@@ -928,36 +960,94 @@ void RegistrationAndValues() {
     Check(!f.Ui().metamobKeyMarker.get() && f.Ui().keyFields.empty(), "Restore retained a Metamob row reference");
 }
 
-void AnimationModeValuesAndDefaults() {
+// « Animations »: six independent checkboxes, the former Raccourcies as reset
+// defaults; each row says what it does and its limits, and commits only itself.
+void AnimationTogglesValuesAndDefaults() {
     Fixture f;
-    f.state.settings.animationMode = 3;
+    f.state.settings.ApplyLegacyAnimationMode(3);
     initHook(f.page, false, true, ModId, nullptr);
-    auto& source = Get(f.Ui().animationSource.get());
-    Check(source.klass->name == "IntSource" && source.integer == 3 && source.defaultInteger == 1,
-        "Persisted instant mode must keep the shortened reset default");
-    const auto& choices = Get(Get(f.Ui().animationOption.get()).refs.at("choices")).items;
-    const char* labels[] = {"Normal", "Raccourcies", "Sans animations des combattants (expérimental)", "Instantané (expérimental)"};
-    Check(choices.size() == 4, "Simplification must retain all four animation modes");
-    for (size_t i = 0; i != 4; ++i)
-        Check(Get(choices[i]).choice.id == static_cast<int>(i) && Get(Get(choices[i]).choice.label).text == labels[i],
-            "Animation choices lost stable IDs or labels");
-    const auto description = Description(f.Ui().animationOption.get());
-    for (const char* limit : {"expérimentaux", "déplacements", "attentes visuelles", "délais serveur", "certaines attentes", "ne supprime pas toutes"})
-        Check(description.find(limit) != std::string::npos, "Animation tooltip must retain practical limits");
-    for (int mode : {0, 1, 2, 3}) {
-        source.integer = mode;
-        f.Ui().Tick();
-        Check(f.state.settings.animationMode == mode, "Animation transition was not committed");
+    const Settings defaults;
+    Check(f.Ui().animationSources.size() == std::size(AnimationToggles) && AnimationToggleLabels.size() == std::size(AnimationToggles),
+        "One row per animation toggle");
+    for (size_t i = 0; i < f.Ui().animationSources.size(); ++i) {
+        const auto& source = Get(f.Ui().animationSources[i].get());
+        Check(source.klass->name == "BoolSource" && source.boolean && source.defaultBoolean == defaults.*AnimationToggles[i],
+            "Persisted toggles must keep the former Raccourcies as reset defaults");
+        Check(Label(f.Ui().animationOptions[i].get()) == AnimationToggleLabels[i] &&
+            Get(f.Ui().animationOptions[i].get()).klass->name == "BoolOption", "Animation rows are native checkboxes with the shared labels");
+        const auto description = Description(f.Ui().animationOptions[i].get());
+        Check(description.rfind("En combat", 0) == 0 &&
+            description.find(defaults.*AnimationToggles[i] ? "Activé par défaut" : "Désactivé par défaut") != std::string::npos,
+            "Each animation row says it acts in combat and gives its default");
+        Check((i >= 2) == (description.find("Expérimental") != std::string::npos), "The fighter, movement and wait rows are marked experimental");
     }
-    Check(changes == 4, "Animation transitions must commit once each");
-    api.Call(f.Categories().back(), "Reset");
-    Check(source.integer == 1 && Get(f.Categories().back()).integers["resetCalls"] == 1,
-        "Native reset must restore shortened animations");
+    const auto death = Description(f.Ui().animationOptions[3].get()), waits = Description(f.Ui().animationOptions[5].get());
+    Check(death.find("Déplacements instantanés") != std::string::npos && death.find("Sans attentes visuelles") != std::string::npos,
+        "The death row explains why it has no effect with instant movements or waits");
+    Check(waits.find("délais du serveur") != std::string::npos && waits.find("certaines attentes") != std::string::npos,
+        "The waits row keeps its practical limits");
+    Check(Description(f.Ui().animationOptions[0].get()).find("Certains effets restent") != std::string::npos &&
+        Description(f.Ui().animationOptions[1].get()).find("monstres") != std::string::npos &&
+        Description(f.Ui().animationOptions[2].get()).find("certaines animations restent") != std::string::npos,
+        "Effects, casts and fighter rows keep their limits");
+    auto expected = f.state.settings;
+    for (size_t i = 0; i < f.Ui().animationSources.size(); ++i) {
+        auto& source = Get(f.Ui().animationSources[i].get());
+        source.boolean = !source.boolean;
+        f.Ui().Tick();
+        expected.*AnimationToggles[i] = source.boolean;
+        Check(f.state.settings == expected, "An animation checkbox must change only its own toggle");
+    }
+    Check(changes == 6, "Animation changes must commit once each");
+    f.state.settings.noVisualWaits = true; f.Ui().Sync();
+    Check(Get(f.Ui().animationSources[5].get()).boolean, "External toggle changes (context menu) update the native checkbox");
+    const auto section = Section(f.Categories().back(), AnimationSection);
+    api.Call(section, "Reset");
+    for (const auto& source : f.Ui().animationSources) Check(AtDefault(source.get()), "The Animations section reset restores every toggle default");
     f.Ui().Tick();
-    Check(f.state.settings.animationMode == 1, "Reset animation choice was not persisted");
+    for (auto field : AnimationToggles) Check(f.state.settings.*field == defaults.*field, "Reset toggles were not persisted");
+    Check(f.state.settings.LegacyAnimationMode() == 1, "The reset defaults are the former Raccourcies");
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
     Check(Get(f.page).integers["lastSelection"] == 0, "Restore from Mod must select Jeu");
+}
+// « Apparence »: a checkbox per category after each context's choice, every one
+// ticked by default (Miniatures as before); each commits only its own category.
+void AppearanceCategoriesValuesAndDefaults() {
+    Fixture f;
+    for (auto field : CombatMiniatureToggles) f.state.settings.*field = false;
+    initHook(f.page, false, true, DisplayId, nullptr);
+    const auto rows = Rows(Section(f.Categories().back(), AppearanceSection));
+    Check(rows.size() == 12 && rows[0] == f.Ui().modeOption.get() && rows[7] == f.Ui().roleplayModeOption.get(),
+        "Apparence: En combat, its six categories, Hors combat, its four categories");
+    for (size_t i = 0; i < f.Ui().combatMiniatureSources.size(); ++i) {
+        const auto& source = Get(f.Ui().combatMiniatureSources[i].get());
+        Check(!source.boolean && source.defaultBoolean, "Saved combat categories shown, reset to ticked");
+        Check(Description(f.Ui().combatMiniatureOptions[i].get()).rfind("En combat, avec Miniatures", 0) == 0, "Combat rows say their context");
+    }
+    for (size_t i = 0; i < f.Ui().roleplayMiniatureSources.size(); ++i) {
+        const auto& source = Get(f.Ui().roleplayMiniatureSources[i].get());
+        Check(source.boolean && source.defaultBoolean, "Roleplay categories ticked by default");
+        Check(Description(f.Ui().roleplayMiniatureOptions[i].get()).rfind("Hors combat, avec Miniatures", 0) == 0, "Roleplay rows say their context");
+    }
+    for (auto option : {f.Ui().modeOption.get(), f.Ui().roleplayModeOption.get()})
+        Check(Description(option).find("catégories cochées") != std::string::npos && Description(option).find("Créatures") != std::string::npos,
+            "Each context's choice explains the categories and that Créatures applies to all");
+    Check(Description(f.Ui().roleplayModeOption.get()).find("PNJ") != std::string::npos, "NPCs always follow the mode");
+    auto expected = f.state.settings;
+    const auto flip = [&](const Ref& source, bool Settings::* field) {
+        Get(source.get()).boolean = !Get(source.get()).boolean;
+        f.Ui().Tick();
+        expected.*field = Get(source.get()).boolean;
+        Check(f.state.settings == expected, "A category checkbox must change only its own category");
+    };
+    for (size_t i = 0; i < f.Ui().combatMiniatureSources.size(); ++i) flip(f.Ui().combatMiniatureSources[i], CombatMiniatureToggles[i]);
+    for (size_t i = 0; i < f.Ui().roleplayMiniatureSources.size(); ++i) flip(f.Ui().roleplayMiniatureSources[i], RoleplayMiniatureToggles[i]);
+    Check(changes == 10, "Category changes must commit once each");
+    f.state.settings.roleplayMiniatureMonsters = false; f.Ui().Sync();
+    Check(!Get(f.Ui().roleplayMiniatureSources[3].get()).boolean, "External category changes update the native checkbox");
+    f.StopAndRestore();
+    for (const auto& ref : f.Ui().combatMiniatureOptions) Check(!ref.get(), "Restore releases the category rows");
 }
 
 void GlowModeValuesAndDefaults() {
@@ -1030,7 +1120,7 @@ void ReducedMiniaturesDescription() {
 void NativeResetAndFilteredSearchOwnership() {
     Fixture f;
     f.state.settings.roleplayMode = 2;
-    f.state.settings.animationMode = 3;
+    f.state.settings.ApplyLegacyAnimationMode(3);
     f.state.settings.autoLoad = true;
     initHook(f.page, false, true, ModId, nullptr);
     f.state.settings.spouseTeleport = false;
@@ -1047,16 +1137,16 @@ void NativeResetAndFilteredSearchOwnership() {
     Check(Get(sameIdForeign).integers["resetCalls"] == 1 && Get(nativeSource).integer == 40,
         "Foreign category must retain original native reset behavior");
     api.Call(f.nativeCategory, "Reset");
-    Check(f.state.settings == beforeReset && Get(f.Ui().animationSource.get()).integer == 3,
+    Check(f.state.settings == beforeReset && Get(f.Ui().animationSources[4].get()).boolean,
         "Unrelated native reset must not affect Mod models");
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
-    const auto searchCategory = CloneCategory(Section(displayedParent, DisplaySection));
+    const auto searchCategory = CloneCategory(Section(displayedParent, AnimationSection));
     Get(searchCategory).integers["categoryId"] = 999;
-    Get(Get(searchCategory).refs.at("options")).items = {f.Ui().animationOption.get()};
+    Get(Get(searchCategory).refs.at("options")).items = {f.Ui().animationOptions[4].get()};
     const auto rebuilds = Get(f.page).integers["initCalls"];
     api.Call(searchCategory, "Reset");
     Check(Get(searchCategory).integers["resetCalls"] == 1 &&
-        Get(f.Ui().animationSource.get()).integer == 1 &&
+        !Get(f.Ui().animationSources[4].get()).boolean && Get(f.Ui().animationSources[5].get()).boolean &&
         Get(f.Ui().modeSource.get()).integer == 2 &&
         Get(f.Ui().roleplayModeSource.get()).integer == 2 &&
         Get(f.Ui().autoLoadSource.get()).boolean && !Get(f.Ui().spouseSource.get()).boolean,
@@ -1064,7 +1154,7 @@ void NativeResetAndFilteredSearchOwnership() {
     Check(f.state.settings == beforeReset, "Native reset must defer persistence until the normal pump");
     f.Ui().Tick();
     auto resetMethodOnly = beforeReset;
-    resetMethodOnly.animationMode = 1;
+    resetMethodOnly.instantMovements = false;
     Check(f.state.settings == resetMethodOnly && Get(f.page).integers["initCalls"] == rebuilds,
         "Filtered reset must persist only its row without rebuilding native categories");
     api.Call(displayedParent, "Reset");
@@ -1080,38 +1170,50 @@ void NativeResetAndFilteredSearchOwnership() {
 
 // Every preference shown in the tab, away from its reset default.
 Settings AwayFromDefaults() {
-    Settings settings = Config(1, 3);
+    Settings settings = Config(1, 0);
+    for (auto field : AnimationToggles) settings.*field = !(Settings{}.*field);
+    for (auto field : CombatMiniatureToggles) settings.*field = false;
+    for (auto field : RoleplayMiniatureToggles) settings.*field = false;
     settings.roleplayMode = 1;
     settings.monsterGlowMode = 3;
     settings.glowNpcs = settings.glowInteractives = true;
     settings.resourceMapEnabled = settings.resourceMiniMapEnabled = settings.miniMapCenterButton = false;
+    settings.archiZonesMap = false; settings.archiZonesMiniMap = true; settings.calendarKralamoure = false;
     settings.fastMapTransitions = settings.preloadNextMap = settings.spouseTeleport = false;
     settings.soulReminder = settings.soulAutoEquip = false;
     settings.autoLoad = settings.githubUpdates = false;
     settings.metamobSync = true;
     settings.mapTravelPlanner = false;
+    settings.travelRoublardTemple = false;
     settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = settings.chatMetamobStatus = false;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
 Settings WithSectionDefaults(Settings settings, size_t index) {
     const Settings defaults;
-    if (index == DisplaySection) {
-        settings.mode = defaults.mode; settings.roleplayMode = defaults.roleplayMode; settings.animationMode = defaults.animationMode;
+    if (index == AppearanceSection) {
+        settings.mode = defaults.mode; settings.roleplayMode = defaults.roleplayMode;
+        for (auto field : CombatMiniatureToggles) settings.*field = defaults.*field;
+        for (auto field : RoleplayMiniatureToggles) settings.*field = defaults.*field;
+    } else if (index == AnimationSection) {
+        for (auto field : AnimationToggles) settings.*field = defaults.*field;
     } else if (index == GlowSection) {
         settings.monsterGlowMode = defaults.monsterGlowMode; settings.glowNpcs = defaults.glowNpcs; settings.glowInteractives = defaults.glowInteractives;
     } else if (index == MapsSection) {
         settings.resourceMapEnabled = defaults.resourceMapEnabled; settings.resourceMiniMapEnabled = defaults.resourceMiniMapEnabled;
         settings.miniMapCenterButton = defaults.miniMapCenterButton;
+        settings.archiZonesMap = defaults.archiZonesMap; settings.archiZonesMiniMap = defaults.archiZonesMiniMap;
     } else if (index == TravelSection) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
-        settings.mapTravelPlanner = defaults.mapTravelPlanner;
+        settings.mapTravelPlanner = defaults.mapTravelPlanner; settings.travelRoublardTemple = defaults.travelRoublardTemple;
     } else if (index == SoulSection) {
         settings.soulReminder = defaults.soulReminder; settings.soulAutoEquip = defaults.soulAutoEquip;
         settings.metamobSync = defaults.metamobSync;
     } else if (index == ChatSection) {
         settings.chatTravelLinks = defaults.chatTravelLinks; settings.chatSoulInventory = defaults.chatSoulInventory;
         settings.chatOcreStatus = defaults.chatOcreStatus; settings.chatMetamobStatus = defaults.chatMetamobStatus;
+    } else if (index == CalendarSection) {
+        settings.calendarKralamoure = defaults.calendarKralamoure;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
     }
@@ -1196,9 +1298,6 @@ void ValidationAndLoadingGate() {
         }
     }
     for (int invalid : {-1, 4, 99}) {
-        Get(f.Ui().animationSource.get()).integer = invalid;
-        f.Ui().Tick();
-        Check(changes == 0 && Get(f.Ui().animationSource.get()).integer == 1, "Invalid animation mode must revert");
         Get(f.Ui().glowSource.get()).integer = invalid;
         f.Ui().Tick();
         Check(changes == 0 && Get(f.Ui().glowSource.get()).integer == 1, "Invalid glow mode must revert without persistence");
@@ -1272,7 +1371,7 @@ void CreditsLinkOpensProject() {
     auto element = Make("TextButtonOptionElement");
     Get(element).refs["option"] = f.Ui().creditsOption.get();
     textButtonHook(element, Make("Visual"), nullptr);
-    Check(openedUrls == std::vector<std::string>{"https://github.com/Altansar69/dofus-miniatures"} && foreignButtonClicks == 0,
+    Check(openedUrls == std::vector<std::string>{"https://github.com/Altansar69/dofus-enhanced"} && foreignButtonClicks == 0,
         "Credits button opens the project page without running the null native action");
     auto foreign = Make("TextButtonOptionElement"), other = Make("TextButtonOption");
     Get(other).refs["description"] = Make("Description");
@@ -1865,7 +1964,8 @@ int main() {
         run(fake::RestoreRetriesAfterFailedRebuild);
         run(fake::CreditsLinkOpensProject);
         run(fake::RegistrationAndValues);
-        run(fake::AnimationModeValuesAndDefaults);
+        run(fake::AnimationTogglesValuesAndDefaults);
+        run(fake::AppearanceCategoriesValuesAndDefaults);
         run(fake::GlowModeValuesAndDefaults);
         run(fake::GlowCategories);
         run(fake::ReducedMiniaturesDescription);
@@ -1888,7 +1988,7 @@ int main() {
         run(fake::MetamobFieldsLeaveOnAbandon);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: eight native sections (layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace)\n";
+        std::cout << "PASS: ten native sections (Apparence with six combat and four roleplay category checkboxes, Animations with six toggles; layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

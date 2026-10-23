@@ -1,5 +1,6 @@
 #include "features.hpp"
 #include "module.hpp"
+#include <algorithm>
 #include <cmath>
 #include <intrin.h>
 #include "size-policy.hpp"
@@ -13,6 +14,11 @@ using CreatureLookFn = Obj(*)(Obj, Method);
 static CreatureLookFn originalCreatureLook;
 using CreatureHideFn = bool(*)(Obj, Method);
 static CreatureHideFn originalCreatureHide, originalCreatureForcedHide;
+static void RequireField(Klass type, const char* name, size_t offset) {
+    auto field = api.class_get_field_from_name(type, name);
+    if (!field || api.field_get_offset(field) != offset)
+        throw std::runtime_error(std::string("Appearance field layout: ") + name);
+}
 
 static bool CreatureHideResult(Obj entity, bool nativeHidden, uintptr_t caller) {
     if (nativeHidden && module && module->ready.load() && !module->stopped) {
@@ -94,6 +100,18 @@ void Features::Install() {
     api.Native(teamTryGet, 0x1951B60);
     api.Native(fighterTryGet, 0x1957A70);
     api.Native(localIdGet, 0x18BB140);
+    // « Apparence » categories. EntityInfo.bajh is the entity ID; balc reads
+    // long metadata, where gwg.bmnt stores the summoner under key 2 next to the
+    // summoned flag (bool key 1). Party (fti, service fne): bfmh lists its lg
+    // members, oab is a member's ID and lg.ddku marks an accepted member.
+    infoIdGet = api.FindVerified(info, "bajh", 0, 0x1951440);
+    summonerTryGet = api.FindVerified(info, "balc", 2, 0x1952710);
+    characterClass = api.Class("Core.dll", "", "esg");
+    partyClass = api.Class("Core.dll", "", "fti");
+    partyMemberClass = api.Class("Core.dll", "", "lg");
+    partyMembersGet = api.FindVerified(partyClass, "bfmh", 0, 0x752E20);
+    partyMemberIdGet = api.FindVerified(partyMemberClass, "oab", 0, 0x68D2B0);
+    RequireField(partyMemberClass, "ddku", 0x20);
     sizes.Install();
     AddHook(api.Find(converter, "bazg", 2), 0x19755D0, reinterpret_cast<void*>(ConvertHook), reinterpret_cast<void**>(&originalConvert));
     AddHook(api.Find(lookAnimatedEntityClass, "rez", 0), 0x2614FF0, reinterpret_cast<void*>(CreatureLookHook), reinterpret_cast<void**>(&originalCreatureLook));
@@ -117,6 +135,7 @@ void Features::SyncLookCachePolicy() {
     current.context = current.service ? Read<Obj>(current.service, 0x10) : nullptr;
     current.combat = module->InCombat();
     current.mode = ActiveDisplayMode(module->settings, current.combat);
+    current.categories = MiniatureCategoryMask(module->settings);
     current.stopped = module->stopped.load();
     current.active = current.service && Read<bool>(current.service, 0x48);
     if (!lookCachePolicyKnown || !(current == lookCachePolicy)) {
@@ -204,16 +223,18 @@ bool Features::Convert(Obj service, Obj info, Obj* look) {
     if (service != module->creatures.get() || !Read<bool>(service, 0x48)) return false;
     int exclusion = 9;
     if (api.Value<bool>(api.Invoke(excludedTest, info, {&exclusion}))) return false;
-    const auto group = combat ? Group(info) : MiniatureGroup::Unknown;
-    const bool classified = !combat || group != MiniatureGroup::Unknown;
     int playerFlag = 0x80, monsterFlag = 8, summonKey = 1;
     const bool player = api.Value<bool>(api.Invoke(flagsTest, info, {&playerFlag}));
     const bool summon = api.Value<bool>(api.Invoke(excludedTest, info, {&summonKey}));
     const bool monster = summon || (!player && api.Value<bool>(api.Invoke(flagsTest, info, {&monsterFlag})));
-    const int percent = classified ? SimpleReducedPercent : 100;
+    // « Apparence »: only a checked category is reduced. The others keep the
+    // native appearance, as an unclassified fighter always did (factor 1).
+    const auto group = combat ? Group(info) : RoleplayGroup(info, player, monster);
+    const bool reduced = MiniatureGroupEnabled(module->settings, group);
+    const int percent = reduced ? SimpleReducedPercent : 100;
     const float naturalHeight = sizes.Measure(*look, player && !summon).value_or(0);
-    auto factor = SizeFactor(percent, classified ? SimpleMinimumMonsterPercent : 0, monster, naturalHeight, sizes.playerHeight);
-    if (classified && monster &&
+    auto factor = SizeFactor(percent, reduced ? SimpleMinimumMonsterPercent : 0, monster, naturalHeight, sizes.playerHeight);
+    if (reduced && monster &&
         (naturalHeight <= 0 || sizes.playerHeight <= 0) && !loggedPendingSize) {
         Log("SIZE_MEASUREMENTS_PENDING proportionalReductionAvailable=1 reference=" +
             std::to_string(sizes.playerHeight) + " model=" + std::to_string(naturalHeight));
@@ -241,43 +262,115 @@ void Features::Refresh(bool active) {
     // rebuild current combat roots instead of depending on event deduplication.
     RefreshCombatAppearance();
 }
-int Features::LocalTeam() const {
-    if (!module->InCombat()) return -1;
+Features::LocalFighterIdentity Features::LocalFighter() const {
+    LocalFighterIdentity unknown;
+    if (!module->InCombat()) return unknown;
     auto state = Read<Obj>(module->fight.get(), 0x18); // fxc.dvzu : fyb
-    if (!state) return -1;
-    if (std::string(api.class_get_name(api.object_get_class(state))) != "fyb") return -1;
+    if (!state) return unknown;
+    if (std::string(api.class_get_name(api.object_get_class(state))) != "fyb") return unknown;
     auto character = Read<Obj>(state, 0xF0);
     auto fighters = Read<Obj>(state, 0x58);
-    if (!character || !fighters) return -1;
+    if (!character || !fighters) return unknown;
     if (std::string(api.class_get_name(api.object_get_class(character))) != "esg" ||
-        std::string(api.class_get_name(api.object_get_class(fighters))) != "evv") return -1;
-    if (!Read<Obj>(character, 0x128)) return -1;
+        std::string(api.class_get_name(api.object_get_class(fighters))) != "evv") return unknown;
+    if (!Read<Obj>(character, 0x128)) return unknown;
     auto id = api.Value<int64_t>(api.Invoke(localIdGet, character));
     Obj local = nullptr;
-    if (!api.Value<bool>(api.Invoke(fighterTryGet, fighters, {&id, &local})) || !local) return -1;
+    if (!api.Value<bool>(api.Invoke(fighterTryGet, fighters, {&id, &local})) || !local) return unknown;
     Ref held(local);
     int key = 6;
     int8_t team = -1;
-    if (!api.Value<bool>(api.Invoke(teamTryGet, local, {&key, &team}))) return -1;
-    return team >= 0 && team <= 3 ? team : -1;
+    if (!api.Value<bool>(api.Invoke(teamTryGet, local, {&key, &team}))) return unknown;
+    if (team < 0 || team > 3) return unknown;
+    return {team, id};
 }
+int Features::LocalTeam() const { return LocalFighter().team; }
 MiniatureGroup Features::Group(Obj info) const {
     int fighterFlag = 1, playerFlag = 0x80, monsterFlag = 8, summonKey = 1, teamKey = 6;
     if (!api.Value<bool>(api.Invoke(flagsTest, info, {&fighterFlag}))) return MiniatureGroup::Unknown;
     int8_t team = -1;
     if (!api.Value<bool>(api.Invoke(teamTryGet, info, {&teamKey, &team}))) return MiniatureGroup::Unknown;
-    const int localTeam = LocalTeam();
-    if (localTeam < 0) return MiniatureGroup::Unknown;
+    const auto local = LocalFighter();
+    if (local.team < 0) return MiniatureGroup::Unknown;
     bool summon = api.Value<bool>(api.Invoke(excludedTest, info, {&summonKey}));
     bool player = api.Value<bool>(api.Invoke(flagsTest, info, {&playerFlag}));
     bool monster = api.Value<bool>(api.Invoke(flagsTest, info, {&monsterFlag}));
-    return ClassifyMiniature(player, monster, summon, team, localTeam);
+    // Own fighter and own summons, read only when their checkbox differs from
+    // the other allies' one. A missing summoner keeps the allied summon group.
+    bool self = false, ownSummon = false;
+    const auto& settings = module->settings;
+    if (team == local.team && local.id != 0) {
+        if (summon && CombatOwnSummonMatters(settings)) {
+            int summonerKey = 2;
+            int64_t summoner = 0;
+            ownSummon = api.Value<bool>(api.Invoke(summonerTryGet, info, {&summonerKey, &summoner})) && summoner == local.id;
+        } else if (!summon && player && CombatSelfMatters(settings))
+            self = api.Value<int64_t>(api.Invoke(infoIdGet, info)) == local.id;
+    }
+    return ClassifyMiniature(player, monster, summon, team, local.team, self, ownSummon);
+}
+Features::RoleplayIdentity Features::ReadRoleplayIdentity() const {
+    RoleplayIdentity identity;
+    Ref character(module->FindService("fng"));
+    if (character.get() && api.object_get_class(character.get()) == characterClass && Read<Obj>(character.get(), 0x128))
+        identity.self = api.Value<int64_t>(api.Invoke(localIdGet, character.get()));
+    Ref party(module->FindService("fne"));
+    if (!party.get() || api.object_get_class(party.get()) != partyClass) return identity;
+    Ref members(api.Invoke(partyMembersGet, party.get()));
+    if (!members.get()) return identity;
+    const int count = api.Value<int>(api.Call(members.get(), "get_Count"));
+    if (count < 0 || count > 128) throw std::runtime_error("Unexpected party member count");
+    for (int index = 0; index < count; ++index) {
+        Ref member(api.Call(members.get(), "get_Item", {&index}));
+        // Accepted members only (lg.ddku): an invited guest is not in the party.
+        if (!member.get() || api.object_get_class(member.get()) != partyMemberClass || !Read<bool>(member.get(), 0x20)) continue;
+        const auto id = api.Value<int64_t>(api.Invoke(partyMemberIdGet, member.get()));
+        if (id > 0) identity.party.push_back(id);
+    }
+    std::sort(identity.party.begin(), identity.party.end());
+    identity.party.erase(std::unique(identity.party.begin(), identity.party.end()), identity.party.end());
+    return identity;
+}
+const Features::RoleplayIdentity& Features::CurrentRoleplayIdentity() {
+    if (!roleplayIdentityKnown) {
+        roleplayIdentity = ReadRoleplayIdentity();
+        roleplayIdentityKnown = true;
+        nextRoleplayIdentityRead = GetTickCount64() + 1000;
+    }
+    return roleplayIdentity;
+}
+// Out of combat with Miniatures and an unticked player category: a party or
+// character change re-renders the players, read at most once a second.
+void Features::TrackRoleplayIdentity() {
+    const auto now = GetTickCount64();
+    if (roleplayIdentityKnown && now < nextRoleplayIdentityRead) return;
+    nextRoleplayIdentityRead = now + 1000;
+    auto current = ReadRoleplayIdentity();
+    const bool changed = roleplayIdentityKnown && !(current == roleplayIdentity);
+    roleplayIdentity = std::move(current);
+    roleplayIdentityKnown = true;
+    if (changed) Refresh(true);
+}
+MiniatureGroup Features::RoleplayGroup(Obj info, bool player, bool monster) {
+    bool self = false, partyMember = false;
+    if (!monster && RoleplayIdentityMatters(module->settings)) {
+        const auto& identity = CurrentRoleplayIdentity();
+        const auto id = api.Value<int64_t>(api.Invoke(infoIdGet, info));
+        self = identity.self != 0 && id == identity.self;
+        partyMember = player && !self && std::binary_search(identity.party.begin(), identity.party.end(), id);
+    }
+    return ClassifyRoleplayMiniature(player, monster, self, partyMember);
 }
 void Features::Tick() {
-    PumpInstantWaits(module->InCombat());
-    if (ActiveDisplayMode(module->settings, module->InCombat()) == 2) {
+    const bool combat = module->InCombat();
+    PumpInstantWaits(combat);
+    const bool identity = !combat && module->settings.roleplayMode == 2 && RoleplayIdentityMatters(module->settings);
+    if (ActiveDisplayMode(module->settings, combat) == 2) {
         if (sizes.Tick()) Refresh(true);
+        if (identity) TrackRoleplayIdentity();
     } else sizes.pending.clear();
+    // Read again once needed: no identity is kept while it is not used.
+    if (!identity) roleplayIdentityKnown = false;
     const int team = LocalTeam();
     if (team != previousLocalTeam) {
         previousLocalTeam = team;

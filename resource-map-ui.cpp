@@ -446,5 +446,6 @@ void TickUi(){
     }catch(const std::exception& error){Log(std::string("RESOURCE_MINIMAP_UI_ERROR ")+error.what());Detach(miniOwned);}
 }
 void RestoreUi(){pending.reset();Detach(owned);Detach(miniOwned);}
+Obj CartographyWindow(){return owned?owned->owner.get():pending.get();}
 bool UiCleanupPending(){return owned!=nullptr||miniOwned!=nullptr;}
 }

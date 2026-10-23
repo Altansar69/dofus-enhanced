@@ -10,7 +10,7 @@ PredicateFn originalMonsterAnimation, originalPendingAnimation, originalAppearan
 bool MovementAnimationWait(Obj entity, bool nativeResult, uintptr_t caller, uintptr_t expected) {
     if (!nativeResult || caller - gameBase != expected) return nativeResult;
     try {
-        if (InstantCombatEnabled() && entity && IsCurrentFightEntity(entity)) return false;
+        if (InstantWaitsEnabled() && entity && IsCurrentFightEntity(entity)) return false;
     } catch (const std::exception& error) {
         Log(std::string("MOVEMENT_WAIT_ERROR ") + error.what());
         if (module) module->stopRequested.store(true);
@@ -30,7 +30,7 @@ bool PendingAnimationHook(Obj entity, Method method) {
 bool AppearanceReady(Obj entity, bool nativeResult, uintptr_t caller) {
     if (nativeResult || caller - gameBase != 0x205FD43) return nativeResult;
     try {
-        if (InstantCombatEnabled() && entity && IsCurrentFightEntity(entity)) return true;
+        if (InstantWaitsEnabled() && entity && IsCurrentFightEntity(entity)) return true;
     } catch (const std::exception& error) {
         Log(std::string("APPEARANCE_WAIT_ERROR ") + error.what());
         if (module) module->stopRequested.store(true);

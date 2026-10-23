@@ -2,6 +2,7 @@
 #include "chat-soul-data.hpp"
 #include "module.hpp"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <map>
 #include <set>
@@ -20,6 +21,14 @@ struct State {
     bool installed = false, inventoryKnown = false;
     uint64_t nextScan = 0, inventoryAt = 0, nextQuest = 0, nextLog = 0;
 } state;
+// What each client (SoulClient order) last asked for, and when: kept across
+// reader resets, so one client giving up a reader never drops another's need.
+struct Need { bool inventory = false, quest = false; uint64_t at = 0; };
+std::array<Need, 2> needs;
+// The first client (SoulClient order) that needs a reader and asked within
+// this delay leads: only its calls advance the readers, once per pump.
+constexpr uint64_t LeadMs = 1000;
+uint64_t revision = 1;
 bool Active() {
     return module && module->ready.load() && module->servicesReady && !module->stopped && !module->stopRequested.load();
 }
@@ -121,6 +130,7 @@ void ScanInventory(uint64_t now) {
                 api.Call(state.service.get(),"bdoq") != state.inventory.get() ||
                 api.Call(state.inventory.get(),"get_content") != state.content.get())
                 throw std::runtime_error("Inventory owner changed during chat scan");
+            if (!state.inventoryKnown || state.owned != state.scanning) ++revision;
             state.owned = std::move(state.scanning);
             CancelScan(); state.inventoryKnown = true; state.inventoryAt = now; state.nextScan = now + 2000;
             return;
@@ -179,15 +189,31 @@ void ReadQuest(uint64_t now) {
     }
     if (!SameSession() || module->FindService("fnp") != state.quests.get() ||
         api.Call(state.quests.get(),"bczk") != finished.get()) throw std::runtime_error("Quest owner changed");
+    if (state.progress != progress) ++revision;
     state.progress = std::move(progress);
     QuestReason(reason);
 }
 // A hidden status reads nothing; shown again, it starts from unknown.
 void ForgetInventory() {
     try { CancelScan(); } catch (const std::exception& e) { Error("cleanup",e); }
+    if (state.inventoryKnown || !state.owned.empty()) ++revision;
     state.service.reset(); state.owned.clear(); state.inventoryKnown = false; state.nextScan = 0;
 }
-void ForgetQuest() { state.quests.reset(); state.progress.clear(); state.nextQuest = 0; }
+void ForgetQuest() { if (!state.progress.empty()) ++revision; state.quests.reset(); state.progress.clear(); state.nextQuest = 0; }
+// Every reader root released; the clients' needs stay.
+void ResetReaders() {
+    try { CancelScan(); } catch (const std::exception& e) { Error("cleanup",e); }
+    if (state.inventoryKnown || !state.progress.empty()) ++revision;
+    state = {};
+}
+SoulState Public(Progress progress) {
+    switch (progress) {
+    case Progress::Missing: return SoulState::Missing;
+    case Progress::Done: return SoulState::Done;
+    case Progress::NotStarted: return SoulState::NotStarted;
+    default: return SoulState::Unknown;
+    }
+}
 const Goal* FindGoal(int monster) {
     const auto it = std::lower_bound(OcreGoals.begin(),OcreGoals.end(),monster,
         [](const Goal& row,int id) { return row.monster < id; });
@@ -206,29 +232,46 @@ Progress Quest(int monster) {
     return SameSession() && found != state.progress.end() ? found->second : Progress::Unknown;
 }
 }
-void TickChatSoulStatus(bool inventory, bool quest) {
+void WantSoulStatus(SoulClient client, bool inventory, bool quest) {
     using namespace chat_souls;
-    if ((!inventory && !quest) || !Active()) { RestoreChatSoulStatus(); return; }
-    if (!SameSession()) {
-        RestoreChatSoulStatus(); state.owner = module; state.cached.reset(module->cached.get()); state.compositor.reset(module->compositor.get());
-    }
+    const auto index = static_cast<size_t>(client);
+    if (index >= needs.size()) return;
     const auto now = GetTickCount64();
-    try { Install(); } catch (const std::exception& e) { Error("metadata",e); return; }
+    needs[index] = {inventory, quest, now};
+    inventory = quest = false;
+    for (const auto& need : needs) { inventory = inventory || need.inventory; quest = quest || need.quest; }
+    if ((!inventory && !quest) || !Active()) { ResetReaders(); return; }
+    if (!SameSession()) {
+        ResetReaders(); state.owner = module; state.cached.reset(module->cached.get()); state.compositor.reset(module->compositor.get());
+    }
+    // A reader nobody needs any more is forgotten at once, whoever calls.
     if (!inventory) ForgetInventory();
-    else try { ScanInventory(now); } catch (const std::exception& e) {
+    if (!quest) ForgetQuest();
+    // One read step per pump: a client needing nothing, or asking after a
+    // fresher earlier one, only updates its needs (each client asks once per pump).
+    if (!needs[index].inventory && !needs[index].quest) return;
+    for (size_t i = 0; i < index; ++i)
+        if ((needs[i].inventory || needs[i].quest) && now - needs[i].at < LeadMs) return;
+    try { Install(); } catch (const std::exception& e) { Error("metadata",e); return; }
+    if (inventory) try { ScanInventory(now); } catch (const std::exception& e) {
         // An interrupted scan (content changed, owner replaced) keeps the last
         // complete result and retries soon; only a service change forgets it.
         state.nextScan = now + 1000;
         try { CancelScan(); } catch (...) {} Error("inventory",e);
     }
-    if (!quest) ForgetQuest();
-    else try { ReadQuest(now); } catch (const std::exception& e) { state.progress.clear(); QuestReason("read-failed"); Error("quest",e); }
+    if (quest) try { ReadQuest(now); } catch (const std::exception& e) {
+        if (!state.progress.empty()) ++revision;
+        state.progress.clear(); QuestReason("read-failed"); Error("quest",e);
+    }
 }
 void RestoreChatSoulStatus() {
     using namespace chat_souls;
-    try { CancelScan(); } catch (const std::exception& e) { Error("cleanup",e); }
-    state = {};
+    ResetReaders();
+    needs = {};
 }
+SoulState OcreProgress(int monster) { using namespace chat_souls; return Public(Quest(monster)); }
+SoulState BagProgress(int monster) { using namespace chat_souls; return Public(Inventory(monster)); }
+uint64_t SoulStatusRevision() { return chat_souls::revision; }
 std::string ChatSoulCaption(int monster, ChatSoulPart part, bool colorStatus) {
     using namespace chat_souls;
     if (monster <= 0 || !FindGoal(monster)) return {};

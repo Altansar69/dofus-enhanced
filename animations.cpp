@@ -31,9 +31,15 @@ struct CompletingStep {
 };
 thread_local CompletingStep* CompletingStep::current = nullptr;
 
-bool InstantCombatEnabled() {
-    return module && module->ready.load() && !module->stopped.load() &&
-        !module->stopRequested.load() && module->settings.animationMode == 3 && module->InCombat();
+// Each « Animations » toggle acts in combat only, while the module runs.
+static bool CombatVisualsActive() {
+    return module && module->ready.load() && !module->stopped.load() && !module->stopRequested.load();
+}
+bool InstantMovementEnabled() {
+    return CombatVisualsActive() && module->settings.instantMovements && module->InCombat();
+}
+bool InstantWaitsEnabled() {
+    return CombatVisualsActive() && module->settings.noVisualWaits && module->InCombat();
 }
 
 bool IsCurrentFightEntity(Obj entity) {
@@ -59,12 +65,15 @@ bool IsCurrentFightEntity(Obj entity) {
 
 static void AnimationStartHook(Obj step, Method method) {
     if (CompletingStep::Contains(step)) return;
-    bool skip = false;
+    bool skip = false, remember = false;
     try {
-        skip = step && module && module->ready.load() && !module->stopped.load() &&
-            !module->stopRequested.load() && module->settings.animationMode >= 2 &&
-            module->InCombat() && IsCurrentFightEntity(Read<Obj>(step, 0x78));
-        if (skip && module->settings.animationMode == 3 && MustKeepNativeAnimation(step)) skip = false;
+        // « Sans animations d'attaque et de sort » / « Sans animations de mort »:
+        // the step's recorded provenance decides (see SkipFighterAnimation).
+        if (step && CombatVisualsActive() && AnyFighterAnimationSkipped(module->settings) &&
+            module->InCombat() && IsCurrentFightEntity(Read<Obj>(step, 0x78))) {
+            skip = SkipFighterAnimation(module->settings, ClassifyAnimationStep(step));
+            remember = skip && module->settings.noVisualWaits;
+        }
     } catch (const std::exception& error) {
         // No native start or completion has happened yet: the original is safe.
         skip = false;
@@ -77,9 +86,9 @@ static void AnimationStartHook(Obj step, Method method) {
     }
     if (Read<bool>(step, 0x1D)) return;
 
-    // Only the instant mode may release an independent waiter for this exact
-    // skipped animation. Record it before synchronous native callbacks run.
-    if (module->settings.animationMode == 3) {
+    // Only « Sans attentes visuelles » may release an independent waiter for
+    // this exact skipped animation. Record it before synchronous callbacks run.
+    if (remember) {
         try { RememberSkippedAnimation(step); }
         catch (const std::exception& error) {
             Log(std::string("ANIMATION_TRACKING_ERROR ") + error.what());
@@ -108,23 +117,11 @@ static void AnimationStartHook(Obj step, Method method) {
     }
 }
 
-static bool IsCombatAnimationRead(uintptr_t caller) {
-    switch (caller - gameBase) {
-    case 0x1ECE82C: // FightSequence.biwv: native projectile/effect step filtering.
-    case 0x272E250: // dyq.uus: native caster animation selection.
-    case 0x2744303: // dzj.uxg
-        return true;
-    default:
-        return false;
-    }
-}
-
-static void OptionGetterHook(Obj option, void* result, Method method) {
-    const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
+// « Sans effets des sorts » answers the FightSequence.biwv read, « Lancers de
+// sorts raccourcis » the dyq.uus and dzj.uxg reads (OverrideSpellEffectsRead).
+static void OptionGetterAt(Obj option, void* result, Method method, uintptr_t caller) {
     originalOptionGetter(option, result, method);
-    if (!IsCombatAnimationRead(caller) || !result || !module ||
-        !module->ready.load() || module->stopped.load() ||
-        module->stopRequested.load() || module->settings.animationMode == 0)
+    if (!result || !CombatVisualsActive() || !OverrideSpellEffectsRead(module->settings, caller - gameBase))
         return;
 
     try {
@@ -136,6 +133,9 @@ static void OptionGetterHook(Obj option, void* result, Method method) {
         Log(std::string("ANIMATION_OPTION_ERROR ") + error.what());
         module->stopRequested.store(true);
     }
+}
+static void OptionGetterHook(Obj option, void* result, Method method) {
+    OptionGetterAt(option, result, method, reinterpret_cast<uintptr_t>(_ReturnAddress()));
 }
 
 void Features::InstallAnimation() {

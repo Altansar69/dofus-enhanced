@@ -26,6 +26,8 @@
 #include "notebook-panel.hpp"
 #include "tools-ui.hpp"
 #include "jobs-xp-panel.hpp"
+#include "archi-zones.hpp"
+#include "calendar-kralove.hpp"
 #include "metamob-sync.hpp"
 #include "capture-detect.hpp"
 #include <MinHook.h>
@@ -153,7 +155,6 @@ void Module::Discover(Obj source) {
 void Module::Change(Settings next, bool save) {
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2)
         throw std::runtime_error("Display mode outside valid range");
-    if (!Settings::ValidAnimationMode(next.animationMode)) throw std::runtime_error("Invalid animation mode");
     if (!Settings::ValidMonsterGlowMode(next.monsterGlowMode)) throw std::runtime_error("Invalid monster glow mode");
     if (!Settings::ValidResourceSelection(next.resourceMapItems)) throw std::runtime_error("Invalid resource map selection");
     const bool withMetamobSync = !save || KeepSharedMetamobSync(next);
@@ -171,8 +172,16 @@ void Module::Change(Settings next, bool save) {
     features->Refresh(ActiveDisplayMode(settings, combat) != 0);
     ui->Sync();
     if (save) SaveSettings(withMetamobSync);
+    // One digit per checkbox, in row order: « Apparence » combat and roleplay
+    // categories, then the « Animations » toggles.
+    const auto digits = [this](const auto& fields) {
+        std::string text;
+        for (auto field : fields) text += settings.*field ? '1' : '0';
+        return text;
+    };
     Log("SETTINGS combat=" + std::to_string(settings.mode) + " roleplay=" + std::to_string(settings.roleplayMode) +
-        " animations=" + std::to_string(settings.animationMode) + " autoLoad=" + std::to_string(settings.autoLoad) +
+        " miniatures=" + digits(CombatMiniatureToggles) + "/" + digits(RoleplayMiniatureToggles) +
+        " animations=" + digits(AnimationToggles) + " autoLoad=" + std::to_string(settings.autoLoad) +
         " sizing=reduce percent=60 minimum=50");
 }
 // metamobSync is shared by every game client of this installation (one per
@@ -263,6 +272,8 @@ void Module::Pump(Obj source) {
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
     startupStage("notebook-panel", [] { TickNotebookPanel(); });
     startupStage("jobs-xp", [] { TickJobsXp(); });
+    startupStage("archi-zones", [] { TickArchiZones(); });
+    startupStage("calendar-kralove", [] { TickCalendarKralove(); });
     startupStage("soul-group-menu", [] { TickSoulGroupMenu(); });
     startupStage("spouse-party-menu", [] { TickSpousePartyMenu(); });
     startupStage("spouse-party-widget", [] { TickSpousePartyWidget(); });
@@ -315,6 +326,8 @@ void Module::Stop() {
     RestoreNotebookPanel();
     toolsUi::Restore();
     RestoreJobsXp();
+    RestoreArchiZones();
+    RestoreCalendarKralove();
     RestoreSoulHelper();
     RestoreSoulWidget();
     RestoreDisplayShortcut();
@@ -335,7 +348,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -381,11 +394,13 @@ static void UpdateHook(Obj self, Method method) {
             if (NotebookPanelCleanupPending()) RestoreNotebookPanel();
             if (toolsUi::CleanupPending()) toolsUi::Restore();
             if (JobsXpCleanupPending()) RestoreJobsXp();
+            if (ArchiZonesCleanupPending()) RestoreArchiZones();
+            if (CalendarKraloveCleanupPending()) RestoreCalendarKralove();
             if (SoulHelperCleanupPending()) RestoreSoulHelper();
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -445,6 +460,8 @@ static DWORD WINAPI Worker(void*) {
         treasure::InstallHunt();
         InstallNotebookPanel();
         InstallJobsXp();
+        InstallArchiZones();
+        InstallCalendarKralove();
         InstallSoulWidget();
         InstallMonsterGlow();
         InstallSoulGroupMenu();

@@ -206,7 +206,7 @@ void Plan(std::vector<chat_travel::Destination> choices,bool direct) {
         choices.push_back(here); zone=HereZone();
     }
     directPlan=direct;
-    chat_route::Begin(std::move(choices),targetMap,journey.sourceMap,zone);
+    chat_route::Begin(std::move(choices),targetMap,journey.sourceMap,zone,module->settings.travelRoublardTemple);
     journey.phase=Phase::Planning;
     Log("CHAT_TRAVEL comparing native traversable routes (map changes, teleport penalty 1)");
     Notice("recherche d'un trajet accessible...");

@@ -49,7 +49,7 @@ struct JumpFinish {
           dictionary(dictionaryValue), state(stateValue), lookup(lookupValue), id(idValue), segmentCount(countValue) {}
     bool IsCurrent() const {
         auto currentEntity = entity.get(), currentState = state.get();
-        return InstantCombatEnabled() && IsCurrentFightEntity(currentEntity) &&
+        return InstantMovementEnabled() && IsCurrentFightEntity(currentEntity) &&
             Read<Obj>(behavior.get(), 0x18) == dictionary.get() &&
             FindState(dictionary.get(), lookup, id) == currentState &&
             Read<Obj>(currentState, 0x28) == currentEntity &&
@@ -130,7 +130,7 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     int segmentCount = -1;
     const bool nested = ActiveJump::ObserveReentry(entity);
     try {
-        if (InstantCombatEnabled() && behavior && entity && route && !nested &&
+        if (InstantMovementEnabled() && behavior && entity && route && !nested &&
             api.object_get_class(behavior) == jumpClass && api.object_get_class(route) == routeClass &&
             IsCurrentFightEntity(entity)) {
             auto points = Read<Obj>(route, 0x20);

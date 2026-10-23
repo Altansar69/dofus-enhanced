@@ -37,7 +37,7 @@ void* Api::NativeAt(uintptr_t rva) const {
 Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
-bool InstantCombatEnabled() { return fake::enabled && !module->stopRequested; }
+bool InstantWaitsEnabled() { return fake::enabled && !module->stopRequested; }
 bool IsCurrentFightEntity(Obj entity) {
     if (fake::fail) throw std::runtime_error("Registry failure");
     return fake::member && entity == fake::entity;

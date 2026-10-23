@@ -22,6 +22,8 @@ constexpr size_t MaxFreeText = 1024;
 // NameKey only compares names: a longer input has no key and never matches.
 constexpr size_t MaxKeyInput = 4096;
 constexpr size_t MaxUsername = 40;
+// A Kralamoure description as Metamob sends it: far more is no description.
+constexpr size_t MaxDescriptionInput = 8192;
 
 // Every answer goes through here. nlohmann's own messages quote the body
 // ("last read: ..."), so each parse or type error becomes one fixed text.
@@ -61,6 +63,13 @@ int64_t Integer(const Json& value, int64_t minimum, int64_t maximum) {
 }
 int Count(const Json& value, int minimum) { return static_cast<int>(Integer(value, minimum, MaxCount)); }
 int64_t Id(const Json& value) { return Integer(value, 1, std::numeric_limits<int64_t>::max()); }
+// An id only a later reader needs (the quests' server.id, for the calendar):
+// absent, null or unusable reads 0 and never refuses the answer.
+int64_t OptionalId(const Json& object, const char* name) {
+    const auto* value = Nullable(object, name);
+    if (!value) return 0;
+    try { return Id(*value); } catch (const std::runtime_error&) { return 0; }
+}
 // C0 and C1 control characters and DEL (U+0080..U+009F are C2 80..C2 9F).
 bool HasControl(std::string_view text) {
     for (size_t i = 0; i < text.size(); ++i) {
@@ -199,6 +208,9 @@ bool Hidden(char32_t c) {
     return c < 32 || (c >= 0x7F && c <= 0x9F) || c == U'<' || c == U'>' || c == 0x061C ||
         (c >= 0x200B && c <= 0x200F) || (c >= 0x2028 && c <= 0x202E) || (c >= 0x2060 && c <= 0x206F) || c == 0xFEFF;
 }
+// Also dropped from free text: Unicode tag characters, interlinear annotation
+// marks and the Mongolian vowel separator (all invisible).
+bool Invisible(char32_t c) { return (c >= 0xE0000 && c <= 0xE007F) || (c >= 0xFFF9 && c <= 0xFFFB) || c == 0x180E; }
 // Two or four decimal digits, nothing else (from_chars would accept a sign).
 bool Digits(std::string_view text, int& value) {
     value = 0;
@@ -214,6 +226,25 @@ int64_t Days(int64_t year, int64_t month, int64_t day) {
     const int64_t era = (year >= 0 ? year : year - 399) / 400, yearOfEra = year - era * 400;
     const int64_t dayOfYear = (153 * (month > 2 ? month - 3 : month + 9) + 2) / 5 + day - 1;
     return era * 146097 + yearOfEra * 365 + yearOfEra / 4 - yearOfEra / 100 + dayOfYear - 719468;
+}
+int MonthLength(int year, int month) {
+    constexpr int Lengths[]{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    const bool leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    return Lengths[month - 1] + (month == 2 && leap ? 1 : 0);
+}
+int64_t FloorDiv(int64_t value, int64_t divisor) { return value / divisor - (value % divisor < 0 ? 1 : 0); }
+// A Windows time zone by its key name (EnumDynamicTimeZoneInformation, Windows 8+).
+bool Zone(std::wstring_view key, DYNAMIC_TIME_ZONE_INFORMATION& info) {
+    for (DWORD index = 0; index < 4096; ++index) {
+        DYNAMIC_TIME_ZONE_INFORMATION candidate{};
+        const DWORD result = EnumDynamicTimeZoneInformation(index, &candidate);
+        if (result == ERROR_NO_MORE_ITEMS) return false;
+        if (result == ERROR_SUCCESS && key == std::wstring_view(candidate.TimeZoneKeyName)) {
+            info = candidate;
+            return true;
+        }
+    }
+    return false;
 }
 // IMF-fixdate (RFC 9110 5.6.7), the date form servers send:
 // "Sun, 06 Nov 1994 08:49:37 GMT". The obsolete forms are not read.
@@ -257,6 +288,7 @@ std::vector<Quest> ParseQuests(std::string_view body) {
             if (const auto* server = Nullable(item, "server")) {
                 quest.serverName = Label(Field(*server, "name"), 128);
                 if (const auto* version = Nullable(*server, "game_version")) quest.gameVersion = Count(Field(*version, "id"), 1);
+                quest.serverId = OptionalId(*server, "id");
             }
             if (const auto* type = Nullable(Field(item, "quest_template"), "quest_type"))
                 quest.questType = Label(Field(*type, "slug"), 64);
@@ -301,6 +333,39 @@ QuantityUpdate ParseQuantityUpdate(std::string_view body) {
     return Read(body, [](const Json& json) {
         const auto& data = Field(json, "data");
         return QuantityUpdate{Id(Field(data, "monster_id")), Count(Field(data, "quantity"), 0)};
+    });
+}
+std::vector<Kralove> ParseKralove(std::string_view body) {
+    return Read(body, [](const Json& json) {
+        const auto& data = Field(json, "data");
+        if (!data.is_array() || data.size() > MaxKralove) throw std::runtime_error("Réponse Metamob inattendue.");
+        std::vector<Kralove> openings;
+        std::set<int64_t> ids;
+        for (const auto& item : data) {
+            Kralove opening;
+            opening.id = Id(Field(item, "id"));
+            if (!ids.insert(opening.id).second) throw std::runtime_error("Ouverture Metamob en double.");
+            const auto& when = Field(item, "event_datetime");
+            const auto at = when.is_string() ? UtcSeconds(when.get_ref<const std::string&>()) : std::nullopt;
+            if (!at) throw std::runtime_error("Date Metamob invalide.");
+            opening.at = *at;
+            if (const auto* text = Nullable(item, "description")) {
+                if (!text->is_string() || text->get_ref<const std::string&>().size() > MaxDescriptionInput)
+                    throw std::runtime_error("Texte Metamob invalide.");
+                opening.description = SafeText(text->get_ref<const std::string&>(), MaxDescription);
+            }
+            if (const auto* creator = Nullable(item, "creator")) opening.creator = SafeUsername(FreeText(*creator));
+            opening.participants = Count(Field(item, "participants_count"), 0);
+            opening.characters = Count(Field(item, "character_count"), 0);
+            opening.messages = Count(Field(item, "messages_count"), 0);
+            if (const auto* server = Nullable(item, "server")) {
+                opening.serverId = Id(Field(*server, "id"));
+                opening.server = Label(Field(*server, "name"), 128);
+            }
+            openings.push_back(std::move(opening));
+        }
+        std::sort(openings.begin(), openings.end(), [](const Kralove& a, const Kralove& b) { return a.at != b.at ? a.at < b.at : a.id < b.id; });
+        return openings;
     });
 }
 std::string QuantityBody(int quantity) {
@@ -349,6 +414,82 @@ std::string SafeUsername(std::string_view username) {
         safe += piece;
     }
     return safe;
+}
+std::string SafeText(std::string_view text, size_t maximum) {
+    std::string safe;
+    bool space = false;
+    for (size_t at = 0; at < text.size();) {
+        const auto point = Decode(text, at);
+        if (!point.length) { ++at; continue; } // a stray byte is dropped
+        const auto piece = text.substr(at, point.length);
+        at += point.length;
+        const auto c = point.value;
+        if (c == U' ' || (c >= U'\t' && c <= U'\r') || c == 0x2028 || c == 0x2029) { space = !safe.empty(); continue; }
+        if (Hidden(c) || Invisible(c)) continue;
+        if (space) { safe += ' '; space = false; }
+        safe += piece;
+    }
+    if (safe.size() <= maximum) return safe;
+    constexpr std::string_view Ellipsis = "…";
+    if (maximum < Ellipsis.size()) return {};
+    size_t end = maximum - Ellipsis.size();
+    while (end > 0 && (static_cast<unsigned char>(safe[end]) & 0xC0) == 0x80) --end; // never half a character
+    safe.resize(end);
+    while (!safe.empty() && safe.back() == ' ') safe.pop_back();
+    return safe + std::string(Ellipsis);
+}
+int64_t DayNumber(int year, int month, int day) { return Days(year, month, day); }
+CivilTime CivilDay(int64_t dayNumber) {
+    // H. Hinnant's civil_from_days; 1970-01-01 was a Thursday.
+    const int64_t z = dayNumber + 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097, dayOfEra = z - era * 146097;
+    const int64_t yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365;
+    const int64_t dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100);
+    const int64_t shifted = (5 * dayOfYear + 2) / 153, month = shifted < 10 ? shifted + 3 : shifted - 9;
+    CivilTime civil;
+    civil.year = static_cast<int>(yearOfEra + era * 400 + (month <= 2 ? 1 : 0));
+    civil.month = static_cast<int>(month);
+    civil.day = static_cast<int>(dayOfYear - (153 * shifted + 2) / 5 + 1);
+    civil.weekday = static_cast<int>(((dayNumber % 7) + 7 + 3) % 7);
+    return civil;
+}
+std::optional<int64_t> UtcSeconds(std::string_view text) {
+    if (text.size() < 20 || text[4] != '-' || text[7] != '-' || text[10] != 'T' || text[13] != ':' || text[16] != ':')
+        return std::nullopt;
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    if (!Digits(text.substr(0, 4), year) || !Digits(text.substr(5, 2), month) || !Digits(text.substr(8, 2), day) ||
+        !Digits(text.substr(11, 2), hour) || !Digits(text.substr(14, 2), minute) || !Digits(text.substr(17, 2), second))
+        return std::nullopt;
+    auto zone = text.substr(19);
+    if (!zone.empty() && zone.front() == '.') {
+        size_t digits = 1;
+        while (digits < zone.size() && zone[digits] >= '0' && zone[digits] <= '9') ++digits;
+        if (digits == 1 || digits > 10) return std::nullopt; // 1 to 9 digits of a second
+        zone = zone.substr(digits);
+    }
+    if (zone != "Z" && zone != "+00:00") return std::nullopt;
+    if (year < 2000 || year > 2199 || month < 1 || month > 12 || day < 1 || day > MonthLength(year, month) || hour > 23 ||
+        minute > 59 || second > 59)
+        return std::nullopt;
+    return Days(year, month, day) * 86400 + hour * 3600 + minute * 60 + second;
+}
+std::optional<CivilTime> LocalTime(int64_t unixSeconds, std::wstring_view zone) {
+    if (unixSeconds < 0 || unixSeconds >= Days(2200, 1, 1) * 86400) return std::nullopt;
+    DYNAMIC_TIME_ZONE_INFORMATION info{};
+    if (zone.empty()) {
+        if (GetDynamicTimeZoneInformation(&info) == TIME_ZONE_ID_INVALID) return std::nullopt;
+    } else if (!Zone(zone, info)) return std::nullopt;
+    const auto date = CivilDay(FloorDiv(unixSeconds, 86400));
+    const auto seconds = unixSeconds % 86400;
+    SYSTEMTIME utc{};
+    utc.wYear = static_cast<WORD>(date.year); utc.wMonth = static_cast<WORD>(date.month); utc.wDay = static_cast<WORD>(date.day);
+    utc.wHour = static_cast<WORD>(seconds / 3600); utc.wMinute = static_cast<WORD>(seconds / 60 % 60);
+    utc.wSecond = static_cast<WORD>(seconds % 60);
+    SYSTEMTIME local{};
+    if (!SystemTimeToTzSpecificLocalTimeEx(&info, &utc, &local)) return std::nullopt;
+    auto civil = CivilDay(Days(local.wYear, local.wMonth, local.wDay));
+    civil.hour = local.wHour; civil.minute = local.wMinute; civil.second = local.wSecond;
+    return civil;
 }
 std::string NameKey(std::string_view utf8) {
     if (utf8.empty() || utf8.size() > MaxKeyInput) return {};
@@ -409,5 +550,25 @@ std::optional<QuestMonster> FindMonster(const std::vector<QuestMonster>& monster
     }
     if (!found) return std::nullopt;
     return *found;
+}
+MonsterIndex IndexMonsters(const std::vector<QuestMonster>& monsters) {
+    MonsterIndex index;
+    for (size_t i = 0; i < monsters.size(); ++i)
+        for (const auto* name : {&monsters[i].name, &monsters[i].nameEn, &monsters[i].nameEs}) {
+            if (name->empty()) continue;
+            auto key = MatchKey(*name);
+            if (key.empty()) continue;
+            const auto [entry, added] = index.try_emplace({monsters[i].type, std::move(key)}, i);
+            // The same monster again (another language, overlapping pages) keeps its
+            // first entry; another monster under the same key leaves the key naming none.
+            if (!added && entry->second && monsters[*entry->second].id != monsters[i].id) entry->second.reset();
+        }
+    return index;
+}
+std::optional<size_t> FindIndexed(const MonsterIndex& index, std::string_view gameName, int type) {
+    const auto key = MatchKey(gameName);
+    if (key.empty()) return std::nullopt;
+    const auto found = index.find({type, key});
+    return found == index.end() ? std::nullopt : found->second;
 }
 }

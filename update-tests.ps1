@@ -72,6 +72,10 @@ try {
     $renamed.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-enhanced/releases/download/r91/$($renamed.assets[0].name)"
     $chosen = Select-Update @($renamed) $gameHash $metadataHash
     Check ($null -ne $chosen -and $chosen.revision -eq 91 -and $chosen.url -ceq $renamed.assets[0].browser_download_url) 'Renamed repository asset rejected'
+    $legacy = Asset 94 $gameHash $metadataHash $digest
+    $legacy.assets[0].browser_download_url = "https://github.com/Altansar69/dofus-miniatures/releases/download/r94/$($legacy.assets[0].name)"
+    $chosen = Select-Update @($legacy) $gameHash $metadataHash
+    Check ($null -ne $chosen -and $chosen.revision -eq 94 -and $chosen.url -ceq $legacy.assets[0].browser_download_url) 'Former repository asset rejected'
     $other = Asset 92 $gameHash $metadataHash $digest
     $other.assets[0].browser_download_url = "https://github.com/Altansar69/other-repo/releases/download/r92/$($other.assets[0].name)"
     Check ($null -eq (Select-Update @($other) $gameHash $metadataHash)) 'Other repository asset accepted'

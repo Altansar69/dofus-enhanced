@@ -9,9 +9,9 @@ $ErrorActionPreference = 'Stop'
 # A launcher may inherit PSModulePath from PowerShell 7 or a build environment.
 # Resolve the installed Windows module explicitly instead of depending on it.
 Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Utility/Microsoft.PowerShell.Utility.psd1') -ErrorAction Stop
-$script:Repository = 'Altansar69/dofus-miniatures'
-# The repository becomes Altansar69/dofus-enhanced. GitHub redirects the API
-# from the old name, but release assets are then listed under the new one.
+$script:Repository = 'Altansar69/dofus-enhanced'
+# Renamed from Altansar69/dofus-miniatures (GitHub redirects the old name):
+# assets published under either name stay trusted.
 $script:AssetRepositories = @('Altansar69/dofus-miniatures', 'Altansar69/dofus-enhanced')
 $script:Family = 'DofusMiniatures-3.7.11.11-r'
 $script:PayloadFiles = @('DofusMiniatures.dll', 'ModuleLoader.exe', 'ModuleAutoLoader.exe',

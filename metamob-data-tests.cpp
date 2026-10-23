@@ -1,4 +1,5 @@
 #include "metamob-data.hpp"
+#include <windows.h>
 #include <climits>
 #include <iostream>
 #include <set>
@@ -15,7 +16,8 @@ const std::string FakeKey = "TEST-KEY-0123456789-NOT-REAL", Marker = "Zorglub-Co
 // Every error is one of these fixed texts, never built from the input.
 const std::set<std::string> Fixed{"Réponse Metamob trop volumineuse.", "Réponse Metamob illisible.",
     "Réponse Metamob inattendue.", "Nombre Metamob invalide.", "Texte Metamob invalide.", "Quête Metamob invalide.",
-    "Pagination Metamob incohérente.", "Monstre Metamob en double.", "Quantité Metamob hors limites."};
+    "Pagination Metamob incohérente.", "Monstre Metamob en double.", "Quantité Metamob hors limites.", "Date Metamob invalide.",
+    "Ouverture Metamob en double."};
 const std::string NoQuest = "Metamob : aucune quête Ocre Dofus Unity sur ton compte, rien n’a été modifié.";
 const std::string SeveralQuests = "Metamob : plusieurs quêtes Ocre sur ton compte ; indique le nom de ce personnage dans "
     "« Personnage à contacter » de la bonne quête.";
@@ -49,6 +51,10 @@ std::string Chosen(const std::vector<Quest>& quests, std::string_view character)
 }
 int64_t Found(const std::vector<QuestMonster>& monsters, std::string_view name, int type) {
     const auto monster = FindMonster(monsters, name, type);
+    // The chat part's and the maps' index answers exactly as FindMonster does.
+    const auto indexed = FindIndexed(IndexMonsters(monsters), name, type);
+    Check(indexed.has_value() == monster.has_value() && (!indexed || monsters[*indexed].id == monster->id),
+        "The list's index finds the monster FindMonster finds");
     return monster ? monster->id : -1;
 }
 
@@ -431,6 +437,163 @@ void Languages() {
 }
 }
 
+// GET /v1/kralove: Kralamoure openings, as the API documents them.
+const std::string KraloveBody = R"json({"data":[
+ {"id":42,"event_datetime":"2026-10-24T19:00:00Z","description":"Rendez-vous devant le zaap\nAmenez des pierres pleines !",
+  "creator":"Zyx\u2019s","participants_count":4,"character_count":12,"messages_count":3,
+  "server":{"id":11,"name":"Draconiros","community":"fr","game_version":{"id":1,"name":"Dofus"}},"future":{"x":[1,null,"y"]}},
+ {"id":7,"event_datetime":"2026-10-24T18:00:00.000000Z","description":null,"creator":null,"participants_count":0,
+  "character_count":0,"messages_count":0,"server":{"id":11,"name":"Draconiros","community":"fr","game_version":null}},
+ {"id":9,"event_datetime":"2026-10-25T01:30:00+00:00","creator":"<b>Bob</b>\u202e","participants_count":1,
+  "character_count":2,"messages_count":0,"server":null}],"meta":{"generated":"2026-10-22T12:00:00Z"}})json";
+// One opening in an otherwise valid answer (one line, so a fixture can change any piece of it).
+const std::string OneOpening = R"json({"data":[{"id":42,"event_datetime":"2026-10-24T19:00:00Z","description":"Rendez-vous",)json"
+    R"json("creator":"Zyx","participants_count":4,"character_count":12,"messages_count":3,"server":{"id":11,"name":"Draconiros"}}]})json";
+const std::string OpeningObject = OneOpening.substr(9, OneOpening.size() - 11); // without {"data":[ and ]}
+int64_t At(int year, int month, int day, int hour, int minute, int second) {
+    return DayNumber(year, month, day) * 86400 + hour * 3600 + minute * 60 + second;
+}
+
+void Kralamoure() {
+    const auto openings = ParseKralove(KraloveBody);
+    Check(openings.size() == 3 && openings[0].id == 7 && openings[1].id == 42 && openings[2].id == 9, "Openings by time");
+    const auto& full = openings[1];
+    Check(full.at == At(2026, 10, 24, 19, 0, 0) && full.at == 1792868400 && full.serverId == 11 && full.server == "Draconiros" &&
+        full.creator == "Zyx’s" && full.participants == 4 && full.characters == 12 && full.messages == 3 &&
+        full.description == "Rendez-vous devant le zaap Amenez des pierres pleines !", "Opening fields (a line break read as a space)");
+    Check(openings[0].at == At(2026, 10, 24, 18, 0, 0) && openings[0].description.empty() && openings[0].creator.empty() &&
+        openings[0].characters == 0, "Null description and creator; a fraction of a second");
+    Check(openings[2].at == At(2026, 10, 25, 1, 30, 0) && openings[2].creator == "bBob/b" && openings[2].serverId == 0 &&
+        openings[2].server.empty() && openings[2].description.empty(), "+00:00, absent description, a creator made safe, null server");
+    Check(ParseKralove(R"json({"data":[]})json").empty(), "No opening at all");
+    Check(OpeningObject.front() == '{' && OpeningObject.back() == '}' && ParseKralove(OneOpening).size() == 1, "Minimal opening");
+    {
+        // Same time: by id.
+        const auto pair = ParseKralove("{\"data\":[" + With(OpeningObject, "\"id\":42", "\"id\":50") + "," + OpeningObject + "]}");
+        Check(pair.size() == 2 && pair[0].id == 42 && pair[1].id == 50, "Same time: by id");
+    }
+    {
+        // Bounds: 500 openings, a description of 8192 bytes (cut for the tooltip), a creator of 1024 bytes.
+        std::string many = "{\"data\":[";
+        for (int i = 0; i < 500; ++i) many += (i ? "," : "") + With(OpeningObject, "\"id\":42", "\"id\":" + std::to_string(i + 1));
+        Check(ParseKralove(many + "]}").size() == 500, "500 openings");
+        Reject([&] { ParseKralove(many + "," + With(OpeningObject, "\"id\":42", "\"id\":501") + "]}"); }, "Over 500 openings accepted");
+        const auto longest = ParseKralove(With(OneOpening, "\"Rendez-vous\"", "\"" + std::string(8192, 'd') + "\""));
+        Check(longest[0].description.size() == MaxDescription && longest[0].description.ends_with("…") &&
+            longest[0].description.starts_with(std::string(MaxDescription - 3, 'd')), "Long description cut for the tooltip");
+        Reject([&] { ParseKralove(With(OneOpening, "\"Rendez-vous\"", "\"" + std::string(8193, 'd') + "\"")); }, "Oversized description");
+        Check(ParseKralove(With(OneOpening, "\"Zyx\"", "\"" + std::string(1024, 'z') + "\""))[0].creator == std::string(40, 'z'), "Creator bound");
+        Reject([&] { ParseKralove(With(OneOpening, "\"Zyx\"", "\"" + std::string(1025, 'z') + "\"")); }, "Oversized creator");
+        // The 1 MiB transport bound.
+        Reject([&] { ParseKralove("{\"data\":[],\"x\":\"" + std::string(1024 * 1024, 'x') + "\"}"); }, "Oversized answer");
+    }
+    // Hostile text: never markup, never a control, bidi or invisible character, never a line break.
+    {
+        const auto hostile = ParseKralove(With(With(OneOpening, "\"Rendez-vous\"",
+            R"json("<color=red>Viens</color>\u0007\u202e\u2066\u200b\ud834\udd1e\udb40\udc41 \r\n\t ici\u2028fin")json"),
+            "\"Zyx\"", R"json("<i>Zed</i>\u0000\u200f")json"));
+        Check(hostile[0].description == "color=redViens/color𝄞 ici fin" && hostile[0].creator == "iZed/i", "Hostile description and creator");
+    }
+    for (const auto& [from, to] : std::vector<std::pair<std::string, std::string>>{
+        {"\"id\":42", "\"id\":0"}, {"\"id\":42", "\"id\":-1"}, {"\"id\":42", "\"id\":\"42\""}, {"\"id\":42", "\"id\":4.2"},
+        {"\"id\":42", "\"id\":null"}, {"\"id\":42", "\"id\":18446744073709551615"}, {"\"id\":42,", ""},
+        {"\"participants_count\":4", "\"participants_count\":-1"}, {"\"character_count\":12", "\"character_count\":\"12\""},
+        {"\"messages_count\":3", "\"messages_count\":null"}, {"\"character_count\":12", "\"character_count\":1000001"},
+        {"\"messages_count\":3,", ""}, {"\"participants_count\":4,", ""}, {"\"character_count\":12,", ""},
+        {"\"Rendez-vous\"", "7"}, {"\"Rendez-vous\"", "{\"fr\":\"x\"}"}, {"\"Zyx\"", "5"}, {"\"Zyx\"", "[\"Zyx\"]"},
+        {"{\"id\":11,\"name\":\"Draconiros\"}", "{\"name\":\"Draconiros\"}"}, {"{\"id\":11,\"name\":\"Draconiros\"}", "{\"id\":11}"},
+        {"{\"id\":11,\"name\":\"Draconiros\"}", "\"Draconiros\""}, {"\"id\":11", "\"id\":0"}, {"\"Draconiros\"", "\"<b>Draco</b>\""},
+        {"\"Draconiros\"", "\"\""}, {"Draconiros", Marker + R"json(\u0007)json"}, {"\"event_datetime\":\"2026-10-24T19:00:00Z\",", ""}}) {
+        const auto body = With(OneOpening, from, to);
+        Reject([&] { ParseKralove(body); }, ("Bad opening accepted: " + to).c_str());
+    }
+    // Bad dates: one fixed text.
+    for (const std::string& date : {"\"2026-02-30T10:00:00Z\"", "\"2026-10-24T24:00:00Z\"", "\"2026-10-24T19:60:00Z\"",
+        "\"2026-10-24T19:00:60Z\"", "\"2026-10-24 19:00:00Z\"", "\"2026-10-24T19:00:00\"", "\"2026-10-24T19:00:00+02:00\"",
+        "\"2026-10-24T19:00:00-00:00\"", "\"2026-10-24T19:00:00z\"", "\"2026-10-24t19:00:00Z\"", "\"1999-12-31T23:00:00Z\"",
+        "\"2200-01-01T00:00:00Z\"", "\"2026-1-24T19:00:00Z\"", "\"2026-10-24T19:00:00.Z\"", "\"2026-10-24T19:00:00.1234567890Z\"",
+        "\"2026-10-24T19:00:00ZZ\"", "\"+2026-10-24T19:00:00Z\"", "\"\"", "null", "1792868400", "\"2026-10-24\"", "\"2100-02-29T00:00:00Z\""}) {
+        const auto error = Error([&] { ParseKralove(With(OneOpening, "\"2026-10-24T19:00:00Z\"", date)); });
+        Check(error == "Date Metamob invalide.", ("Bad date accepted or misreported: " + date).c_str());
+    }
+    RejectAs([&] { ParseKralove("{\"data\":[" + OpeningObject + "," + With(OpeningObject, "\"Zyx\"", "\"Other\"") + "]}"); },
+        "Ouverture Metamob en double.", "The same id twice");
+    for (const auto& body : std::vector<std::string>{"", "<html>" + Marker + "</html>", "{\"data\":", "{\"data\":{}}", "{\"data\":null}",
+        "{\"openings\":[]}", "[]", "{\"data\":[7]}", "{\"data\":[null]}"})
+        Reject([&] { ParseKralove(body); }, "Bad answer accepted");
+    // The quests' server id, for the calendar: lenient (never refuses the quests the captures need).
+    const auto quests = ParseQuests(QuestsBody);
+    Check(quests[0].serverId == 1 && quests[1].serverId == 20 && quests[2].serverId == 0 && quests[3].serverId == 13, "Quests' server ids");
+    Check(ParseQuests(OneQuest)[0].serverId == 0, "Absent server id: 0");
+    for (const std::string& id : {"\"1\"", "0", "-5", "1.5", "null", "true"})
+        Check(ParseQuests(With(OneQuest, "\"server\":{", "\"server\":{\"id\":" + id + ","))[0].serverId == 0, "Unusable server id: 0");
+    Check(ParseQuests(With(OneQuest, "\"server\":{", "\"server\":{\"id\":23,"))[0].serverId == 23, "Server id");
+}
+
+void Texts() {
+    Check(SafeText("  a\t\tb \r\n c  ", 100) == "a b c", "Spaces collapsed and trimmed");
+    Check(SafeText("<script>alert(1)</script>", 100) == "scriptalert(1)/script", "No markup");
+    Check(SafeText(std::string("a\xFF" "b\xC3"), 100) == "ab" && SafeText(std::string("x\0y", 3), 100) == "xy", "Invalid UTF-8 and NUL dropped");
+    Check(SafeText("ligne\u2028suite\u2029fin\u0085.", 100) == "ligne suite fin.", "Unicode line breaks read as spaces, NEL dropped");
+    Check(SafeText("a\u202eb\u2067c\u200dd\ufeffe\u061cf\U000E0041g\ufffah\u180ei", 100) == "abcdefghi", "Bidi, invisible and tag characters dropped");
+    Check(SafeText("Clément’s « fête » 😀", 100) == "Clément’s « fête » 😀", "Ordinary text kept");
+    Check(SafeText("abcdefghijklmno", 10) == "abcdefg…" && SafeText("abcdefghij", 10) == "abcdefghij", "Cut with « … » within the bound");
+    Check(SafeText("ééééé", 8) == "éé…" && SafeText("abc defgh", 7) == "abc…", "Never half a character, no space before « … »");
+    Check(SafeText("abcdef", 2).empty() && SafeText("", 10).empty() && SafeText(" \t\n", 10).empty(), "Tiny bounds, nothing left");
+    for (size_t bound = 0; bound < 40; ++bound) {
+        const auto cut = SafeText("éa😀b€c 𝄞 xyz «ok» ’", bound);
+        Check(cut.size() <= bound && SafeUsername(cut) == cut, "Within the bound, whole characters only");
+    }
+}
+
+void Times() {
+    Check(DayNumber(1970, 1, 1) == 0 && DayNumber(2000, 1, 1) == 10957 && DayNumber(2026, 10, 24) == 20750, "Day numbers");
+    for (int64_t day = DayNumber(2000, 1, 1); day <= DayNumber(2199, 12, 31); ++day) {
+        const auto civil = CivilDay(day);
+        if (DayNumber(civil.year, civil.month, civil.day) != day || civil.weekday != static_cast<int>(((day % 7) + 10) % 7))
+            throw std::runtime_error("Civil day round trip");
+    }
+    Check(CivilDay(0).weekday == 3 && CivilDay(DayNumber(2026, 10, 19)).weekday == 0 && CivilDay(DayNumber(2026, 10, 25)).weekday == 6 &&
+        CivilDay(DayNumber(2027, 3, 28)).weekday == 6, "Weekdays: Monday 0 to Sunday 6");
+    Check(CivilDay(DayNumber(2024, 2, 29)).day == 29 && CivilDay(DayNumber(2100, 3, 1) - 1).day == 28 &&
+        CivilDay(DayNumber(2000, 3, 1) - 1).day == 29, "Leap years");
+    Check(UtcSeconds("2000-01-01T00:00:00Z") == 946684800 && UtcSeconds("2026-10-24T19:00:00Z") == 1792868400 &&
+        UtcSeconds("2026-10-24T19:00:00.5Z") == 1792868400 && UtcSeconds("2026-10-24T19:00:00.123456789+00:00") == 1792868400 &&
+        UtcSeconds("2024-02-29T12:00:00Z") == At(2024, 2, 29, 12, 0, 0) && UtcSeconds("2199-12-31T23:59:59Z") == At(2199, 12, 31, 23, 59, 59),
+        "UTC dates");
+    for (const char* bad : {"2026-02-29T00:00:00Z", "2100-02-29T00:00:00Z", "2026-04-31T00:00:00Z", "2026-13-01T00:00:00Z",
+        "2026-00-10T00:00:00Z", "2026-10-00T00:00:00Z", "2026-10-24T19:00:00+01:00", "2026-10-24T19:00Z", "2026-10-24T19:00:00",
+        "2026-10-24T19:00:00 Z", " 2026-10-24T19:00:00Z", "2026-10-24T19:00:00.Z", "2026-10-24T19:00:00.0000000000Z", ""})
+        Check(!UtcSeconds(bad), (std::string("Bad UTC date accepted: ") + bad).c_str());
+    // Local time with Windows' rules for the very date: Paris (Romance Standard Time) around both changes.
+    const auto paris = [](int64_t at) { return LocalTime(at, L"Romance Standard Time"); };
+    const auto shown = [](const std::optional<CivilTime>& t) {
+        return t ? std::to_string(t->year) + "-" + std::to_string(t->month) + "-" + std::to_string(t->day) + " " + std::to_string(t->hour) +
+            ":" + std::to_string(t->minute) + ":" + std::to_string(t->second) + " w" + std::to_string(t->weekday) : std::string("none");
+    };
+    Check(shown(paris(At(2026, 10, 24, 22, 0, 0))) == "2026-10-25 0:0:0 w6", "Saturday 22:00 UTC: Sunday 00:00 CEST");
+    Check(shown(paris(At(2026, 10, 25, 0, 30, 0))) == "2026-10-25 2:30:0 w6", "02:30 CEST");
+    Check(shown(paris(At(2026, 10, 25, 0, 59, 59))) == "2026-10-25 2:59:59 w6", "Last second of summer time");
+    Check(shown(paris(At(2026, 10, 25, 1, 0, 0))) == "2026-10-25 2:0:0 w6", "Back to 02:00 CET");
+    Check(shown(paris(At(2026, 10, 25, 1, 30, 0))) == "2026-10-25 2:30:0 w6", "02:30 CET, the second time");
+    Check(shown(paris(At(2026, 10, 25, 22, 59, 59))) == "2026-10-25 23:59:59 w6" && shown(paris(At(2026, 10, 25, 23, 0, 0))) == "2026-10-26 0:0:0 w0",
+        "Midnight in winter time");
+    Check(shown(paris(At(2027, 3, 28, 0, 59, 59))) == "2027-3-28 1:59:59 w6" && shown(paris(At(2027, 3, 28, 1, 0, 0))) == "2027-3-28 3:0:0 w6",
+        "02:00 CET is 03:00 CEST");
+    Check(shown(paris(At(2027, 3, 27, 23, 0, 0))) == "2027-3-28 0:0:0 w6" && shown(paris(At(2027, 3, 28, 22, 0, 0))) == "2027-3-29 0:0:0 w0",
+        "The day before and after in Paris");
+    Check(shown(LocalTime(At(2026, 10, 25, 1, 30, 0), L"UTC")) == "2026-10-25 1:30:0 w6", "UTC");
+    Check(shown(LocalTime(At(2026, 11, 1, 5, 30, 0), L"Eastern Standard Time")) == "2026-11-1 1:30:0 w6" &&
+        shown(LocalTime(At(2026, 11, 1, 6, 30, 0), L"Eastern Standard Time")) == "2026-11-1 1:30:0 w6", "New York's own change");
+    Check(!LocalTime(At(2026, 10, 25, 1, 30, 0), L"Nowhere Standard Time") && !LocalTime(-1, L"UTC") &&
+        !LocalTime(At(2200, 1, 1, 0, 0, 0), L"UTC") && LocalTime(At(2199, 12, 31, 23, 59, 59), L"UTC"), "Unknown zone, out of range");
+    // This PC's own zone: the same as its key's rules.
+    DYNAMIC_TIME_ZONE_INFORMATION mine{};
+    Check(GetDynamicTimeZoneInformation(&mine) != TIME_ZONE_ID_INVALID, "This PC's time zone");
+    for (const auto at : {At(2026, 10, 25, 0, 30, 0), At(2026, 10, 25, 1, 30, 0), At(2027, 3, 28, 1, 0, 0), At(2026, 7, 14, 12, 0, 0)})
+        Check(mine.DynamicDaylightTimeDisabled || !mine.TimeZoneKeyName[0] || shown(LocalTime(at)) == shown(LocalTime(at, mine.TimeZoneKeyName)), "This PC's local time");
+}
+
 int main() {
     try {
         Answers();
@@ -441,9 +604,15 @@ int main() {
         Choices();
         Monsters();
         Languages();
+        Kralamoure();
+        Texts();
+        Times();
         std::cout << "PASS: Metamob answers (accents, ’ and ', JSON escapes, null, unknown fields, wrong types, HTML, truncated JSON), "
             "fixed errors without body or key, Retry-After, key/slug bounds, NameKey, quest choice and the kind of its problem, "
-            "monster match in fr/en/es\n";
+            "monster match in fr/en/es; Kralamoure openings (strict: nulls, bad dates, duplicates, 500 openings, 1 MiB, "
+            "description and creator bounds, the quests' lenient server id), display-safe text (markup, controls, bidi, "
+            "invisible, cut on a character), UTC dates, civil days, local time with Windows' rules (Paris 2026-10-25 and "
+            "2027-03-28, New York, UTC, this PC)\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
 }

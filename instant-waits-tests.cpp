@@ -90,7 +90,7 @@ void PumpScriptWaits(bool) {}
 void ClearScriptWaits() {}
 void PumpCombatCleanup(bool) {}
 void ClearCombatCleanup() {}
-bool InstantCombatEnabled() { return fake::enabled; }
+bool InstantWaitsEnabled() { return fake::enabled; }
 bool IsCurrentFightEntity(managed::Obj e) {
     if (fake::failLookup) throw std::runtime_error("Lookup failed");
     return fake::member && e == fake::entity;

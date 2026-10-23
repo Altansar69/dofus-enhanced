@@ -10,7 +10,52 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS MINIATURES — Dofus Unity 3.7.12.12 — RÉVISION 110 — VERSION 1.11.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — RÉVISION 111 — VERSION 1.12.0
+
+R111 — VERSION 1.12.0 : MODE OCRE DE LA CARTE, KRALAMOURES, APPARENCE À LA CARTE
+- Cartes › « Archimonstres manquants sur la grande carte » (coché par
+  défaut) : un carré « Ocre » sous « Conquête », dans la colonne des modes de
+  la grande carte. Il colore les zones où il te manque des archimonstres ou
+  des boss de donjon de L’éternelle moisson (pas validés dans la quête, pas
+  dans le sac, aucun sur Metamob), selon leur nombre (1, 2, 3, 4 à 5, 6 et
+  plus). Son panneau, comme celui des anomalies : Rechercher, Tous les
+  territoires, Niveau … à …, Tous / Archimonstres / Boss de donjon, colonnes
+  triables, légende et état des lectures ; un clic sur une ligne centre la
+  carte sur la zone. Tant que l’avancement Ocre n’est pas connu, rien n’est
+  coloré.
+- Cartes › « Archimonstres manquants sur la mini-carte » (décoché par
+  défaut) : les mêmes zones sur la mini-carte.
+- Nouveau bloc Calendrier › « Ouvertures Kralamoure dans le calendrier »
+  (coché par défaut, utile avec une clé Metamob) : sous les jours du
+  calendrier du jeu, les ouvertures planifiées sur Metamob pour le serveur de
+  ta quête (« 21:00 · 12 persos », heure de ce PC, trois par jour puis « +N
+  autres »), les détails au survol, l’événement sur metamob.fr au clic. Lues
+  seulement calendrier ouvert, au plus toutes les 10 minutes, sans jamais
+  retarder la synchro des captures.
+- Apparence : sous « En combat », six cases choisissent qui passe en
+  Miniatures (Moi, Joueurs alliés, Invocations alliées, Mes invocations,
+  Ennemis, Invocations ennemies) ; sous « Hors combat », quatre (Moi, Membres
+  du groupe, Autres joueurs, Monstres). Une catégorie décochée garde sa
+  taille normale ; Créatures reste pour tous. Tout est coché par défaut.
+- Animations : un bloc à part, six cases au lieu des quatre modes : Sans
+  effets des sorts et Lancers de sorts raccourcis (cochées par défaut :
+  l’ancien mode Raccourcies), puis, expérimentales, Sans animations d’attaque
+  et de sort, Sans animations de mort, Déplacements instantanés et Sans
+  attentes visuelles. Les anciens réglages sont convertis à l’identique
+  (Normal : aucune case ; Sans animations des combattants : les quatre
+  premières ; Instantané : les six) et restent lisibles par les versions
+  précédentes. Clic droit sur la carte › Animations : les mêmes six cases.
+- Déplacements › « Passer par le temple Roublard » (coché par défaut) :
+  décoché, le trajet du mod ne passe plus par le temple Roublard ni par sa
+  statue. Correction de la R110 : d’après les critères du jeu lui-même, les
+  portes du temple sont ouvertes à tous, mais la statue est réservée aux
+  Roublards (quête « Dévotion à Dralbour » pour le Temple des Douze, « La
+  colère des dieux » pour le Domaine des dieux). Chaque classe a la même
+  statue dans son propre temple, que le trajet du mod prend aussi.
+- Dépôt GitHub renommé dofus-enhanced et rangé en dossiers (src, tests,
+  package, docs) ; le contenu de l’archive ne change pas.
+- Les réglages et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 R110 — VERSION 1.11.0 : METAMOB DANS LE CHAT, TRAJET CORRIGÉ
 - Chat › « Metamob dans le chat » (coché par défaut, utile avec une clé

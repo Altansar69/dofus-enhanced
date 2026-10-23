@@ -57,7 +57,7 @@ std::vector<std::string> notices,logs;
 bool failSpellEligibility=false;
 int allowedChecks=0;
 int64_t teleportMap=0,walkedMap=0,plannedTarget=0,plannedSource=0; ChatTpTarget resolvedFor{};
-int plannedZone=-2; Obj mapCells{};
+int plannedZone=-2; Obj mapCells{}; bool plannedTemple=false;
 soul::CombatSnapshot fightState{soul::CombatState::Fighting,17,51};
 soul::InventorySnapshot inventory{true,0,{{55,9687,3,true}}};
 bool (*receiveHook)(Obj,Obj,Method)=nullptr;
@@ -189,7 +189,7 @@ struct Fixture {
         entered=interacted=teleported=walked=cast=equipped=quotes=0;teleportSource=teleportCost=-1;requestedQuote=0;directKnown=true;synchronousQuote=false;
         synchronousList=failAppend=false;resolvedMaps={123};nativeMenus=nativeWalks=nativeAutos=nativeMouseDowns=stoppedEvents=0;gameTime=100;
         plannedDeparture=104;plannedChoices.clear();notices.clear();logs.clear();routePending=false;routeTicks=0;
-        walkedMap=plannedTarget=plannedSource=0;resolvedFor={};plannedZone=-2;mapCells=nullptr;
+        walkedMap=plannedTarget=plannedSource=0;resolvedFor={};plannedZone=-2;mapCells=nullptr;plannedTemple=false;
         for(auto name:{"fng","fpf","fkc","frq","fro","frv","fsm","fmz","fnm","fnk","fnr","fjx","frs","fsf","fvq","fns","fsr","fmo"}) services[name]=Make(name);
         services["ham"]=Make("hal");services["fjs"]=Make("faw");services["fpm"]=Make("epf");
         sceneReady=acceptRoute=true;loadingMap=routeRunning=routePendingNative=followingMember=false;loadedMapOverride=-1;
@@ -255,9 +255,9 @@ namespace chat_route {
 Result result;
 void Install() {}
 void Clear() {result={Status::Unreachable};}
-void Begin(std::vector<chat_travel::Destination> choices,int64_t target,int64_t source,int zone) {
+void Begin(std::vector<chat_travel::Destination> choices,int64_t target,int64_t source,int zone,bool temple) {
     fake::Check(target>0,"Planner requires the resolved native destination map");
-    fake::plannedChoices=choices;fake::plannedTarget=target;fake::plannedSource=source;fake::plannedZone=zone;
+    fake::plannedChoices=choices;fake::plannedTarget=target;fake::plannedSource=source;fake::plannedZone=zone;fake::plannedTemple=temple;
     Clear();for(auto choice:choices)if(choice.map==fake::plannedDeparture){result={Status::Found,choice,3};return;}
 }
 Result Tick(){++fake::routeTicks;return fake::routePending?Result{}:result;}
@@ -504,6 +504,13 @@ void TravelFixTests() {
         Check(logged(std::string("CHAT_TRAVEL_HERE_ZONE map=10 unknown=")+reasons[invalid]),"The unknown zone is logged with its reason");});
     run([&](Fixture& f){zones();bag=true;StartChatTravel({10,10,1});f.Receive();TickChatTravel();
         Check(plannedZone==-1&&plannedTarget==123&&!logged("CHAT_TRAVEL_HERE_ZONE"),"From the Havre-Sac there is no current-map departure, hence no zone");});
+    // « Passer par le temple Roublard » (on by default) is read at every route
+    // comparison: switching it applies to the next trip.
+    run([&](Fixture& f){StartChatTravel({10,10,1});Check(plannedTemple,"The temple option is on by default");
+        RestoreChatTravel();f.owner.settings.travelRoublardTemple=false;StartChatTravel({11,10,1});
+        Check(!plannedTemple&&quotes==2,"Unchecked, the route comparison avoids the temple");
+        RestoreChatTravel();f.owner.settings.travelRoublardTemple=true;StartChatTravel({12,10,1});
+        Check(plannedTemple,"Checked again, the next trip may use it");});
     // A changed cell layout disables only the zone reading: travel still starts
     // from every zone of the current map.
     const auto layout=api.class_get_field_from_name;
@@ -628,5 +635,5 @@ int main(){using namespace fake;try{
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
       auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(999);Get(services["fjs"]).fields["dsjs"]=d;
       routePendingNative=true;TickChatTravel();Sleep(1050);TickChatTravel();Check(walked==1,"Never replace a different native destination");}
-    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, already there on the game's destination map, the Havre-Sac start, the player's own zone, confirmed arrival then native onward travel to the game's map, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
+    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, already there on the game's destination map, the Havre-Sac start, the player's own zone, the Roublard temple option, confirmed arrival then native onward travel to the game's map, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

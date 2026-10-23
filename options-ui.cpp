@@ -14,7 +14,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 8;
+constexpr int ModSections = 10;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -22,6 +22,34 @@ constexpr const char* Figma = "Core.UILogic.Components.Figma";
 constexpr const char* UiModule = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr const char* Modes[] = {"Normal", "Créatures", "Miniatures"};
+// « Apparence » categories and « Animations » toggles: row title and
+// description, in the order of Settings' toggle tables (see options-ui.hpp).
+struct CheckRow { const char* title; const char* description; };
+constexpr CheckRow CombatMiniatureRows[] = {
+    {"Moi", "En combat, avec Miniatures : ton personnage est réduit. Décoché, il garde sa taille normale. Activé par défaut."},
+    {"Joueurs alliés", "En combat, avec Miniatures : les autres personnages de ton équipe sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
+    {"Invocations alliées", "En combat, avec Miniatures : les invocations des autres personnages de ton équipe sont réduites. Décoché, elles gardent leur taille normale. Activé par défaut."},
+    {"Mes invocations", "En combat, avec Miniatures : les invocations de ton personnage sont réduites. Décoché, elles gardent leur taille normale. Activé par défaut."},
+    {"Ennemis", "En combat, avec Miniatures : les monstres et personnages de l’équipe adverse sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
+    {"Invocations ennemies", "En combat, avec Miniatures : les invocations de l’équipe adverse sont réduites. Décoché, elles gardent leur taille normale. Activé par défaut."}};
+constexpr CheckRow RoleplayMiniatureRows[] = {
+    {"Moi", "Hors combat, avec Miniatures : ton personnage est réduit. Décoché, il garde sa taille normale. Activé par défaut."},
+    {"Membres du groupe", "Hors combat, avec Miniatures : les personnages de ton groupe sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
+    {"Autres joueurs", "Hors combat, avec Miniatures : les personnages des autres joueurs, hors de ton groupe, sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
+    {"Monstres", "Hors combat, avec Miniatures : les groupes de monstres sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."}};
+constexpr const char* AnimationDescriptions[] = {
+    "En combat, le jeu fait comme si son option des effets de sorts était désactivée, sans la modifier : les projectiles et effets visuels des sorts ne sont plus ajoutés aux séquences de combat. Certains effets restent visibles. Activé par défaut.",
+    "En combat, les personnages joueurs lancent leurs sorts avec l’animation réduite que le jeu utilise quand ses effets de sorts sont désactivés. Sans effet sur les monstres. Activé par défaut.",
+    "En combat, les combattants ne jouent plus les animations des séquences de combat : attaques, lancers de sorts, coups reçus… Leurs déplacements restent animés. Expérimental : certaines animations restent jouées. Désactivé par défaut.",
+    "En combat, un combattant vaincu disparaît sans jouer son animation de mort. Sans effet quand Déplacements instantanés ou Sans attentes visuelles est coché : sa mort reste alors celle du jeu, qui retire ensuite le combattant. Expérimental. Désactivé par défaut.",
+    "En combat, la marche, les poussées, les lancers de personnage porté et les sauts arrivent aussitôt à destination, cases intermédiaires comprises. Un trajet inhabituel garde son animation. Expérimental. Désactivé par défaut.",
+    "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
+static_assert(std::size(CombatMiniatureRows) == std::size(CombatMiniatureToggles) &&
+    std::size(RoleplayMiniatureRows) == std::size(RoleplayMiniatureToggles) &&
+    std::size(AnimationDescriptions) == std::size(AnimationToggles) && AnimationToggleLabels.size() == std::size(AnimationToggles));
+static_assert(std::tuple_size_v<decltype(OptionsUi::combatMiniatureSources)> == std::size(CombatMiniatureToggles) &&
+    std::tuple_size_v<decltype(OptionsUi::roleplayMiniatureSources)> == std::size(RoleplayMiniatureToggles) &&
+    std::tuple_size_v<decltype(OptionsUi::animationSources)> == std::size(AnimationToggles));
 Klass generalClass = nullptr;
 using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
@@ -31,7 +59,7 @@ InitFn originalInit = nullptr;
 using TextButtonFn = void(*)(Obj, Obj, Method);
 TextButtonFn originalTextButton = nullptr, originalTextButtonInit = nullptr;
 Method textButtonModelGetter = nullptr, openUrl = nullptr, setPassword = nullptr, setEnabled = nullptr;
-constexpr const char* ProjectUrl = "https://github.com/Altansar69/dofus-miniatures";
+constexpr const char* ProjectUrl = "https://github.com/Altansar69/dofus-enhanced";
 // Metamob rows. The key never goes to Settings, a log, a notice or an exception.
 constexpr int IconSave = 148, IconTrash = 316; // FigmaIcons.floppy, trash
 constexpr int KeyMaxLength = 256;
@@ -108,8 +136,12 @@ bool ModelsLoaded(const OptionsUi& ui) {
     auto loaded = [](const Ref& source) {
         return source.get() && api.Value<bool>(api.Call(source.get(), "IsLoaded"));
     };
-    return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) &&
-        loaded(ui.animationSource) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource);
+    const auto allLoaded = [&](const auto& sources) {
+        for (const auto& source : sources) if (!loaded(source)) return false;
+        return true;
+    };
+    return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) && allLoaded(ui.combatMiniatureSources) &&
+        allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -118,7 +150,12 @@ template<class T> void SetSource(Obj source, T value, bool notify) {
 void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.modeSource.get(), settings.mode, notify);
     SetSource(ui.roleplayModeSource.get(), settings.roleplayMode, notify);
-    SetSource(ui.animationSource.get(), settings.animationMode, notify);
+    for (size_t i = 0; i < ui.combatMiniatureSources.size(); ++i)
+        SetSource(ui.combatMiniatureSources[i].get(), settings.*CombatMiniatureToggles[i], notify);
+    for (size_t i = 0; i < ui.roleplayMiniatureSources.size(); ++i)
+        SetSource(ui.roleplayMiniatureSources[i].get(), settings.*RoleplayMiniatureToggles[i], notify);
+    for (size_t i = 0; i < ui.animationSources.size(); ++i)
+        SetSource(ui.animationSources[i].get(), settings.*AnimationToggles[i], notify);
     SetSource(ui.autoLoadSource.get(), settings.autoLoad, notify);
     SetSource(ui.githubSource.get(), settings.githubUpdates, notify);
     SetSource(ui.soulSource.get(), settings.soulReminder, notify);
@@ -138,6 +175,10 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.chatSoulSource.get(), settings.chatSoulInventory, notify);
     SetSource(ui.chatOcreSource.get(), settings.chatOcreStatus, notify);
     SetSource(ui.chatMetamobSource.get(), settings.chatMetamobStatus, notify);
+    SetSource(ui.archiZonesSource.get(), settings.archiZonesMap, notify);
+    SetSource(ui.archiZonesMiniSource.get(), settings.archiZonesMiniMap, notify);
+    SetSource(ui.calendarKraloveSource.get(), settings.calendarKralamoure, notify);
+    SetSource(ui.templeSource.get(), settings.travelRoublardTemple, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -193,8 +234,17 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     const auto booleanType = api.object_get_class(module->creatureOption.get());
     OptionsUi prepared;
     prepared.modeSource.reset(api.New(integerType, {&defaults.mode, &readOnly}));
-    prepared.animationSource.reset(api.New(integerType, {&defaults.animationMode, &readOnly}));
     prepared.roleplayModeSource.reset(api.New(integerType, {&defaults.roleplayMode, &readOnly}));
+    // One private source per checkbox, its reset default the Settings default.
+    const auto toggleSources = [&](auto& sources, const auto& fields) {
+        for (size_t i = 0; i < sources.size(); ++i) {
+            bool value = defaults.*fields[i];
+            sources[i].reset(api.New(booleanType, {&value, &readOnly}));
+        }
+    };
+    toggleSources(prepared.combatMiniatureSources, CombatMiniatureToggles);
+    toggleSources(prepared.roleplayMiniatureSources, RoleplayMiniatureToggles);
+    toggleSources(prepared.animationSources, AnimationToggles);
     prepared.autoLoadSource.reset(api.New(booleanType, {&defaults.autoLoad, &readOnly}));
     prepared.githubSource.reset(api.New(booleanType, {&defaults.githubUpdates, &readOnly}));
     prepared.soulSource.reset(api.New(booleanType, {&defaults.soulReminder, &readOnly}));
@@ -214,29 +264,38 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.chatSoulSource.reset(api.New(booleanType, {&defaults.chatSoulInventory, &readOnly}));
     prepared.chatOcreSource.reset(api.New(booleanType, {&defaults.chatOcreStatus, &readOnly}));
     prepared.chatMetamobSource.reset(api.New(booleanType, {&defaults.chatMetamobStatus, &readOnly}));
+    prepared.archiZonesSource.reset(api.New(booleanType, {&defaults.archiZonesMap, &readOnly}));
+    prepared.archiZonesMiniSource.reset(api.New(booleanType, {&defaults.archiZonesMiniMap, &readOnly}));
+    prepared.calendarKraloveSource.reset(api.New(booleanType, {&defaults.calendarKralamoure, &readOnly}));
+    prepared.templeSource.reset(api.New(booleanType, {&defaults.travelRoublardTemple, &readOnly}));
     if (!ModelsLoaded(prepared)) return false;
     // Native reset uses constructor defaults, independently of persisted values.
     ApplySettings(prepared, module->settings, false);
     Ref tooltip(api.Call(page, "blrl"));
     if (!tooltip.get()) throw std::runtime_error("Native options tooltip service unavailable");
     Choices modes;
-    Choices animationModes;
     Choices glowModes;
     for (int i = 0; i < static_cast<int>(GlowModeLabels.size()); ++i)
         glowModes.emplace_back(i, GlowModeLabels[i]);
-    for (int i = 0; i < static_cast<int>(AnimationModeLabels.size()); ++i)
-        animationModes.emplace_back(i, AnimationModeLabels[i]);
     for (int i = 0; i != 3; ++i) modes.emplace_back(i, Modes[i]);
     prepared.modeOption.reset(MakeChoiceOption(prepared.modeSource.get(), current.get(), "En combat",
-        "En combat uniquement : apparence normale, créatures ou miniatures. Les raccourcis utilisent ce même réglage. Miniatures réduit à 60 % de la taille d’origine, avec un minimum automatique de 50 % de la hauteur de référence d’un joueur pour les monstres et invocations, lorsque les mesures sont disponibles.", modes));
-    prepared.animationOption.reset(MakeChoiceOption(prepared.animationSource.get(), current.get(), "Animations",
-        "Raccourcies utilise les séquences et effets réduits du jeu. Sans animations des combattants évite les animations d'attaque, de sort et de mort prises en charge, et filtre leurs effets, en conservant les déplacements. Instantané ajoute les sauts de déplacements et d'attentes visuelles pris en charge. Les délais serveur et certaines attentes restent inchangés. Ces modes sont expérimentaux : cela ne supprime pas toutes les animations.", animationModes));
+        "En combat uniquement : apparence normale, créatures ou miniatures. Les raccourcis utilisent ce même réglage. Miniatures réduit à 60 % de la taille d’origine, avec un minimum automatique de 50 % de la hauteur de référence d’un joueur pour les monstres et invocations, lorsque les mesures sont disponibles. Avec Miniatures, seules les catégories cochées ci-dessous sont réduites, les autres gardent leur taille normale ; Créatures s’applique à tous les combattants.", modes));
+    for (size_t i = 0; i < prepared.combatMiniatureOptions.size(); ++i)
+        prepared.combatMiniatureOptions[i].reset(MakeBoolOption(prepared.combatMiniatureSources[i].get(), current.get(), tooltip.get(),
+            CombatMiniatureRows[i].title, CombatMiniatureRows[i].description));
     prepared.roleplayModeOption.reset(MakeChoiceOption(prepared.roleplayModeSource.get(), current.get(), "Hors combat",
-        "Affichage des personnages et monstres hors combat, indépendant du réglage en combat. Les raccourcis utilisent ce même réglage. Miniatures réduit à 60 % de la taille d’origine, avec un minimum automatique de 50 % de la hauteur de référence d’un joueur pour les monstres et invocations, lorsque les mesures sont disponibles.", modes));
+        "Affichage des personnages et monstres hors combat, indépendant du réglage en combat. Les raccourcis utilisent ce même réglage. Miniatures réduit à 60 % de la taille d’origine, avec un minimum automatique de 50 % de la hauteur de référence d’un joueur pour les monstres et invocations, lorsque les mesures sont disponibles. Avec Miniatures, seules les catégories cochées ci-dessous sont réduites ; les PNJ et les autres éléments le sont toujours, et Créatures s’applique à tous.", modes));
+    for (size_t i = 0; i < prepared.roleplayMiniatureOptions.size(); ++i)
+        prepared.roleplayMiniatureOptions[i].reset(MakeBoolOption(prepared.roleplayMiniatureSources[i].get(), current.get(), tooltip.get(),
+            RoleplayMiniatureRows[i].title, RoleplayMiniatureRows[i].description));
+    // Section « Animations »: each toggle on its own row, all in combat only.
+    for (size_t i = 0; i < prepared.animationOptions.size(); ++i)
+        prepared.animationOptions[i].reset(MakeBoolOption(prepared.animationSources[i].get(), current.get(), tooltip.get(),
+            AnimationToggleLabels[i], AnimationDescriptions[i]));
     prepared.autoLoadOption.reset(MakeBoolOption(prepared.autoLoadSource.get(), current.get(), tooltip.get(), "Chargement automatique",
         "Charge la dernière version compatible lors des prochains lancements de Dofus, sans saisie du PID. Si les mises à jour GitHub sont activées, vérifie les nouvelles versions avant le chargement. Les clients déjà ouverts conservent leur version chargée."));
     prepared.githubOption.reset(MakeBoolOption(prepared.githubSource.get(), current.get(), tooltip.get(), "Mises à jour GitHub",
-        "À chaque nouveau lancement, recherche une version publiée sur Altansar69/dofus-miniatures, vérifie son intégrité et sa compatibilité avec Dofus, puis la télécharge. Sans réseau, conserve la version locale compatible. Nécessite le chargement automatique. Un correctif du mod peut rester nécessaire après une mise à jour du jeu."));
+        "À chaque nouveau lancement, recherche une version publiée sur Altansar69/dofus-enhanced, vérifie son intégrité et sa compatibilité avec Dofus, puis la télécharge. Sans réseau, conserve la version locale compatible. Nécessite le chargement automatique. Un correctif du mod peut rester nécessaire après une mise à jour du jeu."));
     prepared.soulOption.reset(MakeBoolOption(prepared.soulSource.get(), current.get(), tooltip.get(), "Alerte pierre d’âme",
         "Pour un combat contenant un boss ou un archimonstre avec une âme capturable définie. Masqué pour les groupes ordinaires et les cartes interdisant la capture. Pendant le placement, affiche la tranche minimale requise, le stock et la pierre équipée. Équiper choisit uniquement cette tranche. En combat : Capture d’âme en rouge si l’état Chercheur d’âmes manque, en vert s’il est actif. L’effet ne garantit pas à lui seul la capture."));
     prepared.soulAutoOption.reset(MakeBoolOption(prepared.soulAutoSource.get(), current.get(), tooltip.get(), "Équiper automatiquement la pierre d’âme",
@@ -260,8 +319,14 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
     prepared.miniCenterOption.reset(MakeBoolOption(prepared.miniCenterSource.get(), current.get(), tooltip.get(), "Bouton de recentrage sur la mini-carte",
         "Affiche en bas à gauche de la mini-carte le bouton qui la ramène sur ton personnage, avec le même aspect que le bouton joueur de la grande carte. Décocher le masque."));
+    prepared.archiZonesOption.reset(MakeBoolOption(prepared.archiZonesSource.get(), current.get(), tooltip.get(), "Archimonstres manquants sur la grande carte",
+        "Ajoute sur la grande carte un carré « Ocre » sous « Conquête ». Comme le mode Anomalies, il ouvre un panneau (recherche, territoires, niveaux, Tous / Archimonstres / Boss de donjon) et colore les zones selon le nombre d’archimonstres et de boss de donjon de L’éternelle moisson qu’il te manque : ni validés dans la quête, ni dans ton sac, ni sur ta quête Metamob (si une clé est enregistrée). Plus la couleur est foncée, plus il en manque. Activé par défaut."));
+    prepared.archiZonesMiniOption.reset(MakeBoolOption(prepared.archiZonesMiniSource.get(), current.get(), tooltip.get(), "Archimonstres manquants sur la mini-carte",
+        "Colore aussi sur la mini-carte les zones où il te manque des archimonstres ou des boss de donjon, selon le choix Tous / Archimonstres / Boss de donjon du panneau Ocre de la grande carte (sans sa recherche ni ses filtres de territoire et de niveau), même quand ce mode est fermé. Désactivé par défaut."));
     prepared.travelPlannerOption.reset(MakeBoolOption(prepared.travelPlannerSource.get(), current.get(), tooltip.get(), "Remplacer l’autopilote du jeu",
         "Le double-clic sur la grande carte ou la mini-carte et l’entrée « Voyager jusqu’à cette position » de leur clic droit lancent le trajet du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu. Ctrl + double-clic, le menu d’un point de repère et la commande /travel gardent l’autopilote du jeu. Décoché, le double-clic et cette entrée lancent directement l’autopilote du jeu. Activé par défaut."));
+    prepared.templeOption.reset(MakeBoolOption(prepared.templeSource.get(), current.get(), tooltip.get(), "Passer par le temple Roublard",
+        "Le trajet du mod peut passer par le temple Roublard, sous le cimetière d’Amakna, et par les téléportations de sa statue quand elles le raccourcissent. Le jeu réserve la statue aux Roublards (quête « Dévotion à Dralbour » pour le Temple des Douze, « La colère des dieux » pour le Domaine des dieux) ; les portes du temple sont ouvertes à tous. Décoché, le mod choisit son départ sans passer par le temple ; l’autopilote du jeu, qui finit le trajet, garde ses propres chemins. Activé par défaut."));
     // Section « Chat »: each addition next to positions and monster groups shared in chat.
     prepared.chatTravelOption.reset(MakeBoolOption(prepared.chatTravelSource.get(), current.get(), tooltip.get(), "Bouton TP dans le chat",
         "Ajoute TP à côté des positions et des groupes de monstres partagés dans le chat, et fait des coordonnées écrites [x,y] des liens de position. Un clic lance le trajet du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu (indisponible en combat). Activé par défaut."));
@@ -271,6 +336,9 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "À côté d’un archimonstre ou d’un boss de L’éternelle moisson partagé dans le chat, indique son objectif : Ocre validé, Ocre à faire ou Ocre non commencée (Ocre : ? sans données). Un clic ouvre la quête dans le journal. Activé par défaut."));
     prepared.chatMetamobOption.reset(MakeBoolOption(prepared.chatMetamobSource.get(), current.get(), tooltip.get(), "Metamob dans le chat",
         "Après l’avancement Ocre, indique combien d’exemplaires de ce monstre ta quête Metamob compte : Metamob : 2, ou Metamob : 0 en rouge (Metamob : ? tant que la quête n’est pas lue). Nécessite une clé Metamob enregistrée ; la quête est relue au plus toutes les 10 minutes et une capture synchronisée la met à jour aussitôt. Activé par défaut."));
+    // Section « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
+    prepared.calendarKraloveOption.reset(MakeBoolOption(prepared.calendarKraloveSource.get(), current.get(), tooltip.get(), "Ouvertures Kralamoure dans le calendrier",
+        "Dans le calendrier du jeu, ajoute sous les jours une ligne Kralamoure avec les ouvertures planifiées sur Metamob pour le serveur de ta quête : heure locale et personnages inscrits ; survole pour l’organisateur et la description, clique pour ouvrir l’événement sur metamob.fr. Nécessite une clé Metamob enregistrée ; la liste n’est lue que calendrier ouvert, au plus toutes les 10 minutes. Activé par défaut."));
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
@@ -303,6 +371,14 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.chatOcreOption = std::move(prepared.chatOcreOption);
     ui.chatMetamobSource = std::move(prepared.chatMetamobSource);
     ui.chatMetamobOption = std::move(prepared.chatMetamobOption);
+    ui.archiZonesSource = std::move(prepared.archiZonesSource);
+    ui.archiZonesOption = std::move(prepared.archiZonesOption);
+    ui.archiZonesMiniSource = std::move(prepared.archiZonesMiniSource);
+    ui.archiZonesMiniOption = std::move(prepared.archiZonesMiniOption);
+    ui.calendarKraloveSource = std::move(prepared.calendarKraloveSource);
+    ui.calendarKraloveOption = std::move(prepared.calendarKraloveOption);
+    ui.templeSource = std::move(prepared.templeSource);
+    ui.templeOption = std::move(prepared.templeOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -317,9 +393,13 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.glowNpcsOption = std::move(prepared.glowNpcsOption);
     ui.glowInteractivesSource = std::move(prepared.glowInteractivesSource);
     ui.glowInteractivesOption = std::move(prepared.glowInteractivesOption);
-    ui.animationSource = std::move(prepared.animationSource);
+    ui.combatMiniatureSources = std::move(prepared.combatMiniatureSources);
+    ui.combatMiniatureOptions = std::move(prepared.combatMiniatureOptions);
+    ui.roleplayMiniatureSources = std::move(prepared.roleplayMiniatureSources);
+    ui.roleplayMiniatureOptions = std::move(prepared.roleplayMiniatureOptions);
+    ui.animationSources = std::move(prepared.animationSources);
+    ui.animationOptions = std::move(prepared.animationOptions);
     ui.modeOption = std::move(prepared.modeOption);
-    ui.animationOption = std::move(prepared.animationOption);
     ui.roleplayModeSource = std::move(prepared.roleplayModeSource);
     ui.roleplayModeOption = std::move(prepared.roleplayModeOption);
     ui.autoLoadSource = std::move(prepared.autoLoadSource);
@@ -812,13 +892,21 @@ bool OptionsUi::Attach(Obj page) {
     // Parent/section shape of the native menu: the page shows each section as
     // its own block, in this order, with the ids that follow ModCategory.
     struct Section { const char* title; std::vector<Obj> rows; };
+    // « Apparence »: each context's choice, then its category checkboxes.
+    std::vector<Obj> appearance{modeOption.get()}, animations;
+    for (const auto& option : combatMiniatureOptions) appearance.push_back(option.get());
+    appearance.push_back(roleplayModeOption.get());
+    for (const auto& option : roleplayMiniatureOptions) appearance.push_back(option.get());
+    for (const auto& option : animationOptions) animations.push_back(option.get());
     const Section layout[] = {
-        {"Apparence et animations", {modeOption.get(), roleplayModeOption.get(), animationOption.get()}},
+        {"Apparence", appearance},
+        {"Animations", animations},
         {"Surbrillance", {glowOption.get(), glowNpcsOption.get(), glowInteractivesOption.get()}},
-        {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), miniCenterOption.get()}},
-        {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get()}},
+        {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), miniCenterOption.get(), archiZonesOption.get(), archiZonesMiniOption.get()}},
+        {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get(), templeOption.get()}},
         {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
         {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get()}},
+        {"Calendrier", {calendarKraloveOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
         {"À propos", {creditsOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
@@ -870,8 +958,13 @@ void OptionsUi::Tick() {
     if (!ModelsLoaded(*this)) return;
     auto next = module->settings;
     next.mode = api.Value<int>(api.Call(modeSource.get(), "get_property"));
-    next.animationMode = api.Value<int>(api.Call(animationSource.get(), "get_property"));
     next.roleplayMode = api.Value<int>(api.Call(roleplayModeSource.get(), "get_property"));
+    for (size_t i = 0; i < combatMiniatureSources.size(); ++i)
+        next.*CombatMiniatureToggles[i] = api.Value<bool>(api.Call(combatMiniatureSources[i].get(), "get_property"));
+    for (size_t i = 0; i < roleplayMiniatureSources.size(); ++i)
+        next.*RoleplayMiniatureToggles[i] = api.Value<bool>(api.Call(roleplayMiniatureSources[i].get(), "get_property"));
+    for (size_t i = 0; i < animationSources.size(); ++i)
+        next.*AnimationToggles[i] = api.Value<bool>(api.Call(animationSources[i].get(), "get_property"));
     next.autoLoad = api.Value<bool>(api.Call(autoLoadSource.get(), "get_property"));
     next.githubUpdates = api.Value<bool>(api.Call(githubSource.get(), "get_property"));
     next.soulReminder = api.Value<bool>(api.Call(soulSource.get(), "get_property"));
@@ -891,8 +984,12 @@ void OptionsUi::Tick() {
     next.chatSoulInventory = api.Value<bool>(api.Call(chatSoulSource.get(), "get_property"));
     next.chatOcreStatus = api.Value<bool>(api.Call(chatOcreSource.get(), "get_property"));
     next.chatMetamobStatus = api.Value<bool>(api.Call(chatMetamobSource.get(), "get_property"));
+    next.archiZonesMap = api.Value<bool>(api.Call(archiZonesSource.get(), "get_property"));
+    next.archiZonesMiniMap = api.Value<bool>(api.Call(archiZonesMiniSource.get(), "get_property"));
+    next.calendarKralamoure = api.Value<bool>(api.Call(calendarKraloveSource.get(), "get_property"));
+    next.travelRoublardTemple = api.Value<bool>(api.Call(templeSource.get(), "get_property"));
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
-        !Settings::ValidAnimationMode(next.animationMode) || !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
+        !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
         Sync(); return;
     }
     if (!(next == module->settings)) {
@@ -937,9 +1034,13 @@ void OptionsUi::Restore() {
     }
     if (failure) std::rethrow_exception(failure);
     modeOption.reset();
-    animationOption.reset();
     modeSource.reset();
-    animationSource.reset();
+    for (auto& ref : combatMiniatureSources) ref.reset();
+    for (auto& ref : combatMiniatureOptions) ref.reset();
+    for (auto& ref : roleplayMiniatureSources) ref.reset();
+    for (auto& ref : roleplayMiniatureOptions) ref.reset();
+    for (auto& ref : animationSources) ref.reset();
+    for (auto& ref : animationOptions) ref.reset();
     roleplayModeSource.reset();
     roleplayModeOption.reset();
     autoLoadSource.reset();
@@ -965,6 +1066,9 @@ void OptionsUi::Restore() {
     chatSoulSource.reset(); chatSoulOption.reset();
     chatOcreSource.reset(); chatOcreOption.reset();
     chatMetamobSource.reset(); chatMetamobOption.reset();
+    archiZonesSource.reset(); archiZonesOption.reset(); archiZonesMiniSource.reset(); archiZonesMiniOption.reset();
+    calendarKraloveSource.reset(); calendarKraloveOption.reset();
+    templeSource.reset(); templeOption.reset();
     creditsOption.reset(); creditsMarker.reset();
     metamobSyncSource.reset(); metamobSyncOption.reset();
     metamobKeyOption.reset(); metamobKeyMarker.reset();

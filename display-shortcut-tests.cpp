@@ -230,7 +230,7 @@ struct Fixture {
         state.ready.store(true);
         state.settings.mode = 1;
         state.settings.roleplayMode = 2;
-        state.settings.animationMode = 3;
+        state.settings.ApplyLegacyAnimationMode(3);
         state.cached.reset(Make("CachedOptions"));
         viewport = Element("PanelRoot");
         themeOwner = viewport; // Theme custom declarations belong to :root, not every descendant.
@@ -777,7 +777,7 @@ void ContextSelectionAndExternalSync() {
     Get(dropdown).integers["selectedIndex"] = 0;
     TickDisplayShortcut();
     Check(changes == 1 && f.state.settings.roleplayMode == 0 && f.state.settings.mode == baseline.mode &&
-        f.state.settings.animationMode == baseline.animationMode,
+        [&] { for (auto field : AnimationToggles) if (f.state.settings.*field != baseline.*field) return false; return true; }(),
         "Outside-combat choice must update only its display context");
     Check(!Get(f.root).boolean, "Native root boolean must follow Normal selection");
     combat = true;

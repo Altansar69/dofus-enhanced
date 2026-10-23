@@ -1,6 +1,7 @@
 #pragma once
 #include "metamob-sync.hpp"
 #include "runtime.hpp"
+#include <array>
 #include <functional>
 #include <string>
 #include <vector>
@@ -20,8 +21,14 @@ struct OptionsUi {
     struct Page { managed::Ref owner, category; };
     std::vector<Page> pages;
     managed::Ref pendingPage, stableList, container;
-    managed::Ref modeSource, roleplayModeSource, animationSource, autoLoadSource;
-    managed::Ref modeOption, roleplayModeOption, animationOption, autoLoadOption;
+    managed::Ref modeSource, roleplayModeSource, autoLoadSource;
+    managed::Ref modeOption, roleplayModeOption, autoLoadOption;
+    // « Apparence »: a checkbox per miniature category after each context's
+    // choice (Settings' CombatMiniatureToggles and RoleplayMiniatureToggles).
+    std::array<managed::Ref, 6> combatMiniatureSources, combatMiniatureOptions;
+    std::array<managed::Ref, 4> roleplayMiniatureSources, roleplayMiniatureOptions;
+    // « Animations »: one checkbox per toggle (Settings' AnimationToggles).
+    std::array<managed::Ref, 6> animationSources, animationOptions;
     managed::Ref githubSource, githubOption;
     managed::Ref soulSource, soulOption;
     managed::Ref soulAutoSource, soulAutoOption;
@@ -34,10 +41,14 @@ struct OptionsUi {
     managed::Ref resourcesMiniSource, resourcesMiniOption;
     managed::Ref miniCenterSource, miniCenterOption;
     // « Déplacements »: the mod's travel in place of the game's autopilot.
-    managed::Ref travelPlannerSource, travelPlannerOption;
+    managed::Ref travelPlannerSource, travelPlannerOption, templeSource, templeOption;
     // « Chat »: what the mod adds next to positions and monster groups shared in chat.
     managed::Ref chatTravelSource, chatTravelOption, chatSoulSource, chatSoulOption, chatOcreSource, chatOcreOption;
     managed::Ref chatMetamobSource, chatMetamobOption;
+    // « Cartes »: zones of the missing archimonsters on each map.
+    managed::Ref archiZonesSource, archiZonesOption, archiZonesMiniSource, archiZonesMiniOption;
+    // « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
+    managed::Ref calendarKraloveSource, calendarKraloveOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
     // Metamob rows, after the two soul rows of the « Pierre d’âme » section:

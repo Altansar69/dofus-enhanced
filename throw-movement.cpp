@@ -102,7 +102,7 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     bool eligible = false;
     const bool busy = Starting::Busy(entity);
     try {
-        eligible = !busy && InstantCombatEnabled() && behavior && entity && route &&
+        eligible = !busy && InstantMovementEnabled() && behavior && entity && route &&
             api.object_get_class(behavior) == throwClass && api.object_get_class(route) == routeClass &&
             IsCurrentFightEntity(entity);
     } catch (const std::exception& error) {
@@ -120,7 +120,7 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     if (starting.reentered) return;
 
     try {
-        if (!InstantCombatEnabled() || !IsCurrentFightEntity(entity)) return;
+        if (!InstantMovementEnabled() || !IsCurrentFightEntity(entity)) return;
         auto dictionary = Read<Obj>(behavior, 0x20), pending = Read<Obj>(behavior, 0x28);
         if (!dictionary || !pending) return;
         auto lookup = api.Find(api.object_get_class(dictionary), "TryGetValue", 2);
@@ -137,7 +137,7 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
             (void)held;
             Starting draining(entity);
             Finishing finishing(behavior, dictionary, state, entity, route, callback, lookup, contains, id);
-            if (!InstantCombatEnabled() || !IsCurrentFightEntity(entity) ||
+            if (!InstantMovementEnabled() || !IsCurrentFightEntity(entity) ||
                 !finishing.OwnsState() || finishing.Cancelled()) return;
             auto tween = Read<Obj>(state, 0x48);
             // Only the initial arc. rly installs no OnKill subscriber; existing

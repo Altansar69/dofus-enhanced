@@ -41,7 +41,7 @@ Obj FindState(Obj dictionary, Method lookup, int64_t id) {
 
 bool SameState(Obj behavior, Obj dictionary, Method lookup, int64_t id,
                Obj state, Obj entity, Obj route, Obj callback, int easing) {
-    return InstantCombatEnabled() && IsCurrentFightEntity(entity) &&
+    return InstantMovementEnabled() && IsCurrentFightEntity(entity) &&
         Read<int>(behavior, 0x38) == 6 && Read<Obj>(behavior, 0x28) == dictionary &&
         FindState(dictionary, lookup, id) == state && Read<int>(state, 0x10) == easing &&
         Read<Obj>(state, 0x28) == entity && Read<Obj>(state, 0x48) == route &&
@@ -98,7 +98,7 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     const auto parameter = static_cast<int32_t>(first);
     const int easing = parameter == 0 ? 1 : parameter;
     try {
-        if (InstantCombatEnabled() && behavior && entity && route && !nested &&
+        if (InstantMovementEnabled() && behavior && entity && route && !nested &&
             api.object_get_class(behavior) == pushClass && Read<int>(behavior, 0x38) == 6 &&
             api.object_get_class(route) == routeClass && (easing == 1 || easing == 2) &&
             IsCurrentFightEntity(entity)) {

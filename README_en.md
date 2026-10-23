@@ -11,18 +11,22 @@
 > - **I don’t know whether using this mod is allowed** by the terms of use of Dofus and Ankama: **a ban cannot be completely ruled out**.
 > - Use it **at your own risk**. The software is provided **“as is”, without any warranty**.
 
-**Dofus Enhanced** brings a good dose of quality of life to **Dofus Unity**, right inside the game’s interface: 🤏 miniatures, ⏩ shortened combat animations, ⛏️ resources on the maps, 🚀 one-click travel (zaaps and Havenbag included), 💎 soul capture helper with Metamob sync, 🏴‍☠️ treasure hunt, 📒 notebook and 📈 profession XP.
+**Dofus Enhanced** brings a good dose of quality of life to **Dofus Unity**, right inside the game’s interface: 🤏 miniatures your way, ⏩ combat animations à la carte, ⛏️ resources on the maps, 🧬 missing archmonsters zone by zone, 🚀 one-click travel (zaaps and Havenbag included), 💎 soul capture helper with Metamob sync, 🐙 Kralamoure openings in the calendar, 🏴‍☠️ treasure hunt, 📒 notebook and 📈 profession XP.
 
 Everything is set up in the game’s options, the mod’s panels are built from the game’s own components, and the mod updates itself when the game starts. Free and open source. 🎁
 
 ## ✨ Features
 
-⚙️ **A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence et animations (appearance and animations), Surbrillance (highlight), Cartes (maps), Déplacements (travel), Pierre d’âme (soul stone), Chat, Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
+⚙️ **A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence (appearance), Animations, Surbrillance (highlight), Cartes (maps), Déplacements (travel), Pierre d’âme (soul stone), Chat, Calendrier (calendar), Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
 
-### 🎨 Appearance and animations
+### 🎨 Appearance
 - 🤏 **Miniatures, Créatures (creatures) or Normal**, chosen separately in and out of combat. Miniatures shrinks to 60% of the original size, never below 50% of a player’s height for monsters and summons.
-- ⏩ **Shortened combat animations**: Raccourcies (shortened, default), Sans animations des combattants (no fighter animations) or Instantané (instant); the last two modes are experimental. Server delays do not change, so not every animation disappears.
+- ☑️ **You pick who becomes a miniature**: in combat, yourself, allied players, allied summons, your own summons, enemies and enemy summons; out of combat, yourself, party members, other players and monsters. Everything is ticked by default.
 - 🖱️ The game’s creature button becomes a Normal / Créatures / Miniatures selector, and right-clicking the map offers Affichage (display), Animations and Surbrillance (highlight).
+
+### 🎬 Animations
+- ⏩ **Six independent checkboxes** for fights: **Sans effets des sorts** (no spell effects) and **Lancers de sorts raccourcis** (shortened spell casts), ticked by default, then, as experimental options, **Sans animations d’attaque et de sort** (no attack and spell animations), **Sans animations de mort** (no death animations), **Déplacements instantanés** (instant movements) and **Sans attentes visuelles** (no visual waits).
+- ⏱️ Server delays do not change, so not every animation disappears. The same checkboxes are in the map’s right-click menu.
 
 ### 🔦 Highlight
 - 👀 **Monster outlines** out of combat, to spot monsters hidden behind the interface, behind the interface and walls, or all the time.
@@ -30,11 +34,13 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ### 🗺️ Maps
 - ⛏️ **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). These are known gathering spots, not their real-time availability.
+- 🧬 **« Ocre » mode**: a square under « Conquête » (conquest) on the world map colours each zone by how many archmonsters and dungeon bosses of the Ochre quest (L’éternelle moisson) you are still missing (not validated in the quest, not in your bag, not on Metamob). Its panel works like the anomalies one: search, territories, levels and an All / Archmonsters / Dungeon bosses filter; clicking a zone centres the map on it. The same zones can also be shown on the minimap.
 - 🎯 **Recenter button** on the minimap, bringing it back to your character.
 
 ### 🧭 Travel
 - 🚀 **Smarter travel**: the chat **TP** button, double-clicking the world map or the minimap, or the right-click « Voyager jusqu’à cette position » (travel to this position) entry. The mod compares walking with your known zaaps (directly or from the Havenbag), then lets the game’s autopilot finish the trip. Zaap prices apply.
 - 🕹️ Prefer the original autopilot? Untick **Remplacer l’autopilote du jeu** (replace the game’s autopilot); Ctrl + double-click and `/travel` always keep it.
+- ⛪ **Roublard temple**: the trip can go through the temple under the Amakna cemetery and, for a Roublard who has done the quest, through its statue’s teleports (Temple des Douze, Domaine des dieux) when that is shorter. Can be turned off with **Passer par le temple Roublard** (go through the Roublard temple).
 - 💨 **Fast map transitions** (shorter fades) and **next-map preloading** (experimental). Loading and the server are still needed.
 - 💞 **Spouse teleport**: a button, a heart and the distance on your spouse’s portrait in the party, plus a right-click entry. Only on click, under the game’s own conditions.
 
@@ -46,6 +52,9 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 ### 💬 Chat
 - 💬 Next to positions and to archmonsters or bosses of the Ochre quest (L’éternelle moisson) shared in chat: a **TP** button, **Âme en sac** / Pas en sac (soul in your bag or not; the bank is not checked), **Ocre** progress (a click opens the quest) and your **Metamob** count (with a saved key).
 - 🎛️ Each addition can be turned on or off. With TP, typed `[x,y]` coordinates become clickable.
+
+### 🐙 Calendar
+- 🐙 **Metamob’s Kralamoure openings in the game’s calendar** (with your Metamob key): the time, in your PC’s time zone, and the number of registered characters, day by day; details on hover, and a click opens the event on metamob.fr. Read only while the calendar is open, at most every 10 minutes.
 
 ### 🧰 Built-in tools
 - 🏴‍☠️ **Treasure hunt**: a panel picks up your position and the current step, searches clues on DofusDB and starts the trip to the clue in one click (**Chemin**, path). Nothing is validated on your behalf.
@@ -99,7 +108,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ## 🔢 Versioning
 
-This project is following [semantic versioning schema](https://semver.org/). Each version has an **x.y.z** number, shown in game in **Options → Dofus Enhanced → À propos** (about), and an **rN** revision: the GitHub tag (`r109`, `r110`…) that the automatic updates follow. Example: 1.11.0 = r110.
+This project is following [semantic versioning schema](https://semver.org/). Each version has an **x.y.z** number, shown in game in **Options → Dofus Enhanced → À propos** (about), and an **rN** revision: the GitHub tag (`r109`, `r110`…) that the automatic updates follow. Example: 1.12.0 = r111.
 
 ## 🤝 Credits
 

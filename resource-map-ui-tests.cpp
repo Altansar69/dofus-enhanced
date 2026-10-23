@@ -307,8 +307,12 @@ void NativeTreeAndDuplicateOpen(){
         Check(Get(icon).size==resourceMap::TestCatalog[i-2].iconId,"Category image identifies first resource for the profession");}
     Check(Get(f.Row("Eau")).size==2,"Rows match large native checkbox size");
     f.Open();Check(f.Scroll()==scroll&&nativeEnable==2,"Duplicate native OnEnable must not duplicate controls");
+    Check(resourceMap::CartographyWindow()==f.owner,"The open big map window is shared with the Ocre mode");
     Check(guards.at("SectionHeader..ctor")==0x1745F00&&guards.at("ScrollView..ctor")==0x5741C70&&guards.at("CheckboxCustom.SetValueWithoutNotify")==0x17044F0,"Verified exact constructor/value contracts");
     disableHook(f.owner,nullptr);Check(nativeDisable==1,"Native OnDisable preserved");f.Restored();
+    Check(!resourceMap::CartographyWindow(),"A closed big map is no longer shared");
+    enableHook(f.owner,nullptr);Check(resourceMap::CartographyWindow()==f.owner,"A window enabled but not attached yet is shared too");
+    disableHook(f.owner,nullptr);Check(!resourceMap::CartographyWindow(),"Closing it before attachment unshares it");
 }
 void SelectionAndExternalChanges(){
     Fixture f;f.state.settings.resourceMapItems={303};f.Open();Check(Get(f.Row("Frêne")).value,"Persisted selection restored");

@@ -60,7 +60,7 @@ void CheckGithubUpdates(const std::filesystem::path& folder, const std::filesyst
         wchar_t system[MAX_PATH]{};
         if (!GetSystemDirectoryW(system, MAX_PATH)) throw std::runtime_error("Cannot locate Windows PowerShell");
         const auto powershell = std::filesystem::path(system) / L"WindowsPowerShell/v1.0/powershell.exe";
-        log << "UPDATE_CHECK GitHub Altansar69/dofus-miniatures\n"; log.flush();
+        log << "UPDATE_CHECK GitHub Altansar69/dofus-enhanced\n"; log.flush();
         const auto active = [&] { return (!enabled || enabled()) && Settings::Read(settings).githubUpdates; };
         if (!active()) return;
         const auto result = Child(powershell, L"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File " +

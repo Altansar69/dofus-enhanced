@@ -50,6 +50,11 @@ std::vector<std::string> logs;
 void Check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
+constexpr size_t AnimationCount = AnimationToggleLabels.size();
+bool AnimationsEqual(const Settings& a, const Settings& b) {
+    for (auto field : AnimationToggles) if (a.*field != b.*field) return false;
+    return true;
+}
 Object& Get(Obj object) {
     if (!object) throw std::runtime_error("Null fake context receiver");
     return *static_cast<Object*>(object);
@@ -120,7 +125,7 @@ struct Fixture {
     Obj container, maker, menu, original, grid, before, after, panel, root = nullptr, subroot = nullptr, animationRoot = nullptr, glowRoot = nullptr;
     std::vector<Obj> baseline;
     std::array<Obj, 3> views{};
-    std::array<Obj, 4> animationViews{};
+    std::array<Obj, AnimationCount> animationViews{};
     std::array<Obj, 4> glowViews{};
     std::array<Obj, 2> glowCategoryViews{};
     explicit Fixture(bool inCombat = false) {
@@ -140,7 +145,7 @@ struct Fixture {
         Get(state.roleplayOption.get()).boolean = true;
         state.settings.mode = 1;
         state.settings.roleplayMode = 2;
-        state.settings.animationMode = 3;
+        state.settings.ApplyLegacyAnimationMode(3); // every animation checkbox ticked
         state.settings.autoLoad = true;
         container = Make("DofusOptionsContainer");
         Get(container).refs["creatureModeFight"] = state.creatureOption.get();
@@ -208,11 +213,14 @@ struct Fixture {
         Get(animationRoot).refs["menuData"] = Submenu("Animations");
         Get(animationRoot).refs["panel"] = panel;
         Get(Submenu("Animations")).refs["dofusContextualMenuRoot"] = animationRoot;
-        for (int i = 0; i < 4; ++i) {
+        for (size_t i = 0; i < AnimationCount; ++i) {
             animationViews[i] = Make("ContextMenuItemView");
-            Get(animationViews[i]).refs["itemData"] = AnimationChoice(i);
+            Get(animationViews[i]).refs["itemData"] = AnimationChoice(static_cast<int>(i));
             Get(animationViews[i]).refs["panel"] = panel;
             Get(animationViews[i]).refs["parent"] = animationRoot;
+            Get(animationViews[i]).flags["isOn"] = Get(AnimationChoice(static_cast<int>(i))).flags["isOn"];
+            Get(animationViews[i]).flags["visualIsOn"] = Get(AnimationChoice(static_cast<int>(i))).flags["isOn"];
+            Get(animationRoot).items.push_back(animationViews[i]);
         }
         Check(Submenu("Surbrillance") != nullptr, "Glow submenu missing");
         glowRoot = Make("DofusContextualMenuRoot");
@@ -451,7 +459,7 @@ void ChoicesAndNativeIsolation() {
         Check(rows.size() == f.baseline.size() + 2 && rows[0] == f.before && rows[1] == f.grid && rows[5] == f.after &&
             std::find(rows.begin(), rows.end(), f.original) == rows.end(), "Only native creature row must be replaced");
         Check(Get(rows[2]).text == "Affichage" && Get(rows[3]).text == "Animations" && Items(f.Submenu()).size() == 3 &&
-            Items(f.Submenu("Animations")).size() == 4, "Expected adjacent Affichage and Animations submenus");
+            Items(f.Submenu("Animations")).size() == AnimationCount, "Expected adjacent Affichage and Animations submenus");
         Check(Get(rows[2]).numbers.at("iconLeft") == 136 && Get(rows[3]).numbers.at("iconLeft") == 226,
             "Display and animation submenus must use the native eye and play icons");
         Check(rows[4] == f.Glow() && Get(rows[4]).numbers.at("iconLeft") == 136,
@@ -468,7 +476,7 @@ void ChoicesAndNativeIsolation() {
             "Selected display mode not committed through Module.Change");
         Check((inCombat ? f.state.settings.roleplayMode : f.state.settings.mode) ==
             (inCombat ? baselineSettings.roleplayMode : baselineSettings.mode) &&
-            f.state.settings.animationMode == baselineSettings.animationMode &&
+            AnimationsEqual(f.state.settings, baselineSettings) &&
             f.state.settings.autoLoad == baselineSettings.autoLoad,
             "Context selection changed unrelated settings");
         Check(nativeCloses == 1 && Get(f.views[selected]).refs["parent"] == f.subroot,
@@ -483,33 +491,76 @@ void ChoicesAndNativeIsolation() {
         Check(handles.size() == 3, "Context ownership GC handles survived explicit restoration");
     }
 }
-void AnimationChoicesPreserveOtherSettings() {
-    for (const bool inCombat : {false, true}) for (int selected = 0; selected < 4; ++selected) {
+// « Animations »: one native checkbox per toggle, labels shared with the
+// options block; each click flips exactly its own toggle and keeps the menu open.
+void AnimationTogglesPreserveOtherSettings() {
+    for (const bool inCombat : {false, true}) for (unsigned initial : {0u, 0x15u, 0x2Au, 0x3Fu}) {
         Fixture f(inCombat);
-        f.state.settings.animationMode = (selected + 1) % 4;
+        for (size_t i = 0; i < AnimationCount; ++i) f.state.settings.*AnimationToggles[i] = ((initial >> i) & 1) != 0;
         auto expected = f.state.settings;
-        const int originalAnimation = expected.animationMode;
-        expected.animationMode = selected;
         f.Create();
-        for (int i = 0; i < 4; ++i) {
-            const auto& choice = Get(f.AnimationChoice(i));
-            Check(choice.text == AnimationModeLabels[i] && choice.numbers.at("state") == 2 &&
-                choice.flags.at("isOn") == (i == originalAnimation), "Animation radio labels/state do not match stored modes");
+        for (size_t i = 0; i < AnimationCount; ++i) {
+            const auto& choice = Get(f.AnimationChoice(static_cast<int>(i)));
+            Check(choice.text == AnimationToggleLabels[i] && choice.numbers.at("state") == 1 &&
+                choice.flags.at("isOn") == expected.*AnimationToggles[i] && !choice.flags.at("closeOnSelect"),
+                "Animation checkbox labels/state do not match stored toggles");
         }
         f.Open();
-        f.ClickAnimation(selected, selected % 2 == 0);
-        Check(changes == 1 && f.state.settings == expected,
-            "Animation selection must change only the global animation mode through Module.Change");
-        Check(nativeCloses == 1 && Get(f.animationViews[selected]).refs.at("parent") == f.animationRoot,
-            "Animation selection replaced native mouse/keyboard close behavior");
-        for (int i = 0; i < 4; ++i) Check(Get(f.AnimationChoice(i)).flags["isOn"] == (i == selected),
-            "Animation radio selection must remain mutually exclusive");
-        for (int i = 0; i < 3; ++i) Check(Get(f.Choice(i)).flags["isOn"] == (i == (inCombat ? expected.mode : expected.roleplayMode)),
-            "Animation radio group affected the independent display radio group");
+        for (size_t click = 0; click < 2 * AnimationCount; ++click) {
+            const size_t selected = (click * 5 + initial) % AnimationCount;
+            f.ClickAnimation(static_cast<int>(selected), click % 2 == 0);
+            expected.*AnimationToggles[selected] = !(expected.*AnimationToggles[selected]);
+            TickContextDisplayMenu();
+            Check(changes == click + 1 && f.state.settings == expected,
+                "An animation checkbox must flip only its own toggle through Module.Change");
+            Check(nativeCloses == 0 && scheduledCloses == 0 && Get(f.animationViews[selected]).refs.at("parent") == f.animationRoot,
+                "Animation checkboxes keep the native menu open for mouse and keyboard");
+            for (size_t i = 0; i < AnimationCount; ++i)
+                Check(Get(f.AnimationChoice(static_cast<int>(i))).flags["isOn"] == expected.*AnimationToggles[i] &&
+                    Get(f.animationViews[i]).flags["visualIsOn"] == expected.*AnimationToggles[i],
+                    "Animation checkboxes and their views follow every toggle independently");
+            for (int i = 0; i < 3; ++i) Check(Get(f.Choice(i)).flags["isOn"] == (i == (inCombat ? expected.mode : expected.roleplayMode)),
+                "Animation checkboxes affected the independent display radio group");
+        }
+        const auto retained = handles.size();
+        f.NewMenu(); f.Create(); f.Open();
+        Check(handles.size() == retained, "Reopening must not accumulate retained menus/handlers");
+        for (size_t i = 0; i < AnimationCount; ++i)
+            Check(Get(f.AnimationChoice(static_cast<int>(i))).flags["isOn"] == expected.*AnimationToggles[i], "Reopened checkboxes show the saved toggles");
         RestoreContextDisplayMenu();
         f.CheckUnchanged();
         Check(handles.size() == 3, "Animation menu ownership survived restoration");
     }
+}
+// Native views keep their own checked state: reconcile them after dispatch and
+// on each tick, without saving anything, and never touch an unowned row.
+void AnimationCheckboxViewsFollowPreferences() {
+    Fixture f; f.Create(); f.Open();
+    const auto unrelated = Make("ContextMenuItemView");
+    Get(unrelated).refs["itemData"] = NativeItem(nullptr, "Unowned checkbox");
+    Get(unrelated).refs["panel"] = f.panel;
+    Get(unrelated).flags["isOn"] = Get(unrelated).flags["visualIsOn"] = true;
+    Get(f.animationRoot).items.push_back(unrelated);
+    for (int clicked : {2, 4, 2, 0}) {
+        f.ClickAnimation(clicked);
+        for (size_t i = 0; i < AnimationCount; ++i) {
+            const bool value = f.state.settings.*AnimationToggles[i];
+            Get(f.animationViews[i]).flags["isOn"] = Get(f.animationViews[i]).flags["visualIsOn"] = !value;
+        }
+        const auto beforeChanges = changes;
+        const auto preferences = f.state.settings;
+        TickContextDisplayMenu();
+        for (size_t i = 0; i < AnimationCount; ++i)
+            Check(Get(f.animationViews[i]).flags["isOn"] == f.state.settings.*AnimationToggles[i] &&
+                Get(f.animationViews[i]).flags["visualIsOn"] == f.state.settings.*AnimationToggles[i],
+                "Every animation checkbox view must recover after native dispatch");
+        Check(changes == beforeChanges && f.state.settings == preferences, "Visual reconciliation must not toggle or save preferences");
+        Check(Get(unrelated).flags["isOn"] && Get(unrelated).flags["visualIsOn"], "Do not change an unowned native row");
+    }
+    Get(f.animationRoot).refs["panel"] = nullptr;
+    Get(f.animationViews[0]).flags["visualIsOn"] = !f.state.settings.noSpellEffects;
+    TickContextDisplayMenu();
+    Check(Get(f.animationViews[0]).flags["visualIsOn"] == !f.state.settings.noSpellEffects, "Detached submenus must be left alone");
 }
 void GlowChoicesAndReopens() {
     for (const bool inCombat : {false, true}) for (int initial : {0, 1, 2, 3}) for (int selected : {0, 1, 2, 3}) {
@@ -656,10 +707,10 @@ void NativeDisabledStateIsPreserved() {
     Check(Get(Items(f.menu)[2]).flags["disabled"], "Native disabled entry became an enabled submenu");
     for (int i = 0; i < 3; ++i) Check(Get(f.Choice(i)).flags["disabled"], "Disabled parent must keep all owned choices disabled");
     Check(!Get(Items(f.menu)[3]).flags["disabled"], "Native display availability must not disable the independent animation setting");
-    for (int i = 0; i < 4; ++i) Check(!Get(f.AnimationChoice(i)).flags["disabled"], "Animation choices inherited unrelated display disabling");
+    for (int i = 0; i < static_cast<int>(AnimationCount); ++i) Check(!Get(f.AnimationChoice(i)).flags["disabled"], "Animation choices inherited unrelated display disabling");
     f.Open();
     auto expected = f.state.settings;
-    expected.animationMode = 0;
+    expected.noSpellEffects = !expected.noSpellEffects;
     f.ClickAnimation(0);
     Check(changes == 1 && f.state.settings == expected, "Animation selection must work while native creature display is disabled");
     Check(!Get(f.Glow()).flags["disabled"], "Creature availability must not disable glow");
@@ -735,7 +786,7 @@ void ExternalChoiceClosesStaleMenu() {
         f.Create();
         f.Open();
         if (setting == 0) f.state.settings.roleplayMode = 0;
-        else if (setting == 1) f.state.settings.animationMode = 0;
+        else if (setting == 1) f.state.settings.noVisualWaits = false;
         else if (setting == 2) f.state.settings.monsterGlowMode = 3;
         else if (setting == 3) f.state.settings.glowNpcs = true;
         else f.state.settings.glowInteractives = true;
@@ -747,12 +798,16 @@ void ExternalChoiceClosesStaleMenu() {
 }
 void FailureRollback() {
     struct Failure { const char* method; int occurrence; bool after; };
+    // Build order: display radios 1-3 and submenu 1, animation checkboxes 1-6
+    // and submenu 2, glow radios 4-7 and submenu 3, separator, glow checkboxes 7-8.
     const Failure failures[] = {
-        {"AppendRadioButtonItem", 3, false}, {"AppendRadioButtonItem", 6, false}, {"AppendSubMenu", 2, true},
-        {"AppendRadioButtonItem", 8, false}, {"AppendRadioButtonItem", 8, true},
-        {"AppendRadioButtonItem", 9, false}, {"AppendRadioButtonItem", 10, true}, {"AppendRadioButtonItem", 11, false},
-        {"AppendCheckboxItem", 1, false}, {"AppendCheckboxItem", 1, true},
-        {"AppendCheckboxItem", 2, false}, {"AppendCheckboxItem", 2, true}, {"AppendSeparator", 1, true},
+        {"AppendRadioButtonItem", 3, false}, {"AppendSubMenu", 1, true}, {"AppendSubMenu", 2, false}, {"AppendSubMenu", 2, true},
+        {"AppendCheckboxItem", 1, false}, {"AppendCheckboxItem", 1, true}, {"AppendCheckboxItem", 4, false},
+        {"AppendCheckboxItem", 6, false}, {"AppendCheckboxItem", 6, true},
+        {"AppendRadioButtonItem", 4, false}, {"AppendRadioButtonItem", 5, true}, {"AppendRadioButtonItem", 7, false},
+        {"AppendRadioButtonItem", 7, true},
+        {"AppendCheckboxItem", 7, false}, {"AppendCheckboxItem", 7, true},
+        {"AppendCheckboxItem", 8, false}, {"AppendCheckboxItem", 8, true}, {"AppendSeparator", 1, true},
         {"AppendSubMenu", 3, false}, {"AppendSubMenu", 3, true},
         {"InsertItem", 1, false}, {"InsertItem", 1, true}, {"InsertItem", 2, false}, {"InsertItem", 2, true},
         {"InsertItem", 3, false}, {"InsertItem", 3, true}
@@ -875,7 +930,8 @@ int main() {
             fake::Check(fake::handles.empty(), "Context test leaked managed 64-bit GC references");
         };
         run(fake::ChoicesAndNativeIsolation);
-        run(fake::AnimationChoicesPreserveOtherSettings);
+        run(fake::AnimationTogglesPreserveOtherSettings);
+        run(fake::AnimationCheckboxViewsFollowPreferences);
         run(fake::GlowChoicesAndReopens);
         run(fake::GlowRepeatedChoicesKeepMenuOpen);
         run(fake::GlowCategoriesIndependentAndPersistent);
@@ -891,7 +947,7 @@ int main() {
         run(fake::StopRestoresOnlyOwnedRowAndInertsStaleHandler);
         run(fake::SelectionFailureKeepsNativeDispatchParents);
         run(fake::RestoreFailureStillClosesOtherRootAndReleasesReferences);
-        std::cout << "PASS: real context menu integration, display3 + animation4 + glow4 in both contexts, persistence dispatch, native close/keyboard, rollback, stale sessions and four-root GC cleanup\n";
+        std::cout << "PASS: real context menu integration, display3 + six animation checkboxes + glow4 in both contexts, persistence dispatch, native close/keyboard, view reconciliation, rollback, stale sessions and four-root GC cleanup\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

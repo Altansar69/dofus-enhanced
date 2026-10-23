@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <ctime>
 #include <deque>
 #include <fstream>
@@ -302,6 +303,11 @@ std::string Colored(int quantity) {
 }
 std::string Rich(int monster) { return MetamobChatCaption(monster, true); }
 std::string Plain(int monster) { return MetamobChatCaption(monster, false); }
+// The maps' view of the same cache.
+bool Ocre(int monster, int quantity, OcreList list) {
+    const auto value = MetamobOcreQuantity(monster);
+    return value.usable && value.quantity == quantity && value.list == list;
+}
 
 Path root;
 Path Folder(const std::string& name) {
@@ -2131,6 +2137,8 @@ void ChatFirstLoad() {
     syncOn = false;
     Check(Rich(GameTofu) == "Metamob : ?" && Plain(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead,
         "Before the quest is read: « ? »");
+    Check(Ocre(GameTofu, -1, OcreList::NotRead) && !MetamobOcreQuantity(GameStranger).usable &&
+        !MetamobOcreQuantity(GameNameless).usable, "The maps: not read yet; nothing outside L’éternelle moisson");
     Check(Rich(GameStranger).empty() && MetamobChatDetail(GameStranger).empty() && Rich(GameNameless).empty() &&
         MetamobChatDetail(GameNameless).empty() && Rich(0).empty() && Rich(-GameTofu).empty(),
         "Nothing outside L’éternelle moisson, nor for a monster the game does not name");
@@ -2150,6 +2158,9 @@ void ChatFirstLoad() {
     }
     Check(Rich(GameTofu) == Colored(2) && Plain(GameTofu) == "Metamob : 2" && MetamobChatDetail(GameTofu) == Counted(2), "2: green");
     Check(Rich(GameMob) == Colored(0) && Plain(GameMob) == "Metamob : 0" && MetamobChatDetail(GameMob) == Counted(0), "0: red");
+    Check(Ocre(GameTofu, 2, OcreList::Read) && Ocre(GameMob, 0, OcreList::Read) && Ocre(GameAbrakroc, 0, OcreList::Read) &&
+        !MetamobOcreQuantity(GameMissing).usable && !MetamobOcreQuantity(GameOtherKind).usable,
+        "The maps: the quantities read; nothing for a monster not in the quest");
     Check(Rich(GameLarva) == Colored(1) && MetamobChatDetail(GameLarva) == Counted(1) && Rich(GameBouftou) == Colored(5) &&
         Rich(GameTiwa) == Colored(3) && Rich(GameAbrakroc) == Colored(0), "Every quest monster the game names, accents and apostrophes aside");
     Check(Rich(GameMissing).empty() && MetamobChatDetail(GameMissing).empty() && Rich(GameOtherKind).empty() && Rich(GamePlain).empty(),
@@ -2391,6 +2402,7 @@ void ChatQuestChoice() {
     Check(notices.empty() && Rich(GameTofu) == "Metamob : ?" && Logged("METAMOB_CATALOG_FAILED reason=quest"), "No Unity Ocre quest: silent");
     Check(Plain(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NoQuestDetail && MetamobChatDetail(GameMob) == NoQuestDetail,
         "No Unity Ocre quest: its tooltip says to create it on metamob.fr");
+    Check(Ocre(GameTofu, -1, OcreList::NoQuest), "The maps: no Unity Ocre quest");
     for (int i = 0; i < 19; ++i) Ask(30000);
     AskAt(at + 599999);
     Check(Sent() == 1 && MetamobChatDetail(GameTofu) == NoQuestDetail, "Not asked again within 10 min");
@@ -2400,6 +2412,7 @@ void ChatQuestChoice() {
     Check(Sent() == 2 && notices.empty() && Rich(GameTofu) == "Metamob : ?", "Several quests naming none of this character: silent");
     Check(Plain(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == SeveralDetail,
         "Several quests naming none of this character: its tooltip says to name it in the right quest");
+    Check(Ocre(GameTofu, -1, OcreList::SeveralQuests), "The maps: several quests naming none of this character");
     ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, (Character + ", Bob").c_str(), "ocre", 1)});
     ExpectList(OtherSlug, CatalogWith({{Tofu.id, 6}}));
     AskAt(at + 599999);
@@ -2410,6 +2423,7 @@ void ChatQuestChoice() {
     Expect("GET", ListPath(OtherSlug, 0), Html(503));
     AskAt(at + 600000);
     Check(Rich(GameTofu) == "Metamob : ?" && MetamobChatDetail(GameTofu) == NotRead && Sent() == 6, "A passing failure once read: the generic text");
+    Check(Ocre(GameTofu, -1, OcreList::Failed), "The maps: the last reading failed");
     Finish("chat quest choice");
 
     // A passing failure right after a quest problem: the generic text again.
@@ -2706,6 +2720,394 @@ void ChatWipedKey() {
 }
 
 // The real wrapper: a detached worker and the real clock, end to end.
+// « Ouvertures Kralamoure dans le calendrier »: the openings of the server of
+// the character's quest (Quest() names server 11, Draconiros), asked from a
+// week before this PC's date.
+int64_t KraloveFromDay() {
+    const auto local = metamob::LocalTime(FakeEpochValue);
+    return (local ? metamob::DayNumber(local->year, local->month, local->day) : FakeEpochValue / 86400) - 7;
+}
+std::string KralovePath(int64_t server = 11) {
+    const auto date = metamob::CivilDay(KraloveFromDay());
+    char text[16]{};
+    std::snprintf(text, sizeof(text), "%04d-%02d-%02d", date.year, date.month, date.day);
+    return "/kralove?server=" + std::to_string(server) + "&from=" + text;
+}
+// This character's Unity Ocre quest on another server, or on one without an id.
+std::string ServerQuest(const std::string& slug, const char* character, int64_t server, const std::string& name) {
+    auto quest = Quest(slug, character, "ocre", 1);
+    const std::string from = "\"server\":{\"id\":11,\"name\":\"Draconiros\",";
+    const auto at = quest.find(from);
+    Check(at != std::string::npos, "Test fixture: quest server");
+    return quest.replace(at, from.size(), "\"server\":{" + (server ? "\"id\":" + std::to_string(server) + "," : std::string()) +
+        "\"name\":\"" + name + "\",");
+}
+// An opening as the API documents it, the private marker in its description and creator.
+std::string Opening(int64_t id, const std::string& at, int64_t server, int characters) {
+    return "{\"id\":" + std::to_string(id) + ",\"event_datetime\":\"" + at + "\",\"description\":\"Rendez-vous " + Marker +
+        "\",\"creator\":\"" + Marker + "\",\"participants_count\":3,\"character_count\":" + std::to_string(characters) +
+        ",\"messages_count\":1,\"server\":{\"id\":" + std::to_string(server) + ",\"name\":\"" + (server == 11 ? "Draconiros" : "Ombre") +
+        "\",\"community\":\"fr\",\"game_version\":{\"id\":1,\"name\":\"Dofus\"}}}";
+}
+std::string Openings(const std::vector<std::string>& items) {
+    std::string body;
+    for (const auto& item : items) body += (body.empty() ? "" : ",") + item;
+    return "{\"data\":[" + body + "]}";
+}
+void ExpectKralove(Response response, int64_t server = 11) { Expect("GET", KralovePath(server), std::move(response)); }
+int64_t Utc(const char* text) { return *metamob::UtcSeconds(text); }
+// A pump while the calendar row is shown: it asks for the openings, then the sync ticks.
+void Want(uint64_t advance = 0) { fakeNow += advance; WantKralove(); TickSync(syncOn); }
+void WantAt(uint64_t at) { if (fakeNow.load() < at) fakeNow = at; WantKralove(); TickSync(syncOn); }
+
+// Read at once when the calendar asks, silently, then at most every 10 min while
+// it asked within the last minute (the quests read again then: the server as it is).
+void KraloveFirstLoad() {
+    Begin(Folder("kralove"), true);
+    syncOn = false;
+    auto view = MetamobKralove();
+    Check(view.usable && view.status == KraloveStatus::Loading && !view.read && view.openings.empty() && view.server.empty(),
+        "Before any reading: loading");
+    for (int i = 0; i < 5; ++i) Tick(60000);
+    Check(Sent() == 0 && MetamobKralove().version == view.version, "Nothing read until the calendar asks");
+    if (const auto local = metamob::LocalTime(FakeEpochValue); local && local->month == 10 && local->day == 22)
+        Check(KralovePath() == "/kralove?server=11&from=2026-10-15", "From a week before this PC's date");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Json(Openings({Opening(902, "2026-10-24T19:00:00Z", 11, 12), Opening(901, "2026-10-23T18:00:00.000000Z", 11, 5),
+        Opening(903, "2026-10-24T20:00:00Z", 12, 7)})));
+    Want();
+    Check(Sent() == 2 && notices.empty() && Logged("METAMOB_KRALOVE openings=2") && Logged("METAMOB_KRALOVE_OTHER_SERVER openings=1") &&
+        Logged("METAMOB_HTTP method=GET route=/kralove status=200"), "Read at once, silently: the quests, then the openings of the quest's server");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        for (size_t i = 0; i < calls.size(); ++i) {
+            Check(calls[i].key == FakeKey && !calls[i].held && calls[i].thread == GetCurrentThreadId(), "The stored key, never the sender lock");
+            if (i) Check(calls[i].at - calls[i - 1].at >= 1100, "At least 1.1 s between two requests");
+        }
+    }
+    view = MetamobKralove();
+    Check(view.usable && view.status == KraloveStatus::Ready && view.read && view.server == "Draconiros" && view.fromDay == KraloveFromDay() &&
+        view.openings.size() == 2 && view.openings[0].id == 901 && view.openings[1].id == 902 &&
+        view.openings[0].at == Utc("2026-10-23T18:00:00Z") && view.openings[1].characters == 12 && view.openings[1].creator == Marker &&
+        view.openings[1].description == "Rendez-vous " + Marker && view.openings[1].serverId == 11, "Server 11's openings by time, server 12's left out");
+    const auto version = view.version;
+    auto read = LastAt();
+    for (int i = 0; i < 19; ++i) Want(30000);
+    WantAt(read + 599999);
+    Check(Sent() == 2 && MetamobKralove().version == version, "Not read again within 10 min");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Json(Openings({Opening(904, "2026-10-25T19:00:00Z", 11, 3)})));
+    WantAt(read + 600000);
+    view = MetamobKralove();
+    Check(Sent() == 4 && view.openings.size() == 1 && view.openings[0].id == 904 && view.version != version,
+        "Read again after 10 min, with the quests (the server as it is now)");
+    // The calendar closed: not read again, what was read stays; opened again: read at once.
+    read = LastAt();
+    TickAt(read + 600000);
+    TickAt(read + 1800000);
+    Check(Sent() == 4 && MetamobKralove().openings[0].id == 904, "Closed: not read again, what was read stays");
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Json(Openings({})));
+    Want();
+    view = MetamobKralove();
+    Check(Sent() == 6 && view.read && view.openings.empty() && view.status == KraloveStatus::Ready, "Opened again: read at once; none planned");
+    read = LastAt();
+    WantAt(read + 599001);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Json(Openings({})));
+    TickAt(read + 600000);
+    Check(Sent() == 8, "Asked within the last second: read");
+    read = LastAt();
+    WantAt(read + 599000);
+    TickAt(read + 600000);
+    TickAt(read + 700000);
+    Check(Sent() == 8, "Asked a second ago: the calendar is closed, not read");
+    // A failure's retry never comes after the calendar closed.
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Html(503));
+    WantAt(read + 700000);
+    read = LastAt();
+    Check(Sent() == 10 && MetamobKralove().status == KraloveStatus::Unreachable, "A failed reading");
+    TickAt(read + 30000);
+    TickAt(read + 3600000);
+    Check(Sent() == 10, "Closed: its retry is not sent");
+    Finish("kralove first load");
+}
+
+// Nothing at all without a usable key: none, unreadable, refused, or a forget under way.
+void KraloveWithoutKey() {
+    Begin(Folder("kralove-nokey"), false);
+    for (int i = 0; i < 3; ++i) Want(60000);
+    Check(Sent() == 0 && !MetamobKralove().usable && MetamobKralove().openings.empty(), "No key: nothing read, nothing usable");
+    Finish("kralove without key");
+
+    const auto unreadable = Folder("kralove-unreadable");
+    Begin(unreadable, false);
+    {
+        std::ofstream output(KeyPath(unreadable), std::ios::binary);
+        output << "DEMK1\n" << Marker;
+    }
+    Check(MetamobKralove().usable, "A key file not checked yet: usable");
+    Want();
+    Check(Sent() == 0 && notices.empty() && StoredKeyStatus() == KeyStatus::Unreadable && !MetamobKralove().usable &&
+        Logged("METAMOB_KRALOVE_FAILED reason=key"), "Unreadable: nothing sent nor said, no longer usable");
+    for (int i = 0; i < 3; ++i) Want(60000);
+    Check(Sent() == 0 && LoggedCount("METAMOB_KRALOVE_FAILED") == 1, "Not tried again");
+    Finish("kralove with an unreadable key");
+
+    // Refused by Metamob (its JSON 401) on the openings only, the quests accepted: the
+    // calendar's own refusal, read again 10 min later; the key stays usable elsewhere.
+    Begin(Folder("kralove-refused"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Status(401));
+    Want();
+    Check(notices.empty() && StoredKeyStatus() == KeyStatus::Verified && MetamobKralove().usable &&
+        MetamobKralove().status == KraloveStatus::Refused && !Logged("METAMOB_KEY_REFUSED") &&
+        Logged("METAMOB_KRALOVE_FAILED reason=refused"), "Refused for the openings only: silent, the key still usable");
+    for (int i = 0; i < 9; ++i) Want(60000);
+    Check(Sent() == 2 && MetamobKralove().status == KraloveStatus::Refused, "Not read again within 10 min");
+    Finish("kralove refused for the openings only");
+
+    Begin(Folder("kralove-forget"), true);
+    ForgetStoredKey();
+    Check(!MetamobKralove().usable, "Forgotten: unusable at once");
+    Want();
+    Said({KeyForgotten}, "Forgotten");
+    Want(60000);
+    Check(Sent() == 0 && !MetamobKralove().usable, "Nothing read once forgotten");
+    Finish("kralove while forgetting");
+}
+
+// The captures go first: nothing is read while a capture waits.
+void KraloveCapturesFirst() {
+    Begin(Folder("kralove-captures"), true);
+    EnqueueCapture(Captured(Tofu));
+    Want();
+    Want(1999);
+    Check(Sent() == 0, "Not read while a capture waits for its 2 s");
+    ExpectFirst(Tofu, 2, 3);
+    Want(1);
+    Said({Added(Tofu, 2, 3)}, "The capture first");
+    Check(Sent() == 5 && !MetamobKralove().read, "Alone in its worker");
+    ExpectKralove(Json(Openings({Opening(905, "2026-10-24T19:00:00Z", 11, 2)})));
+    Want();
+    Check(Sent() == 6 && MetamobKralove().read && MetamobKralove().openings.size() == 1, "Then the openings, the fresh quests kept");
+    Finish("kralove after the captures");
+}
+
+// Failures are silent and spaced (30 s, then twice longer), never pause the
+// captures; Retry-After holds everything, the captures first; Metamob's own 404
+// waits 10 min; what was read stays through passing failures.
+void KraloveFailures() {
+    Begin(Folder("kralove-fail"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Html(503));
+    Want();
+    auto at = LastAt();
+    auto view = MetamobKralove();
+    Check(view.status == KraloveStatus::Unreachable && !view.read && notices.empty() && Logged("METAMOB_KRALOVE_FAILED reason=request") &&
+        Logged("METAMOB_HTTP method=GET route=/kralove status=503"), "Unreachable: silent");
+    ExpectList(Slug);
+    ExpectStep(Slug, Tofu, 2);
+    ExpectWrite(Slug, Tofu, 3, Written(Tofu, 3));
+    EnqueueCapture(Captured(Tofu));
+    Tick(2000);
+    Said({Added(Tofu, 2, 3)}, "A capture right after a failed reading goes out at once");
+    WantAt(at + 29999);
+    Check(Sent() == 6, "Not tried again before 30 s");
+    ExpectKralove(Lost(12029, false));
+    WantAt(at + 30000);
+    at = LastAt();
+    WantAt(at + 59999);
+    Check(Sent() == 7, "Then 60 s");
+    ExpectKralove(Json("{\"data\":{\"id\":1,\"description\":\"" + Marker + "\"}}"));
+    WantAt(at + 60000);
+    at = LastAt();
+    Check(MetamobKralove().status == KraloveStatus::Unreadable && Logged("METAMOB_BAD_ANSWER route=/kralove") &&
+        Logged("METAMOB_KRALOVE_FAILED reason=answer") && notices.empty(), "An answer that does not read: silent");
+    WantAt(at + 119999);
+    Check(Sent() == 8, "Then 120 s, never told");
+    ExpectKralove(Json(Openings({Opening(906, "2026-10-24T19:00:00Z", 11, 4)})));
+    WantAt(at + 120000);
+    view = MetamobKralove();
+    Check(view.status == KraloveStatus::Ready && view.read && view.openings.size() == 1 && Sent() == 9, "Read once Metamob answers (the quests kept)");
+    // Rate limited: neither the calendar nor a capture before Retry-After; then the capture first.
+    auto read = LastAt();
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Status(429, "120"));
+    WantAt(read + 600000);
+    at = LastAt();
+    view = MetamobKralove();
+    Check(view.status == KraloveStatus::Busy && view.read && view.openings.size() == 1 && Logged("METAMOB_RATE_LIMIT seconds=120") &&
+        Logged("METAMOB_KRALOVE_FAILED reason=busy") && notices.empty(), "429: busy, what was read stays");
+    EnqueueCapture(Captured(Mob));
+    WantAt(at + 119999);
+    Check(Sent() == 11, "Neither the calendar nor a capture before Retry-After");
+    ExpectStep(Slug, Mob, 0);
+    ExpectWrite(Slug, Mob, 1, Written(Mob, 1));
+    WantAt(at + 120000);
+    Said({Added(Mob, 0, 1)}, "The capture first");
+    Check(Sent() == 13, "Alone in its worker");
+    ExpectKralove(Json(Openings({Opening(906, "2026-10-24T19:00:00Z", 11, 4)})));
+    Want();
+    Check(Sent() == 14 && MetamobKralove().status == KraloveStatus::Ready, "Then the openings");
+    // Metamob's JSON 404: no such list, the openings dropped, asked again 10 min later only.
+    read = LastAt();
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Status(404));
+    WantAt(read + 600000);
+    at = LastAt();
+    view = MetamobKralove();
+    Check(view.status == KraloveStatus::Unavailable && !view.read && view.openings.empty() && view.server.empty() &&
+        Logged("METAMOB_KRALOVE_FAILED reason=unavailable"), "Metamob's 404: unavailable");
+    WantAt(at + 599999);
+    Check(Sent() == 16, "Asked again 10 min later only");
+    // A 404 page that is not Metamob's: a passing failure.
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Html(404));
+    WantAt(at + 600000);
+    at = LastAt();
+    Check(MetamobKralove().status == KraloveStatus::Unreachable && Sent() == 18, "A 404 page: unreachable");
+    WantAt(at + 29999);
+    Check(Sent() == 18, "Then 30 s");
+    ExpectKralove(Json(Openings({})));
+    WantAt(at + 30000);
+    Check(Sent() == 19 && MetamobKralove().status == KraloveStatus::Ready && MetamobKralove().read, "Read again");
+    Finish("kralove failures");
+}
+
+// The server of the character's Unity Ocre quest: none, several naming none of
+// this character, a quest naming no server, quests that do not read; then its own.
+void KraloveQuests() {
+    Begin(Folder("kralove-quest"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 2), Quest(OtherSlug, nullptr, "dokille", 1)});
+    Want();
+    auto at = LastAt();
+    auto view = MetamobKralove();
+    Check(view.status == KraloveStatus::NoQuest && !view.read && notices.empty() && Logged("METAMOB_KRALOVE_FAILED reason=quest"),
+        "No Unity Ocre quest: no server, silent");
+    for (int i = 0; i < 19; ++i) Want(30000);
+    WantAt(at + 599999);
+    Check(Sent() == 1, "Asked again 10 min later only");
+    ExpectQuests({Quest(Slug, "Bob", "ocre", 1), Quest(OtherSlug, nullptr, "ocre", 1)});
+    WantAt(at + 600000);
+    at = LastAt();
+    Check(MetamobKralove().status == KraloveStatus::SeveralQuests && notices.empty(), "Several quests naming none of this character");
+    ExpectQuests({ServerQuest(Slug, Character.c_str(), 0, "Draconiros")});
+    WantAt(at + 600000);
+    at = LastAt();
+    Check(MetamobKralove().status == KraloveStatus::NoServer && Logged("METAMOB_KRALOVE_FAILED reason=server"), "Its quest names no server");
+    Expect("GET", "/quests", Json("{\"data\":{\"slug\":\"" + Slug + "\",\"bio\":\"" + Marker + "\"}}"));
+    WantAt(at + 600000);
+    at = LastAt();
+    Check(MetamobKralove().status == KraloveStatus::Unreadable && Logged("METAMOB_BAD_ANSWER route=/quests"), "Quests that do not read");
+    ExpectQuests({ServerQuest(Slug, Character.c_str(), 23, "Ombre")});
+    ExpectKralove(Json(Openings({Opening(907, "2026-10-24T19:00:00Z", 23, 4), Opening(908, "2026-10-24T20:00:00Z", 11, 4)})), 23);
+    WantAt(at + 30000);
+    view = MetamobKralove();
+    Check(view.read && view.server == "Ombre" && view.openings.size() == 1 && view.openings[0].id == 907 && view.openings[0].serverId == 23 &&
+        Sent() == 6 && notices.empty(), "The quest's own server, its openings only");
+    Finish("kralove quests");
+}
+
+// Another character, another key file: what was read goes, read again for them.
+void KraloveChanges() {
+    const auto settings = Folder("kralove-changes");
+    Begin(settings, true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1), ServerQuest(OtherSlug, "Bobinou", 23, "Ombre")});
+    ExpectKralove(Json(Openings({Opening(908, "2026-10-24T19:00:00Z", 11, 3)})));
+    Want();
+    auto view = MetamobKralove();
+    Check(view.read && view.server == "Draconiros" && view.openings[0].id == 908, "This character's quest: server 11");
+    playing = "Bobinou";
+    ExpectKralove(Json(Openings({Opening(909, "2026-10-24T19:00:00Z", 23, 2)})), 23);
+    Want(1000);
+    view = MetamobKralove();
+    Check(view.read && view.server == "Ombre" && view.openings.size() == 1 && view.openings[0].id == 909 && Sent() == 3,
+        "Another character: its quest's server at once (the fresh quests kept)");
+    playing.clear();
+    Want(1000);
+    Check(Sent() == 3 && MetamobKralove().openings[0].id == 909, "A character unknown for a moment: what was read stays");
+    playing = "Bobinou";
+    // Another client saves another key: what was read with the previous one goes at once.
+    AnotherClientSaves(settings, OtherKey);
+    keyNow = OtherKey;
+    fakeNow += 1000;
+    view = MetamobKralove();
+    Check(view.usable && !view.read && view.status == KraloveStatus::Loading && view.openings.empty(), "Another key file: read again");
+    ExpectKralove(Json(Openings({Opening(910, "2026-10-24T19:00:00Z", 23, 1)})), 23);
+    Want();
+    view = MetamobKralove();
+    Check(view.read && view.openings[0].id == 910 && Sent() == 4, "Read with that key");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        Check(calls.back().key == OtherKey, "With the other client's key");
+    }
+    Finish("kralove changes");
+}
+
+// The chat part's list and the calendar's openings asked together: one worker,
+// the quests read once.
+void KraloveWithChat() {
+    Begin(Folder("kralove-chat"), true);
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    ExpectKralove(Json(Openings({Opening(911, "2026-10-24T19:00:00Z", 11, 6)})));
+    WantMetamobCatalog();
+    Want();
+    Check(Sent() == 4 && Rich(GameTofu) == Colored(2) && MetamobKralove().read && MetamobKralove().openings[0].id == 911 && notices.empty(),
+        "One worker: the quests once, the list, the openings");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        for (size_t i = 1; i < calls.size(); ++i) Check(calls[i].at - calls[i - 1].at >= 1100, "At least 1.1 s between two requests");
+    }
+    // A 429 on the chat part's list holds the calendar's reading of that same worker until its Retry-After.
+    const auto read = LastAt();
+    Expect("GET", ListPath(Slug, 0), Status(429, "120"));
+    const auto both = [](uint64_t at) { if (fakeNow.load() < at) fakeNow = at; WantMetamobCatalog(); WantKralove(); TickSync(syncOn); };
+    both(read + 600000);
+    const auto at = LastAt();
+    Check(Sent() == 5 && Logged("METAMOB_RATE_LIMIT seconds=120") && MetamobKralove().openings[0].id == 911,
+        "The list rate limited: the openings not asked in that worker");
+    both(at + 119999);
+    Check(Sent() == 5, "Neither before Retry-After");
+    ExpectList(Slug, CatalogWith({{Tofu.id, 4}}));
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectKralove(Json(Openings({Opening(914, "2026-10-24T19:00:00Z", 11, 2)})));
+    both(at + 120000);
+    Check(Sent() == 9 && Rich(GameTofu) == Colored(4) && MetamobKralove().openings[0].id == 914 && notices.empty(),
+        "Then both, the quests read again for the server");
+    Finish("kralove with the chat part");
+}
+
+// On a real worker thread: loading meanwhile, kept on the game thread; a forget
+// while it reads leaves nothing usable.
+void KraloveThreaded() {
+    const auto path = "GET " + KralovePath();
+    Gate(Folder("kralove-thread"), path, Json(Openings({Opening(912, "2026-10-24T19:00:00Z", 11, 6)})));
+    Want();
+    Await([] { return holding.load(); }, 5000, "the openings read");
+    Check(!MetamobKralove().read && MetamobKralove().status == KraloveStatus::Loading && metamob::testing::WorkerRunning(),
+        "Loading while the worker reads");
+    letGo = true;
+    AwaitWorker("the openings read");
+    Check(MetamobKralove().read && MetamobKralove().openings[0].id == 912 && notices.empty() && Requested(path) == 1,
+        "Read on the worker, kept on the game thread");
+    Finish("kralove on the worker");
+
+    Gate(Folder("kralove-thread-forget"), path, Json(Openings({Opening(913, "2026-10-24T19:00:00Z", 11, 6)})));
+    Want();
+    Await([] { return holding.load(); }, 5000, "the openings read");
+    ForgetStoredKey();
+    Check(!MetamobKralove().usable, "Forgotten while read: nothing usable at once");
+    letGo = true;
+    Await([] { return Noticed(KeyForgotten) && !metamob::testing::WorkerRunning(); }, 10000, "the forget");
+    Tick();
+    Said({KeyForgotten}, "Forgotten");
+    Want(60000);
+    Check(!MetamobKralove().usable && !MetamobKralove().read && Requested() == 2 && !KeyStored(), "Nothing kept, nothing more read");
+    Finish("kralove forgotten while read");
+}
 void Threaded() {
     Begin(Folder("thread"), false);
     metamob::testing::SetClock(nullptr, nullptr, nullptr);
@@ -2839,6 +3241,14 @@ int main() {
         ChatLanguages();
         ChatThreaded();
         ChatWipedKey();
+        KraloveFirstLoad();
+        KraloveWithoutKey();
+        KraloveCapturesFirst();
+        KraloveFailures();
+        KraloveQuests();
+        KraloveChanges();
+        KraloveWithChat();
+        KraloveThreaded();
         Threaded();
         NoPrivateData();
         std::filesystem::remove_all(root);
@@ -2853,7 +3263,11 @@ int main() {
             "never while a capture waits nor without a usable key or during a forget, read with a refused key once valid or saved again, "
             "silent spaced failures, Retry-After, page checks, 404 rediscovery, the quest of each character, the sync's own writes shown "
             "at once, captions and details per state (what to fix after a lasting quest problem), fr/en/es names by "
-            "type, on the worker, key copies wiped\n";
+            "type, on the worker, key copies wiped; « Ouvertures Kralamoure »: the openings of the quest's server read at once when "
+            "the calendar asks, again at most every 10 min while it is shown (the quests read again then), from a "
+            "week before this PC's date, never while a capture waits nor without a usable key or during a forget, silent spaced "
+            "failures, Retry-After (captures first), Metamob's 404, the quest and server problems, another server's openings "
+            "left out, another character or key read again, with the chat part in one worker, on the worker\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

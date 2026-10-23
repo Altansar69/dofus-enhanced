@@ -283,6 +283,7 @@ int main() {
     Refused(Get("/" + std::string(512, 'a')), Key, "Path over 512 refused");
     Check(metamob::PlainPath("/" + std::string(511, 'a')) && !metamob::PlainPath("/" + std::string(512, 'a')), "Path bound");
     Check(metamob::PlainPath("/quests/abc_DEF-1/monsters?step=4&limit=200&offset=200"), "Every built path accepted");
+    Check(metamob::PlainPath("/kralove?server=11&from=2026-10-15"), "The calendar's Kralamoure path accepted");
     for (const char* key : {"short-key", "TEST KEY 0123456789 NOT REAL", "TEST-KEY-0123456789\r\nX: 1", "TEST-KEY-0123456789-\x7F"})
         Refused(Get("/me"), key, "Unusable key refused");
 

@@ -66,16 +66,17 @@ void AnimationCtorHook(Obj step, Obj entity, Obj name, bool idleAfter, bool wait
 }
 }
 
-bool MustKeepNativeAnimation(Obj step) {
-    if (!step || !InstantCombatEnabled()) return false;
-    for (const auto& item : animations) if (item.step.get() == step) return item.death;
-    return true; // The step may have been constructed before hooks were installed.
+AnimationStepKind ClassifyAnimationStep(Obj step) {
+    if (!step) return AnimationStepKind::Unknown;
+    for (const auto& item : animations)
+        if (item.step.get() == step) return item.death ? AnimationStepKind::Death : AnimationStepKind::Ordinary;
+    return AnimationStepKind::Unknown; // The step may have been constructed before hooks were installed.
 }
 
 void ClearCombatCleanup() { animations.clear(); }
 
 void PumpCombatCleanup(bool inCombat) {
-    // A temporary mode change must not discard provenance of pending steps.
+    // A temporary toggle change must not discard provenance of pending steps.
     if (!inCombat || !module || module->stopped.load()) { ClearCombatCleanup(); return; }
     RemoveCompletedAnimations();
 }

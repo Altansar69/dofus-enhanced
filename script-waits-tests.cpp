@@ -79,7 +79,7 @@ void* Api::NativeAt(uintptr_t rva) const {
 Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
-bool InstantCombatEnabled() { return fake::enabled && !module->stopRequested; }
+bool InstantWaitsEnabled() { return fake::enabled && !module->stopRequested; }
 void AddNativeHook(uintptr_t rva, void* hook, void** original) {
     if (rva == 0x2089970) { fake::ctorHook = reinterpret_cast<ScriptCtorFn>(hook); *original = reinterpret_cast<void*>(fake::Ctor); }
     else {

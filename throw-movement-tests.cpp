@@ -218,7 +218,7 @@ void Reset() {
     Get(entity).attachedToCarrier = true;
     Get(entity).heightOffset = 24.0f;
     route = Route(); lastState = nullptr;
-    module->settings.animationMode = 3;
+    module->settings.ApplyLegacyAnimationMode(3); // every « Animations » toggle on
     module->stopRequested = false;
 }
 void CheckFallback(const char* message) {
@@ -287,8 +287,8 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
 Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string& message) { fake::logs.push_back(message); }
-bool InstantCombatEnabled() {
-    return module && module->settings.animationMode == 3 && fake::inCombat && !module->stopRequested;
+bool InstantMovementEnabled() {
+    return module && module->settings.instantMovements && fake::inCombat && !module->stopRequested;
 }
 bool IsCurrentFightEntity(managed::Obj target) { return fake::member && target == fake::entity; }
 bool DeferInstantMovement(std::function<void()> finish) {
@@ -327,8 +327,11 @@ void SuccessfulCompletion() {
     }
 }
 void EligibilityFallbacks() {
-    for (int mode : {0, 1, 2, 4, -1}) {
-        Reset(); module->settings.animationMode = mode; Dispatch(); CheckFallback("Non-instant animation mode must remain native");
+    for (int config : {0, 1, 2, 3}) {
+        // The former modes 0-2, then every other toggle on (waits alone never move a fighter).
+        Reset();
+        if (config < 3) module->settings.ApplyLegacyAnimationMode(config); else module->settings.instantMovements = false;
+        Dispatch(); CheckFallback("Without Déplacements instantanés a throw must remain native");
     }
     Reset(); inCombat = false; Dispatch(); CheckFallback("Outside-combat throw must remain native");
     Reset(); member = false; Dispatch(); CheckFallback("Unknown fighter must remain native");
@@ -392,7 +395,7 @@ void ReentryAndReplacement() {
     Reset(); afterKill = [](Obj) { member = false; }; Dispatch();
     Check(starts == 1 && kills == 1 && arrivals == 1 && completions == 1,
         "Committed throw must finish even if fighter membership changes after flight kill");
-    Reset(); afterKill = [](Obj) { module->settings.animationMode = 0; }; Dispatch();
+    Reset(); afterKill = [](Obj) { module->settings.instantMovements = false; }; Dispatch();
     Check(starts == 1 && kills == 1 && arrivals == 1 && completions == 1,
         "Committed throw must finish even if animation mode changes after flight kill");
     Reset(); afterKill = [](Obj) { module->stopRequested = true; }; Dispatch();
@@ -413,7 +416,7 @@ void ReentryAndReplacement() {
     Check(starts == 1 && kills == 1 && arrivals == 1 && finishes == 0 && cancels == 1 && completions == 1 &&
         Current() == nullptr && Get(Read<Obj>(behavior, 0x28)).pending.empty(),
         "Cancellation during final placement must use native rma and clear its cancellation entry");
-    Reset(); module->settings.animationMode = 0; Dispatch();
+    Reset(); module->settings.instantMovements = false; Dispatch();
     finishHook(behavior, Current(), callerMethod);
     Check(starts == 1 && kills == 0 && arrivals == 0 && finishes == 1 && completions == 1,
         "Unscoped native rmb must pass through unchanged in old animation modes");
@@ -491,7 +494,7 @@ void DeferredStateLifecycle() {
         case 0: Get(Dictionary()).entries.erase(entityId); break;
         case 1: Get(Read<Obj>(behavior, 0x28)).pending.insert(entityId); break;
         case 2: member = false; break;
-        case 3: module->settings.animationMode = 0; break;
+        case 3: module->settings.instantMovements = false; break;
         case 4: Put(state, 0x40, Make("Action")); break;
         case 5: Put(state, 0x50, Make("CancellationTokenSource")); break;
         case 6: Put(Read<Obj>(state, 0x48), 0xE8, false); break;

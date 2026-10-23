@@ -11,18 +11,22 @@ Français | [English](README_en.md)
 > - **Je ne sais pas si l’utilisation de ce mod est autorisée** par les conditions d’utilisation de Dofus et d’Ankama : **la possibilité d’un bannissement n’est pas à exclure totalement**.
 > - Tu l’utilises **à tes risques et périls**. Le logiciel est fourni **« tel quel », sans aucune garantie**.
 
-**Dofus Enhanced** ajoute à **Dofus Unity** une bonne dose de confort, directement dans l’interface du jeu : 🤏 miniatures, ⏩ animations de combat raccourcies, ⛏️ ressources sur les cartes, 🚀 trajets en un clic (zaaps et Havre-Sac compris), 💎 aide à la capture d’âmes avec synchro Metamob, 🏴‍☠️ chasse au trésor, 📒 carnet et 📈 XP des métiers.
+**Dofus Enhanced** ajoute à **Dofus Unity** une bonne dose de confort, directement dans l’interface du jeu : 🤏 miniatures au choix, ⏩ animations de combat à la carte, ⛏️ ressources sur les cartes, 🧬 archimonstres manquants zone par zone, 🚀 trajets en un clic (zaaps et Havre-Sac compris), 💎 aide à la capture d’âmes avec synchro Metamob, 🐙 Kralamoures dans le calendrier, 🏴‍☠️ chasse au trésor, 📒 carnet et 📈 XP des métiers.
 
 Tout se règle dans les options du jeu, les panneaux du mod sont construits avec les composants du jeu, et le mod se met à jour tout seul au lancement du jeu. Gratuit et open source. 🎁
 
 ## ✨ Fonctionnalités
 
-⚙️ **Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence et animations, Surbrillance, Cartes, Déplacements, Pierre d’âme, Chat, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
+⚙️ **Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence, Animations, Surbrillance, Cartes, Déplacements, Pierre d’âme, Chat, Calendrier, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
 
-### 🎨 Apparence et animations
+### 🎨 Apparence
 - 🤏 **Miniatures, Créatures ou Normal**, au choix en combat et hors combat, séparément. Miniatures réduit à 60 % de la taille d’origine, sans descendre sous 50 % de la hauteur d’un joueur pour les monstres et les invocations.
-- ⏩ **Animations de combat raccourcies** : Raccourcies (par défaut), Sans animations des combattants ou Instantané (ces deux modes sont expérimentaux). Les délais du serveur ne changent pas : toutes les animations ne disparaissent pas.
+- ☑️ **Tu choisis qui passe en miniature** : en combat, toi, les joueurs alliés, les invocations alliées, tes invocations, les ennemis et les invocations ennemies ; hors combat, toi, les membres du groupe, les autres joueurs et les monstres. Tout est coché par défaut.
 - 🖱️ Le bouton créature du jeu devient un sélecteur Normal / Créatures / Miniatures, et le clic droit sur la carte propose Affichage, Animations et Surbrillance.
+
+### 🎬 Animations
+- ⏩ **Six cases indépendantes** pour les combats : **Sans effets des sorts** et **Lancers de sorts raccourcis** (cochées par défaut), puis, en expérimental, **Sans animations d’attaque et de sort**, **Sans animations de mort**, **Déplacements instantanés** et **Sans attentes visuelles**.
+- ⏱️ Les délais du serveur ne changent pas : toutes les animations ne disparaissent pas. Les mêmes cases sont dans le clic droit sur la carte.
 
 ### 🔦 Surbrillance
 - 👀 **Contour des monstres** hors combat, pour les repérer quand ils sont cachés derrière l’interface, derrière l’interface et les murs, ou tout le temps.
@@ -30,11 +34,13 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ### 🗺️ Cartes
 - ⛏️ **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Ce sont les points de récolte connus, pas leur disponibilité en temps réel.
+- 🧬 **Mode « Ocre »** : un carré sous « Conquête », sur la grande carte, colore chaque zone selon le nombre d’archimonstres et de boss de donjon de L’éternelle moisson qu’il te manque (ni validés dans la quête, ni dans ton sac, ni sur Metamob). Son panneau, comme celui des anomalies : recherche, territoires, niveaux et filtre Tous / Archimonstres / Boss de donjon ; un clic sur une zone centre la carte dessus. Les mêmes zones peuvent aussi s’afficher sur la mini-carte.
 - 🎯 **Bouton de recentrage** sur la mini-carte, pour la ramener sur ton personnage.
 
 ### 🧭 Déplacements
 - 🚀 **Trajets améliorés** : bouton **TP** du chat, double-clic sur la grande carte ou la mini-carte, ou « Voyager jusqu’à cette position » au clic droit. Le mod compare le départ à pied et par tes zaaps connus (directement ou depuis le Havre-Sac), puis laisse l’autopilote du jeu finir le trajet. Les prix des zaaps s’appliquent.
 - 🕹️ Tu préfères l’autopilote d’origine ? Décoche **Remplacer l’autopilote du jeu** ; Ctrl + double-clic et `/travel` le gardent toujours.
+- ⛪ **Temple Roublard** : le trajet peut passer par le temple sous le cimetière d’Amakna et, pour un Roublard qui a fait la quête, par les téléportations de sa statue (Temple des Douze, Domaine des dieux), quand c’est plus court. Désactivable avec **Passer par le temple Roublard**.
 - 💨 **Transitions rapides entre cartes** (fondus raccourcis) et **préchargement de la carte suivante** (expérimental). Le chargement et le serveur restent nécessaires.
 - 💞 **Téléportation au conjoint** : bouton, cœur et distance sur la vignette de ton conjoint dans le groupe, plus une entrée au clic droit. Uniquement au clic, selon les conditions du jeu.
 
@@ -46,6 +52,9 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 ### 💬 Chat
 - 💬 À côté des positions et des archimonstres ou boss de L’éternelle moisson partagés dans le chat : bouton **TP**, **Âme en sac** / Pas en sac (sac uniquement, pas la banque), avancement **Ocre** (un clic ouvre la quête) et quantité **Metamob** (avec une clé enregistrée).
 - 🎛️ Chaque ajout s’active séparément. Avec le TP, les coordonnées écrites `[x,y]` deviennent cliquables.
+
+### 🐙 Calendrier
+- 🐙 **Ouvertures Kralamoure de Metamob dans le calendrier du jeu** (avec ta clé Metamob) : l’heure, à l’heure de ton PC, et le nombre de personnages inscrits, jour par jour ; les détails au survol, et un clic ouvre l’événement sur metamob.fr. Lues seulement quand le calendrier est ouvert, au plus toutes les 10 minutes.
 
 ### 🧰 Outils intégrés
 - 🏴‍☠️ **Chasse au trésor** : un panneau reprend ta position et l’étape en cours, cherche les indices sur DofusDB et lance le trajet vers l’indice en un clic (**Chemin**). Aucune validation n’est envoyée à ta place.
@@ -99,7 +108,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ## 🔢 Versionnage
 
-Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, et une révision **rN** : l’étiquette GitHub (`r109`, `r110`…) que suit la mise à jour automatique. Exemple : 1.11.0 = r110.
+Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, et une révision **rN** : l’étiquette GitHub (`r109`, `r110`…) que suit la mise à jour automatique. Exemple : 1.12.0 = r111.
 
 ## 🤝 Crédits
 

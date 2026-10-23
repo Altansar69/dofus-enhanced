@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -18,11 +19,13 @@ void Log(const std::string& text);
 
 // The game thread queues captures and key operations; one detached worker at a
 // time takes the whole state ("book"), runs Work (key operations, then one sync
-// cycle or the chat part's reading of the quest; plain C++ only: no IL2CPP call),
-// and hands it back to TickSync, which posts its notices and keeps what it learnt
-// of the stored key for the options' key row and of the quest for the chat. Logs
-// carry fixed codes and numbers only: never the key, a header, a body, the
-// username, a slug, a monster or a character name.
+// cycle, or the chat part's reading of the quest and the calendar's reading of
+// the Kralamoure openings; plain C++ only: no IL2CPP call), and hands it back to
+// TickSync, which posts its notices and keeps what it learnt of the stored key
+// for the options' key row, of the quest for the chat and of the openings for
+// the calendar. Logs carry fixed codes and numbers only: never the key, a
+// header, a body, the username, a slug, a monster or a character name, an
+// opening's id, creator or description.
 namespace metamob {
 namespace {
 // Visible texts: local chat notices, prefix included.
@@ -84,6 +87,14 @@ constexpr uint64_t RefreshMs = 10 * 60 * 1000, WantedMs = 60000, StatusMs = 1000
 constexpr size_t MaxWrites = 64;
 constexpr wchar_t SenderName[] = L"Local\\DofusMiniatures.Metamob";
 constexpr char QuestsRoute[] = "/quests", ListRoute[] = "/quests/*/monsters", WriteRoute[] = "/quests/*/monsters/*";
+// « Ouvertures Kralamoure »: the calendar's list, asked from a week before this
+// PC's date (the week shown when the calendar opens is read whole, whatever
+// day the answer's dates fall on in UTC).
+constexpr char KraloveRoute[] = "/kralove";
+constexpr int64_t KraloveDaysBack = 7;
+// The calendar asks at every pump while its row is shown: a second without it
+// is a closed calendar, never read for.
+constexpr uint64_t KraloveWantedMs = 1000;
 
 uint64_t RealNow() { return GetTickCount64(); }
 int64_t RealEpoch() {
@@ -186,6 +197,7 @@ struct Book {
     std::vector<Group> groups;
     std::vector<Flight> flights;
     std::optional<std::vector<Quest>> quests;                   // GET /quests, kept while it picks a quest
+    uint64_t questsAt = 0;                                      // when they were read (the calendar reads them again after 10 min)
     std::map<std::string, std::vector<QuestMonster>> monsters;  // per quest slug: ids and steps (quantities are read again)
     int failures = 0;           // consecutive transient failures
     uint64_t notBefore = 0;     // backoff, Retry-After, a busy sender, the refused key check
@@ -230,6 +242,16 @@ struct Listed {
 };
 // A write of the sync confirmed by Metamob: the chat part shows its quantity at once.
 struct Written { std::string slug; int64_t id = 0; int quantity = 0; };
+// The calendar's reading of the Kralamoure openings, handed to the game thread
+// with the job like the chat part's (Loading: nothing learnt, no key then).
+struct KraloveRead {
+    std::optional<KeyFile> file;      // the key file it was read with (read before the key)
+    std::string character;            // the character the quest was chosen for
+    KraloveStatus status = KraloveStatus::Loading;
+    std::string server;               // that quest's server
+    int64_t fromDay = 0;              // the first day asked
+    std::vector<Kralove> openings;    // that server's only
+};
 struct Job {
     Book book;
     std::optional<Secret> submit;   // a key to verify with GET /me, then store
@@ -237,6 +259,10 @@ struct Job {
     bool listing = false;           // read the chat part's list (never while a capture waits)
     std::string character;          // the local character, which picks that quest
     std::optional<Listed> listed;   // what that reading found, taken once the worker has ended
+    bool kralove = false;           // read the calendar's openings (never while a capture waits)
+    int64_t kraloveFromDay = 0;     // from that day (DayNumber), sent as kraloveFrom (YYYY-MM-DD)
+    std::string kraloveFrom;
+    std::optional<KraloveRead> kraloveRead; // what that reading found, taken once the worker has ended
     std::optional<KeyFile> check;   // the key row's check of this key file (CheckStoredKey)
     bool told = false;              // that check told the key's status (read once the worker has ended)
     std::filesystem::path keyPath;
@@ -300,6 +326,7 @@ struct Session {
     std::vector<std::string> problems; // quest choice notices already given in this cycle
     QuestProblem questProblem = QuestProblem::None; // why the last quest choice found none
     bool listing = false, refused = false; // the chat part's silent reading; Metamob refused its key
+    bool limited = false, bad = false;     // a 429 (Limit), an answer that does not read (BadAnswer): why a silent reading halted
 };
 // A 2xx answer to the stored key: Metamob accepts it (told to the key row once per cycle).
 void Accepted(Session& s) {
@@ -342,10 +369,12 @@ bool KeyRefusal(const Response& response) { return (response.status == 401 || re
     const int seconds = RetryAfterSeconds(response.retryAfter, timing.epoch()).value_or(DefaultRetryAfter);
     s.book.notBefore = timing.now() + static_cast<uint64_t>(seconds) * 1000;
     Log("METAMOB_RATE_LIMIT seconds=" + std::to_string(seconds));
+    s.limited = true;
     throw Halt{};
 }
 [[noreturn]] void BadAnswer(Session& s, const char* route) {
     Log(std::string("METAMOB_BAD_ANSWER route=") + route);
+    s.bad = true;
     Backoff(s);
 }
 // The body of a 2xx JSON answer; anything else stops the cycle.
@@ -365,15 +394,16 @@ template<class Parse> auto Parsed(Session& s, const char* route, Parse parse) {
     try { return parse(); } catch (...) { BadAnswer(s, route); }
 }
 // The character's quest. No quest or an ambiguous choice: told once per cycle
-// (never by the chat part's reading), and the list is asked again next time (the
-// user may fix it meanwhile).
-std::optional<std::string> QuestSlug(Session& s, const std::string& character) {
+// (never by the chat part's or the calendar's reading), and the list is asked
+// again next time (the user may fix it meanwhile).
+std::optional<Quest> ChosenQuest(Session& s, const std::string& character) {
     if (!s.book.quests) {
         const auto body = Get(s, "/quests", QuestsRoute, false);
         s.book.quests = Parsed(s, QuestsRoute, [&] { return ParseQuests(body); });
+        s.book.questsAt = timing.now();
     }
     auto choice = ChooseQuest(*s.book.quests, character);
-    if (choice.quest) return std::move(choice.quest->slug);
+    if (choice.quest) return std::move(choice.quest);
     s.questProblem = choice.kind;
     if (!s.listing && std::find(s.problems.begin(), s.problems.end(), choice.problem) == s.problems.end()) {
         s.job.Post(choice.problem);
@@ -381,6 +411,11 @@ std::optional<std::string> QuestSlug(Session& s, const std::string& character) {
     }
     s.askQuestsAgain = true;
     return std::nullopt;
+}
+std::optional<std::string> QuestSlug(Session& s, const std::string& character) {
+    auto quest = ChosenQuest(s, character);
+    if (!quest) return std::nullopt;
+    return std::move(quest->slug);
 }
 // The quest's whole monster list with its quantities (Unity Ocre: 337, two
 // pages). complete (the chat part): a page missing before the total is a bad
@@ -714,6 +749,93 @@ void ReadCatalog(Job& job) {
     if (ok) Log("METAMOB_CATALOG monsters=" + std::to_string(count));
     else Log(std::string("METAMOB_CATALOG_FAILED reason=") + failure);
 }
+// « Ouvertures Kralamoure dans le calendrier »: the openings Metamob lists for
+// the server of the character's Unity Ocre quest (the quests kept by the book
+// when read less than 10 min ago, read again otherwise), read afresh and
+// silently (fixed log codes, never a notice). Only that server's openings are
+// kept. The game thread keeps what it found (KeepKralove) and decides when to
+// read again.
+void ReadKralove(Job& job) {
+    auto& book = job.book;
+    KraloveRead read;
+    read.character = job.character;
+    read.fromDay = job.kraloveFromDay;
+    const char* failure = "error";
+    try {
+        read.file = Identity(job.keyPath); // read first: a key saved meanwhile is never taken for the one loaded
+        std::optional<Secret> key;
+        try { key = LoadKey(job.keyPath); }
+        catch (...) { job.Found(KeyStatus::Unreadable, read.file); read.status = KraloveStatus::KeyUnreadable; }
+        if (!key) failure = "key"; // forgotten or unreadable: nothing is sent
+        else {
+            Session s{job, book, *key, read.file};
+            s.listing = true; // silent: a failure halts, untold; the game thread spaces the next try
+            // The quest's server as it is now: quests read 10 min ago or more are read again.
+            const auto now = timing.now();
+            if (book.quests && (now < book.questsAt || now - book.questsAt >= RefreshMs)) book.quests.reset();
+            try {
+                const auto quest = ChosenQuest(s, job.character);
+                if (!quest) {
+                    read.status = s.questProblem == QuestProblem::Several ? KraloveStatus::SeveralQuests : KraloveStatus::NoQuest;
+                    failure = "quest";
+                } else if (quest->serverId <= 0) {
+                    read.status = KraloveStatus::NoServer;
+                    failure = "server";
+                    s.askQuestsAgain = true; // the user may name it meanwhile
+                } else {
+                    if (job.forgetting.load()) throw Halt{}; // nothing more is sent with a key being forgotten
+                    ++s.requests;
+                    auto response = Send(job, *key, "GET", "/kralove?server=" + std::to_string(quest->serverId) + "&from=" + job.kraloveFrom,
+                        KraloveRoute);
+                    if (job.cancelled.load()) throw Halt{};
+                    const bool answered = response.status >= 200 && response.status < 300 && response.json;
+                    const bool refused = KeyRefusal(response);
+                    if (answered) Accepted(s);
+                    else if (response.status == 429) Limit(s, response);
+                    else if (!refused && (response.status != 404 || !response.json)) Backoff(s);
+                    if (refused) {
+                        // Refused for this list only: the key itself is judged by the quests,
+                        // read again with it every 10 min, and by the chat and the captures.
+                        read.status = KraloveStatus::Refused;
+                        failure = "refused";
+                    } else if (!answered) {
+                        // Metamob's own 404: no such list on its API (asked again 10 min later).
+                        read.status = KraloveStatus::Unavailable;
+                        failure = "unavailable";
+                    } else {
+                        std::optional<std::vector<Kralove>> openings;
+                        try { openings = ParseKralove(response.body); } catch (...) {}
+                        if (!openings) {
+                            Log(std::string("METAMOB_BAD_ANSWER route=") + KraloveRoute);
+                            read.status = KraloveStatus::Unreadable;
+                            failure = "answer";
+                        } else {
+                            size_t others = 0;
+                            for (auto& opening : *openings) {
+                                if (opening.serverId == quest->serverId) read.openings.push_back(std::move(opening));
+                                else ++others;
+                            }
+                            read.server = quest->serverName;
+                            if (read.server.empty() && !read.openings.empty()) read.server = read.openings.front().server;
+                            read.status = KraloveStatus::Ready;
+                            if (others) Log("METAMOB_KRALOVE_OTHER_SERVER openings=" + std::to_string(others));
+                        }
+                    }
+                }
+            } catch (const Halt&) {
+                read.status = s.refused ? KraloveStatus::Refused : s.limited ? KraloveStatus::Busy :
+                    s.bad ? KraloveStatus::Unreadable : KraloveStatus::Unreachable;
+                failure = s.refused ? "refused" : s.limited ? "busy" : s.bad ? "answer" : "request";
+            }
+            if (s.askQuestsAgain) book.quests.reset();
+        }
+    } catch (...) { read.status = KraloveStatus::Unreachable; read.openings.clear(); failure = "error"; }
+    const auto count = read.openings.size();
+    const bool ok = read.status == KraloveStatus::Ready;
+    job.kraloveRead = std::move(read); // always handed back: the game thread spaces the next reading
+    if (ok) Log("METAMOB_KRALOVE openings=" + std::to_string(count));
+    else Log(std::string("METAMOB_KRALOVE_FAILED reason=") + failure);
+}
 // Options › « Enregistrer »: GET /v1/me with the candidate key. Refused by
 // Metamob (its JSON 401/403): nothing stored. Otherwise stored, verified or not
 // (Metamob unreachable, or a page that is not its answer).
@@ -787,6 +909,8 @@ void Work(Job& job) noexcept {
         // The chat part's list, given only to a job without captures (Start): never
         // before them. Reads only: the sync turned off does not stop it, a forget does.
         if (job.listing && !job.cancelled.load() && !job.forgetting.load() && timing.now() >= job.book.notBefore) ReadCatalog(job);
+        // The calendar's openings, likewise; after a 429 of the list just read, at its Retry-After.
+        if (job.kralove && !job.cancelled.load() && !job.forgetting.load() && timing.now() >= job.book.notBefore) ReadKralove(job);
     } catch (...) {
         try { Log("METAMOB_WORKER_ERROR"); } catch (...) {}
     }
@@ -805,11 +929,27 @@ void Work(Job& job) noexcept {
 struct Catalog {
     std::string character, slug;
     std::vector<QuestMonster> monsters;
+    MonsterIndex index;                // FindMonster's answers for that list, built once per reading
     bool read = false, failed = false; // a list read; the last reading failed (« ? » until one succeeds)
     QuestProblem problem = QuestProblem::None; // that failure lasts (no Unity Ocre quest, or several): the tooltip says why
     int failures = 0;                  // passing failures in a row: tried again 30 s later, twice longer each time
     uint64_t next = 0;                 // no reading before
 };
+// The calendar's copy of the Kralamoure openings (game thread only), for the
+// current key file and the character its quest was chosen for.
+struct KraloveCache {
+    std::string character;
+    bool tried = false;                // a reading came back: its character is known
+    KraloveStatus status = KraloveStatus::Loading;
+    bool read = false;                 // openings read; kept through passing failures
+    std::string server;
+    int64_t fromDay = 0;
+    std::vector<Kralove> openings;
+    int failures = 0;                  // passing failures in a row: tried again 30 s later, twice longer each time
+    uint64_t next = 0;                 // no reading before
+};
+// Changes with the calendar's copy (KraloveView::version), across Install and Restore too.
+uint64_t kraloveVersion = 1;
 // Game-thread state. While a worker runs it owns the book; captures wait in the inbox.
 struct State {
     bool installed = false;
@@ -836,6 +976,10 @@ struct State {
     std::map<int, std::optional<size_t>> matched;
     bool wanted = false;
     uint64_t wantedAt = 0, statusAt = 0;
+    // « Ouvertures Kralamoure »: the calendar's openings and when it last asked for them.
+    KraloveCache kralove;
+    bool kraloveWanted = false;
+    uint64_t kraloveWantedAt = 0;
 };
 State state;
 // A cancelled worker that has not ended yet keeps a new one from starting:
@@ -861,9 +1005,14 @@ int Pending() { return Units(state.book) + Count(state.inbox) + state.jobUnits; 
 // has been taken back: no key for the key row meanwhile, then the key file as
 // it is, a new key saved right after included.
 bool Forgetting() { return state.forget || (state.job && state.job->forget); }
-// The chat part's list goes with the key it was read with (another key file, a
-// forget) and with the character it was chosen for: read again for the new ones.
-void Unlist() { state.catalog = Catalog{}; state.matched.clear(); }
+// The chat part's list and the calendar's openings go with the key they were
+// read with (another key file, a forget) and with the character their quest was
+// chosen for: read again for the new ones.
+void Unlist() {
+    state.catalog = Catalog{}; state.matched.clear();
+    state.kralove = KraloveCache{};
+    ++kraloveVersion;
+}
 // The key file seen now. Another one than the known one (saved, replaced or
 // forgotten, here or by another client) is a key not checked yet, or none.
 void Track(const KeyFile& file) {
@@ -927,6 +1076,7 @@ void Keep(Listed listed) {
     if (listed.ok) {
         catalog.slug = std::move(listed.slug);
         catalog.monsters = std::move(listed.monsters);
+        catalog.index = IndexMonsters(catalog.monsters);
         catalog.read = true; catalog.failed = false; catalog.failures = 0; catalog.problem = QuestProblem::None;
         catalog.next = now + RefreshMs;
         state.matched.clear(); // matched again with the new list
@@ -946,11 +1096,68 @@ void Wrote(const Written& write) {
         if (monster.id == write.id) monster.quantity = write.quantity;
 }
 // Another character on this client: the quest read for the previous one may not
-// be this one's (several Ocre quests). An unknown character keeps what was read.
+// be this one's (several Ocre quests), nor its server. An unknown character
+// keeps what was read.
 void Follow() {
-    if (!state.catalog.read && !state.catalog.failed) return;
+    const bool catalog = state.catalog.read || state.catalog.failed, kralove = state.kralove.tried;
+    if (!catalog && !kralove) return;
     const auto character = Character();
-    if (!character.empty() && character != state.catalog.character) Unlist();
+    if (character.empty()) return;
+    if ((catalog && character != state.catalog.character) || (kralove && character != state.kralove.character)) Unlist();
+}
+// The calendar's openings are read while it is shown (asked within the last
+// second), with a usable key: at once the first time, then 10 min after the
+// last reading.
+bool KraloveDue(uint64_t now) {
+    if (!state.kraloveWanted || (now >= state.kraloveWantedAt && now - state.kraloveWantedAt >= KraloveWantedMs)) return false;
+    return Usable() && now >= state.kralove.next;
+}
+// The first day asked: this PC's date a week back (UTC's when Windows cannot tell).
+int64_t KraloveFromDay() {
+    const auto epoch = timing.epoch();
+    if (const auto local = LocalTime(epoch)) return DayNumber(local->year, local->month, local->day) - KraloveDaysBack;
+    return (epoch >= 0 ? epoch / 86400 : (epoch - 86399) / 86400) - KraloveDaysBack;
+}
+std::string DateText(int64_t day) {
+    const auto date = CivilDay(day);
+    char text[16]{};
+    std::snprintf(text, sizeof(text), "%04d-%02d-%02d", date.year, date.month, date.day);
+    return text;
+}
+// A reading of the openings handed back by its worker. One made with another
+// key file than the one there now is dropped (Track cleared the copy). Read:
+// kept, read again 10 min later. A lasting problem (no usable quest or server,
+// no such list on the API) drops the openings of a quest no longer chosen and
+// waits 10 min; the key refused or unreadable waits for a usable key (the key
+// row tells it). A passing failure keeps what was read: 30 s, then twice longer
+// up to 15 min (a 429 also holds every request until its Retry-After).
+void KeepKralove(KraloveRead read) {
+    const auto file = Identity(state.keyPath);
+    if (file) Track(*file);
+    if (file && read.file && *read.file != *file) return;
+    const auto now = timing.now();
+    auto& kralove = state.kralove;
+    ++kraloveVersion;
+    kralove.character = std::move(read.character);
+    kralove.tried = true;
+    switch (read.status) {
+    case KraloveStatus::Ready:
+        kralove.status = read.status; kralove.read = true; kralove.server = std::move(read.server); kralove.fromDay = read.fromDay;
+        kralove.openings = std::move(read.openings); kralove.failures = 0; kralove.next = now + RefreshMs;
+        return;
+    case KraloveStatus::NoQuest: case KraloveStatus::SeveralQuests: case KraloveStatus::NoServer: case KraloveStatus::Unavailable:
+        kralove.status = read.status; kralove.read = false; kralove.server.clear(); kralove.openings.clear();
+        kralove.failures = 0; kralove.next = now + RefreshMs;
+        return;
+    case KraloveStatus::Refused: case KraloveStatus::KeyUnreadable:
+        kralove.status = read.status; kralove.next = now + RefreshMs;
+        return;
+    default:
+        break;
+    }
+    if (read.status != KraloveStatus::Loading) kralove.status = read.status;
+    kralove.failures = std::min(kralove.failures + 1, 1000);
+    kralove.next = now + std::min<uint64_t>(BackoffCapMs, BackoffMs << std::min(kralove.failures - 1, 5));
 }
 // A game monster's chat part: none (outside L’éternelle moisson, unknown to the
 // game view, not in the quest, no usable key), unknown (« ? »: the list not read
@@ -966,11 +1173,9 @@ Part ChatPart(int monsterId) {
     const auto game = state.game.monster(monsterId);
     if (!game || game->name.empty()) return {};
     if (!known) return {true, -1, catalog.problem};
-    // Matched once per list read: FindMonster compares every name of the list.
-    std::optional<size_t> entry;
-    if (const auto monster = FindMonster(catalog.monsters, game->name, game->type))
-        for (size_t i = 0; i < catalog.monsters.size() && !entry; ++i)
-            if (catalog.monsters[i].id == monster->id) entry = i;
+    // Matched once per list read, through the list's index (FindMonster's rules):
+    // the maps ask for every missing monster of the quest at once.
+    const auto entry = FindIndexed(catalog.index, game->name, game->type);
     state.matched.emplace(monsterId, entry);
     return entry ? Part{true, catalog.monsters[*entry].quantity} : Part{};
 }
@@ -1040,6 +1245,7 @@ void Collect() {
     if (job->check && !job->told && *job->check == state.known.file && state.known.status == KeyStatus::Saved)
         state.known.status = KeyStatus::Unverified;
     if (job->listed) Keep(std::move(*job->listed));
+    if (job->kraloveRead) KeepKralove(std::move(*job->kraloveRead));
     if (job->off.load()) Discard(false); // turned off while it ran: nothing of it is resumed
 }
 void Start(bool enabled) {
@@ -1050,10 +1256,12 @@ void Start(bool enabled) {
     // The chat part's list: never while a capture waits (the captures go first),
     // nor with a key being saved or forgotten.
     const bool listing = Units(state.book) == 0 && !state.submit && !state.forget && now >= state.book.notBefore && ListingDue(now);
+    // The calendar's openings: likewise.
+    const bool kralove = Units(state.book) == 0 && !state.submit && !state.forget && now >= state.book.notBefore && KraloveDue(now);
     // The key row's check: dropped once its key file's status is known, never before a pause ends.
     if (state.known.status != KeyStatus::Saved) state.check = false;
     const bool check = state.check && now >= state.book.notBefore;
-    if (!due && !check && !listing && !state.submit && !state.forget) return;
+    if (!due && !check && !listing && !kralove && !state.submit && !state.forget) return;
     if (activeJob && !activeJob->done.load()) return;
     auto job = std::make_shared<Job>();
     job->book = std::move(state.book);
@@ -1064,7 +1272,12 @@ void Start(bool enabled) {
     job->forget = std::exchange(state.forget, false);
     job->cycle = due;
     job->listing = listing;
-    if (listing) job->character = Character();
+    job->kralove = kralove;
+    if (listing || kralove) job->character = Character();
+    if (kralove) {
+        job->kraloveFromDay = KraloveFromDay();
+        job->kraloveFrom = DateText(job->kraloveFromDay);
+    }
     if (check) { job->check = state.known.file; state.check = false; }
     job->keyPath = state.keyPath;
     job->transport = state.transport;
@@ -1095,6 +1308,7 @@ void InstallSync(const std::filesystem::path& settingsPath, Transport transport,
         state.notice = std::move(notice);
         state.game = std::move(game);
         state.installed = static_cast<bool>(state.transport);
+        ++kraloveVersion;
         if (const auto file = Identity(state.keyPath)) Track(*file); // a key file there: Saved until checked
         Log(state.installed ? "METAMOB_SYNC_READY" : "METAMOB_SYNC_UNAVAILABLE");
     } catch (...) {
@@ -1129,6 +1343,7 @@ void RestoreSync() {
             try { ForgetKey(state.keyPath); Log("METAMOB_KEY_FORGOTTEN"); } catch (...) { Log("METAMOB_KEY_FORGET_FAILED"); }
         }
         state = State{}; // a key not verified yet is wiped; a running worker ends on its own
+        ++kraloveVersion;
     } catch (...) {}
 }
 void EnqueueCapture(Capture capture) {
@@ -1208,6 +1423,37 @@ void WantMetamobCatalog() {
     if (!state.installed) return;
     state.wanted = true;
     state.wantedAt = timing.now();
+}
+OcreQuantity MetamobOcreQuantity(int monsterId) {
+    try {
+        const auto part = ChatPart(monsterId);
+        if (!part.shown) return {};
+        if (part.quantity >= 0) return {true, part.quantity, OcreList::Read};
+        const auto list = part.problem == QuestProblem::NoQuest ? OcreList::NoQuest :
+            part.problem == QuestProblem::Several ? OcreList::SeveralQuests :
+            state.catalog.failed ? OcreList::Failed : OcreList::NotRead;
+        return {true, -1, list};
+    } catch (...) { return {}; }
+}
+void WantKralove() {
+    if (!state.installed) return;
+    state.kraloveWanted = true;
+    state.kraloveWantedAt = timing.now();
+}
+KraloveView MetamobKralove() {
+    try {
+        KraloveView view;
+        if (!state.installed || !Usable()) return view;
+        const auto& kralove = state.kralove;
+        view.usable = true;
+        view.status = kralove.status;
+        view.read = kralove.read;
+        view.server = kralove.server;
+        view.fromDay = kralove.fromDay;
+        view.openings = kralove.openings;
+        view.version = kraloveVersion;
+        return view;
+    } catch (...) { return {}; }
 }
 // Nothing of the game is held: Restore has nothing to wait for.
 bool SyncCleanupPending() { return false; }

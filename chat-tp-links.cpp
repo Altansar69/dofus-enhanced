@@ -539,13 +539,14 @@ void TickChatTpLinks() {
     }
     state.restoring = false;
     // Each status reader runs only while a label shows its enabled part: with
-    // both unchecked, no inventory or quest data is read at all.
+    // both unchecked, the chat asks for no inventory or quest data at all (the
+    // readers are shared: the maps' Ocre zones may still ask for their own).
     const auto shown = [](LinkPart part) {
         return Enabled(part) && std::any_of(state.labels.begin(),state.labels.end(),[&](const auto& label) {
             return std::any_of(label->links.begin(),label->links.end(),[&](const Link& link) { return link.part == part; });
         });
     };
-    TickChatSoulStatus(shown(LinkPart::Inventory),shown(LinkPart::Ocre));
+    WantSoulStatus(SoulClient::Chat,shown(LinkPart::Inventory),shown(LinkPart::Ocre));
     // The Metamob part reads only the capture sync's cache. While it is checked
     // and a shown label holds a monster group led by a monster of L’éternelle
     // moisson (the only ones a Metamob part can follow), ask the sync to keep that
@@ -588,6 +589,6 @@ void RestoreChatTpLinks() {
         state.stringType.reset(); state.linkColor = {}; state.hoverColor = {};
     }
     state.restoring = false;
-    RestoreChatSoulStatus();
+    WantSoulStatus(SoulClient::Chat,false,false); // only the chat's needs: the maps keep theirs
 }
 bool ChatTpLinksCleanupPending() { return !chat_tp_links::state.labels.empty(); }

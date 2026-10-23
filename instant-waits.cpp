@@ -22,7 +22,7 @@ std::deque<Skipped> skipped;
 int VisualStaggerDelay(int delay, uintptr_t caller) {
     // fxz.bfva's per-entity visual stagger only. Other delay steps, including
     // all loading waits and watchdogs, retain their duration and scheduler.
-    return delay > 0 && caller == gameBase + 0x1E59C24 && InstantCombatEnabled() ? 0 : delay;
+    return delay > 0 && caller == gameBase + 0x1E59C24 && InstantWaitsEnabled() ? 0 : delay;
 }
 void DelayCtorHook(Obj step, int delay, Method method) {
     const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
@@ -58,7 +58,7 @@ void WaitStartHook(Obj waiter, Method method) {
     if (WaitFrame::Contains(waiter)) return;
     bool finish = false;
     try {
-        if (waiter && InstantCombatEnabled() && api.object_get_class(waiter) == waiterClass) {
+        if (waiter && InstantWaitsEnabled() && api.object_get_class(waiter) == waiterClass) {
             if (Read<bool>(waiter, 0x1D)) return;
             finish = WasSkipped(Read<Obj>(waiter, 0x40));
         }
@@ -80,7 +80,7 @@ void WaitStartHook(Obj waiter, Method method) {
 }
 
 void RememberSkippedAnimation(Obj step) {
-    if (!step || !InstantCombatEnabled() ||
+    if (!step || !InstantWaitsEnabled() ||
         !api.class_is_assignable_from(animationClass, api.object_get_class(step))) return;
     const auto now = GetTickCount64();
     Expire(now);
@@ -92,9 +92,9 @@ void ClearInstantWaits() { skipped.clear(); ClearScriptWaits(); ClearCombatClean
 void PumpInstantWaits(bool inCombat) {
     PumpCombatCleanup(inCombat);
     PumpScriptWaits(inCombat);
-    // Cleanup-dependent animations must remain known across animation-mode
-    // changes; they may have been queued before Instantané was selected.
-    if (!inCombat || !InstantCombatEnabled()) { skipped.clear(); ClearScriptWaits(); return; }
+    // Cleanup-dependent animations must remain known across toggle changes;
+    // they may have been queued before an animation toggle was ticked.
+    if (!inCombat || !InstantWaitsEnabled()) { skipped.clear(); ClearScriptWaits(); return; }
     Expire(GetTickCount64());
 }
 void InstallInstantWaits() {

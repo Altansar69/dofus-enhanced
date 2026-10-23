@@ -1,10 +1,12 @@
 #pragma once
+#include "metamob-data.hpp"
 #include "metamob-http.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 // "Synchro des captures": after each archimonster or boss capture, +1 to that
 // monster in the user's Metamob Ocre quest, nothing else. Metamob only takes
 // absolute quantities, so each +1 is a fresh read then an absolute write, kept
@@ -84,5 +86,55 @@ std::string MetamobChatDetail(int monsterId);
 // while a capture waits, a key is being saved or forgotten, nor without a
 // usable key. Called at every chat pump while such a label is shown.
 void WantMetamobCatalog();
+// « Archimonstres manquants » on the maps, game thread, cache only: whether a
+// game monster of the Ocre quest is in the user's Metamob quest (usable false:
+// no usable key, not an Ocre goal, unknown to the game view or not in the
+// quest), its quantity (-1 while the list is not read or its last reading
+// failed) and why there is none. The caller keeps the list fresh with
+// WantMetamobCatalog.
+enum class OcreList {
+    NotRead,       // not read yet
+    Read,          // read: the quantity is the list's
+    Failed,        // the last reading failed: read again automatically
+    NoQuest,       // no Dofus Unity Ocre quest on the account (read again 10 min later)
+    SeveralQuests, // several, none naming this character (read again 10 min later)
+};
+struct OcreQuantity { bool usable = false; int quantity = -1; OcreList list = OcreList::NotRead; };
+OcreQuantity MetamobOcreQuantity(int monsterId);
+// « Ouvertures Kralamoure dans le calendrier » (calendar-kralove.cpp), game
+// thread, cache only: the openings Metamob lists (GET /v1/kralove) for the
+// server of the user's Dofus Unity Ocre quest (the one ChooseQuest picks for
+// this character), from a week before this PC's date on. Read at once the first
+// time, then at most every 10 min while the calendar is shown (it asked within
+// the last second); never while a capture waits, a key is being saved or
+// forgotten, nor without a usable key. Failures are silent: tried again 30 s later, twice
+// longer each time up to 15 min, 10 min after a lasting one (quest, server, no
+// such list); a 429 also waits for its Retry-After, as the captures do.
+enum class KraloveStatus {
+    Loading,        // not read yet
+    Ready,          // read: openings and server below
+    Unreachable,    // no answer, 5xx, or a page that is not Metamob's JSON
+    Busy,           // 429: read again after its Retry-After
+    Refused,        // the key refused (Metamob's JSON 401/403): no longer usable
+    KeyUnreadable,  // the key file cannot be decrypted on this Windows account
+    Unavailable,    // Metamob's JSON 404: no such list on its API
+    Unreadable,     // a JSON answer that does not read as the documented list
+    NoQuest,        // no Dofus Unity Ocre quest on the account: no server to read
+    SeveralQuests,  // several, none naming this character
+    NoServer,       // the chosen quest names no server
+};
+struct KraloveView {
+    bool usable = false;        // a usable key (saved, valid or not verified; no forget under way): nothing below otherwise
+    KraloveStatus status = KraloveStatus::Loading; // the last reading's outcome
+    bool read = false;          // the openings below come from a reading (kept through passing failures)
+    std::string server;         // their server's name
+    int64_t fromDay = 0;        // first day asked (DayNumber): the days before it are not read
+    std::vector<Kralove> openings; // that server's only, by time
+    uint64_t version = 0;       // changes whenever the reading kept here changes
+};
+// The calendar row is shown: keep its openings fresh (see above). Called at
+// every pump while it is shown, and only then.
+void WantKralove();
+KraloveView MetamobKralove();
 bool SyncCleanupPending();
 }
