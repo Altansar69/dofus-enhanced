@@ -829,10 +829,12 @@ void Leave(const char* reason) {
     Log(std::string("ARCHI_ZONES_MODE off reason=") + reason);
 }
 // Entering the Ocre mode leaves the game's anomaly or conquest mode the way its
-// windows' close buttons do: one panel on the right at a time.
+// windows' close buttons do, and the mod's « Ressources » mode: one panel on
+// the right at a time.
 void Toggle(Obj window) {
     if (active) { Leave("square"); return; }
     active = true;
+    resourceMap::CloseResourceTab();
     if (Mode(window) != 0) { int none = 0; api.Invoke(n.leaveMode, window, {&none}); }
     Log("ARCHI_ZONES_MODE on");
 }
@@ -1766,8 +1768,10 @@ void Tick(uint64_t now) {
             EnsureSquare(window);
             if (clicks.square) Toggle(window);
             if (clicks.close) Leave("close");
-            // The game's own anomaly or conquest mode chosen: the Ocre mode leaves.
+            // The game's own anomaly or conquest mode chosen, or the mod's
+            // « Ressources » (resource-map-ui, which ticks after): the Ocre mode leaves.
             if (active && Mode(window) != 0) Leave("game-mode");
+            if (active && resourceMap::ResourceTabOpen()) Leave("resources");
         } catch (const std::exception& e) { Report("square", e); DetachUi(); retryUi = now + 5000; window = nullptr; }
     } else if (!window) {
         // Closed: the Ocre mode ends with it, as the game's own modes do (fhi.OnDisable → bejb(0)).

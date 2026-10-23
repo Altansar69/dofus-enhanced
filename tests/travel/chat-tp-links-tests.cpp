@@ -861,7 +861,7 @@ void DimensionLinks() {
         auto label=MakeLabel(input);Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};
         bindHook(view,Make("Row"),0,nullptr);return label;
     };
-    settings.coordsWorldChat=true;
+    settings.coordsWorldChatMode=2;
     auto sent=Map(2,2,1,"dim-sent"," [2,2]");SentText(sent,"Ma maison [2,2]");
     auto source=Result();Link(source,Map(3,4,1,"dim-map"," [3,4]"));Text(source,Str(" et "));
     Link(source,MonsterGroup(20,-34,2,"dim-group",147));Text(source,Str(" puis [5,6], "));
@@ -907,16 +907,25 @@ void DimensionLinks() {
     for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Links left behind by a redraw get their own text back");
     links=Positions(label);
     // Unchecked: the game's text within a pump, TP untouched; checked again: back.
-    settings.coordsWorldChat=false;pump(1);
+    settings.coordsWorldChatMode=0;pump(1);
     Check(Count(shown(label),"Monde des Douze")==0&&Count(shown(label),"Incarnam")==0&&shown(label).find("<link=dim-map> [3,4]</link>")!=std::string::npos&&
         shown(label).find("<link=dim-sent>Ma maison [2,2]</link>")!=std::string::npos&&TpManagers(label)==tp,
         "Unchecked: the positions show the game's text within a pump; TP stays");
     for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Unchecked: every link has its own text back");
     auto meanwhile=bind(input);
     Check(Count(shown(meanwhile),"Monde des Douze")==0&&TpManagers(meanwhile).size()==9,"Unchecked: a new message keeps the game's position texts");
-    settings.coordsWorldChat=true;pump(1);
+    settings.coordsWorldChatMode=2;pump(1);
     Check(Count(shown(label),"Monde des Douze")==4&&Count(shown(meanwhile),"Monde des Douze")==4&&TpManagers(label)==tp,
         "Checked again: shown messages get their dimensions back within a pump");
+    // « Oui, sauf dans le Monde des Douze »: its positions keep the game's text, the others show their dimension.
+    settings.coordsWorldChatMode=1;pump(1);
+    Check(Count(shown(label),"Monde des Douze")==0&&Count(shown(meanwhile),"Monde des Douze")==0&&
+        shown(label).find("<link=dim-map> [3,4]</link>")!=std::string::npos&&shown(label).find("<link=dim-sent>Ma maison [2,2]</link>")!=std::string::npos&&
+        shown(label).find("<link=dim-group>[20,-34, Incarnam]</link>")!=std::string::npos&&Count(shown(meanwhile),"Incarnam")==1&&TpManagers(label)==tp,
+        "Except the Monde des Douze: its positions keep the game's text within a pump, Incarnam keeps its dimension, TP stays");
+    settings.coordsWorldChatMode=2;pump(1);
+    Check(Count(shown(label),"Monde des Douze")==4&&Count(shown(label),"Incarnam")==1&&Count(shown(meanwhile),"Monde des Douze")==4,
+        "« Oui » again: every dimension is back within a pump");
     // TP unchecked: plain coordinates are plain text again; the links keep their dimension.
     settings.chatTravelLinks=false;pump(2);
     Check(shown(meanwhile).find(" puis [5,6], ")!=std::string::npos&&Count(shown(meanwhile),"Monde des Douze")==4&&TpManagers(meanwhile).empty()&&
@@ -925,9 +934,9 @@ void DimensionLinks() {
     settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=false;pump(2);
     Check(Count(shown(meanwhile),"Monde des Douze")==4&&SeparatorCount(shown(meanwhile))==0&&SeparatorCount(shown(label))==0,
         "The dimension does not depend on the four parts");
-    settings.coordsWorldChat=false;pump(2);
+    settings.coordsWorldChatMode=0;pump(2);
     Check(shown(meanwhile)==native&&Count(shown(label),"Monde")==0,"Everything unchecked: the game's own text, exactly");
-    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=settings.coordsWorldChat=true;pump(2);
+    settings.chatTravelLinks=settings.chatSoulInventory=settings.chatOcreStatus=settings.chatMetamobStatus=true;settings.coordsWorldChatMode=2;pump(2);
     Check(Count(shown(label),"Monde des Douze")==4&&TpManagers(label).size()==9,"All checked again: dimensions and TP are back");
     // A failure reading a link keeps TP and the game's position texts.
     dimensionFails=true;auto failed=bind(input);dimensionFails=false;
@@ -954,13 +963,13 @@ void DimensionLinks() {
     Check(!ChatTpLinksCleanupPending()&&shown(meanwhile)==native&&shown(failed)==native&&shown(label)=="recycled [9,10] ","Cleanup restores the game's texts");
     for(const auto& [id,manager]:links)Check(OwnTextBack(manager),"Cleanup gives every link its own text back");
     Check(handles.size()==baseline,"Cleanup releases every reference");
-    settings.coordsWorldChat=false;
+    settings.coordsWorldChatMode=0;
 }
 // Typed coordinates are remembered per row, 64 ids, the oldest dropped first: a
 // row recycled through many messages never gives a dimension to the typed
 // coordinates of the message it shows, even when a redraw brings their links back.
 void TypedCoordinatesKept() {
-    auto& settings=module->settings;settings.coordsWorldChat=true;
+    auto& settings=module->settings;settings.coordsWorldChatMode=2;
     const auto baseline=handles.size();
     const auto shown=[](Obj label){return Get(Get(label).fields["text"]).text;};
     auto label=MakeLabel(Str("")),view=Make("ChatView"),binding=Make("ChatItemBinding");
@@ -981,21 +990,21 @@ void TypedCoordinatesKept() {
     }
     RestoreChatTpLinks();
     Check(handles.size()==baseline,"Cleanup releases every reference");
-    settings.coordsWorldChat=false;
+    settings.coordsWorldChatMode=0;
 }
 // Its natives unverified, the option leaves every position with the game's
 // text: TP and the statuses keep working.
 void DimensionsUnavailable() {
     Check(std::any_of(logs.begin(),logs.end(),[](const std::string& l){return l.starts_with("CHAT_DIMENSION_DISABLED ");}),
         "A dimension contract mismatch is reported");
-    module->settings.coordsWorldChat=true;
+    module->settings.coordsWorldChatMode=2;
     auto source=Result();Link(source,Map(3,4,1,"dim-map"," [3,4]"));
     auto input=Build(source),label=MakeLabel(input),view=Make("ChatView"),binding=Make("ChatItemBinding");
     Get(binding).fields={{"content",label},{"subContent",MakeLabel(Str(""))}};Get(view).fields["binding"]=binding;
     bindHook(view,Make("Row"),0,nullptr);
     Check(TpManagers(label).size()==1&&Get(Get(label).fields["text"]).text.find("<link=dim-map> [3,4]</link>")!=std::string::npos,
         "Without its natives the dimension is left out, TP stays");
-    RestoreChatTpLinks();module->settings.coordsWorldChat=false;
+    RestoreChatTpLinks();module->settings.coordsWorldChatMode=0;
 }
 
 }
@@ -1059,7 +1068,7 @@ int main(int argc,char** argv){
         fake::colorLayoutAvailable=!fallback;fake::expectExplicitColors=!fallback;fake::dimensionLayoutAvailable=!noDimension;
         // The TP and status scenarios read the game's position texts: the
         // dimension (checked by default) has its own scenario below.
-        fake::Check(owner.settings.coordsWorldChat,"The chat dimension is checked by default");owner.settings.coordsWorldChat=false;
+        fake::Check(owner.settings.coordsWorldChatMode==2,"The chat dimension is shown by default");owner.settings.coordsWorldChatMode=0;
         InstallChatTpLinks(fake::OnClick);
         if(fallback)fake::Check(!fake::logs.empty()&&fake::logs.back().starts_with("CHAT_TP_COLOR_FALLBACK "),
             "Unavailable cosmetic layout must preserve chat TP with a diagnostic instead of aborting module startup");

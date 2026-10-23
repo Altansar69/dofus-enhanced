@@ -40,7 +40,7 @@ std::string Quoted(const std::string& name) { return "« " + name + " »"; }
 std::string Number(int value) { return std::to_string(value); }
 std::string SavedText(const std::string& user) { return "Metamob : clé enregistrée pour le compte " + Quoted(user) + "."; }
 std::string AddedText(const std::string& name, int before, int after) {
-    return "Metamob : +" + Number(after - before) + " " + Quoted(name) + " (" + Number(before) + " → " + Number(after) + ").";
+    return "Metamob : +" + Number(after - before) + " " + Quoted(name) + " (de " + Number(before) + " à " + Number(after) + ").";
 }
 std::string NoKeyText(const std::string& name) {
     return "Metamob : capture de " + Quoted(name) + " non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
@@ -53,7 +53,7 @@ std::string UnreachableText(int pending) {
     return "Metamob injoignable : " + Number(pending) + " capture(s) en attente, nouvel essai automatique.";
 }
 std::string ChangedText(const std::string& name, int before, int after) {
-    return "Metamob : " + Quoted(name) + " a changé pendant l’envoi (" + Number(before) + " → " + Number(after) + ") ; vérifie ta quête sur Metamob.";
+    return "Metamob : " + Quoted(name) + " a changé pendant l’envoi (de " + Number(before) + " à " + Number(after) + ") ; vérifie ta quête sur Metamob.";
 }
 std::string RefusedText(const std::string& name) { return "Metamob : mise à jour refusée pour " + Quoted(name) + "."; }
 // Given up while an earlier send of it may have landed: never said refused

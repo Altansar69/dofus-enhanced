@@ -7,9 +7,11 @@
 #include "appearance/mode-policy.hpp"
 #include "animations/animation-mode-labels.hpp"
 #include "glow/glow-mode-labels.hpp"
+#include "appearance/miniature-category-labels.hpp"
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <span>
 #include <string>
 
 namespace context_display_detail {
@@ -30,11 +32,30 @@ AnimationValues AnimationToggleValues(const Settings& settings) {
     for (size_t index = 0; index < AnimationToggleCount; ++index) values[index] = settings.*AnimationToggles[index];
     return values;
 }
+// « Affichage »: after its three modes, a native checkbox per « Apparence »
+// category of the menu's context (six in combat, five out of combat), in the
+// options block's order, as « Surbrillance » shows its PNJ after its levels.
+constexpr size_t MaxCategoryCount = CombatMiniatureLabels.size();
+static_assert(RoleplayMiniatureLabels.size() <= MaxCategoryCount);
+using CategoryValues = std::array<bool, MaxCategoryCount>;
+std::span<bool Settings::* const> CategoryToggles(bool combat) {
+    if (combat) return CombatMiniatureToggles;
+    return RoleplayMiniatureToggles;
+}
+CategoryValues CategoryToggleValues(const Settings& settings, bool combat) {
+    CategoryValues values{};
+    const auto toggles = CategoryToggles(combat);
+    for (size_t index = 0; index < toggles.size(); ++index) values[index] = settings.*toggles[index];
+    return values;
+}
 struct OwnedMenu {
     Ref menu, maker, cached, option, original, before, after, replacement, submenu;
     Ref animationReplacement, animationSubmenu;
     Ref glowReplacement, glowSubmenu;
     std::array<Choice, 3> choices;
+    std::array<Choice, MaxCategoryCount> categories;
+    CategoryValues categoryValues{};
+    size_t categoryCount = 0;
     std::array<Choice, AnimationToggleCount> animationToggles;
     AnimationValues animations{};
     std::array<Choice, 4> glowChoices;
@@ -173,6 +194,7 @@ void SyncCheckboxViews(Obj submenu, const Choice* choices, bool* values, size_t 
     }
 }
 void SyncCheckboxViews(OwnedMenu& owned) {
+    SyncCheckboxViews(owned.submenu.get(), owned.categories.data(), owned.categoryValues.data(), owned.categoryCount);
     SyncCheckboxViews(owned.animationSubmenu.get(), owned.animationToggles.data(), owned.animations.data(), AnimationToggleCount);
     SyncCheckboxViews(owned.glowSubmenu.get(), owned.glowCategories.data(), owned.glowIncludes.data(), owned.glowCategories.size());
 }
@@ -184,6 +206,9 @@ void Sync(OwnedMenu& owned) {
         api.Call(owned.choices[i].item.get(), "set_isOn", {&selected});
     }
     owned.mode = mode;
+    owned.categoryValues = CategoryToggleValues(module->settings, owned.combat);
+    for (size_t i = 0; i < owned.categoryCount; ++i)
+        api.Call(owned.categories[i].item.get(), "set_isOn", {&owned.categoryValues[i]});
     owned.animations = AnimationToggleValues(module->settings);
     for (size_t i = 0; i < AnimationToggleCount; ++i)
         api.Call(owned.animationToggles[i].item.get(), "set_isOn", {&owned.animations[i]});
@@ -255,6 +280,18 @@ void BuildSubmenu(Ref& submenu, Ref& replacement, Choice* choices, int count,
     }
     SubmenuEntry(submenu.get(), replacement, caption, disabled, icon);
 }
+// The context's « Apparence » categories, below a separator in « Affichage ».
+// Like the PNJ of « Surbrillance », they can be ticked in any mode; they only
+// change the miniatures.
+void BuildMiniatureCategories(OwnedMenu& owned) {
+    owned.categoryCount = owned.combat ? CombatMiniatureLabels.size() : RoleplayMiniatureLabels.size();
+    owned.categoryValues = CategoryToggleValues(module->settings, owned.combat);
+    api.Call(owned.submenu.get(), "AppendSeparator");
+    AppendCheckboxes(owned.submenu.get(), owned.categories.data(),
+        owned.combat ? CombatMiniatureLabels.data() : RoleplayMiniatureLabels.data(),
+        owned.combat ? CombatMiniatureHelps.data() : RoleplayMiniatureHelps.data(),
+        owned.categoryValues.data(), owned.categoryCount, "Unexpected miniature category checkbox callback handler");
+}
 // « Animations »: the six toggles as checkboxes, available whatever the
 // native creature row's state (the setting is independent of it).
 void BuildAnimationSubmenu(OwnedMenu& owned) {
@@ -309,6 +346,7 @@ void Augment(Obj maker, Obj menu) {
     const bool disabled = api.Value<bool>(api.Call(owned->original.get(), "get_disabled"));
     // Allocate all owned rows before the first native list mutation.
     BuildSubmenu(owned->submenu, owned->replacement, owned->choices.data(), 3, Labels, "Affichage", owned->mode, disabled, DisplayIcon);
+    BuildMiniatureCategories(*owned);
     BuildAnimationSubmenu(*owned);
     BuildSubmenu(owned->glowSubmenu, owned->glowReplacement, owned->glowChoices.data(), 4,
         GlowModeLabels.data(), "Surbrillance", owned->glowMode, false, DisplayIcon, false);
@@ -339,10 +377,12 @@ void CallbackHook(Obj callback, Obj view, Method method) {
     if (HandleSoulGroupMenuCallback(callback, view)) return;
     if (HandleSpousePartyMenuCallback(callback, view)) return;
     auto* owned = state.owned.get();
-    int selected = -1, glowCategory = -1;
+    int selected = -1, glowCategory = -1, category = -1;
     bool animation = false, glow = false;
     if (owned) for (int index = 0; index < 3; ++index)
         if (owned->choices[index].callback.get() == callback) { selected = index; break; }
+    if (owned && selected < 0) for (int index = 0; index < static_cast<int>(owned->categoryCount); ++index)
+        if (owned->categories[index].callback.get() == callback) { selected = index; category = index; break; }
     if (owned && selected < 0) for (int index = 0; index < static_cast<int>(AnimationToggleCount); ++index)
         if (owned->animationToggles[index].callback.get() == callback) { selected = index; animation = true; break; }
     if (owned && selected < 0) for (int index = 0; index < 4; ++index)
@@ -353,7 +393,8 @@ void CallbackHook(Obj callback, Obj view, Method method) {
     // Known handlers have null managed actions. Never forward a mismatched/stale
     // invocation to the native creature toggle, and never identify rows by their text.
     try {
-        const auto& choice = glowCategory >= 0 ? owned->glowCategories[glowCategory] : glow ? owned->glowChoices[selected] : animation ? owned->animationToggles[selected] : owned->choices[selected];
+        const auto& choice = category >= 0 ? owned->categories[category] : glowCategory >= 0 ? owned->glowCategories[glowCategory] :
+            glow ? owned->glowChoices[selected] : animation ? owned->animationToggles[selected] : owned->choices[selected];
         const auto submenu = glow ? owned->glowSubmenu.get() : animation ? owned->animationSubmenu.get() : owned->submenu.get();
         const auto replacement = glow ? owned->glowReplacement.get() : animation ? owned->animationReplacement.get() : owned->replacement.get();
         if (!owned->armed || state.busy || !SameContext(*owned) || !Is(view, state.viewClass) ||
@@ -363,7 +404,8 @@ void CallbackHook(Obj callback, Obj view, Method method) {
             api.Value<bool>(api.Call(choice.item.get(), "get_disabled"))) return;
         BusyGuard busy;
         auto next = module->settings;
-        if (glowCategory == 0) next.glowNpcs = !next.glowNpcs;
+        if (category >= 0) { auto field = CategoryToggles(owned->combat)[category]; next.*field = !(next.*field); }
+        else if (glowCategory == 0) next.glowNpcs = !next.glowNpcs;
         else if (glowCategory == 1) next.glowInteractives = !next.glowInteractives;
         else if (glow) next.monsterGlowMode = selected;
         else if (animation) { auto field = AnimationToggles[selected]; next.*field = !(next.*field); }
@@ -426,6 +468,7 @@ void TickContextDisplayMenu() {
         // Native views snapshot state during creation. Closing when preferences
         // change elsewhere avoids presenting stale radio marks, checkbox marks or a stale choice.
         if (ActiveDisplayMode(module->settings, state.owned->combat) != state.owned->mode ||
+            CategoryToggleValues(module->settings, state.owned->combat) != state.owned->categoryValues ||
             AnimationToggleValues(module->settings) != state.owned->animations ||
             module->settings.monsterGlowMode != state.owned->glowMode ||
             module->settings.glowNpcs != state.owned->glowIncludes[0] ||

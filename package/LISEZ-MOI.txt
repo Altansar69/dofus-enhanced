@@ -10,7 +10,42 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.13.1
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.14.0
+
+VERSION 1.14.0 : PERFORMANCES DÉPLAÇABLES, GPU ET DISQUE, ONGLET RESSOURCES
+- Performances : le cadre des FPS se fait glisser à la souris et garde sa
+  place, même après un redémarrage ou un changement de résolution ; les
+  clics sur le cadre ne vont pas au jeu (« Déplacer l’affichage à la
+  souris », coché par défaut ; décoché, il reprend son coin). Une
+  quatrième ligne donne la charge du GPU due au jeu et l’activité du
+  disque où il est installé, par exemple « GPU 23 % · Disque C: 4 % ·
+  1,2 Mo/s » (« Charge du GPU » et « Activité du disque », cochées par
+  défaut).
+- Grande carte : « Ressources » devient un vrai mode de la carte, comme
+  « Anomalies » : un carré dans la colonne des modes ouvre une fenêtre
+  faite comme celles du jeu, à la place de l’ancien volet sombre. Un seul
+  mode à la fois, Ocre compris ; la sélection et les repères ne changent
+  pas.
+- Mini-carte : le fond noir de l’infobulle englobe toutes ses lignes,
+  nom de la zone compris.
+- Apparence : nouvelle case « PNJ » dans les miniatures hors combat,
+  décochée par défaut : la plupart des PNJ n’étaient jamais réduits, et
+  ceux qui l’étaient gardent désormais leur taille tant que la case reste
+  décochée. Les cases
+  des miniatures sont aussi dans le clic droit sur la carte → Affichage,
+  comme celles de la Surbrillance.
+- Chat : « Dimension avec les coordonnées dans le chat » devient une
+  liste : Non, Oui sauf dans le Monde des Douze, ou Oui (l’ancienne case
+  cochée donne « Oui »).
+- Chat : le message Metamob après une capture écrit « (de 0 à 1) » ; la
+  flèche n’existe pas dans la police du jeu et laissait un blanc. De même
+  pour les boutons Précédentes / Suivantes de l’XP des métiers, l’infobulle
+  des indices de la chasse au trésor et le « menu … » du carnet compact.
+- Correctif : se déconnecter, changer de personnage ou subir une
+  reconnexion automatique arrêtait le mod jusqu’au redémarrage du jeu ;
+  il attend maintenant le retour en jeu.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.13.1 : PUBLICATIONS NOMMÉES PAR VERSION
 - Les publications GitHub portent désormais le numéro de version (v1.13.0,
@@ -1806,7 +1841,8 @@ s’applique pas aux joueurs. Même réglage en combat et hors combat.
 Les proportions sont conservées. Aucun choix de méthode ou pourcentage.
 L’ancien réglage Uniformiser est ignoré ; les autres préférences persistent.
 Réinitialiser Mod remet Miniatures en combat, Normal hors combat, Animations
-Raccourcies, la surbrillance derrière l’interface et les sept cases activées. Les positions des modules sont conservées.
+Raccourcies, la surbrillance derrière l’interface et les cases des catégories
+activées, sauf PNJ. Les positions des modules sont conservées.
 
 RACCOURCIS D'AFFICHAGE
 L'emplacement de l'ancien bouton créature propose les trois choix :
@@ -1818,9 +1854,12 @@ directement dès que les services et la barre sont disponibles, sans premier cli
 Le sélecteur affiche le choix courant, abrégé N / C / M quand sa case est
 étroite. Son infobulle et sa liste conservent les trois noms complets.
 Un clic droit sur la carte propose Affichage > Normal / Créatures / Miniatures.
-Le mode courant est coché et sélectionner une ligne ferme le menu normalement.
-Juste en dessous, Animations propose Normal / Raccourcies / Sans animations des
-combattants (expérimental) / Instantané (expérimental). Le mode actuel est coché.
+Le mode courant est coché et sélectionner un mode ferme le menu normalement.
+Depuis la 1.14.0, sous ces trois choix, les cases des catégories des miniatures
+du contexte courant (six en combat, cinq hors combat dont PNJ) se cochent sans
+fermer le menu, comme dans Options → Dofus Enhanced → Apparence.
+Juste en dessous, Animations propose les six cases du bloc Animations des
+options (depuis la 1.12.0).
 Cette sélection ne change ni l'apparence ni la taille des personnages.
 Les autres entrées du menu natif sont conservées. Si le contexte ou la session
 change pendant que ce menu est ouvert, ses anciens choix ne sont plus appliqués.
@@ -1917,7 +1956,7 @@ bloque le chargement jusqu’à nouvelle vérification.
 
 SOURCES
 Le code source (C++, avec MinHook et nlohmann/json) est publié sur
-https://github.com/Altansar69/dofus-miniatures. Recompiler avec Visual Studio
+https://github.com/Altansar69/dofus-enhanced. Recompiler avec Visual Studio
 C++ x64, CMake et Ninja : build.ps1, puis ctest --test-dir build
 --output-on-failure. Les binaires propriétaires de Dofus ne sont pas fournis.
 

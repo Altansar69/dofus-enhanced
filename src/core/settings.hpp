@@ -45,12 +45,14 @@ struct Settings {
     bool coordsWorldMiniMap = true; // Cartes : [x, y, dimension] pour les coordonnées de la mini-carte
     bool notebookPingButton = true; // Carnet : bouton de repère sur la carte à droite de chaque position
     bool mapAddPosition = true; // Carnet : « Ajouter aux positions » au clic droit d'une case des cartes
-    bool coordsWorldChat = true; // Chat : [x, y, dimension] pour les positions partagées
+    // Chat : dimension des positions partagées, [x, y, dimension] (une liste, plus
+    // une case depuis la 1.14.0) : 0 non, 1 oui sauf dans le Monde des Douze, 2 oui.
+    int coordsWorldChatMode = 2;
     bool perfOverlay = false; // Performances : images par seconde et mémoire dans un coin de l'écran
     int perfOverlayCorner = 0; // 0 en haut à gauche, 1 en haut à droite, 2 en bas à gauche, 3 en bas à droite
     // 1.14.0: the overlay's extra figures and its mouse placement (ExtraToggles).
     bool perfOverlayGpu = true; // Performances : charge du GPU (part du jeu) dans l'affichage
-    bool perfOverlayDisk = true; // Performances : activité du disque (débit du jeu, temps d'activité de son disque)
+    bool perfOverlayDisk = true; // Performances : le disque du jeu (temps d'activité, débit de tous les programmes)
     bool perfOverlayDrag = true; // Performances : l'affichage se déplace en le faisant glisser au clic gauche
     // Place choisie à la souris : le coin haut gauche du cadre, en dix-millièmes
     // de la place libre (largeur ou hauteur de l'écran moins celle du cadre),
@@ -59,11 +61,13 @@ struct Settings {
     int perfOverlayX = -1, perfOverlayY = -1;
     // Apparence : avec le mode Miniatures, chaque catégorie cochée est réduite et
     // les autres gardent leur taille normale (Créatures reste pour tous). Par
-    // défaut toutes cochées, comme avant ces cases.
+    // défaut cochées comme avant ces cases, sauf les PNJ, que le jeu ne laissait
+    // jamais réduire (1.14.0).
     bool miniatureSelf = true, miniatureAllies = true, miniatureAllySummons = true; // en combat : moi, joueurs alliés, invocations alliées
     bool miniatureOwnSummons = true, miniatureEnemies = true, miniatureEnemySummons = true; // mes invocations, ennemis, invocations ennemies
     bool roleplayMiniatureSelf = true, roleplayMiniatureParty = true; // hors combat : moi, membres du groupe
     bool roleplayMiniaturePlayers = true, roleplayMiniatureMonsters = true; // autres joueurs, monstres
+    bool roleplayMiniatureNpcs = false; // PNJ
     // Animations (en combat) : une case par mécanisme. Les valeurs par défaut
     // sont l'ancien mode « Raccourcies » ; animationMode (0 à 3) n'est plus
     // qu'écrit pour les révisions antérieures et lu quand ces clés manquent.
@@ -100,6 +104,7 @@ struct Settings {
     }
     static bool ValidMonsterGlowMode(int value) { return value >= 0 && value <= 3; }
     static bool ValidPerfOverlayCorner(int value) { return value >= 0 && value <= 3; }
+    static bool ValidCoordsWorldChatMode(int value) { return value >= 0 && value <= 2; }
     static bool ValidPerfOverlayPlace(int value) { return value >= -1 && value <= 10000; }
     static bool ValidPerfOverlayPlace(int x, int y) {
         return ValidPerfOverlayPlace(x) && ValidPerfOverlayPlace(y) && (x < 0) == (y < 0);
@@ -126,9 +131,9 @@ inline constexpr bool Settings::* CombatMiniatureToggles[] = {
     &Settings::miniatureOwnSummons, &Settings::miniatureEnemies, &Settings::miniatureEnemySummons};
 inline constexpr bool Settings::* RoleplayMiniatureToggles[] = {
     &Settings::roleplayMiniatureSelf, &Settings::roleplayMiniatureParty,
-    &Settings::roleplayMiniaturePlayers, &Settings::roleplayMiniatureMonsters};
+    &Settings::roleplayMiniaturePlayers, &Settings::roleplayMiniatureMonsters, &Settings::roleplayMiniatureNpcs};
 // The checkboxes added in 1.13.0 and 1.14.0, in the order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName, &Settings::coordsWorldMap, &Settings::coordsWorldMiniMap,
-    &Settings::notebookPingButton, &Settings::mapAddPosition, &Settings::coordsWorldChat, &Settings::perfOverlay,
+    &Settings::notebookPingButton, &Settings::mapAddPosition, &Settings::perfOverlay,
     &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag};

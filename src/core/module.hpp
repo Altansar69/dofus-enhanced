@@ -22,6 +22,9 @@ struct Module {
     bool servicesReady = false;
     bool startupConfirmed = false;
     bool waitingForAccountOptions = false;
+    // Logged out, reconnecting or choosing a character: the account options
+    // are unbound until the next binding; Pump waits instead of failing.
+    bool accountOptionsUnbound = false;
     bool previousCombat = false;
     std::atomic_bool stopped{false};
     std::atomic_bool ready{false};

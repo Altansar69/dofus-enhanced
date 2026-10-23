@@ -15,8 +15,8 @@
 
 // The production map info against an offline cartography: the game's tooltip
 // of the hovered cell (fhw.berz, then CartographyTooltipBuilder.Update writing
-// « [x,y] » and the zaap price), its template and the maps' dimensions. No
-// client, no input.
+// « [x,y] » and the zaap price), its template, the layout of its coordinates
+// box and the maps' dimensions. No client, no input.
 namespace fake {
 using namespace managed;
 struct Type { std::string name; Type* parent = nullptr; };
@@ -37,6 +37,10 @@ struct Object {
     StyleLengthValue minWidth{0, 0, 1};
     StyleFloatValue flexShrink{0, 1};
     bool shown = true, upperCase = false;
+    // DofusLabel: single-line by default, with the one-line height of its text
+    // style inline (SetTextHeight); not single-line, no inline height.
+    bool singleLine = true;
+    StyleLengthValue height{0, 0, 1};
 };
 std::map<std::string, std::unique_ptr<Type>> types;
 std::vector<std::unique_ptr<Object>> objects;
@@ -49,7 +53,7 @@ std::vector<uintptr_t> hookRvas;
 std::vector<std::string> logs;
 std::string failMethod, failVerified;
 uintptr_t failHook = 0;
-int berzCalls = 0, updateCalls = 0, textWrites = 0;
+int berzCalls = 0, updateCalls = 0, textWrites = 0, singleLineWrites = 0;
 bool measureWorks = true;
 void Check(bool value, const std::string& message) { if (!value) throw std::runtime_error(message); }
 Type* Class(const std::string& name) {
@@ -81,6 +85,9 @@ mapInfo::Vec2 Measure(const std::string& text) {
     }
     return {(std::max)(widest, current), 18 * lines};
 }
+// The text style's --line-height: the inline height of a single-line DofusLabel.
+constexpr float LineHeight = 16;
+StyleLengthValue OneLine() { return {LineHeight, 0, 0}; }
 
 // ------------------------------------------------------------ the game
 using BerzFn = void(*)(Obj, mapInfo::Vec2, Obj, Method);
@@ -106,6 +113,7 @@ void BuildTemplate(bool named = true, const char* coordsName = "ctr_coords") {
     Get(templateRoot).parent = tooltipRoot; Get(tooltip).parent = templateRoot; Get(row).parent = tooltip;
     Get(ctrCoords).parent = row; Get(label).parent = ctrCoords; Get(ctrZaap).parent = row; Get(priceLabel).parent = ctrZaap;
     for (auto element : {tooltipRoot, templateRoot, tooltip, row, ctrCoords, label, ctrZaap, priceLabel}) Get(element).panel = panel;
+    Get(label).height = OneLine(); Get(priceLabel).height = OneLine(); // styled by the game: one line each
 }
 // fhw.berz: a new CartographyTooltipBuilder for these infos, set up by the
 // tooltip service, which calls its Update (SetupViewWithContent).
@@ -160,6 +168,16 @@ Obj Invoke(Method method, Obj self, std::initializer_list<void*> arguments) {
         Check(o.type->name == "DofusLabel", "Each label measures its own text");
         const auto nan = std::numeric_limits<float>::quiet_NaN();
         return Box(measureWorks ? Measure(Get(static_cast<Obj>(args[0])).text) : mapInfo::Vec2{nan, nan}, "Vector2");
+    }
+    if (m.name == "get_isSingleLine" || m.name == "set_isSingleLine") {
+        const bool getter = m.name == "get_isSingleLine";
+        Check(t == "DofusLabel" && m.rva == (getter ? 0x1593B70u : 0x1593FB0u), "Only the verified DofusLabel.isSingleLine");
+        if (getter) return Box(o.singleLine, "Boolean");
+        // DofusLabel.set_isSingleLine: a change gives the one-line height
+        // (single-line) or drops it (SetTextHeight).
+        const bool single = *static_cast<bool*>(args[0]);
+        if (single != o.singleLine) { o.singleLine = single; o.height = single ? OneLine() : StyleLengthValue{0, 0, 1}; ++singleLineWrites; }
+        return nullptr;
     }
     if (m.name == "get_parent") return o.parent;
     if (m.name == "get_name") return String(t == "VisualElement" ? o.name : o.text);
@@ -293,6 +311,27 @@ bool OwnWidth() { return MinWidth().keyword == 1; }                 // the templ
 bool NoShrink() { const auto s = Get(ctrCoords).flexShrink; return s.keyword == 0 && s.value == 0; }
 bool OwnShrink() { return Get(ctrCoords).flexShrink.keyword == 1; }
 bool Widened(float width) { return MinWidth().keyword == 0 && MinWidth().unit == 0 && MinWidth().value == width; }
+// The fixture's layout of the row: the lines #lbl_coords shows at the width its
+// box gets (the root's 154 px or its minimum width, less the box padding and the
+// zaap price box), and the lines its black box (#ctr_coords' background) holds:
+// one for a single-line label (its fixed one-line height), every line otherwise.
+int ShownLines() {
+    const auto root = MinWidth();
+    float room = (std::max)(154.0f, root.keyword == 0 ? root.value : 0.0f) - 20;
+    if (Get(ctrZaap).shown) room -= Zaap + Measure(Get(priceLabel).text).x;
+    const auto text = Text();
+    int lines = 0;
+    for (size_t start = 0;;) {
+        const auto end = text.find('\n', start);
+        const auto width = Measure(text.substr(start, end == std::string::npos ? std::string::npos : end - start)).x;
+        lines += (std::max)(1, static_cast<int>(std::ceil(width / room)));
+        if (end == std::string::npos) return lines;
+        start = end + 1;
+    }
+}
+bool Encloses() { return (Get(label).singleLine ? 1 : ShownLines()) == ShownLines(); }
+// The label's own setting, as the game styled it: single-line, one line high.
+bool OwnLine() { return Get(label).singleLine && Get(label).height.keyword == 0 && Get(label).height.value == LineHeight; }
 void Options(bool zone, bool bigCoords, bool miniCoords) {
     auto& o = module->settings;
     o.miniMapZoneName = zone; o.coordsWorldMap = bigCoords; o.coordsWorldMiniMap = miniCoords;
@@ -315,6 +354,7 @@ void Contracts() {
     Check(guards.at("fhw.berz") == 0x1BEF880 && guards.at("CartographyTooltipBuilder.Update") == 0x15EFCA0 &&
         guards.at("CartographyTooltipBinding.get_lbl_coords") == 0x2EA53C0 && guards.at("CartographyTooltipBinding.get_lbl_zaapPrice") == 0x2EA55D0 &&
         guards.at("DofusLabel.set_text") == 0x1594570 && guards.at("DofusLabel.get_text") == 0x1593FA0 &&
+        guards.at("DofusLabel.get_isSingleLine") == 0x1593B70 && guards.at("DofusLabel.set_isSingleLine") == 0x1593FB0 &&
         guards.at("TextElement.MeasureTextSize") == 0x5645AF0 && guards.at("SubAreaData.get_name") == 0x7D0F60 &&
         guards.at("WorldMapData.get_name") == 0x7D3DE0 && guards.at("VisualElement.get_parent") == 0x55F7180 &&
         guards.at("VisualElement.get_name") == 0x3158710 && guards.at("VisualElement.get_panel") == 0x55F7170 &&
@@ -339,18 +379,21 @@ void DefaultOptions() {
     Check(berzCalls == 1 && updateCalls == 1, "The game's own tooltip is created and updated once");
     Check(Text() == Village + "\n" + TwelveCoords, "Mini-map: the zone above [x,y, dimension]");
     Check(Widened(7 * 24 + Row) && NoShrink(), "The coordinates box keeps its width and the root gets the measured row");
-    Check(Get(tooltipRoot).minWidth.keyword == 1 && Get(label).minWidth.keyword == 1 && Get(ctrZaap).flexShrink.keyword == 1,
-        "Only the cartography template's root and coordinates box change");
+    Check(!Get(label).singleLine && Get(label).height.keyword == 1 && ShownLines() == 2 && Encloses(),
+        "Two lines: the label is not single-line, its black box holds both");
+    Check(Get(tooltipRoot).minWidth.keyword == 1 && Get(label).minWidth.keyword == 1 && Get(ctrZaap).flexShrink.keyword == 1 &&
+        Get(priceLabel).singleLine && Get(priceLabel).height.value == LineHeight,
+        "Only the cartography template's root, coordinates box and label change");
     Hover(big, 3, -20, amakna);
-    Check(Text() == TwelveCoords && Widened(7 * 24 + Row), "Big map: [x,y, dimension], never the zone name");
+    Check(Text() == TwelveCoords && Widened(7 * 24 + Row) && OwnLine(), "Big map: [x,y, dimension], never the zone name, on the label's own line");
     Hover(big, -1, 13);
     Check(Text() == "[-1,13, Monde" + Nbsp + "des" + Nbsp + "Douze]", "Big map without a zone keeps its dimension");
     Get(big).fields["<dugi>k__BackingField"] = incarnam;
     Hover(big, 4, -2);
     Check(Text() == "[4,-2, Incarnam]" && OwnWidth() && NoShrink(), "The shown world names the dimension; a short row keeps the template's width");
     Get(big).fields["<dugi>k__BackingField"] = twelve;
-    Check(std::count(logs.begin(), logs.end(), "MAP_INFO_TOOLTIP view=mini width=190") == 1 &&
-        std::count_if(logs.begin(), logs.end(), [](const std::string& l) { return l.starts_with("MAP_INFO_TOOLTIP view=big"); }) == 1,
+    Check(std::count(logs.begin(), logs.end(), "MAP_INFO_TOOLTIP view=mini width=190 lines=several") == 1 &&
+        std::count_if(logs.begin(), logs.end(), [](const std::string& l) { return l.starts_with("MAP_INFO_TOOLTIP view=big") && l.ends_with(" lines=one"); }) == 1,
         "The first rewritten tooltip of each map is logged once");
 }
 // A zaap cell: the game shows its price box beside the coordinates; the row's
@@ -359,18 +402,19 @@ void ZaapPrice() {
     Hover(mini, 3, -20, amakna, true, 1234);
     Check(Text() == Village + "\n" + TwelveCoords && Get(priceLabel).text == "1234" && Get(ctrZaap).shown, "The game shows the zaap price");
     Check(Widened(7 * 24 + Row + Zaap + 7 * 4) && NoShrink(), "The row holds the coordinates and the price box");
+    Check(!Get(label).singleLine && ShownLines() == 2 && Encloses() && Get(priceLabel).singleLine, "Beside the price, the coordinates' box holds both lines");
     Hover(big, 3, -20, nullptr, true, 0);
-    Check(Text() == TwelveCoords && Widened(7 * 24 + Row + Zaap + 7 * 1), "A free zaap is a price box too");
+    Check(Text() == TwelveCoords && Widened(7 * 24 + Row + Zaap + 7 * 1) && OwnLine(), "A free zaap is a price box too");
     Get(big).fields["<dugi>k__BackingField"] = incarnam;
     Hover(big, 4, -2, nullptr, true, 250);
-    Check(Text() == "[4,-2, Incarnam]" && Widened(7 * 16 + Row + Zaap + 7 * 3), "Even a short text needs the room of both boxes");
+    Check(Text() == "[4,-2, Incarnam]" && Widened(7 * 16 + Row + Zaap + 7 * 3) && OwnLine() && Encloses(), "Even a short text needs the room of both boxes");
     Get(big).fields["<dugi>k__BackingField"] = twelve;
     // The zaap prices arrive later: the game updates the same tooltip again.
     auto infos = Hover(mini, 3, -20, amakna);
     Check(Widened(7 * 24 + Row), "Without a price, the coordinates box alone");
     Get(infos).slots["zaapPrice"] = 98765;
     updateHook(lastBuilder, infos, nullptr);
-    Check(Text() == Village + "\n" + TwelveCoords && Widened(7 * 24 + Row + Zaap + 7 * 5), "A later price Update widens the same tooltip");
+    Check(Text() == Village + "\n" + TwelveCoords && Widened(7 * 24 + Row + Zaap + 7 * 5) && Encloses(), "A later price Update widens the same tooltip");
     // Text the label cannot measure yet (no panel or font): the estimate, 8 px a code point.
     measureWorks = false;
     Hover(mini, 3, -20, amakna, true, 1234);
@@ -382,48 +426,51 @@ void ZaapPrice() {
     Check(Text() == "VILLAGE D\xE2\x80\x99" "AMAKNA\n[3,-20, MONDE" + Nbsp + "DES" + Nbsp + "DOUZE]" && mapInfo::s.shown == Text(),
         "A text case of the label is what this module remembers as shown");
     RestoreMapInfo();
-    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink(), "With a text case the cleanup still gives the game's text back");
+    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine(), "With a text case the cleanup still gives the game's text back");
     Get(label).upperCase = false;
 }
 void EachOption() {
     Options(false, true, true);
     Hover(mini, 3, -20, amakna);
-    Check(Text() == TwelveCoords && Widened(7 * 24 + Row), "Zone name off: the mini-map keeps its dimension");
+    Check(Text() == TwelveCoords && Widened(7 * 24 + Row) && OwnLine(), "Zone name off: the mini-map keeps its dimension, on one line");
     Options(true, true, false);
     Hover(mini, 3, -20, amakna);
-    Check(Text() == Village + "\n[3,-20]" && OwnWidth() && NoShrink(), "Mini-map dimension off: the zone above the game's coordinates");
+    Check(Text() == Village + "\n[3,-20]" && OwnWidth() && NoShrink() && !Get(label).singleLine && Encloses(),
+        "Mini-map dimension off: the zone above the game's coordinates, both in the box");
     Hover(big, 3, -20, amakna);
     Check(Text() == TwelveCoords, "The big map follows its own option");
     Options(false, true, false);
     Hover(mini, 3, -20, amakna);
-    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink(), "Both mini-map options off: the game's own tooltip and template");
+    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine(), "Both mini-map options off: the game's own tooltip and template");
     Options(true, false, true);
     Hover(big, 3, -20, amakna);
-    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink(), "Big map option off: the game's own tooltip and template");
+    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine(), "Big map option off: the game's own tooltip and template");
     Hover(mini, 3, -20, longZone);
-    Check(Text() == Get(longZone).text + "\n" + TwelveCoords && Widened(7 * 36 + Row), "A long zone name widens the row to its line");
+    Check(Text() == Get(longZone).text + "\n" + TwelveCoords && Widened(7 * 36 + Row) && ShownLines() == 2 && Encloses(),
+        "A long zone name widens the row to its line");
     auto huge = Make("SubAreaData"); Get(huge).text = std::string(80, 'z');
     Hover(mini, 3, -20, huge);
-    Check(Widened(480) && NoShrink(), "The root's width is bounded; the box keeps its line");
+    Check(Widened(480) && NoShrink() && ShownLines() == 3 && !Get(label).singleLine && Encloses(),
+        "The root's width is bounded: the zone wraps, its box holds every line");
     const auto calls = berzCalls;
     Options(false, false, false);
     auto quiet = Hover(mini, 3, -20, amakna);
-    Check(berzCalls == calls + 1 && Text() == "[3,-20]" && OwnWidth() && OwnShrink() && !mapInfo::Lookup(quiet) && mapInfo::s.records.size() <= 8,
-        "All off: the hooks pass the game's tooltip through, remember nothing and give the template back");
+    Check(berzCalls == calls + 1 && Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine() && !mapInfo::Lookup(quiet) &&
+        mapInfo::s.records.size() <= 8, "All off: the hooks pass the game's tooltip through, remember nothing and give the template back");
     TickMapInfo();
     Check(!MapInfoCleanupPending() && mapInfo::s.records.empty(), "All off: nothing of this module stays");
     Options(true, true, true);
 }
 void EdgeCases() {
     Hover(mini, 3, -20, amakna, false);
-    Check(Text() == "[3,-20]" && !Get(ctrCoords).shown && OwnShrink(), "Coordinates the game hides stay the game's");
+    Check(Text() == "[3,-20]" && !Get(ctrCoords).shown && OwnShrink() && OwnLine(), "Coordinates the game hides stay the game's");
     Hover(other, 3, -20, amakna);
     Check(Text() == "[3,-20]", "An unknown cartography view keeps the game's tooltip");
     Hover(mini, 7, 7);
     Check(Text() == "[7,7, Monde" + Nbsp + "des" + Nbsp + "Douze]", "No zone under the cell: the dimension only");
     Get(mini).fields["<dugi>k__BackingField"] = nameless;
     Hover(mini, 3, -20, amakna);
-    Check(Text() == Village + "\n[3,-20]", "A world without a name: the zone and the game's coordinates");
+    Check(Text() == Village + "\n[3,-20]" && !Get(label).singleLine && Encloses(), "A world without a name: the zone and the game's coordinates");
     Get(mini).fields["<dugi>k__BackingField"] = nullptr;
     const auto writes = textWrites;
     Hover(mini, 3, -20);
@@ -438,23 +485,24 @@ void EdgeCases() {
     for (int i = 0; i < 8; ++i) Hover(big, i, i);
     Get(label).text = "[3,-20]";
     updateHook(lastBuilder, infos, nullptr);
-    Check(Text() == "[3,-20]" && mapInfo::s.records.size() == 8 && OwnWidth() && OwnShrink(),
+    Check(Text() == "[3,-20]" && mapInfo::s.records.size() == 8 && OwnWidth() && OwnShrink() && OwnLine(),
         "Bounded memory: a forgotten tooltip keeps the game's text and template");
-    // A template without the 154 px root: the text and the box, nothing else.
+    // A template without the 154 px root: the text, the box and its label, nothing else.
     BuildTemplate(false);
     Hover(mini, 3, -20, amakna);
-    Check(Text() == Village + "\n" + TwelveCoords && MinWidth().keyword == 1 && NoShrink() && !mapInfo::s.adjusted.back().root.get(),
-        "Without the template root, only the coordinates box changes");
+    Check(Text() == Village + "\n" + TwelveCoords && MinWidth().keyword == 1 && NoShrink() && !mapInfo::s.adjusted.back().root.get() &&
+        !Get(label).singleLine && Encloses(), "Without the template root, only the coordinates box and its label change");
     // A label that is not in the game's coordinates box: left to the game.
     BuildTemplate(true, "ctr_other");
     Hover(mini, 3, -20, amakna);
-    Check(Text() == "[3,-20]" && OwnShrink() && OwnWidth(), "Another template layout is left to the game");
+    Check(Text() == "[3,-20]" && OwnShrink() && OwnWidth() && OwnLine(), "Another template layout is left to the game");
     // Several pooled templates: at most four stay changed, the oldest is given back.
-    std::vector<std::pair<Obj, Obj>> templates;
-    for (int i = 0; i < 6; ++i) { BuildTemplate(); templates.emplace_back(templateRoot, ctrCoords); Hover(mini, 3, -20, amakna); }
-    Check(mapInfo::s.adjusted.size() == 4 && Get(templates[0].first).minWidth.keyword == 1 && Get(templates[0].second).flexShrink.keyword == 1 &&
-        Get(templates[1].first).minWidth.keyword == 1 && Get(templates[1].second).flexShrink.keyword == 1 &&
-        Get(templates[5].first).minWidth.keyword == 0 && Get(templates[5].second).flexShrink.keyword == 0,
+    std::vector<std::array<Obj, 3>> templates;
+    for (int i = 0; i < 6; ++i) { BuildTemplate(); templates.push_back({templateRoot, ctrCoords, label}); Hover(mini, 3, -20, amakna); }
+    Check(mapInfo::s.adjusted.size() == 4 && Get(templates[0][0]).minWidth.keyword == 1 && Get(templates[0][1]).flexShrink.keyword == 1 &&
+        Get(templates[0][2]).singleLine && Get(templates[0][2]).height.value == LineHeight &&
+        Get(templates[1][0]).minWidth.keyword == 1 && Get(templates[1][1]).flexShrink.keyword == 1 && Get(templates[1][2]).singleLine &&
+        Get(templates[5][0]).minWidth.keyword == 0 && Get(templates[5][1]).flexShrink.keyword == 0 && !Get(templates[5][2]).singleLine,
         "At most four changed templates; older ones get their own values back");
     // A native failure while rewriting leaves the game's tooltip and logs once.
     failMethod = "get_lbl_coords";
@@ -467,11 +515,89 @@ void EdgeCases() {
     // A failed measure falls back to the estimate.
     failMethod = "MeasureTextSize";
     Hover(mini, 3, -20, amakna);
-    Check(Text() == Village + "\n" + TwelveCoords && Widened(8 * 24 + Row), "A failed measure falls back to the estimate");
+    Check(Text() == Village + "\n" + TwelveCoords && Widened(8 * 24 + Row) && Encloses(), "A failed measure falls back to the estimate");
+    // The label's own setting cannot be read: nothing of a new template changes, the failure is reported.
+    BuildTemplate();
+    mapInfo::s.nextLog = 0;
+    failMethod = "get_isSingleLine";
+    Hover(mini, 3, -20, amakna);
+    Check(OwnLine() && OwnShrink() && OwnWidth() && logs.back() == "MAP_INFO_ERROR tooltip: Injected native failure: get_isSingleLine",
+        "A label whose setting cannot be read keeps the template as the game made it, and is reported");
+    Hover(mini, 3, -20, amakna);
+    Check(!Get(label).singleLine && Encloses(), "The next update of the tooltip adjusts it");
+}
+// The black box of the coordinates (#ctr_coords' background) holds every line
+// the label shows. The reported mini-map tooltip: its zone name above the
+// coordinates overflowed a box kept on one line by the single-line label.
+void EveryLine() {
+    Hover(mini, 3, -20, amakna);
+    Check(ShownLines() == 2 && !Get(label).singleLine && Get(label).height.keyword == 1 && Encloses(),
+        "The zone above the coordinates: the label is not single-line, its box holds both lines");
+    Get(label).singleLine = true;
+    Check(!Encloses(), "The fixture sees the reported tooltip: a single-line label keeps its box on one line");
+    Get(label).singleLine = false;
+    // One line on the same template: the label's own height again (the game's look).
+    Hover(big, 3, -20, amakna);
+    Check(Text() == TwelveCoords && ShownLines() == 1 && OwnLine() && Encloses(), "The big map's line on the same template: its own height again");
+    Options(false, true, true);
+    Hover(mini, 3, -20, amakna);
+    Check(Text() == TwelveCoords && OwnLine() && Encloses(), "Zone name off: one line, the label's own height");
+    // Every combination of the three options on each map, with a zone, a long
+    // one or none, with or without a zaap price: the box holds every line the
+    // label shows, and the label leaves its own single line only for several.
+    const auto writes = singleLineWrites;
+    for (int mask = 0; mask < 8; ++mask) {
+        Options((mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0);
+        for (auto view : {mini, big})
+            for (auto zone : {amakna, longZone, static_cast<Obj>(nullptr)})
+                for (int price : {-1, 1234}) {
+                    Hover(view, 3, -20, zone, true, price);
+                    const auto lines = ShownLines();
+                    Check(Encloses() && (lines == 1 ? OwnLine() : !Get(label).singleLine),
+                        "Options " + std::to_string(mask) + ": the box holds the label's " + std::to_string(lines) + " line(s)");
+                }
+    }
+    Check(singleLineWrites > writes, "The combinations switch the label both ways");
+    Options(true, true, true);
+    // One line wider than the tooltip can grow (480 px), without a zone: it wraps, both lines in the box.
+    auto vast = Make("WorldMapData"); Get(vast).text = std::string(70, 'w');
+    Get(big).fields["<dugi>k__BackingField"] = vast;
+    Hover(big, 3, -20);
+    Check(Widened(480) && ShownLines() == 2 && !Get(label).singleLine && Encloses(), "A wrapped line of coordinates: both lines in the box");
+    Get(big).fields["<dugi>k__BackingField"] = twelve;
+    // Without the template's root the row keeps its 154 px: a line of coordinates that wraps there.
+    BuildTemplate(false);
+    Hover(big, 3, -20);
+    Check(Text() == TwelveCoords && ShownLines() == 2 && !Get(label).singleLine && Encloses(), "A row wider than its 154 px wraps: both lines in the box");
+    BuildTemplate();
+    // The game's own text back, by the game or by the options: the label's own line.
+    Hover(mini, 3, -20, amakna);
+    Hover(mini, 3, -20, amakna, false);
+    Check(Text() == "[3,-20]" && OwnLine(), "Coordinates the game hides: the label's own line back");
+    Hover(mini, 3, -20, amakna);
+    Options(false, true, false);
+    Hover(mini, 3, -20, amakna);
+    Check(Text() == "[3,-20]" && OwnLine() && Encloses(), "Mini-map options off: the label's own line back");
+    Options(true, true, true);
+    // A label already multi-line keeps its own setting, for one line or after.
+    Get(label).singleLine = false; Get(label).height = {0, 0, 1};
+    Hover(big, 3, -20);
+    Check(Text() == TwelveCoords && !Get(label).singleLine, "A multi-line label stays multi-line on one line");
+    Hover(mini, 3, -20, amakna);
+    RestoreMapInfo();
+    Check(Text() == "[3,-20]" && !Get(label).singleLine && Get(label).height.keyword == 1 && !MapInfoCleanupPending(), "Its own setting is given back");
+    BuildTemplate();
+    // Text the label cannot measure yet: the estimate decides, the box still holds every line.
+    measureWorks = false;
+    Hover(mini, 3, -20, amakna);
+    Check(!Get(label).singleLine && Encloses(), "Unmeasured text: several lines, all in the box");
+    Hover(big, 3, -20);
+    Check(OwnLine() && Encloses(), "Unmeasured, one line: the label's own height");
+    measureWorks = true;
 }
 void Cleanup() {
     auto shown = Hover(mini, 3, -20, amakna);
-    Check(MapInfoCleanupPending() && MinWidth().keyword == 0 && NoShrink(), "Shown: cleanup is pending");
+    Check(MapInfoCleanupPending() && MinWidth().keyword == 0 && NoShrink() && !Get(label).singleLine, "Shown: cleanup is pending");
     const auto rooted = handles.size();
     module->stopRequested = true;
     Hover(mini, 4, 4, amakna);
@@ -486,18 +612,25 @@ void Cleanup() {
     TickMapInfo();
     Check(MapInfoCleanupPending() && !mapInfo::s.adjusted.empty(), "A failed template restore is retained for a retry");
     TickMapInfo();
-    Check(!MapInfoCleanupPending() && OwnWidth() && OwnShrink() && Text() == "[3,-20]" && handles.size() < rooted,
+    Check(!MapInfoCleanupPending() && OwnWidth() && OwnShrink() && OwnLine() && Text() == "[3,-20]" && handles.size() < rooted,
         "The retry gives back the template, the game's text and every reference");
     module->stopRequested = false;
+    // The label's own setting fails to come back: retained, then given back.
+    Hover(mini, 3, -20, amakna);
+    failMethod = "set_isSingleLine";
+    RestoreMapInfo();
+    Check(MapInfoCleanupPending() && !Get(label).singleLine && Text() == "[3,-20]", "A failed label restore is retained for a retry");
+    RestoreMapInfo();
+    Check(!MapInfoCleanupPending() && OwnLine() && OwnWidth() && OwnShrink(), "The retry gives the label its own line back");
     // A label the game has rewritten since is left alone.
     Hover(mini, 3, -20, amakna);
     Get(label).text = "[9,9]";
     RestoreMapInfo();
-    Check(Text() == "[9,9]" && OwnWidth() && OwnShrink() && !MapInfoCleanupPending(), "Cleanup restores only its own text");
+    Check(Text() == "[9,9]" && OwnWidth() && OwnShrink() && OwnLine() && !MapInfoCleanupPending(), "Cleanup restores only its own text");
     Hover(mini, 3, -20, amakna);
     Get(label).panel = nullptr;
     RestoreMapInfo();
-    Check(Text() != "[3,-20]" && !MapInfoCleanupPending(), "A detached label is released untouched");
+    Check(Text() != "[3,-20]" && OwnLine() && !MapInfoCleanupPending(), "A detached label keeps its text and gets its own line back");
     Get(label).panel = panel;
     module->servicesReady = false;
     TickMapInfo();
@@ -507,10 +640,12 @@ void Cleanup() {
 void InstallFailures() {
     Reset();
     mapInfo::s = mapInfo::State{};
-    failVerified = "get_lbl_coords";
-    InstallMapInfo();
-    Check(!mapInfo::s.installed && hookRvas.empty() && logs.back().starts_with("MAP_INFO_DISABLED "),
-        "A missing contract disables only this module, before any hook");
+    for (const char* missing : {"get_lbl_coords", "get_isSingleLine", "set_isSingleLine"}) {
+        failVerified = missing;
+        InstallMapInfo();
+        Check(!mapInfo::s.installed && hookRvas.empty() && logs.back() == std::string("MAP_INFO_DISABLED Verified method unavailable: ") + missing,
+            std::string("A missing contract disables only this module, before any hook: ") + missing);
+    }
     failVerified.clear();
     offsets[{"CartographyTooltipInfos", "zaapPrice"}] = 0x30;
     InstallMapInfo();
@@ -545,14 +680,15 @@ int main() {
         fake::DefaultOptions();
         fake::ZaapPrice();
         fake::EachOption();
+        fake::EveryLine();
         fake::EdgeCases();
         fake::Cleanup();
         fake::InstallFailures();
         RestoreMapInfo();
         module = nullptr;
         std::cout << "PASS: map info on the game's cartography tooltip: zone name on the mini-map, [x,y, dimension] on each map "
-                     "per option, measured row with the zaap price, non-shrinking coordinates box, template given back, bounded "
-                     "memory, failures and cleanup\n";
+                     "per option, measured row with the zaap price, non-shrinking coordinates box, its black box around every "
+                     "line (label single-line only for one), template given back, bounded memory, failures and cleanup\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

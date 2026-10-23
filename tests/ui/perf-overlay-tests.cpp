@@ -1,19 +1,24 @@
 // PerfOverlayTests (offline): perf-overlay.cpp on a fake IL2CPP runtime with
-// fake Windows counters and clocks. No client binary is loaded, no process
-// opened. Every native call the module makes must have been verified at
-// install (FindVerified at its pinned RVA, every RVA guarded in
-// signatures.hpp), except the style value setters every module uses.
+// fake Windows counters, clocks, mouse and performance counters (PDH). No
+// client binary is loaded, no process opened, no real counter read: the GPU
+// and disk worker runs on a real thread against a fake PDH. Every native call
+// the module makes must have been verified at install (FindVerified at its
+// pinned RVA, every RVA guarded in signatures.hpp), except the style value
+// setters every module uses.
 #include "core/module.hpp"
 #include "core/signatures.hpp"
 #include "appearance/features.hpp"
 #include "ui/options-ui.hpp"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <set>
 #include <tuple>
 
@@ -40,7 +45,8 @@ std::map<std::string, size_t> offsets{{"dzrv", 0x70}};
 std::set<std::tuple<std::string, std::string, int, uintptr_t>> contracts;
 // The game's class chain, for the verified-call rule.
 const std::map<std::string, std::string> bases{{"Label", "TextElement"}, {"TextElement", "VisualElement"},
-    {"VisualElement", "Focusable"}, {"gmy", "VisualElement"}, {"UIDocumentRootElement", "VisualElement"}};
+    {"VisualElement", "Focusable"}, {"gmy", "VisualElement"}, {"UIDocumentRootElement", "VisualElement"},
+    {"RuntimePanel", "BaseRuntimePanel"}, {"BaseRuntimePanel", "Panel"}, {"Panel", "BaseVisualElementPanel"}};
 std::vector<std::string> logs;
 // Failure injection: this method on this object throws (failCount times; -1:
 // always), only while the object is shown when failAttachedOnly.
@@ -49,9 +55,24 @@ Obj failOwner = nullptr;
 int failCount = 0;
 bool failAttachedOnly = false;
 int labelsBuilt = 0, removals = 0;
-float collapsedWidth = -1; // >= 0 or NaN: the layout's width while the game hides its interface
+float collapsedWidth = -1; // >= 0 or NaN: the label's layout while the game hides its interface
 std::set<uintptr_t> natives;  // the native helpers checked (NativeAt)
 uintptr_t nativeMismatch = 0; // a helper whose bytes differ from the snapshot
+// The panel: RootHigh laid out over it, 1920 x 1080 panel pixels unless a test
+// changes the resolution or the interface scale.
+float layerWidth = 1920, layerHeight = 1080;
+// Game elements drawn above the overlay (menus, popups, the loading screen):
+// the panel picks them first.
+struct Blocker { Obj element; float x, y, width, height; };
+std::vector<Blocker> blockers;
+int picks = 0;
+// The settings: Module::Change (never called by the overlay: its appearance
+// refresh), and the place saved as Change saves it: another client's shared
+// Metamob choice kept (sharedMetamob), the options page synchronised, the
+// file written (which may fail).
+int changes = 0, saves = 0, syncs = 0;
+bool saveFails = false;
+std::optional<bool> sharedMetamob;
 // The game's interface.
 Obj document = nullptr, host = nullptr, service = nullptr, high = nullptr, gameHigh = nullptr, panel = nullptr;
 
@@ -126,6 +147,24 @@ float LaidOutWidth(Obj o) {
     }
     return width;
 }
+// 16 px a line plus the padding: 52 for three lines, 68 for four.
+float LaidOutHeight(Obj o) {
+    if (!(collapsedWidth < 0)) return collapsedWidth;
+    return 16.f * static_cast<float>(1 + std::count(Get(o).text.begin(), Get(o).text.end(), '\n')) + 4.f;
+}
+// The label's layout in its layer: x, y, width, height, from its anchored sides.
+std::array<float, 4> LabelBox(Obj o) {
+    const float width = LaidOutWidth(o), height = LaidOutHeight(o);
+    float x = 0, y = 0;
+    if (Styled(o, "left")) x = Pixels(o, "left");
+    else if (Styled(o, "right")) x = layerWidth - Pixels(o, "right") - width;
+    if (Styled(o, "top")) y = Pixels(o, "top");
+    else if (Styled(o, "bottom")) y = layerHeight - Pixels(o, "bottom") - height;
+    return {x, y, width, height};
+}
+bool Within(const std::array<float, 4>& box, float x, float y) {
+    return x >= box[0] && x < box[0] + box[2] && y >= box[1] && y < box[1] + box[3];
+}
 // The Windows side.
 constexpr int64_t Frequency = 10000000; // 10 MHz: one tick is 100 ns
 constexpr int64_t FrameTicks = 166667;  // 60 frames a second
@@ -158,6 +197,7 @@ void Setup() {
         const auto& type = static_cast<Class*>(k)->name;
         return type == "Box" || type == "Length" || type == "Hierarchy" || type.starts_with("Style");
     };
+    api.class_is_assignable_from = [](Klass base, Klass k) { return Derives(static_cast<Class*>(k)->name, static_cast<Class*>(base)->name); };
     api.object_new = [](Klass k) -> Obj { return Make(static_cast<Class*>(k)->name); };
     api.object_unbox = [](Obj o) -> void* { return Get(o).bytes.data(); };
     api.string_new = [](const char* s) -> Obj { return String(s); };
@@ -170,7 +210,7 @@ void Setup() {
 // RootLayer (gmy) under the UIDocument root, with the ten native layers in
 // gmo's order; RootHigh already holds a game element.
 void BuildInterface() {
-    panel = Make("Panel");
+    panel = Make("RuntimePanel");
     document = Element("UIDocumentRootElement", "RootUI-container");
     Get(document).fields["panel"] = panel;
     host = Element("gmy", "RootLayer");
@@ -278,13 +318,30 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         std::memcpy(target.styles[property].data(), args.at(0), Size(property));
         return nullptr;
     }
+    if (info.type == "BaseVisualElementPanel") {
+        // IPanel.Pick(Vector2): the topmost picking element at a panel point.
+        Check(m == "Pick", "Only the panel's pick");
+        float point[2]; std::memcpy(point, args[0], sizeof(point));
+        ++picks;
+        for (auto it = blockers.rbegin(); it != blockers.rend(); ++it)
+            if (Within({it->x, it->y, it->width, it->height}, point[0], point[1])) return it->element;
+        auto& layered = Get(high).children;
+        for (auto it = layered.rbegin(); it != layered.rend(); ++it)
+            if (Get(*it).klass->name == "Label" && Get(*it).picking == 0 && Within(LabelBox(*it), point[0], point[1])) return *it;
+        return high;
+    }
     if (m == ".ctor") { Check(o.klass->name == "Label" && info.type == "Label", "Label constructor"); o.constructed = true; ++labelsBuilt; return nullptr; }
     Check(o.klass->name != "Label" || o.constructed, "Label used before its constructor");
     if (m == "get_parent") return o.fields["parent"];
     if (m == "get_panel") return Panel(self);
     if (m == "get_name") return fixture::String(o.name);
     if (m == "get_hierarchy") { auto box = Make("Hierarchy"); std::memcpy(Get(box).bytes.data(), &self, sizeof(self)); return box; }
-    if (m == "get_layout") { struct Rect { float x, y, width, height; }; return Box(Rect{0, 0, LaidOutWidth(self), 52}); }
+    if (m == "get_layout") {
+        struct Rect { float x, y, width, height; };
+        if (o.klass->name != "Label") return Box(Rect{0, 0, layerWidth, layerHeight});
+        const auto box = LabelBox(self);
+        return Box(Rect{box[0], box[1], box[2], box[3]});
+    }
     if (m == "Insert") {
         const int index = *static_cast<int*>(args[0]);
         Obj child = static_cast<Obj>(args[1]);
@@ -312,8 +369,160 @@ managed::Obj Module::FindService(const char* name) const {
     fixture::Check(std::string(name) == "fqp", "Only the layer service is looked up");
     return fixture::service;
 }
+// As the module. Change: counted, to tell it never comes from the overlay.
+void Module::Change(Settings next, bool) {
+    ++fixture::changes;
+    settings = next;
+}
+// The shared Metamob choice another client made meanwhile, kept.
+bool Module::KeepSharedMetamobSync(Settings& next) const {
+    if (fixture::sharedMetamob) next.metamobSync = *fixture::sharedMetamob;
+    return true;
+}
+// The settings file written (which may fail).
+void Module::SaveSettings(bool) {
+    ++fixture::saves;
+    if (fixture::saveFails) throw std::runtime_error("Injected save failure");
+}
+void OptionsUi::Sync() { ++fixture::syncs; }
 void Log(const std::string& message) { fixture::logs.push_back(message); }
 #include "ui/perf-overlay.cpp"
+
+// The mouse: the game's window in the foreground or not, the cursor in its
+// client area (the panel's size unless a test scales it), the left button.
+namespace mouse {
+bool foreground = true, button = false;
+long clientX = 0, clientY = 0, clientWidth = 1920, clientHeight = 1080;
+int buttonReads = 0, cursorReads = 0;
+bool Button() { ++buttonReads; return button; }
+bool Cursor(perfOverlay::Cursor& cursor) {
+    ++cursorReads;
+    if (!foreground) return false;
+    cursor = {clientX, clientY, clientWidth, clientHeight};
+    return true;
+}
+}
+
+// PDH as Windows answers it, without reading a counter: a rate needs two
+// collections, so every read before a query's second collection fails with
+// PDH_CSTATUS_INVALID_DATA. Called on the worker threads: everything under
+// `lock`, the tests' settings included (Configure).
+namespace pdhFake {
+using perfOverlay::CounterItems;
+std::mutex lock;
+std::vector<std::wstring> paths;          // every counter path added, in order
+std::map<uintptr_t, int> collections;     // the open queries' collections
+int opens = 0, closes = 0, spawns = 0;
+uintptr_t lastQuery = 0;
+PDH_STATUS openStatus = ERROR_SUCCESS, gpuStatus = ERROR_SUCCESS, diskStatus = ERROR_SUCCESS,
+    collectStatus = ERROR_SUCCESS, readStatus = ERROR_SUCCESS;
+// This process's engines (the busiest, 3D at 22,6 %: « GPU 23 % », never the
+// 25 % of both adapters' 3D added up) and the physical disks: C: 3,6 %
+// active, 1,2 Mo/s.
+CounterItems engines{
+    {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_0_engtype_3D", 22.6, true},
+    {L"pid_4242_luid_0x00000000_0x0000E5F0_phys_0_eng_0_engtype_3D", 2.5, true},
+    {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_1_engtype_Copy", 3.0, true},
+    {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_9_engtype_High Priority 3D", 1.0, true}};
+CounterItems idle{{L"0 D:", 56.5, true}, {L"3 C:", 96.4, true}, {L"_Total", 88.6, true}};
+CounterItems bytes{{L"0 D:", 10866306, true}, {L"3 C:", 1.2 * 1048576, true}, {L"_Total", 12124546, true}};
+HANDLE gate = nullptr;  // set: the collections wait until it is signalled
+std::atomic<int> waiting{0};
+bool spawnFails = false;
+unsigned pid = 4242;
+std::wstring path = L"C:\\Jeux\\Dofus\\Dofus.exe";
+template<class F> void Configure(F change) { const std::lock_guard<std::mutex> guard(lock); change(); }
+PDH_STATUS Open(PDH_HQUERY* query) {
+    const std::lock_guard<std::mutex> guard(lock);
+    if (openStatus != ERROR_SUCCESS) return openStatus;
+    ++opens;
+    collections[++lastQuery] = 0;
+    *query = reinterpret_cast<PDH_HQUERY>(lastQuery);
+    return ERROR_SUCCESS;
+}
+PDH_STATUS Add(PDH_HQUERY query, const wchar_t* counterPath, PDH_HCOUNTER* counter) {
+    const std::lock_guard<std::mutex> guard(lock);
+    const std::wstring text = counterPath;
+    paths.push_back(text);
+    const bool gpu = text.starts_with(L"\\GPU Engine(");
+    const PDH_STATUS status = gpu ? gpuStatus : diskStatus;
+    if (status != ERROR_SUCCESS) return status;
+    const uintptr_t kind = gpu ? 1 : text.find(L"Idle") != std::wstring::npos ? 2 : 3;
+    *counter = reinterpret_cast<PDH_HCOUNTER>(reinterpret_cast<uintptr_t>(query) << 4 | kind);
+    return ERROR_SUCCESS;
+}
+PDH_STATUS Collect(PDH_HQUERY query) {
+    HANDLE wait = nullptr;
+    { const std::lock_guard<std::mutex> guard(lock); wait = gate; }
+    if (wait) { ++waiting; WaitForSingleObject(wait, INFINITE); --waiting; }
+    const std::lock_guard<std::mutex> guard(lock);
+    if (collectStatus != ERROR_SUCCESS) return collectStatus;
+    ++collections[reinterpret_cast<uintptr_t>(query)];
+    return ERROR_SUCCESS;
+}
+PDH_STATUS Read(PDH_HCOUNTER counter, CounterItems& items) {
+    const std::lock_guard<std::mutex> guard(lock);
+    const auto handle = reinterpret_cast<uintptr_t>(counter);
+    items.clear();
+    if (collections[handle >> 4] < 2) return static_cast<PDH_STATUS>(PDH_CSTATUS_INVALID_DATA);
+    if (readStatus != ERROR_SUCCESS) return readStatus;
+    const auto kind = handle & 15;
+    items = kind == 1 ? engines : kind == 2 ? idle : bytes;
+    return ERROR_SUCCESS;
+}
+PDH_STATUS Close(PDH_HQUERY query) {
+    const std::lock_guard<std::mutex> guard(lock);
+    ++closes;
+    collections.erase(reinterpret_cast<uintptr_t>(query));
+    return ERROR_SUCCESS;
+}
+unsigned Pid() { return pid; }
+std::wstring Path() { return path; }
+HANDLE Spawn(LPTHREAD_START_ROUTINE routine, void* parameter) {
+    ++spawns;
+    if (spawnFails) { SetLastError(ERROR_NOT_ENOUGH_MEMORY); return nullptr; }
+    return CreateThread(nullptr, 0, routine, parameter, 0, nullptr);
+}
+int Alive() { const std::lock_guard<std::mutex> guard(lock); return opens - closes; }
+std::vector<std::wstring> Paths() { const std::lock_guard<std::mutex> guard(lock); return paths; }
+void ClearPaths() { const std::lock_guard<std::mutex> guard(lock); paths.clear(); }
+}
+
+// PdhGetFormattedCounterArrayW as Windows answers it: the buffer's size first
+// (PDH_MORE_DATA), then the items, their names in that same buffer.
+namespace formatFake {
+struct Entry { std::wstring name; double value; DWORD status; };
+std::vector<Entry> entries;
+PDH_STATUS answer = ERROR_SUCCESS; // another answer: the first collection's, no instance
+int calls = 0, growths = 0;        // growths: instances coming between two calls
+DWORD flags = 0;
+DWORD Needed() {
+    size_t size = entries.size() * sizeof(PDH_FMT_COUNTERVALUE_ITEM_W);
+    for (const auto& entry : entries) size += (entry.name.size() + 1) * sizeof(wchar_t);
+    return static_cast<DWORD>(size);
+}
+PDH_STATUS WINAPI Format(PDH_HCOUNTER, DWORD format, LPDWORD size, LPDWORD count, PPDH_FMT_COUNTERVALUE_ITEM_W buffer) {
+    ++calls;
+    flags = format;
+    if (answer != ERROR_SUCCESS) return answer;
+    if (buffer && growths > 0) {
+        --growths;
+        entries.push_back({L"pid_9_luid_0x0_0x1_phys_0_eng_" + std::to_wstring(entries.size()) + L"_engtype_Copy", 1, PDH_CSTATUS_VALID_DATA});
+    }
+    const DWORD needed = Needed();
+    if (!buffer || *size < needed) { *size = needed; return static_cast<PDH_STATUS>(PDH_MORE_DATA); }
+    auto* names = reinterpret_cast<wchar_t*>(buffer + entries.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        std::memcpy(names, entries[i].name.c_str(), (entries[i].name.size() + 1) * sizeof(wchar_t));
+        buffer[i].szName = names;
+        buffer[i].FmtValue.CStatus = entries[i].status;
+        buffer[i].FmtValue.doubleValue = entries[i].value;
+        names += entries[i].name.size() + 1;
+    }
+    *count = static_cast<DWORD>(entries.size());
+    return ERROR_SUCCESS;
+}
+}
 
 namespace {
 using namespace fixture;
@@ -338,13 +547,34 @@ void Pump(int pumps = 1) {
         Tick();
     }
 }
+// One frame at 60 FPS with the game at 12 % of 8 processors, as the pumps.
+void Step() { cpuTime += 160000; Frame(); }
+// One such frame with the cursor at this client point and the button down or up.
+void Mouse(long x, long y, bool down) { mouse::clientX = x; mouse::clientY = y; mouse::button = down; Step(); }
 bool Near(double value, double expected, double tolerance = 1e-6) { return std::fabs(value - expected) <= tolerance; }
+// Real time: the device worker runs on its own thread, a sample every 2 ms here.
+template<class Ready> bool WaitFor(Ready ready, uint64_t ms = 5000) {
+    const auto start = GetTickCount64();
+    while (!ready()) {
+        if (GetTickCount64() - start > ms) return false;
+        Sleep(1);
+    }
+    return true;
+}
+perfOverlay::DeviceFigures Figures() {
+    const auto worker = perfOverlay::devices.worker;
+    if (!worker) return {};
+    const std::lock_guard<std::mutex> guard(worker->lock);
+    return worker->figures;
+}
 const std::string Measuring = "FPS : mesure en cours…";
 const std::string Memory = "Mémoire 1,52 Go · privée 1,31 Go";
 const std::string Heap = "Tas géré 312 Mo / 420 Mo";
 const std::string Steady = "60 FPS · 16,7 ms (max 16,7 ms)\n" + Memory + "\n" + Heap + " · CPU 12 %";
 // A new label's first text: its CPU share needs a second sample.
 const std::string SteadyNoCpu = "60 FPS · 16,7 ms (max 16,7 ms)\n" + Memory + "\n" + Heap;
+// The fourth line from the fake counters.
+const std::string DevicesLine = "GPU 23 % · Disque C: 4 % · 1,2 Mo/s";
 // The fake layout's widths (6 px a character of the longest line, plus 16).
 constexpr float MemoryLineWidth = 6 * 32 + 16, CpuLineWidth = 6 * 35 + 16; // longest line: the memory one, the third one with the CPU share
 
@@ -414,12 +644,33 @@ void Formatting() {
     constexpr uint64_t MiB = 1 << 20;
     Check(Bytes(0) == "0 Mo" && Bytes(312 * MiB) == "312 Mo" && Bytes(1023 * MiB + MiB * 4 / 10) == "1023 Mo" &&
         Bytes(1023 * MiB + MiB * 6 / 10) == "1,00 Go" && Bytes(1632087573ULL) == "1,52 Go", "Memory: Mo, then Go");
+    Check(Throughput(0) == "0 Ko/s" && Throughput(-5) == "0 Ko/s" && Throughput(300 * 1024.0) == "300 Ko/s" &&
+        Throughput(1023.4 * 1024) == "1023 Ko/s" && Throughput(1023.6 * 1024) == "1,0 Mo/s" && Throughput(1.2 * MiB) == "1,2 Mo/s" &&
+        Throughput(9.94 * MiB) == "9,9 Mo/s" && Throughput(9.96 * MiB) == "10 Mo/s" && Throughput(512.3 * MiB) == "512 Mo/s" &&
+        Throughput(2.5 * 1024 * MiB) == "2,5 Go/s" && Throughput(12.3 * 1024 * MiB) == "12 Go/s", "Transfer rates: Ko/s, then Mo/s and Go/s");
     Sample sample;
     sample.frames = {true, 60, 16.6667, 33.4};
     sample.memory = true; sample.workingSet = 1632087573ULL; sample.privateBytes = 1406601790ULL;
     sample.heap = true; sample.heapUsed = 312 * MiB; sample.heapSize = 420 * MiB;
     sample.cpu = 12.4;
-    Check(Text(sample) == "60 FPS · 16,7 ms (max 33,4 ms)\n" + Memory + "\n" + Heap + " · CPU 12 %", "Three lines");
+    const std::string three = "60 FPS · 16,7 ms (max 33,4 ms)\n" + Memory + "\n" + Heap + " · CPU 12 %";
+    Check(Text(sample) == three, "Three lines");
+    // The fourth line: the graphics card and the game's disk, each left out when unknown.
+    auto full = sample;
+    full.gpu = 23; full.drive = L'C'; full.diskBusy = 4; full.diskRate = 1.2 * MiB;
+    Check(Text(full) == three + "\nGPU 23 % · Disque C: 4 % · 1,2 Mo/s", "Four lines: " + Text(full));
+    full.gpu = -1;
+    Check(Text(full) == three + "\nDisque C: 4 % · 1,2 Mo/s", "Without the GPU");
+    full.diskRate = -1;
+    Check(Text(full) == three + "\nDisque C: 4 %", "Without the transfer rate");
+    full.diskBusy = -1; full.diskRate = 2048;
+    Check(Text(full) == three + "\nDisque C: 2 Ko/s", "Without the active time");
+    full.gpu = 0; full.diskRate = -1;
+    Check(Text(full) == three + "\nGPU 0 %", "Without the disk");
+    full.drive = 0; full.diskBusy = 7;
+    Check(Text(full) == three + "\nGPU 0 %", "No drive: no disk");
+    full.gpu = -1;
+    Check(Text(full) == three, "Neither: three lines");
     sample.heap = false;
     Check(Text(sample) == "60 FPS · 16,7 ms (max 33,4 ms)\n" + Memory + "\nCPU 12 %", "Without the managed heap");
     sample.heap = true; sample.cpu = -1;
@@ -435,6 +686,163 @@ void Formatting() {
     Check(bottomRight.right && bottomRight.bottom && bottomRight.horizontal == 8 && bottomRight.vertical == 8, "Bottom right");
     Check(!other.right && !other.bottom && other.vertical == 8, "Anything else: top left");
 }
+// The PDH figures: instance names filtered, the busiest engine, the game's disk found.
+void DeviceModel() {
+    using namespace perfOverlay;
+    const std::wstring engine = L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_0_engtype_3D";
+    Check(EngineType(engine, 4242) == L"3D" && EngineType(engine, 424).empty() && EngineType(engine, 42420).empty() &&
+        EngineType(L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_9_engtype_High Priority 3D", 4242) == L"High Priority 3D" &&
+        EngineType(L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_9", 4242).empty() && EngineType(L"pid_4242_", 4242).empty() &&
+        EngineType(L"pid_4242_luid_0x0_engtype_", 4242).empty() && EngineType(L"xpid_4242_engtype_3D", 4242).empty(),
+        "Engine types of this process only (pid_424_ is not pid_4242_)");
+    CounterItems engines{
+        {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_0_engtype_3D", 20.1, true},
+        {L"pid_4242_luid_0x00000000_0x0000E5F0_phys_0_eng_0_engtype_3D", 2.5, true}, // another adapter's 3D: another engine
+        {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_1_engtype_Copy", 9.0, true},
+        {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_4_engtype_Copy", 9.0, true},
+        {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_9_engtype_High Priority 3D", 15.0, true},
+        {L"pid_4243_luid_0x00000000_0x0000D1E2_phys_0_eng_0_engtype_3D", 80.0, true},             // another process
+        {L"pid_4242_luid_0x00000000_0x0000D1E2_phys_0_eng_2_engtype_Compute 0", 90.0, false}};    // no valid value
+    Check(GpuPercent(engines, 4242) == 20, "The busiest engine, as the Task Manager: 3D 20,1 % (never 22,6 % with the other adapter's)");
+    engines[4].value = 30.4;
+    Check(GpuPercent(engines, 4242) == 30, "Another engine busier: High Priority 3D");
+    engines[4].value = 15.0;
+    engines[2].value = engines[3].value = 24.4;
+    Check(GpuPercent(engines, 4242) == 24, "Two Copy engines at 24,4 %: 24 %, never their sum");
+    Check(GpuPercent(engines, 4243) == 80, "Another process: its own engines");
+    Check(GpuPercent(engines, 1) == -1 && GpuPercent({}, 4242) == -1, "No engine of this process: no figure");
+    for (auto& item : engines) item.valid = false;
+    Check(GpuPercent(engines, 4242) == -1, "The first sample (no valid value): no figure");
+    Check(GpuPercent({{L"pid_7_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 70, true}, {L"pid_7_luid_0x0_0x2_phys_0_eng_0_engtype_3D", 60, true}}, 7) == 70 &&
+        GpuPercent({{L"pid_7_luid_0x0_0x1_phys_0_eng_0_engtype_3D", 104.5, true}}, 7) == 100,
+        "The 3D engines of two adapters: the busier one; clamped at 100 % (uncapped values)");
+    Check(GpuPercent({{L"pid_7_luid_engtype_3D", -3, true}, {L"pid_7_luid_engtype_Copy", 0.4, true}}, 7) == 0 &&
+        GpuPercent({{L"pid_7_luid_engtype_3D", std::nan(""), true}}, 7) == -1, "Negative values as 0, NaN skipped");
+    Check(DriveOf(L"C:\\Jeux\\Dofus\\Dofus.exe") == L'C' && DriveOf(L"d:\\Dofus.exe") == L'D' &&
+        DriveOf(L"\\\\?\\E:\\Dofus\\Dofus.exe") == L'E' && DriveOf(L"\\\\serveur\\jeux\\Dofus.exe") == 0 &&
+        DriveOf(L"\\\\?\\UNC\\serveur\\jeux\\Dofus.exe") == 0 && DriveOf(L"") == 0 && DriveOf(L"1:\\x") == 0, "The game's drive letter");
+    Check(HoldsDrive(L"3 C:", L'C') && HoldsDrive(L"1 D: E:", L'E') && HoldsDrive(L"1 D: E:", L'D') && HoldsDrive(L"12 c:", L'C') &&
+        !HoldsDrive(L"0 D:", L'C') && !HoldsDrive(L"_Total", L'C') && !HoldsDrive(L"0 CD:", L'C') && !HoldsDrive(L"C:", L'C') &&
+        !HoldsDrive(L"3 C:", 0), "Physical disks by the letters of their volumes");
+    const CounterItems idle{{L"0 D:", 56.5, true}, {L"3 C:", 96.4, true}, {L"_Total", 88.6, true}};
+    const CounterItems bytes{{L"0 D:", 10866306, true}, {L"3 C:", 1.2 * 1048576, true}, {L"_Total", 12124546, true}};
+    const auto disk = Disk(idle, bytes, L'C');
+    Check(disk.busy == 4 && Near(disk.rate, 1.2 * 1048576), "The game's disk: active 100 − idle, its bytes per second");
+    Check(Disk(idle, bytes, L'D').busy == 44 && Near(Disk(idle, bytes, L'D').rate, 10866306), "Another drive, another disk");
+    Check(Disk(idle, bytes, L'E').busy == -1 && Disk(idle, bytes, L'E').rate < 0, "A drive no physical disk holds: no figure");
+    Check(Disk({{L"3 C:", 100.002, true}}, {}, L'C').busy == 0 && Disk({{L"3 C:", -2, true}}, {}, L'C').busy == 100,
+        "Clamped 0 to 100 % (PDH idles over 100 %)");
+    Check(Disk({{L"3 C:", 50, false}}, {{L"3 C:", 5, false}}, L'C').busy == -1 && Disk({{L"3 C:", 50, false}}, {{L"3 C:", 5, false}}, L'C').rate < 0,
+        "Invalid values (the first sample): no figure");
+    Check(Disk({{L"3 C:", 50, true}}, {{L"3 C:", -1, true}}, L'C').rate < 0 && Disk({{L"3 C:", 50, true}}, {}, L'C').busy == 50,
+        "A negative rate is none; the active time alone");
+}
+// CounterRead's array (ReadArray on a fake PdhGetFormattedCounterArrayW):
+// sized, then read, each item valid with fresh data only.
+void CounterArrays() {
+    using namespace perfOverlay;
+    using namespace formatFake;
+    const std::wstring engine = L"pid_9_luid_0x0_0x1_phys_0_eng_";
+    entries = {{engine + L"0_engtype_3D", 37.5, PDH_CSTATUS_VALID_DATA}, {engine + L"1_engtype_Copy", 2.25, PDH_CSTATUS_NEW_DATA},
+        {engine + L"2_engtype_Video Decode", 5, PDH_CSTATUS_INVALID_DATA}, {engine + L"3_engtype_Compute 0", -1, PDH_CALC_NEGATIVE_VALUE}};
+    CounterItems items{{L"stale", 1, true}};
+    Check(ReadArray(Format, nullptr, items) == ERROR_SUCCESS && calls == 2 && flags == (PDH_FMT_DOUBLE | PDH_FMT_NOCAP100),
+        "Sized, then read: uncapped doubles");
+    Check(items.size() == 4 && items[0].name == engine + L"0_engtype_3D" && items[0].value == 37.5 && items[0].valid &&
+        items[1].value == 2.25 && items[1].valid && !items[2].valid && !items[3].valid && items[3].name == engine + L"3_engtype_Compute 0",
+        "Each instance with its name and value, valid with fresh data only");
+    calls = 0;
+    growths = 1;
+    Check(ReadArray(Format, nullptr, items) == ERROR_SUCCESS && calls == 3 && items.size() == 5 && items[4].valid,
+        "An instance coming between two calls: sized again");
+    calls = 0;
+    growths = 5;
+    Check(ReadArray(Format, nullptr, items) == static_cast<PDH_STATUS>(PDH_MORE_DATA) && calls == 3 && items.empty(),
+        "Always more instances: given up after three calls");
+    growths = 0;
+    for (const PDH_STATUS refused : {static_cast<PDH_STATUS>(PDH_CSTATUS_INVALID_DATA), static_cast<PDH_STATUS>(PDH_NO_DATA)}) {
+        calls = 0;
+        answer = refused;
+        items = {{L"stale", 1, true}};
+        Check(ReadArray(Format, nullptr, items) == refused && calls == 1 && items.empty(), "Refused (the first collection, no instance): passed on");
+    }
+    answer = ERROR_SUCCESS;
+}
+// The mouse placement: edges, places and the drag's steps.
+void PlacementModel() {
+    using namespace perfOverlay;
+    Check(ClampEdge(500, 200, 1920) == 500 && ClampEdge(-50, 200, 1920) == 8 && ClampEdge(1900, 200, 1920) == 1712 &&
+        ClampEdge(10, 2000, 1920) == 8, "Edges inside the margins; the first margin when the panel is too small");
+    Check(PlaceOfEdge(860, 200, 1920) == 5000 && PlaceOfEdge(8, 200, 1920) == 47 && PlaceOfEdge(1712, 200, 1920) == 9953 &&
+        PlaceOfEdge(0, 200, 1920) == 0 && PlaceOfEdge(1720, 200, 1920) == 10000 && PlaceOfEdge(3000, 200, 1920) == 10000 &&
+        PlaceOfEdge(-5, 200, 1920) == 0 && PlaceOfEdge(10, 2000, 1920) == 0 && PlaceOfEdge(std::nanf(""), 200, 1920) == 0,
+        "Edges as ten-thousandths of the free space");
+    Check(EdgeOfPlace(5000, 200, 1920) == 860 && EdgeOfPlace(0, 200, 1920) == 8 && EdgeOfPlace(10000, 200, 1920) == 1712 &&
+        EdgeOfPlace(-1, 200, 1920) == 8 && EdgeOfPlace(20000, 200, 1920) == 1712 && EdgeOfPlace(5000, 200, 1280) == 540 &&
+        EdgeOfPlace(5000, 2000, 1920) == 8, "Places back to edges, inside the margins");
+    // Whatever the resolution and the overlay's size: the same share of the free space.
+    for (const float space : {1280.f, 1920.f, 2560.f, 3840.f})
+        for (const float size : {150.f, 226.f, 400.f}) {
+            const int place = PlaceOfEdge(.25f * (space - size), size, space);
+            Check(place == 2500 && std::fabs(EdgeOfPlace(place, size, space) - .25f * (space - size)) < .01f,
+                "Round trip at " + std::to_string(space) + " for " + std::to_string(size));
+        }
+    Check(Held(100, 226, 12) == 112 && Held(100, 226, 300) == 325 && Held(100, 226, -5) == 100 && Held(100, .75f, 3) == 100,
+        "The point held, kept inside the overlay");
+    // Client pixels to the panel's: scaled alike on both axes, centred between black bars.
+    const auto at = [](Point point, float x, float y) { return Near(point.x, x) && Near(point.y, y); };
+    Check(at(PanelPoint(960, 540, 1920, 1080, 1920, 1080), 960, 540) && at(PanelPoint(2996, 1796, 3840, 2160, 1920, 1080), 1498, 898),
+        "The display's aspect ratio: scaled");
+    Check(at(PanelPoint(100, 60, 1920, 1200, 1920, 1080), 100, 0) && at(PanelPoint(100, 30, 1920, 1200, 1920, 1080), 100, -30) &&
+        at(PanelPoint(1920, 1200, 3840, 2400, 1920, 1080), 960, 540), "Letterboxed: the bars above and below left out");
+    Check(at(PanelPoint(320, 0, 2560, 1080, 1920, 1080), 0, 0) && at(PanelPoint(2240, 1080, 2560, 1080, 1920, 1080), 1920, 1080) &&
+        at(PanelPoint(100, 500, 2560, 1080, 1920, 1080), -220, 500), "Pillarboxed: the bars left and right left out");
+    Rect box{8, 8, 226, 52};
+    Drag state;
+    // One frame; the overlay then laid out where it was drawn (the game's layout pass).
+    const auto step = [&](bool press, bool down, bool located, bool reached, float x, float y) {
+        const auto result = Advance(state, press, down, located, reached, x, y, box, 1920, 1080);
+        if (result == DragStep::Move || result == DragStep::Back) { box.x = state.left; box.y = state.top; }
+        return result;
+    };
+    Check(step(true, true, true, false, 500, 500) == DragStep::None && state.phase == Drag::Idle, "A press the panel gives to something else");
+    Check(step(true, true, false, true, 20, 20) == DragStep::None && state.phase == Drag::Idle, "A press not located (another window)");
+    Check(step(false, true, true, true, 20, 20) == DragStep::None && state.phase == Drag::Idle, "The button held from before: no press");
+    Check(step(true, true, true, true, 20, 20) == DragStep::None && state.phase == Drag::Pressed && state.grabX == 12 && state.grabY == 12,
+        "Pressed on the overlay: the grab offset");
+    Check(step(false, true, true, true, 22, 22) == DragStep::None && state.phase == Drag::Pressed, "Under 4 px: still a click");
+    Check(step(false, false, true, true, 22, 22) == DragStep::None && state.phase == Drag::Idle, "Released: a click, nothing saved");
+    step(true, true, true, true, 20, 20);
+    Check(step(false, true, true, true, 520, 320) == DragStep::Move && state.phase == Drag::Moving && state.left == 508 && state.top == 308,
+        "Moving with the grab offset");
+    Check(step(false, true, true, true, 5000, -100) == DragStep::Move && state.left == 1686 && state.top == 8, "Clamped inside the margins");
+    Check(step(false, false, true, true, 0, 0) == DragStep::End && state.phase == Drag::Idle && state.left == 1686 && state.top == 8 &&
+        state.width == 226 && state.height == 52 && state.spaceWidth == 1920 && state.spaceHeight == 1080, "Released anywhere: the last place");
+    box = {8, 8, 226, 52};
+    step(true, true, true, true, 20, 20);
+    Check(step(false, true, false, false, 300, 300) == DragStep::None && state.phase == Drag::Idle, "Pressed, then the window left: nothing");
+    step(true, true, true, true, 20, 20);
+    Check(step(false, true, true, false, 300, 300) == DragStep::None && state.phase == Drag::Idle && box.x == 8,
+        "Pressed, then the point held covered: nothing moved");
+    step(true, true, true, true, 20, 20);
+    step(false, true, true, true, 120, 20); // drawn at 108
+    step(false, true, true, true, 220, 20); // seen at 108, drawn at 208
+    Check(step(false, true, true, false, 230, 20) == DragStep::Back && state.phase == Drag::Idle && state.left == 108 && state.top == 8 &&
+        state.width == 226 && state.spaceWidth == 1920, "The point held covered while moving: back at the last place seen");
+    step(true, true, true, true, 120, 20);
+    step(false, true, true, true, 220, 20); // seen at 108, drawn at 208
+    Check(step(false, false, true, false, 220, 20) == DragStep::Back && state.left == 108, "Covered at the release: back too, never left under it");
+    step(true, true, true, true, 120, 20);
+    step(false, true, true, true, 220, 20);
+    Check(step(false, true, false, false, 330, 20) == DragStep::End && state.left == 208 && state.phase == Drag::Idle,
+        "The window left while moving: ended where it was");
+    // The interface hidden while moving (no layout): ended, the sizes of the last move kept.
+    step(true, true, true, true, 220, 20);
+    step(false, true, true, true, 320, 20);
+    const float none = std::nanf("");
+    Check(Advance(state, false, true, false, false, 0, 0, Rect{none, none, none, none}, none, none) == DragStep::End && state.left == 308 &&
+        state.width == 226 && state.height == 52 && state.spaceWidth == 1920 && state.spaceHeight == 1080, "Hidden while moving: the last move's sizes");
+}
 
 // ------------------------------------------------------------ installation
 void ResetInstall() {
@@ -447,6 +855,9 @@ void Install() {
     using namespace perfOverlay;
     sys.counter = FakeCounter; sys.frequency = FakeFrequency; sys.milliseconds = FakeMilliseconds;
     sys.processors = FakeProcessors; sys.memory = FakeMemory; sys.cpu = FakeCpu; sys.lookup = FakeLookup;
+    sys.button = mouse::Button; sys.cursor = mouse::Cursor;
+    sys.pid = pdhFake::Pid; sys.gamePath = pdhFake::Path; sys.spawn = pdhFake::Spawn; sys.devicePeriod = 2;
+    sys.pdh = {pdhFake::Open, pdhFake::Add, pdhFake::Collect, pdhFake::Read, pdhFake::Close};
     // No performance counter: disabled, inert.
     fakeFrequency = 0;
     InstallPerfOverlay();
@@ -492,7 +903,7 @@ void Install() {
         {"VisualElement", "set_name", 1, 0x55F9670}, {"VisualElement", "get_style", 0, 0x55F74A0}, {"VisualElement", "get_layout", 0, 0x55F6930},
         {"Hierarchy", "get_childCount", 0, 0x55FFA80}, {"Hierarchy", "get_Item", 1, 0x55FE670}, {"Focusable", "set_focusable", 1, 0x5777EF0},
         {"Label", ".ctor", 0, 0x5729760}, {"TextElement", "set_text", 1, 0x564B780}, {"TextElement", "set_enableRichText", 1, 0x564B1E0},
-        {"Length", ".ctor", 2, 0x561D3D0}, {"pq", "pbs", 0, 0x2E93CC0}};
+        {"Length", ".ctor", 2, 0x561D3D0}, {"BaseVisualElementPanel", "Pick", 1, 0x57A4050}, {"pq", "pbs", 0, 0x2E93CC0}};
     const std::vector<std::tuple<std::string, uintptr_t, uintptr_t>> styles{
         {"position", 0x55D1A30, 0x55D48B0}, {"left", 0x55D1610, 0x55D3EB0}, {"top", 0x55D1CD0, 0x55D4F70}, {"right", 0x55D1AC0, 0x55D4960},
         {"bottom", 0x55D1190, 0x55D3530}, {"paddingLeft", 0x55D1970, 0x55D46D0}, {"paddingRight", 0x55D19B0, 0x55D4770},
@@ -505,8 +916,8 @@ void Install() {
         expected.insert({"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_" + property, 1, set});
     }
     Check(contracts == expected, "Exactly the pinned contracts: " + std::to_string(contracts.size()) + " of " + std::to_string(expected.size()));
-    for (const uintptr_t rva : {0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0})
-        Check(Guarded(rva), "The GC exports and the code behind them are guarded");
+    for (const uintptr_t rva : {0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0, 0x57A4050})
+        Check(Guarded(rva), "The GC exports, the code behind them and the panel's pick are guarded");
     InstallPerfOverlay();
     Check(contracts == expected && Logged("PERF_OVERLAY_DISABLED") == 2, "Installed once");
 }
@@ -557,10 +968,11 @@ void Created() {
     const auto owned = Owned(high);
     Check(owned.size() == 1 && Overlay() == owned[0] && Get(high).children.front() == owned[0] && Get(high).children.back() == gameHigh,
         "Created first in RootHigh: under the game's own RootHigh elements");
-    Check(Logged("PERF_OVERLAY_READY layer=RootHigh corner=0 heap=1 processors=8") == 1, "Ready logged");
+    Check(Logged("PERF_OVERLAY_READY layer=RootHigh corner=0 heap=1 processors=8 drag=0 place=-1,-1") == 1, "Ready logged");
     const auto label = owned[0];
     auto& o = Get(label);
-    Check(o.klass->name == "Label" && o.constructed && o.picking == 1 && !o.focusable && !o.rich, "Never a click, a hover or the keyboard focus");
+    Check(o.klass->name == "Label" && o.constructed && o.picking == 1 && !o.focusable && !o.rich,
+        "Without the mouse placement: never a click, a hover or the keyboard focus");
     Check(EnumStyle(label, "position") == 1 && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 &&
         !Styled(label, "right") && !Styled(label, "bottom"), "Absolute, 8 px from the top left corner");
     Check(Pixels(label, "paddingLeft") == 8 && Pixels(label, "paddingRight") == 8 && Pixels(label, "paddingTop") == 4 &&
@@ -574,6 +986,7 @@ void Created() {
     Check(Pixels(label, "fontSize") == 12 && EnumStyle(label, "whiteSpace") == 2, "Small text, lines broken at the newlines only (WhiteSpace.Pre)");
     Check(o.text == Measuring + "\n" + Memory + "\n" + Heap && o.texts == 1, "First text: no frame, no CPU share yet: " + o.text);
     Check(!Styled(label, "minWidth"), "No minimum width before a layout");
+    Check(mouse::buttonReads == 0 && mouse::cursorReads == 0 && picks == 0, "Without the mouse placement: no mouse read");
     // About twice a second: not at the next pump, at the second one.
     Pump();
     Check(o.texts == 1, "No refresh 200 ms later");
@@ -835,6 +1248,479 @@ void Cleanup() {
     Check(!Overlay() && Owned(high).empty() && Logged("PERF_OVERLAY_REMOVED session") == 1, "Stopped session: removed");
     module->stopped = false;
 }
+
+// ------------------------------------------------------- mouse placement
+void Dragging() {
+    using namespace perfOverlay;
+    using namespace mouse;
+    module->settings.perfOverlayDrag = true;
+    module->settings.perfOverlayCorner = 0;
+    Tick();
+    Pump(2);
+    auto label = Overlay();
+    Check(label && Get(label).picking == 0 && ui.picking == 0, "Mouse placement on: the overlay takes its clicks (pickingMode Position)");
+    Check(Logged("PERF_OVERLAY_READY layer=RootHigh corner=0 heap=1 processors=8 drag=1 place=-1,-1") == 1, "Ready with the mouse placement");
+    Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && !Styled(label, "right") && !Styled(label, "bottom"), "In its corner until moved");
+    // Idle frames: one button read each, nothing else.
+    auto reads = buttonReads, cursors = cursorReads, picked = picks;
+    for (int i = 0; i < 5; ++i) Mouse(500, 500, false);
+    Check(buttonReads == reads + 5 && cursorReads == cursors && picks == picked, "Idle frames: the button only");
+    // A press outside the overlay: the panel picks something else, nothing follows the cursor.
+    Mouse(500, 500, true);
+    Check(cursorReads == cursors + 1 && picks == picked + 1 && drag.phase == Drag::Idle, "A press elsewhere: no drag");
+    Mouse(20, 20, true);
+    Mouse(600, 400, true);
+    Mouse(600, 400, false);
+    Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == 0 && picks == picked + 1,
+        "Held from elsewhere onto the overlay: still nothing");
+    // The game's window in the background: no press of its own.
+    foreground = false;
+    Mouse(20, 20, true);
+    Mouse(300, 300, true);
+    Mouse(300, 300, false);
+    foreground = true;
+    Check(Pixels(label, "left") == 8 && saves == 0 && picks == picked + 1, "Another window in the foreground: no drag");
+    // A game element drawn above the overlay (a menu, a popup): the press is its own.
+    blockers.push_back({Element("VisualElement", "GameMenu"), 0, 0, 100, 100});
+    Mouse(20, 20, true);
+    Mouse(300, 300, true);
+    Mouse(300, 300, false);
+    blockers.clear();
+    Check(Pixels(label, "left") == 8 && saves == 0 && picks == picked + 2, "Under a game element: no drag");
+    // The interface hidden by the game: no layout, no drag.
+    collapsedWidth = 0;
+    Mouse(20, 20, true);
+    Mouse(300, 300, true);
+    Mouse(300, 300, false);
+    collapsedWidth = -1;
+    Check(Pixels(label, "left") == 8 && saves == 0 && picks == picked + 2, "Interface hidden: no drag");
+    // A click: pressed and released within 4 px.
+    Mouse(20, 20, true);
+    Mouse(22, 21, true);
+    Mouse(22, 21, false);
+    Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == 0 && drag.phase == Drag::Idle, "A click moves nothing");
+    // The drag: the overlay follows the cursor, keeping the grab offset (12, 12).
+    Mouse(20, 20, true);
+    Mouse(1000, 500, true);
+    Check(Pixels(label, "left") == 988 && Pixels(label, "top") == 488 && drag.phase == Drag::Moving && saves == 0, "Follows the cursor");
+    Pump(2);
+    Check(Pixels(label, "left") == 988 && Pixels(label, "top") == 488 && Overlay() == label && Get(label).text == Steady,
+        "The pumps refresh the text and leave the place to the drag");
+    // Beyond the screen: fully visible, 8 px inside.
+    Mouse(2600, 1500, true);
+    const float width = LabelBox(label)[2], height = LabelBox(label)[3];
+    Check(Pixels(label, "left") == 1920 - width - 8 && Pixels(label, "top") == 1080 - height - 8, "Clamped inside the margins");
+    Mouse(-300, -200, true);
+    Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8, "Clamped at the top left too");
+    Mouse(1500, 900, true);
+    // Released: the place saved once, as ten-thousandths of the free space.
+    Mouse(1500, 900, false);
+    const int x = PlaceOfEdge(1488, width, 1920), y = PlaceOfEdge(888, height, 1080);
+    Check(saves == 1 && module->settings.perfOverlayX == x && module->settings.perfOverlayY == y && x == 8784 && y == 8638 &&
+        LoggedLine("PERF_OVERLAY_PLACED x=8784 y=8638") == 1, "Saved once: " + std::to_string(module->settings.perfOverlayX) + "," +
+        std::to_string(module->settings.perfOverlayY));
+    Pump(4);
+    Check(saves == 1 && Pixels(label, "left") == 1488 && Pixels(label, "top") == 888 && Overlay() == label, "Stays where dropped");
+    // Another resolution or interface scale: the same share of the free space.
+    layerWidth = 1280;
+    layerHeight = 720;
+    Pump(2);
+    Check(Pixels(label, "left") == EdgeOfPlace(x, width, 1280) && Pixels(label, "top") == EdgeOfPlace(y, height, 720) &&
+        std::fabs(Pixels(label, "left") - 925.8f) < .1f, "Placed again for a smaller panel: " + std::to_string(Pixels(label, "left")));
+    layerWidth = 1920;
+    layerHeight = 1080;
+    Pump(2);
+    Check(std::fabs(Pixels(label, "left") - 1488) < .5f && std::fabs(Pixels(label, "top") - 888) < .5f && saves == 1, "Back, nothing saved");
+    // The client area at twice the panel's pixels (the interface scale): client pixels converted.
+    clientWidth = 3840;
+    clientHeight = 2160;
+    const auto at = LabelBox(label);
+    Mouse(2996, 1796, true); // the panel's (1498, 898): on the overlay
+    Mouse(1000, 1000, true); // (500, 500): 998 and 398 panel pixels away
+    Check(std::fabs(Pixels(label, "left") - (at[0] - 998)) < .01f && std::fabs(Pixels(label, "top") - (at[1] - 398)) < .01f,
+        "Client pixels scaled to the panel's");
+    Mouse(1000, 1000, false);
+    clientWidth = 1920;
+    clientHeight = 1080;
+    const float droppedLeft = Pixels(label, "left"), droppedTop = Pixels(label, "top");
+    Check(saves == 2 && module->settings.perfOverlayX == PlaceOfEdge(droppedLeft, width, 1920) &&
+        module->settings.perfOverlayY == PlaceOfEdge(droppedTop, height, 1080), "Saved");
+    // The next session: a new label at that place (the last size until laid out, then exactly).
+    RestorePerfOverlay();
+    Tick();
+    label = Overlay();
+    Check(label && ui.pending && std::fabs(Pixels(label, "left") - droppedLeft) < .5f && std::fabs(Pixels(label, "top") - droppedTop) < .5f,
+        "Recreated at its place");
+    Step();
+    Check(!ui.pending && Pixels(label, "left") == EdgeOfPlace(module->settings.perfOverlayX, LabelBox(label)[2], 1920) &&
+        Pixels(label, "top") == EdgeOfPlace(module->settings.perfOverlayY, LabelBox(label)[3], 1080), "Placed exactly once laid out");
+    // A label in a right corner moves by its right and bottom sides (the options page clears the place with the corner).
+    module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
+    module->settings.perfOverlayCorner = 3;
+    Tick();
+    label = Overlay();
+    Step(); // the button seen up once: a new label sees a press only when it starts
+    Check(Pixels(label, "right") == 8 && Pixels(label, "bottom") == 8 && !Styled(label, "left") && !Styled(label, "top"), "Bottom right corner");
+    const auto corner = LabelBox(label);
+    Mouse(static_cast<long>(corner[0] + 5), static_cast<long>(corner[1] + 5), true);
+    Mouse(705, 405, true);
+    const float cornerWidth = LabelBox(label)[2], cornerHeight = LabelBox(label)[3];
+    Check(Pixels(label, "right") == 1920 - 700 - cornerWidth && Pixels(label, "bottom") == 1080 - 400 - cornerHeight &&
+        !Styled(label, "left") && !Styled(label, "top") && LabelBox(label)[0] == 700 && LabelBox(label)[1] == 400, "Its right and bottom sides moved");
+    Mouse(705, 405, false);
+    Check(saves == 3 && module->settings.perfOverlayX == PlaceOfEdge(700, cornerWidth, 1920) && module->settings.perfOverlayCorner == 3,
+        "Saved, its corner kept");
+    // The window losing the foreground mid-drag: the drag ends there, saved.
+    Mouse(705, 405, true);
+    Mouse(305, 305, true);
+    foreground = false;
+    Mouse(800, 800, true);
+    Check(drag.phase == Drag::Idle && saves == 4 && LabelBox(label)[0] == 300 && LabelBox(label)[1] == 300,
+        "Foreground lost: ended where it was, saved");
+    foreground = true;
+    Mouse(900, 600, true);
+    Mouse(900, 600, false);
+    Check(LabelBox(label)[0] == 300 && saves == 4, "The button still down when it comes back: no drag");
+    // Something of the game drawn over the point held mid-drag (the loading
+    // screen): ended, back at the last place where the panel picked it, saved.
+    Mouse(305, 305, true);
+    Mouse(405, 305, true);
+    Mouse(505, 305, true);
+    blockers.push_back({Element("VisualElement", "LoadingScreen"), 0, 0, 1920, 1080});
+    Mouse(905, 305, true);
+    Check(drag.phase == Drag::Idle && saves == 5 && LabelBox(label)[0] == 400 && LabelBox(label)[1] == 300,
+        "Covered mid-drag: back at the last place seen, saved");
+    Mouse(905, 305, false);
+    Mouse(405, 305, true);
+    Mouse(805, 305, true);
+    Mouse(805, 305, false);
+    blockers.clear();
+    Check(LabelBox(label)[0] == 400 && saves == 5, "Under the loading screen: no drag");
+    // Restore mid-drag: stopped, nothing saved.
+    Mouse(405, 305, true);
+    Mouse(605, 305, true);
+    Check(drag.phase == Drag::Moving, "Dragging");
+    RestorePerfOverlay();
+    Check(drag.phase == Drag::Idle && saves == 5 && !Overlay(), "Restore: the drag stopped, nothing saved");
+    Mouse(705, 305, true);
+    Mouse(705, 305, false);
+    Tick();
+    label = Overlay();
+    Step();
+    Check(saves == 5 && std::fabs(LabelBox(label)[0] - EdgeOfPlace(module->settings.perfOverlayX, LabelBox(label)[2], 1920)) < .01f,
+        "Recreated at the saved place");
+    // The label taken away by the game mid-drag (its panel gone): stopped, nothing saved.
+    const auto start = LabelBox(label);
+    Mouse(static_cast<long>(start[0] + 5), static_cast<long>(start[1] + 5), true);
+    Mouse(static_cast<long>(start[0] + 105), static_cast<long>(start[1] + 5), true);
+    Check(drag.phase == Drag::Moving, "Dragging again");
+    Get(document).fields["panel"] = nullptr;
+    Tick();
+    Check(!Overlay() && drag.phase == Drag::Idle, "Removed with its layer: the drag stopped");
+    Mouse(static_cast<long>(start[0] + 205), static_cast<long>(start[1] + 5), true);
+    Mouse(static_cast<long>(start[0] + 205), static_cast<long>(start[1] + 5), false);
+    Get(document).fields["panel"] = panel;
+    Tick();
+    label = Overlay();
+    Check(label && saves == 5, "Back, nothing saved");
+    // A button held while the label appears: never a press.
+    RestorePerfOverlay();
+    button = true;
+    Tick();
+    label = Overlay();
+    Step();
+    const auto held = LabelBox(label);
+    Mouse(static_cast<long>(held[0] + 5), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(held[0] + 300), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(held[0] + 300), static_cast<long>(held[1] + 5), false);
+    Check(LabelBox(label)[0] == held[0] && saves == 5, "Held before the label: no drag");
+    // A save that fails: logged, the place kept for this session.
+    saveFails = true;
+    Mouse(static_cast<long>(held[0] + 5), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), false);
+    saveFails = false;
+    const int failedPlace = module->settings.perfOverlayX;
+    Check(saves == 6 && Logged("PERF_OVERLAY_PLACE_ERROR Injected save failure") == 1 && failedPlace == PlaceOfEdge(LabelBox(label)[0], LabelBox(label)[2], 1920) &&
+        std::fabs(LabelBox(label)[0] - (held[0] + 50)) < .01f, "Save failure logged, the overlay where dropped");
+    // Its text then widens it (the first figures, then the CPU share): a right
+    // corner's label grows to the left, then the next refresh places it again
+    // at the same share of the free space.
+    Pump(4);
+    Check(module->settings.perfOverlayX == failedPlace &&
+        std::fabs(LabelBox(label)[0] - EdgeOfPlace(failedPlace, LabelBox(label)[2], 1920)) < .01f, "Kept at that place for this session");
+    // Unchecked (the options page puts it back in its corner): clicks let through, the button no longer read.
+    Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(held[0] + 255), static_cast<long>(held[1] + 5), true);
+    Check(drag.phase == Drag::Moving, "Dragging when unchecked");
+    module->settings.perfOverlayDrag = false;
+    module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
+    Tick();
+    Check(Overlay() == label && Get(label).picking == 1 && ui.picking == 1 && drag.phase == Drag::Idle &&
+        Pixels(label, "right") == 8 && Pixels(label, "bottom") == 8, "Unchecked: clicks let through, back in its corner, the drag stopped");
+    reads = buttonReads;
+    cursors = cursorReads;
+    picked = picks;
+    Mouse(static_cast<long>(held[0] + 5), static_cast<long>(held[1] + 5), true);
+    Mouse(600, 600, true);
+    Mouse(600, 600, false);
+    Check(buttonReads == reads && cursorReads == cursors && picks == picked && Pixels(label, "right") == 8 && saves == 6,
+        "Unchecked: the mouse is not read");
+    module->settings.perfOverlayCorner = 0;
+    Pump(2);
+    Check(Pixels(Overlay(), "left") == 8 && Pixels(Overlay(), "top") == 8, "Top left again");
+    Check(changes == 0 && syncs == saves, "Every place saved without Module::Change (its appearance refresh), the options page synchronised");
+}
+
+// The mouse placement at the screen's edges: the game's menu buttons drawn
+// over the top right, black bars around the panel; another client's Metamob
+// choice kept with the place.
+void DragEdges() {
+    using namespace perfOverlay;
+    using namespace mouse;
+    module->settings.perfOverlayDrag = true;
+    Tick();
+    const auto label = Overlay();
+    Step(); // the button seen up
+    Check(label && Get(label).picking == 0 && LabelBox(label)[0] == 8 && LabelBox(label)[1] == 8, "Mouse placement on, top left");
+    const float width = LabelBox(label)[2], height = LabelBox(label)[3];
+    const auto saved = saves;
+    // The game's menu buttons over the top right (RootPopup, 41 px high).
+    const Blocker buttons{Element("VisualElement", "MenuButtons"), 1300, 0, 620, 41};
+    blockers.push_back(buttons);
+    // Held by its lower part, the overlay goes partly under them: its centre
+    // covered, never the point held.
+    Mouse(20, 50, true); // the point held: (12, 42) in the overlay
+    Mouse(900, 53, true);
+    Mouse(1800, 50, true);
+    Mouse(1800, 50, false);
+    const auto under = LabelBox(label);
+    Check(under[0] == 1920 - 8 - width && under[1] == 8 && saves == saved + 1 &&
+        Within({buttons.x, buttons.y, buttons.width, buttons.height}, under[0] + under[2] / 2, under[1] + under[3] / 2),
+        "Dropped at the top right, its centre under the menu buttons");
+    // Grabbed again by its visible part: it moves.
+    Mouse(static_cast<long>(under[0]) + 14, 55, true);
+    Mouse(1000, 500, true);
+    Check(drag.phase == Drag::Moving && LabelBox(label)[0] == 986 && LabelBox(label)[1] == 453, "Grabbed by its visible part");
+    Mouse(1000, 500, false);
+    // The point held taken under them: back at the last place where it was seen.
+    Mouse(1000, 470, true); // the point held: (14, 17)
+    Mouse(1200, 100, true);
+    Mouse(1400, 20, true);  // drawn at (1386, 8): the point held, (1400, 25), under the buttons
+    Mouse(1400, 20, true);
+    Check(drag.phase == Drag::Idle && LabelBox(label)[0] == 1186 && LabelBox(label)[1] == 83 && saves == saved + 3 &&
+        module->settings.perfOverlayX == PlaceOfEdge(1186, width, 1920) && module->settings.perfOverlayY == PlaceOfEdge(83, height, 1080),
+        "The point held covered: back at the last place seen, saved there");
+    Mouse(1400, 20, false);
+    Check(LabelBox(label)[0] == 1186 && saves == saved + 3, "Released afterwards: nothing more");
+    blockers.clear();
+    // A borderless full screen at another aspect ratio than the display's:
+    // the panel scaled alike on both axes and centred between black bars.
+    clientWidth = 1920;
+    clientHeight = 1200; // 60 px above and below the 1920 x 1080 panel
+    Mouse(1196, 153, true); // the panel's (1196, 93): on the overlay
+    Mouse(1296, 253, true);
+    Check(drag.phase == Drag::Moving && LabelBox(label)[0] == 1286 && LabelBox(label)[1] == 183, "Letterboxed: the bars left out");
+    Mouse(1296, 253, false);
+    clientWidth = 2560;
+    clientHeight = 1080; // 320 px left and right
+    Mouse(1616, 193, true); // the panel's (1296, 193): on the overlay
+    Mouse(1016, 393, true);
+    Check(drag.phase == Drag::Moving && LabelBox(label)[0] == 686 && LabelBox(label)[1] == 383, "Pillarboxed: the bars left out");
+    Mouse(1016, 393, false);
+    Mouse(100, 393, true); // a black bar: outside the panel
+    Check(drag.phase == Drag::Idle, "A press on a black bar: not the overlay");
+    Mouse(100, 393, false);
+    clientWidth = 1920;
+    clientHeight = 1080;
+    Check(saves == saved + 5, "Each drop saved once");
+    // Another client's Metamob choice not read yet: kept with the place, the
+    // options page synchronised; never Module::Change and its appearance refresh.
+    const bool metamob = module->settings.metamobSync;
+    const auto synced = syncs;
+    sharedMetamob = !metamob;
+    Mouse(696, 393, true);
+    Mouse(796, 493, true);
+    Mouse(796, 493, false);
+    Check(saves == saved + 6 && syncs == synced + 1 && module->settings.metamobSync == !metamob && changes == 0 &&
+        LabelBox(label)[0] == 786, "Saved as Module::Change saves, without its appearance refresh");
+    sharedMetamob.reset();
+    module->settings.metamobSync = metamob;
+    module->settings.perfOverlayDrag = false;
+    module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
+    Pump(2);
+    Check(Overlay() == label && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && Get(label).picking == 1, "Top left again");
+}
+
+// ---------------------------------------------------------- GPU and disk
+void DeviceWorkers() {
+    using namespace perfOverlay;
+    Pump(2);
+    Check(Overlay() && Get(Overlay()).text == Steady && !devices.worker && !devices.thread && pdhFake::spawns == 0,
+        "GPU and disk off: no worker");
+    // Both on: a worker with this process's engines and the physical disks.
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
+    Tick();
+    Check(devices.worker && devices.thread && pdhFake::spawns == 1 && devices.worker->gpu && devices.worker->disk &&
+        devices.worker->pid == 4242 && devices.worker->drive == L'C' && devices.worker->period == 2, "Started while the overlay is shown");
+    Check(WaitFor([] { const auto figures = Figures(); return figures.gpu >= 0 && figures.disk.busy >= 0 && figures.disk.rate >= 0; }),
+        "Figures from the second collection");
+    Check(pdhFake::Paths() == std::vector<std::wstring>{L"\\GPU Engine(pid_4242_*)\\Utilization Percentage",
+        L"\\PhysicalDisk(*)\\% Idle Time", L"\\PhysicalDisk(*)\\Disk Bytes/sec"}, "English counter paths, this process's engines only");
+    Check(Figures().gpuProblem.empty() && Figures().diskProblem.empty(), "No problem");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\n" + DevicesLine, "Fourth line: " + Get(Overlay()).text);
+    Check(pdhFake::spawns == 1 && pdhFake::Alive() == 1, "One worker, one query");
+    // The GPU unchecked: left out at the next refresh; the worker restarted with the disk's counters only.
+    pdhFake::ClearPaths();
+    module->settings.perfOverlayGpu = false;
+    Tick();
+    Check(pdhFake::spawns == 2 && devices.worker && !devices.worker->gpu && devices.worker->disk, "Restarted for the disk only");
+    Check(WaitFor([] { return Figures().disk.busy >= 0; }), "Disk figures");
+    Check(pdhFake::Paths() == std::vector<std::wstring>{L"\\PhysicalDisk(*)\\% Idle Time", L"\\PhysicalDisk(*)\\Disk Bytes/sec"} &&
+        pdhFake::Alive() == 1, "No GPU counter; the first worker's query closed");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\nDisque C: 4 % · 1,2 Mo/s", "Disk only: " + Get(Overlay()).text);
+    // Both unchecked: stopped and joined, its query closed.
+    module->settings.perfOverlayDisk = false;
+    Tick();
+    Check(!devices.worker && !devices.thread && pdhFake::Alive() == 0, "Both off: the worker stopped");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady, "Three lines again");
+    // The GPU alone.
+    module->settings.perfOverlayGpu = true;
+    Tick();
+    Check(WaitFor([] { return Figures().gpu >= 0; }), "GPU figure");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\nGPU 23 %", "GPU only: " + Get(Overlay()).text);
+    // The label gone (a loading screen): stopped; shown again: started again.
+    module->settings.perfOverlayDisk = true;
+    Tick();
+    auto spawned = pdhFake::spawns;
+    Get(document).fields["panel"] = nullptr;
+    Tick();
+    Check(!Overlay() && !devices.worker && !devices.thread && pdhFake::Alive() == 0, "Not shown: stopped");
+    Pump(3);
+    Check(pdhFake::spawns == spawned && !devices.worker, "Not started while waiting");
+    Get(document).fields["panel"] = panel;
+    Tick();
+    Check(Overlay() && devices.worker && pdhFake::spawns == spawned + 1, "Shown again: started again");
+    // Restore (the mod stopping): stopped and joined.
+    RestorePerfOverlay();
+    Check(!devices.worker && !devices.thread && pdhFake::Alive() == 0, "Restore: stopped");
+    Tick();
+    Check(Overlay() && devices.worker && WaitFor([] { return Figures().gpu >= 0 && Figures().disk.busy >= 0; }), "Back after a restore");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\n" + DevicesLine, "Four lines again");
+    // What PDH refuses leaves its figure out, logged once; the overlay goes on.
+    const auto restart = [] {
+        module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
+        Tick();
+        module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
+        Tick();
+    };
+    const auto problems = [] { const auto figures = Figures(); return !figures.gpuProblem.empty() && !figures.diskProblem.empty(); };
+    pdhFake::Configure([] { pdhFake::openStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_OBJECT); });
+    restart();
+    Check(WaitFor(problems), "PDH refused");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady && LoggedLine("PERF_OVERLAY_GPU_UNAVAILABLE query=C0000BB8") == 1 &&
+        LoggedLine("PERF_OVERLAY_DISK_UNAVAILABLE query=C0000BB8") == 1, "No PDH: both left out, logged: " + Get(Overlay()).text);
+    restart();
+    Check(WaitFor(problems), "PDH refused again");
+    Pump(4);
+    Check(Logged("PERF_OVERLAY_GPU_UNAVAILABLE") == 1 && Logged("PERF_OVERLAY_DISK_UNAVAILABLE") == 1, "Logged once");
+    pdhFake::Configure([] { pdhFake::openStatus = ERROR_SUCCESS; pdhFake::gpuStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_OBJECT); });
+    gpuReported = diskReported = false; // each problem's own line below
+    restart();
+    Check(WaitFor([] { const auto figures = Figures(); return !figures.gpuProblem.empty() && figures.disk.busy >= 0; }), "GPU counter refused");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\nDisque C: 4 % · 1,2 Mo/s" && LoggedLine("PERF_OVERLAY_GPU_UNAVAILABLE counter=C0000BB8") == 1 &&
+        !diskReported, "No GPU counter: the disk still shown: " + Get(Overlay()).text);
+    pdhFake::Configure([] { pdhFake::gpuStatus = ERROR_SUCCESS; pdhFake::diskStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_COUNTER); });
+    restart();
+    Check(WaitFor([] { const auto figures = Figures(); return !figures.diskProblem.empty() && figures.gpu >= 0; }), "Disk counter refused");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\nGPU 23 %" && LoggedLine("PERF_OVERLAY_DISK_UNAVAILABLE counter=C0000BB9") == 1,
+        "No disk counter: the GPU still shown: " + Get(Overlay()).text);
+    pdhFake::Configure([] { pdhFake::diskStatus = ERROR_SUCCESS; });
+    diskReported = false;
+    pdhFake::path = L"\\\\serveur\\jeux\\Dofus.exe";
+    restart();
+    Check(devices.worker && devices.worker->drive == 0 && WaitFor([] { return !Figures().diskProblem.empty() && Figures().gpu >= 0; }),
+        "A network path");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\nGPU 23 %" && LoggedLine("PERF_OVERLAY_DISK_UNAVAILABLE no-drive") == 1, "No drive letter: no disk");
+    diskReported = false;
+    pdhFake::path = L"E:\\Dofus\\Dofus.exe";
+    restart();
+    Check(WaitFor([] { return !Figures().diskProblem.empty() && Figures().gpu >= 0; }), "A drive no physical disk holds");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\nGPU 23 %" && LoggedLine("PERF_OVERLAY_DISK_UNAVAILABLE no-instance E:") == 1, "No disk for E:");
+    pdhFake::path = L"C:\\Jeux\\Dofus\\Dofus.exe";
+    gpuReported = diskReported = false;
+    pdhFake::Configure([] { pdhFake::readStatus = static_cast<PDH_STATUS>(PDH_NO_DATA); });
+    restart();
+    Check(WaitFor(problems), "Reads failing");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady && LoggedLine("PERF_OVERLAY_GPU_UNAVAILABLE read=800007D5") == 1 &&
+        LoggedLine("PERF_OVERLAY_DISK_UNAVAILABLE read=800007D5") == 1, "Reads failing: both left out");
+    gpuReported = diskReported = false;
+    pdhFake::Configure([] { pdhFake::readStatus = ERROR_SUCCESS; pdhFake::collectStatus = static_cast<PDH_STATUS>(PDH_NO_DATA); });
+    restart();
+    Check(WaitFor(problems), "Collections failing");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady && LoggedLine("PERF_OVERLAY_GPU_UNAVAILABLE collect=800007D5") == 1 &&
+        LoggedLine("PERF_OVERLAY_DISK_UNAVAILABLE collect=800007D5") == 1, "Collections failing: both left out");
+    pdhFake::Configure([] { pdhFake::collectStatus = ERROR_SUCCESS; });
+    restart();
+    Check(WaitFor([] { return Figures().gpu >= 0 && Figures().disk.busy >= 0; }), "Back");
+    Pump(2);
+    Check(Get(Overlay()).text == Steady + "\n" + DevicesLine, "Four lines once PDH answers");
+    // A thread that cannot start: logged once, tried again 5 s later; the overlay goes on.
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
+    Tick();
+    pdhFake::spawnFails = true;
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
+    spawned = pdhFake::spawns;
+    Tick();
+    Check(!devices.worker && !devices.thread && pdhFake::spawns == spawned + 1 && LoggedLine("PERF_OVERLAY_DEVICES_ERROR thread 8") == 1,
+        "No thread: logged");
+    Pump(24);
+    Check(pdhFake::spawns == spawned + 1 && Get(Overlay()).text == Steady, "Not tried again before 5 s, three lines meanwhile");
+    Pump();
+    Check(pdhFake::spawns == spawned + 2 && LoggedLine("PERF_OVERLAY_DEVICES_ERROR thread 8") == 1, "Tried again 5 s later, logged once");
+    pdhFake::spawnFails = false;
+    Pump(25);
+    Check(devices.worker && devices.thread && pdhFake::spawns == spawned + 3, "Started at the next try");
+    // A worker stuck in a PDH call: the game's thread waits 250 ms at most,
+    // and no second worker starts before the first one ends.
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
+    Tick();
+    const HANDLE gate = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    pdhFake::Configure([&] { pdhFake::gate = gate; });
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
+    Tick();
+    Check(WaitFor([] { return pdhFake::waiting.load() == 1; }), "Stuck in a collection");
+    spawned = pdhFake::spawns;
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
+    const auto before = GetTickCount64();
+    Tick();
+    const auto waited = GetTickCount64() - before;
+    Check(!devices.worker && !devices.thread && devices.retiring && waited >= 200 && waited < 2000 &&
+        Logged("PERF_OVERLAY_DEVICES_SLOW") == 1, "Waited " + std::to_string(waited) + " ms, then left to end by itself");
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
+    Pump(3);
+    Check(!devices.worker && pdhFake::spawns == spawned && pdhFake::Alive() == 1, "No second worker while the first one reads");
+    pdhFake::Configure([] { pdhFake::gate = nullptr; });
+    SetEvent(gate);
+    Check(WaitFor([] { return pdhFake::waiting.load() == 0 && pdhFake::Alive() == 0; }), "The stuck worker ends and closes its query");
+    CloseHandle(gate);
+    Tick();
+    Check(devices.worker && devices.thread && !devices.retiring && pdhFake::spawns == spawned + 1, "Then a new worker");
+    Check(WaitFor([] { return Figures().gpu >= 0 && Figures().disk.busy >= 0; }), "With its figures");
+    module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
+}
 }
 
 int main() {
@@ -842,13 +1728,19 @@ int main() {
         Setup();
         Module mod({});
         module = &mod;
+        mod.ui = std::make_unique<OptionsUi>(); // its Sync only (a fake): the options page kept in step with a saved place
         mod.ready = true;
         mod.servicesReady = true;
         mod.compositor.reset(Make("Compositor"));
+        // The lifecycle below first runs without the 1.14.0 parts, then with each of them.
+        mod.settings.perfOverlayGpu = mod.settings.perfOverlayDisk = mod.settings.perfOverlayDrag = false;
         BuildInterface();
         FramesModel();
         CpuModel();
         Formatting();
+        DeviceModel();
+        CounterArrays();
+        PlacementModel();
         Install();
         OptionOff();
         Waiting();
@@ -859,19 +1751,33 @@ int main() {
         Errors();
         ShownErrors();
         Cleanup();
+        Dragging();
+        DragEdges();
+        DeviceWorkers();
         RestorePerfOverlay();
+        Check(!perfOverlay::devices.worker && !perfOverlay::devices.thread && pdhFake::Alive() == 0, "No worker left after Restore");
         mod.compositor.reset();
         module = nullptr;
         Check(handles.empty(), "No managed reference kept after Restore");
         std::cout << "PASS: performance overlay: frame rate and frame times over the last second (a slow frame forgotten after "
-            "a second, 1024-frame ring), CPU share over the last two refreshes, Mo/Go and French decimals, three-line text, "
-            "every native call verified and guarded (54 methods, 2 GC exports and the 4 functions behind them, the layer "
-            "host's offset), inert when off or disabled, waits for its layer (loading screens, pq.pbs throwing), first child "
-            "of RootHigh, ignores clicks and focus, rounded dark background, never narrower once laid out, four corners "
-            "(top right under the game menu), refreshed every second pump and only when changed, no CPU share spanning a "
-            "wait, recreated when the game rebuilds its layers or the session changes, removed at once when unchecked or "
-            "restored, 3 errors within 5 minutes give up (errors at each first refresh included), cleanup retried twice "
-            "a second for 10 s\n";
+            "a second, 1024-frame ring), CPU share over the last two refreshes, Mo/Go and French decimals, three-line text and "
+            "a fourth for the GPU and the disk, every native call verified and guarded (55 methods, 2 GC exports and the 4 "
+            "functions behind them, the layer host's offset), inert when off or disabled, waits for its layer (loading screens, "
+            "pq.pbs throwing), first child of RootHigh, ignores clicks and focus without the mouse placement, rounded dark "
+            "background, never narrower once laid out, four corners (top right under the game menu), refreshed every second "
+            "pump and only when changed, no CPU share spanning a wait, recreated when the game rebuilds its layers or the "
+            "session changes, removed at once when unchecked or restored, 3 errors within 5 minutes give up (errors at each "
+            "first refresh included), cleanup retried twice a second for 10 s; mouse placement: a press on the overlay only "
+            "(the panel's pick, the game's window in the foreground, the interface shown), a click moves nothing, follows the "
+            "cursor inside the margins, client pixels scaled to the panel (black bars aside), saved once as ten-thousandths of "
+            "the free space without Module::Change's appearance refresh, placed again for another resolution, right and bottom "
+            "corners moved by their own sides, ended by the release or a lost foreground, the point held covered sending it "
+            "back to the last place seen (grabbed again by any visible part), stopped without saving by Restore or the label "
+            "going, never a press held from before, the clicks let through and the mouse unread when unchecked; GPU and disk: "
+            "this process's busiest engine (never a sum), the game's physical disk (active time, transfer rate), the first "
+            "sample without a figure, PDH arrays sized then read (fresh items only), a worker thread only while shown with one "
+            "of them on, restarted with the counters asked for, stopped and "
+            "joined (250 ms at most, never two at once), every PDH refusal leaving its figure out and logged once\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

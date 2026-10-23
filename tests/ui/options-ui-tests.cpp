@@ -4,6 +4,7 @@
 #include "appearance/features.hpp"
 #include "glow/glow-mode-labels.hpp"
 #include "animations/animation-mode-labels.hpp"
+#include "appearance/miniature-category-labels.hpp"
 #include "treasure/treasure-launch.hpp"
 #include <algorithm>
 #include <iostream>
@@ -25,13 +26,13 @@ enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, M
     CalendarSection, PerformanceSection, LoadingSection, AboutSection, SectionCount };
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra, NotebookPingExtra, MapAddPositionExtra,
-    ChatCoordsExtra, PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra };
+    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
 // « Apparence » checkbox titles, in Settings' category order.
 constexpr const char* CombatCategoryTitles[] = {"Moi", "Joueurs alliés", "Invocations alliées", "Mes invocations", "Ennemis", "Invocations ennemies"};
-constexpr const char* RoleplayCategoryTitles[] = {"Moi", "Membres du groupe", "Autres joueurs", "Monstres"};
+constexpr const char* RoleplayCategoryTitles[] = {"Moi", "Membres du groupe", "Autres joueurs", "Monstres", "PNJ"};
 struct Class { std::string name; };
 struct MethodInfo { Class* klass; std::string name; int argc; };
 struct Choice { int id = 0; Obj label = nullptr; };
@@ -593,7 +594,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.extraSources[NotebookPingExtra].get(), ui.extraSources[MapAddPositionExtra].get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
-        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.extraSources[ChatCoordsExtra].get(),
+        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.chatCoordsSource.get(),
         ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
         ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.perfCornerSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
@@ -621,7 +622,8 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         appearance.rows.push_back(CheckRow(ui.combatMiniatureOptions[i], ui.combatMiniatureSources[i], CombatCategoryTitles[i], true));
     appearance.rows.push_back(ChoiceRow(ui.roleplayModeOption, ui.roleplayModeSource, "Hors combat", 0));
     for (size_t i = 0; i < ui.roleplayMiniatureOptions.size(); ++i)
-        appearance.rows.push_back(CheckRow(ui.roleplayMiniatureOptions[i], ui.roleplayMiniatureSources[i], RoleplayCategoryTitles[i], true));
+        appearance.rows.push_back(CheckRow(ui.roleplayMiniatureOptions[i], ui.roleplayMiniatureSources[i], RoleplayCategoryTitles[i],
+            defaults.*RoleplayMiniatureToggles[i]));
     for (size_t i = 0; i < ui.animationOptions.size(); ++i)
         animations.rows.push_back(CheckRow(ui.animationOptions[i], ui.animationSources[i], AnimationToggleLabels[i], defaults.*AnimationToggles[i]));
     return {
@@ -653,7 +655,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.chatSoulOption, ui.chatSoulSource, "Âme en sac dans le chat", true),
             CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true),
             CheckRow(ui.chatMetamobOption, ui.chatMetamobSource, "Metamob dans le chat", true),
-            CheckRow(ui.extraOptions[ChatCoordsExtra], ui.extraSources[ChatCoordsExtra], "Dimension avec les coordonnées dans le chat", true)}},
+            ChoiceRow(ui.chatCoordsOption, ui.chatCoordsSource, "Dimension avec les coordonnées dans le chat", 2)}},
         {"Calendrier", {CheckRow(ui.calendarKraloveOption, ui.calendarKraloveSource, "Ouvertures Kralamoure dans le calendrier", true)}},
         {"Performances", {CheckRow(ui.extraOptions[PerfOverlayExtra], ui.extraSources[PerfOverlayExtra], "Afficher les FPS et la mémoire", false),
             CheckRow(ui.extraOptions[PerfGpuExtra], ui.extraSources[PerfGpuExtra], "Charge du GPU", true),
@@ -819,8 +821,8 @@ void CheckLayout(Fixture& f) {
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 53 && optionModels == 55,
-        "The UI must create fifty private sources and fifty-two rows");
+    Check(sourceModels == 54 && optionModels == 56,
+        "The UI must create fifty-four private sources and fifty-six rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -934,6 +936,15 @@ void RegistrationAndValues() {
     Check(!f.Ui().Attach(f.page) && f.Categories().size() == 3, "Repeated attachment must be idempotent");
     CheckModeChoices(f.Ui().modeOption.get());
     CheckModeChoices(f.Ui().roleplayModeOption.get());
+    {
+        // « Dimension avec les coordonnées dans le chat »: each id is the saved mode.
+        const auto& choices = Get(Get(f.Ui().chatCoordsOption.get()).refs.at("choices")).items;
+        const char* labels[] = {"Non", "Oui, sauf dans le Monde des Douze", "Oui"};
+        Check(choices.size() == 3, "The chat dimension needs its three choices");
+        for (size_t i = 0; i != 3; ++i)
+            Check(Get(choices[i]).choice.id == static_cast<int>(i) && Get(Get(choices[i]).choice.label).text == labels[i],
+                "Chat dimension choice IDs or labels changed");
+    }
     for (const auto& section : Layout(f.Ui()))
         for (const auto& row : section.rows) {
             if (!row.source) continue;
@@ -1040,22 +1051,38 @@ void AppearanceCategoriesValuesAndDefaults() {
     for (auto field : CombatMiniatureToggles) f.state.settings.*field = false;
     initHook(f.page, false, true, DisplayId, nullptr);
     const auto rows = Rows(Section(f.Categories().back(), AppearanceSection));
-    Check(rows.size() == 12 && rows[0] == f.Ui().modeOption.get() && rows[7] == f.Ui().roleplayModeOption.get(),
-        "Apparence: En combat, its six categories, Hors combat, its four categories");
+    Check(rows.size() == 13 && rows[0] == f.Ui().modeOption.get() && rows[7] == f.Ui().roleplayModeOption.get() &&
+        rows[12] == f.Ui().roleplayMiniatureOptions[4].get(), "Apparence: En combat, its six categories, Hors combat, its five categories ending with PNJ");
+    // The map context menu's « Affichage » shows the same categories under the same names.
+    for (size_t i = 0; i < std::size(CombatCategoryTitles); ++i)
+        Check(std::string(CombatCategoryTitles[i]) == CombatMiniatureLabels[i], "Context menu combat categories keep the options titles");
+    for (size_t i = 0; i < std::size(RoleplayCategoryTitles); ++i)
+        Check(std::string(RoleplayCategoryTitles[i]) == RoleplayMiniatureLabels[i], "Context menu roleplay categories keep the options titles");
+    Check(Description(f.Ui().roleplayMiniatureOptions[4].get()) ==
+        "Hors combat, avec Miniatures : les personnages non joueurs (PNJ) sont réduits. Décoché, ils gardent leur taille normale. Désactivé par défaut.",
+        "The PNJ row says what it reduces and that it starts unticked");
     for (size_t i = 0; i < f.Ui().combatMiniatureSources.size(); ++i) {
         const auto& source = Get(f.Ui().combatMiniatureSources[i].get());
         Check(!source.boolean && source.defaultBoolean, "Saved combat categories shown, reset to ticked");
         Check(Description(f.Ui().combatMiniatureOptions[i].get()).rfind("En combat, avec Miniatures", 0) == 0, "Combat rows say their context");
     }
+    const Settings defaults;
     for (size_t i = 0; i < f.Ui().roleplayMiniatureSources.size(); ++i) {
         const auto& source = Get(f.Ui().roleplayMiniatureSources[i].get());
-        Check(source.boolean && source.defaultBoolean, "Roleplay categories ticked by default");
+        const bool ticked = defaults.*RoleplayMiniatureToggles[i];
+        Check(source.boolean == ticked && source.defaultBoolean == ticked && ticked == (i != 4),
+            "Roleplay categories ticked by default, except PNJ (never reduced before its checkbox)");
         Check(Description(f.Ui().roleplayMiniatureOptions[i].get()).rfind("Hors combat, avec Miniatures", 0) == 0, "Roleplay rows say their context");
     }
     for (auto option : {f.Ui().modeOption.get(), f.Ui().roleplayModeOption.get()})
         Check(Description(option).find("catégories cochées") != std::string::npos && Description(option).find("Créatures") != std::string::npos,
             "Each context's choice explains the categories and that Créatures applies to all");
-    Check(Description(f.Ui().roleplayModeOption.get()).find("PNJ") != std::string::npos, "NPCs always follow the mode");
+    // NPCs follow their own category with Miniatures; the game's Créatures never
+    // converts them (bool property 9), whatever the categories.
+    const auto roleplayMode = Description(f.Ui().roleplayModeOption.get());
+    Check(roleplayMode.find("les PNJ et les autres éléments le sont toujours") == std::string::npos &&
+        roleplayMode.ends_with("les autres éléments le sont toujours. Créatures s’applique à tous, sauf aux PNJ, que le jeu laisse tels quels."),
+        "The mode no longer says NPCs are always reduced, nor that Créatures converts them");
     auto expected = f.state.settings;
     const auto flip = [&](const Ref& source, bool Settings::* field) {
         Get(source.get()).boolean = !Get(source.get()).boolean;
@@ -1065,7 +1092,10 @@ void AppearanceCategoriesValuesAndDefaults() {
     };
     for (size_t i = 0; i < f.Ui().combatMiniatureSources.size(); ++i) flip(f.Ui().combatMiniatureSources[i], CombatMiniatureToggles[i]);
     for (size_t i = 0; i < f.Ui().roleplayMiniatureSources.size(); ++i) flip(f.Ui().roleplayMiniatureSources[i], RoleplayMiniatureToggles[i]);
-    Check(changes == 10, "Category changes must commit once each");
+    Check(changes == 11, "Category changes must commit once each");
+    Check(f.state.settings.roleplayMiniatureNpcs, "Ticking PNJ commits it");
+    f.state.settings.roleplayMiniatureNpcs = false; f.Ui().Sync();
+    Check(!Get(f.Ui().roleplayMiniatureSources[4].get()).boolean, "An external PNJ change (the context menu) updates its native checkbox");
     f.state.settings.roleplayMiniatureMonsters = false; f.Ui().Sync();
     Check(!Get(f.Ui().roleplayMiniatureSources[3].get()).boolean, "External category changes update the native checkbox");
     f.StopAndRestore();
@@ -1195,7 +1225,7 @@ Settings AwayFromDefaults() {
     Settings settings = Config(1, 0);
     for (auto field : AnimationToggles) settings.*field = !(Settings{}.*field);
     for (auto field : CombatMiniatureToggles) settings.*field = false;
-    for (auto field : RoleplayMiniatureToggles) settings.*field = false;
+    for (auto field : RoleplayMiniatureToggles) settings.*field = !(Settings{}.*field);
     settings.roleplayMode = 1;
     settings.monsterGlowMode = 3;
     settings.glowNpcs = settings.glowInteractives = true;
@@ -1210,6 +1240,7 @@ Settings AwayFromDefaults() {
     settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = settings.chatMetamobStatus = false;
     for (auto field : ExtraToggles) settings.*field = !(Settings{}.*field);
     settings.perfOverlayCorner = 2;
+    settings.coordsWorldChatMode = 1;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -1240,7 +1271,7 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == ChatSection) {
         settings.chatTravelLinks = defaults.chatTravelLinks; settings.chatSoulInventory = defaults.chatSoulInventory;
         settings.chatOcreStatus = defaults.chatOcreStatus; settings.chatMetamobStatus = defaults.chatMetamobStatus;
-        settings.*ExtraToggles[ChatCoordsExtra] = defaults.*ExtraToggles[ChatCoordsExtra];
+        settings.coordsWorldChatMode = defaults.coordsWorldChatMode;
     } else if (index == CalendarSection) {
         settings.calendarKralamoure = defaults.calendarKralamoure;
     } else if (index == PerformanceSection) {
@@ -1333,6 +1364,16 @@ void ValidationAndLoadingGate() {
         Get(f.Ui().glowSource.get()).integer = invalid;
         f.Ui().Tick();
         Check(changes == 0 && Get(f.Ui().glowSource.get()).integer == 1, "Invalid glow mode must revert without persistence");
+    }
+    for (int invalid : {-1, 3, 99}) {
+        Get(f.Ui().chatCoordsSource.get()).integer = invalid;
+        f.Ui().Tick();
+        Check(changes == 0 && Get(f.Ui().chatCoordsSource.get()).integer == 2, "Invalid chat dimension choice must revert without persistence");
+    }
+    for (int invalid : {-1, 4, 99}) {
+        Get(f.Ui().perfCornerSource.get()).integer = invalid;
+        f.Ui().Tick();
+        Check(changes == 0 && Get(f.Ui().perfCornerSource.get()).integer == 0, "Invalid overlay corner must revert without persistence");
     }
     CheckLayout(f);
     f.StopAndRestore();
@@ -2020,7 +2061,7 @@ int main() {
         run(fake::MetamobFieldsLeaveOnAbandon);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: twelve native sections (Apparence with six combat and four roleplay category checkboxes, Animations with six toggles, Carnet and Performances with the 1.13.0 rows; layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace)\n";
+        std::cout << "PASS: twelve native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows; layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

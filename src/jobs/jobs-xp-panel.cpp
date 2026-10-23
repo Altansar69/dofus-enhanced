@@ -388,7 +388,7 @@ void Create(Obj owner) {
         Ref label(api.Field(row.get(),"m_textLabel"));api.Call(label.get(),"set_isSingleLine",{&no});
         Enum(label.get(),"whiteSpace",0);Enum(state.recipeLines[i].get(),"display",1);
     }
-    Ref pages(Row(list.get()));state.previous.reset(Button(pages.get(),"← Précédentes"));state.next.reset(Button(pages.get(),"Suivantes →"));
+    Ref pages(Row(list.get()));state.previous.reset(Button(pages.get(),"« Précédentes"));state.next.reset(Button(pages.get(),"Suivantes »"));
     Float(state.previous.get(),"flexGrow",1);Float(state.next.get(),"flexGrow",1);Pixels(state.previous.get(),"marginRight",8);
     Ref result(Section(body.get(),"3. Ingrédients à préparer"));
     state.details.reset(Label(result.get(),"Sélectionne une recette pour afficher les quantités nécessaires à ton objectif."));

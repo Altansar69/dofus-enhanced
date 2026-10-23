@@ -229,6 +229,26 @@ void Module::Pump(Obj source) {
         Stop();
         return;
     }
+    // Every read of an unbound account option throws OptionNotLoadedException:
+    // three of them in a row used to stop the module for the rest of the game
+    // (a logout, an automatic reconnection, the character selection).
+    const bool bound = api.Value<bool>(api.Call(creatureOption.get(), "IsLoaded")) &&
+        api.Value<bool>(api.Call(roleplayOption.get(), "IsLoaded"));
+    if (bound == accountOptionsUnbound) {
+        accountOptionsUnbound = !bound;
+        Log(bound ? "ACCOUNT_OPTIONS_BOUND" : "ACCOUNT_OPTIONS_UNBOUND waiting for the account binding");
+        // Bound again: the account's reloaded creature modes are not the player's
+        // toggles. The settings apply to them as at startup (Discover).
+        if (bound) { previousCombat = InCombat(); Change(settings, false); }
+    }
+    if (!bound) {
+        // Off-game screens: no stale figures nor the last character's hunt. Each
+        // is cheap when nothing is shown; the overlay comes back with the binding.
+        // The notebook stays: its entries are the player's, not the character's,
+        // and a draft being typed must survive an automatic reconnection.
+        RestorePerfOverlay(); RestoreTreasurePanel();
+        return;
+    }
     bool combat = InCombat();
     const bool transition = combat != previousCombat;
     previousCombat = combat;
@@ -421,7 +441,8 @@ static void UpdateHook(Obj self, Method method) {
     if (module->servicesReady) { MapInfoFrame(now); PerfOverlayFrame(now); }
     if (module->servicesReady && now < nextPump) { if (CompositorGlowTick(now)) TickMonsterGlow(); resourceMap::PumpRender(now); return; }
     nextPump = now + 200;
-    try { module->Pump(self); }
+    // Three failed pumps in a row stop the module; one that succeeds starts the count again.
+    try { module->Pump(self); module->pumpErrors = 0; }
     catch (const std::exception& error) {
         Log(std::string("PUMP_ERROR ") + error.what());
         if (++module->pumpErrors >= 3) module->Stop();

@@ -21,7 +21,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ### 🎨 Appearance
 - 🤏 **Miniatures, Créatures (creatures) or Normal**, chosen separately in and out of combat. Miniatures shrinks to 60% of the original size, never below 50% of a player’s height for monsters and summons.
-- ☑️ **You pick who becomes a miniature**: in combat, yourself, allied players, allied summons, your own summons, enemies and enemy summons; out of combat, yourself, party members, other players and monsters. Everything is ticked by default.
+- ☑️ **You pick who becomes a miniature**: in combat, yourself, allied players, allied summons, your own summons, enemies and enemy summons; out of combat, yourself, party members, other players, monsters and, if you want, NPCs. Everything is ticked by default except NPCs. The same boxes are in the **Affichage** menu of the map's right-click.
 - 🖱️ The game’s creature button becomes a Normal / Créatures / Miniatures selector, and right-clicking the map offers Affichage (display), Animations and Surbrillance (highlight).
 
 ### 🎬 Animations
@@ -33,7 +33,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 - 🧑‍🌾 Optionally, **NPCs** and **interactive elements** (harvestable resources, doors, zaaps…). Up to 32 outlines at once, all categories combined.
 
 ### 🗺️ Maps
-- ⛏️ **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). These are known gathering spots, not their real-time availability.
+- ⛏️ **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). On the world map they are picked in the **Ressources** tab, a real map mode like **Anomalies**. These are known gathering spots, not their real-time availability.
 - 🏷️ **Map tooltips**: hovering a cell, the minimap shows its zone’s name, and both maps add the dimension to the coordinates: [x,y, Monde des Douze]. The minimap’s resource bar can be hidden while keeping the markers.
 - 🧬 **« Ocre » mode**: a square under « Conquête » (conquest) on the world map colours every zone of the archmonsters and dungeon bosses of the Ochre quest (L’éternelle moisson) by how many you are still missing (not validated in the quest, not in your bag, not on Metamob), and in blue « Complet » (complete) the zones where you have them all. Its panel works like the anomalies one: search, territories, levels and an All / Archmonsters / Dungeon bosses filter; clicking a zone centres the map and shows which ones you miss and which you have. The same colours can also be shown on the minimap.
 - 🎯 **Recenter button** on the minimap, bringing it back to your character.
@@ -52,7 +52,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ### 💬 Chat
 - 💬 Next to positions and to archmonsters or bosses of the Ochre quest (L’éternelle moisson) shared in chat: a **TP** button, **Âme en sac** / Pas en sac (soul in your bag or not; the bank is not checked), **Ocre** progress (a click opens the quest) and your **Metamob** count (with a saved key).
-- 🌍 Shared positions and monster groups can show their dimension: [x,y, Monde des Douze].
+- 🌍 Shared positions and monster groups can show their dimension, everywhere or only outside the Monde des Douze: [x,y, Srambad].
 - 🎛️ Each addition can be turned on or off. With TP, typed `[x,y]` coordinates become clickable.
 
 ### 🐙 Calendar
@@ -62,7 +62,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 - 🏴‍☠️ **Treasure hunt**: a panel picks up your position and the current step, searches clues on DofusDB and starts the trip to the clue in one click (**Chemin**, path). Nothing is validated on your behalf.
 - 📒 **Personal notebook**: positions, notes and messages. Travel to a position, pin it on the map or send a message on the chosen channel in one click; add a cell from the map’s right-click menu. Full or compact layout.
 - 📈 **Profession XP**: an **XP** tab in the professions (Métiers) window works out the crafts and ingredients needed to reach your target level, using DofusDB recipes.
-- 📊 **Performance**: optionally, the FPS, frame time, memory and CPU used by the game, discreetly in a corner of the screen.
+- 📊 **Performance**: optionally, the FPS, frame time, memory, CPU and GPU used by the game, and its disk's activity, in a small discreet frame you place anywhere with the mouse.
 
 ### 🔄 Updates
 - 🔄 **Automatic updates from GitHub** when the game starts: each archive is verified (SHA-256 and exact compatibility with your Dofus version) before it is installed. Offline, the compatible local version is used.

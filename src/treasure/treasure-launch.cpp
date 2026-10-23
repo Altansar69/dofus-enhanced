@@ -181,7 +181,7 @@ void ShowRows() {
         Enum(state.lines[i].get(),"display",show?0:1);
         if(show) {
             const auto& clue=state.filtered[index];
-            const auto text=clue.name+" → ["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] · "+std::to_string(clue.distance)+" carte(s)";
+            const auto text=clue.name+" : ["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] · "+std::to_string(clue.distance)+" carte(s)";
             Text(state.rows[i].get(),clue.name+"\n["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] · "+std::to_string(clue.distance)+" carte(s)");
             Text(state.rows[i].get(),text+"\nCliquer pour utiliser ces coordonnées comme nouveau départ.","set_tooltip");
             Text(state.travel[i].get(),"Lancer le trajet vers ["+std::to_string(clue.x)+","+std::to_string(clue.y)+"] : zaaps, bateaux et /travel, comme le bouton TP du chat.","set_tooltip");

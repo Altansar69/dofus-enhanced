@@ -18,12 +18,13 @@ inline bool NotifyCreaturePreference(bool targetCombat, bool currentlyCombat) {
 // In combat: the local character's fighter, the other players of its team,
 // their summons, its own summons, the opposing fighters and their summons.
 // Out of combat: the local character, the members of its party, the other
-// players and the monster groups. Unknown (a fighter of an unknown or unsupported
-// team, an allied non-summoned monster) keeps its native appearance, as before
-// these checkboxes; RoleplayOther (NPCs, merchants…) always follows the mode.
+// players, the monster groups and the NPCs. Unknown (a fighter of an unknown or
+// unsupported team, an allied non-summoned monster) keeps its native appearance,
+// as before these checkboxes; RoleplayOther (merchants, other actors…) always
+// follows the mode.
 enum class MiniatureGroup : int {
     Self, AlliedPlayer, AlliedSummon, OwnSummon, Enemy, EnemySummon,
-    RoleplaySelf, PartyMember, OtherPlayer, Monster, RoleplayOther,
+    RoleplaySelf, PartyMember, OtherPlayer, Monster, Npc, RoleplayOther,
     Unknown
 };
 // self: the fighter is the local character's own (same ID); ownSummon: its
@@ -37,11 +38,12 @@ inline MiniatureGroup ClassifyMiniature(bool player, bool monster, bool summon, 
     if (monster && !ally) return MiniatureGroup::Enemy;
     return MiniatureGroup::Unknown;
 }
-inline MiniatureGroup ClassifyRoleplayMiniature(bool player, bool monster, bool self, bool partyMember) {
+// npc: an NPC (Features::IsNpc), told apart only while it can change a look.
+inline MiniatureGroup ClassifyRoleplayMiniature(bool player, bool monster, bool self, bool partyMember, bool npc = false) {
     if (self) return MiniatureGroup::RoleplaySelf;
     if (player) return partyMember ? MiniatureGroup::PartyMember : MiniatureGroup::OtherPlayer;
     if (monster) return MiniatureGroup::Monster;
-    return MiniatureGroup::RoleplayOther;
+    return npc ? MiniatureGroup::Npc : MiniatureGroup::RoleplayOther;
 }
 // Whether Miniatures reduces this group: its own checkbox. Créatures and
 // Normal never read these choices.
@@ -57,6 +59,7 @@ inline bool MiniatureGroupEnabled(const Settings& settings, MiniatureGroup group
     case MiniatureGroup::PartyMember: return settings.roleplayMiniatureParty;
     case MiniatureGroup::OtherPlayer: return settings.roleplayMiniaturePlayers;
     case MiniatureGroup::Monster: return settings.roleplayMiniatureMonsters;
+    case MiniatureGroup::Npc: return settings.roleplayMiniatureNpcs;
     case MiniatureGroup::RoleplayOther: return true;
     case MiniatureGroup::Unknown: return false;
     }
@@ -76,6 +79,11 @@ inline bool CombatOwnSummonMatters(const Settings& settings) {
 }
 inline bool RoleplayIdentityMatters(const Settings& settings) {
     return !(settings.roleplayMiniatureSelf && settings.roleplayMiniatureParty && settings.roleplayMiniaturePlayers);
+}
+// An NPC that reaches the creature service is only told apart from the other
+// entities (always reduced) once « PNJ » is unticked.
+inline bool RoleplayNpcMatters(const Settings& settings) {
+    return !settings.roleplayMiniatureNpcs;
 }
 // Every category checkbox, one bit each: a change invalidates cached looks.
 inline unsigned MiniatureCategoryMask(const Settings& settings) {

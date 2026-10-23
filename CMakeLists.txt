@@ -47,7 +47,7 @@ add_library(DofusMiniatures SHARED
   src/maps/resource-map-data.cpp src/maps/resource-map-policy.cpp src/maps/resource-map-ui.cpp
   src/maps/resource-map-render.cpp src/maps/resource-map-icons.cpp
   src/maps/map-info.cpp src/ui/perf-overlay.cpp src/travel/route-graph.cpp src/travel/roublard-passage.cpp)
-target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32)
+target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
 set(LOADER_SOURCES src/loader/launcher.cpp src/core/common.cpp src/loader/autoload.cpp
@@ -106,7 +106,9 @@ set_tests_properties(GitHubUpdateTests PROPERTIES TIMEOUT 30)
 # Options window and the toolbar module menu.
 dofus_test(OptionsUiTests tests/ui/options-ui-tests.cpp src/ui/options-ui.cpp)
 dofus_test(ToolsUiTests tests/ui/tools-ui-tests.cpp src/ui/tools-ui.cpp)
-dofus_test(PerfOverlayTests tests/ui/perf-overlay-tests.cpp)
+# The performance overlay's GPU and disk figures come from PDH (Windows'
+# performance counters); the tests replace every PDH call with a fake.
+dofus_test(PerfOverlayTests tests/ui/perf-overlay-tests.cpp LIBS pdh)
 
 # Appearance: miniatures, creatures, sizes and display shortcuts.
 dofus_test(FeaturesTests tests/appearance/features-tests.cpp src/appearance/features.cpp src/appearance/size-measurements.cpp)

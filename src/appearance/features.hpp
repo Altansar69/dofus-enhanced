@@ -15,6 +15,8 @@ struct Features {
     // its accepted lg members).
     managed::Method infoIdGet{}, summonerTryGet{}, partyMembersGet{}, partyMemberIdGet{};
     managed::Klass characterClass{}, partyClass{}, partyMemberClass{};
+    // « PNJ »: an NPC's ID, EntityInfo integer property 15 (baks, its TryGet).
+    managed::Method npcIdTryGet{};
     struct LookCachePolicy {
         managed::Obj service{}, context{};
         int mode = 0;
@@ -48,6 +50,9 @@ struct Features {
     void Restore(bool clear = true);
     void Refresh(bool active);
     bool Convert(managed::Obj service, managed::Obj info, managed::Obj* look);
+    managed::Ref ScaledCopy(managed::Obj look, float factor);
+    bool IsNpc(managed::Obj info) const;
+    managed::Obj RoleplayNpcLook(managed::Obj entity, managed::Obj look);
     managed::Obj SubentityLook(managed::Obj entity) const;
     bool PreserveMiniatureAttachmentVisibility(managed::Obj entity, uintptr_t caller) const;
     uint64_t PrepareCreatureLook(managed::Obj entity);

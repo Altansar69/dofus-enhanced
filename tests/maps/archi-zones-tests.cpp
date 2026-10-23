@@ -115,6 +115,10 @@ std::map<int, int> subareaReads;
 std::vector<std::pair<int, int>> moves;
 std::vector<int> leaves, worldSwitches;
 Obj cartographyWindow{};
+// The mod's « Ressources » mode of the same column (resource-map-ui): selected,
+// and how many times the Ocre mode closed it.
+bool resourceTabOpen = false;
+int resourceTabCloses = 0;
 bool (*buttonHandler)(Obj) = nullptr;
 bool (*rowHandler)(Obj) = nullptr;
 std::map<int, SoulState> ocre, bag;
@@ -419,7 +423,11 @@ void Log(const std::string& text) { fake::logs.push_back(text); }
 void AddHook(managed::Method, uintptr_t, void*, void**) { ++fake::hooks; throw std::runtime_error("The Ocre zones must never hook a native method"); }
 namespace nativeClick { void AddHandler(bool (*handler)(managed::Obj)) { fake::buttonHandler = handler; } }
 namespace soul { void SetAuxiliaryPanelAction(bool (*handler)(managed::Obj)) { fake::rowHandler = handler; } }
-namespace resourceMap { managed::Obj CartographyWindow() { return fake::cartographyWindow; } }
+namespace resourceMap {
+managed::Obj CartographyWindow() { return fake::cartographyWindow; }
+bool ResourceTabOpen() { return fake::resourceTabOpen; }
+void CloseResourceTab() { ++fake::resourceTabCloses; fake::resourceTabOpen = false; }
+}
 namespace metamob {
 OcreQuantity MetamobOcreQuantity(int monster) {
     const auto found = fake::metamobQuantities.find(monster);
@@ -527,7 +535,8 @@ struct Scenario {
         resolvedStyles.clear(); objects.clear(); creations.clear(); pendingCreations.clear(); monsters.clear(); mapInfos.clear(); subareas.clear();
         dungeonsByMap.clear(); monsterReads.clear(); subareaReads.clear(); moves.clear(); leaves.clear(); worldSwitches.clear();
         ocre.clear(); bag.clear(); wants.clear(); metamobQuantities.clear(); logs.clear();
-        calls = hooks = ocreReads = catalogWants = 0; failMethod.clear(); soulRevision = 1;
+        calls = hooks = ocreReads = catalogWants = resourceTabCloses = 0; failMethod.clear(); soulRevision = 1;
+        resourceTabOpen = false;
         module = &owner;
         owner.ready = true; owner.servicesReady = true;
         owner.compositor.reset(Make("Compositor"));
@@ -1424,6 +1433,30 @@ void LeavingTheMode() {
     Check(Square() && !PanelWindow() && Shapes(bigView).empty(), "Reopened: the square only, the Ocre mode off");
     std::cout << "PASS: leaving the mode (close, Conquête, square, map closed)\n";
 }
+// The mod's other mode of the column, « Ressources » (resource-map-ui, which
+// ticks after this one): one selected mode at a time, both ways.
+void WithTheResourcesMode() {
+    Scenario s;
+    resourceTabOpen = true; // « Ressources » selected
+    Activate(s);
+    Check(archiZones::active && !resourceTabOpen && resourceTabCloses == 1 && leaves.empty(),
+        "Entering Ocre closes « Ressources », the game's mode untouched");
+    MainStates();
+    Pump(6);
+    Check(archiZones::active && PanelWindow() && !Shapes(bigView).empty() && resourceTabCloses == 1, "Ocre shown, « Ressources » closed once");
+    resourceTabOpen = true; // its square clicked
+    Pump(1);
+    Check(!archiZones::active && !PanelWindow() && LastLog("ARCHI_ZONES_MODE") == "ARCHI_ZONES_MODE off reason=resources",
+        "« Ressources » chosen: Ocre leaves at the next tick, its panel with it");
+    Pump(1);
+    Check(Shapes(bigView).empty() && !OurLayer(bigRoot) && Square() && resourceTabOpen && resourceTabCloses == 1 && leaves.empty(),
+        "Its zones leave too, its square stays; « Ressources » and the game's mode untouched");
+    resourceTabOpen = false; // « Ressources » left
+    buttonHandler(Square());
+    Pump(3);
+    Check(archiZones::active && PanelWindow() && resourceTabCloses == 2, "Ocre again: « Ressources » closed again");
+    std::cout << "PASS: one mode at a time with « Ressources »\n";
+}
 void BudgetsAndCadence() {
     Scenario s;
     // 24 more archimonsters, each alone in an outlined zone of world 1.
@@ -1648,6 +1681,7 @@ int main() {
         fake::WaitingLayerHidden();
         fake::DiagnosticsNeverRetire();
         fake::LeavingTheMode();
+        fake::WithTheResourcesMode();
         fake::BudgetsAndCadence();
         fake::PumpCost();
         fake::CleanupAndRestore();

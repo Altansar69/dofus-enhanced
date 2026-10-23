@@ -21,7 +21,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ### 🎨 Apparence
 - 🤏 **Miniatures, Créatures ou Normal**, au choix en combat et hors combat, séparément. Miniatures réduit à 60 % de la taille d’origine, sans descendre sous 50 % de la hauteur d’un joueur pour les monstres et les invocations.
-- ☑️ **Tu choisis qui passe en miniature** : en combat, toi, les joueurs alliés, les invocations alliées, tes invocations, les ennemis et les invocations ennemies ; hors combat, toi, les membres du groupe, les autres joueurs et les monstres. Tout est coché par défaut.
+- ☑️ **Tu choisis qui passe en miniature** : en combat, toi, les joueurs alliés, les invocations alliées, tes invocations, les ennemis et les invocations ennemies ; hors combat, toi, les membres du groupe, les autres joueurs, les monstres et, si tu le veux, les PNJ. Tout est coché par défaut, sauf les PNJ. Les mêmes cases sont dans le menu **Affichage** du clic droit sur la carte.
 - 🖱️ Le bouton créature du jeu devient un sélecteur Normal / Créatures / Miniatures, et le clic droit sur la carte propose Affichage, Animations et Surbrillance.
 
 ### 🎬 Animations
@@ -33,7 +33,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 - 🧑‍🌾 En option, les **PNJ** et les **éléments interactifs** (ressources récoltables, portes, zaaps…). Jusqu’à 32 contours à la fois, toutes catégories confondues.
 
 ### 🗺️ Cartes
-- ⛏️ **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Ce sont les points de récolte connus, pas leur disponibilité en temps réel.
+- ⛏️ **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Sur la grande carte, elles se choisissent dans l’onglet **Ressources**, un vrai mode de la carte comme **Anomalies**. Ce sont les points de récolte connus, pas leur disponibilité en temps réel.
 - 🏷️ **Infobulles des cartes** : au survol d’une case, la mini-carte affiche le nom de sa zone, et les deux cartes ajoutent la dimension aux coordonnées : [x,y, Monde des Douze]. La barre des ressources de la mini-carte peut être masquée en gardant les repères.
 - 🧬 **Mode « Ocre »** : un carré sous « Conquête », sur la grande carte, colore chaque zone des archimonstres et boss de donjon de L’éternelle moisson selon le nombre qu’il te manque (ni validés dans la quête, ni dans ton sac, ni sur Metamob), et en bleu « Complet » celles où tu les as tous. Son panneau, comme celui des anomalies : recherche, territoires, niveaux et filtre Tous / Archimonstres / Boss de donjon ; un clic sur une zone centre la carte et affiche ceux qu’il te manque et ceux que tu as. Les mêmes couleurs peuvent aussi s’afficher sur la mini-carte.
 - 🎯 **Bouton de recentrage** sur la mini-carte, pour la ramener sur ton personnage.
@@ -52,7 +52,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ### 💬 Chat
 - 💬 À côté des positions et des archimonstres ou boss de L’éternelle moisson partagés dans le chat : bouton **TP**, **Âme en sac** / Pas en sac (sac uniquement, pas la banque), avancement **Ocre** (un clic ouvre la quête) et quantité **Metamob** (avec une clé enregistrée).
-- 🌍 Les positions et groupes de monstres partagés peuvent afficher leur dimension : [x,y, Monde des Douze].
+- 🌍 Les positions et groupes de monstres partagés peuvent afficher leur dimension, partout ou seulement hors du Monde des Douze : [x,y, Srambad].
 - 🎛️ Chaque ajout s’active séparément. Avec le TP, les coordonnées écrites `[x,y]` deviennent cliquables.
 
 ### 🐙 Calendrier
@@ -62,7 +62,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 - 🏴‍☠️ **Chasse au trésor** : un panneau reprend ta position et l’étape en cours, cherche les indices sur DofusDB et lance le trajet vers l’indice en un clic (**Chemin**). Aucune validation n’est envoyée à ta place.
 - 📒 **Carnet personnel** : positions, notes et messages. Voyage vers une position, affiche-la sur la carte ou envoie un message dans le canal choisi en un clic ; ajoute une case par un clic droit sur la carte. Version complète ou compacte.
 - 📈 **XP des métiers** : un onglet **XP** dans la fenêtre Métiers calcule les fabrications et les ingrédients nécessaires pour atteindre le niveau visé, avec les recettes DofusDB.
-- 📊 **Performances** : en option, les FPS, la durée d’une image, la mémoire et le processeur utilisés par le jeu, discrètement dans un coin de l’écran.
+- 📊 **Performances** : en option, les FPS, la durée d’une image, la mémoire, le processeur et la carte graphique utilisés par le jeu, et l’activité de son disque, dans un petit cadre discret que tu places où tu veux à la souris.
 
 ### 🔄 Mises à jour
 - 🔄 **Mises à jour automatiques depuis GitHub** au lancement du jeu : chaque archive est vérifiée (SHA-256 et compatibilité exacte avec ta version de Dofus) avant d’être installée. Sans réseau, la version locale compatible est utilisée.

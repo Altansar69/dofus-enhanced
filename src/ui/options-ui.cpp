@@ -36,7 +36,8 @@ constexpr CheckRow RoleplayMiniatureRows[] = {
     {"Moi", "Hors combat, avec Miniatures : ton personnage est réduit. Décoché, il garde sa taille normale. Activé par défaut."},
     {"Membres du groupe", "Hors combat, avec Miniatures : les personnages de ton groupe sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
     {"Autres joueurs", "Hors combat, avec Miniatures : les personnages des autres joueurs, hors de ton groupe, sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
-    {"Monstres", "Hors combat, avec Miniatures : les groupes de monstres sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."}};
+    {"Monstres", "Hors combat, avec Miniatures : les groupes de monstres sont réduits. Décoché, ils gardent leur taille normale. Activé par défaut."},
+    {"PNJ", "Hors combat, avec Miniatures : les personnages non joueurs (PNJ) sont réduits. Décoché, ils gardent leur taille normale. Désactivé par défaut."}};
 constexpr const char* AnimationDescriptions[] = {
     "En combat, le jeu fait comme si son option des effets de sorts était désactivée, sans la modifier : les projectiles et effets visuels des sorts ne sont plus ajoutés aux séquences de combat. Certains effets restent visibles. Activé par défaut.",
     "En combat, les personnages joueurs lancent leurs sorts avec l’animation réduite que le jeu utilise quand ses effets de sorts sont désactivés. Sans effet sur les monstres. Activé par défaut.",
@@ -46,7 +47,7 @@ constexpr const char* AnimationDescriptions[] = {
     "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
 // The checkboxes added in 1.13.0 and 1.14.0, in the order of Settings' ExtraToggles.
 enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, MapCoordsRow, MiniMapCoordsRow, NotebookPingRow, MapAddPositionRow,
-    ChatCoordsRow, PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow };
+    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow };
 constexpr CheckRow ExtraRows[] = {
     {"Barre des ressources sur la mini-carte", "Affiche sur la mini-carte la barre des six métiers qui ouvre le choix des ressources. Décochée, la barre et sa liste disparaissent, mais les repères des ressources choisies restent affichés si « Ressources sur la mini-carte » est cochée ; le choix se fait alors depuis la grande carte. Activé par défaut."},
     {"Nom de la zone au survol de la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche le nom de sa zone au-dessus de ses coordonnées. Activé par défaut."},
@@ -54,16 +55,17 @@ constexpr CheckRow ExtraRows[] = {
     {"Dimension avec les coordonnées sur la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche ses coordonnées avec leur dimension : [x,y, dimension]. Activé par défaut."},
     {"Bouton de repère à côté des positions", "Dans les positions du carnet, un petit bouton drapeau à droite de chaque nom place un repère sur cette position : le drapeau du jeu, visible sur la grande carte et la mini-carte. Le bouton reste enfoncé tant que le repère est affiché ; un second clic le retire. Décochée, le bouton disparaît ; le clic droit sur une position permet toujours d’afficher ou de retirer son repère. Activé par défaut."},
     {"« Ajouter aux positions » au clic droit sur les cartes", "Au clic droit sur une case de la grande carte ou de la mini-carte, ajoute l’entrée « Ajouter aux positions » : elle enregistre cette case (coordonnées, dimension et nom de la zone) dans les positions du carnet, même fermé, et le chat le confirme. Une case déjà enregistrée n’est pas ajoutée deux fois. Activé par défaut."},
-    {"Dimension avec les coordonnées dans le chat", "Les positions et les groupes de monstres partagés dans le chat s’affichent avec leur dimension : [x,y, dimension]. Le lien du jeu, son clic et le bouton TP ne changent pas ; des coordonnées simplement écrites [x,y] restent comme le joueur les a tapées. Activé par défaut."},
-    {"Afficher les FPS et la mémoire", "Affiche discrètement, dans un coin de l’écran, les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
-    {"Charge du GPU", "Ajoute à l’affichage des performances la charge de la carte graphique due au jeu, comme la colonne GPU du Gestionnaire des tâches. Activé par défaut."},
-    {"Activité du disque", "Ajoute à l’affichage des performances ce que le jeu lit et écrit sur le disque chaque seconde, et le temps d’activité du disque où il est installé, comme le Gestionnaire des tâches. Activé par défaut."},
-    {"Déplacer l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux sur l’écran ; sa place est gardée, même après un redémarrage. Ce clic ne va pas au jeu. Décochée, l’affichage reprend son coin et laisse passer les clics vers le jeu. Activé par défaut."}};
+    {"Afficher les FPS et la mémoire", "Affiche discrètement, dans un coin de l’écran ou à la place choisie à la souris, les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde, puis la charge du GPU et l’activité du disque si leurs cases sont cochées. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
+    {"Charge du GPU", "Ajoute à l’affichage des performances la part de la carte graphique utilisée par le jeu, comme la colonne GPU du Gestionnaire des tâches : celle de son moteur le plus chargé (la 3D le plus souvent), mesurée une fois par seconde, par exemple « GPU 23 % ». Si Windows ne fournit pas cette mesure, elle n’apparaît pas. Activé par défaut."},
+    {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % · 1,2 Mo/s ». Pour un jeu installé sur le réseau, elle n’apparaît pas. Activé par défaut."},
+    {"Déplacer l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux ; il reste entièrement à l’écran et sa place est gardée, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reprend son coin et laisse passer les clics vers le jeu. Activé par défaut."}};
 constexpr const char* PerfCorners[] = {"En haut à gauche", "En haut à droite", "En bas à gauche", "En bas à droite"};
+constexpr const char* ChatDimensionChoices[] = {"Non", "Oui, sauf dans le Monde des Douze", "Oui"};
 constexpr const char* TempleTitle = "Passage secret et temple des Roublards";
 constexpr const char* TempleDescription = "Le trajet du mod peut emprunter le passage secret des Roublards : Bad Aboum, dans la crypte sous la vieille chapelle de la Cité d’Astrub [5,-15], conduit au temple Roublard [10,16] et au village d’Amakna [3,3], et en revient. Quand c’est plus court, l’autopilote du jeu le rejoint, puis le mod lui parle et choisit la destination comme un clic, sans jamais rien payer ; si Bad Aboum ne propose pas ce trajet à ton personnage, le trajet continue sans lui et ce refus est retenu. Le trajet peut aussi traverser le temple ; sa statue reste réservée aux Roublards par le jeu. Décoché, le mod n’emprunte ni le passage ni le temple. Activé par défaut.";
 static_assert(std::size(ExtraRows) == std::size(ExtraToggles) &&
-    std::tuple_size_v<decltype(OptionsUi::extraSources)> == std::size(ExtraToggles) && std::size(PerfCorners) == 4);
+    std::tuple_size_v<decltype(OptionsUi::extraSources)> == std::size(ExtraToggles) && std::size(PerfCorners) == 4 &&
+    std::size(ChatDimensionChoices) == 3);
 static_assert(std::size(CombatMiniatureRows) == std::size(CombatMiniatureToggles) &&
     std::size(RoleplayMiniatureRows) == std::size(RoleplayMiniatureToggles) &&
     std::size(AnimationDescriptions) == std::size(AnimationToggles) && AnimationToggleLabels.size() == std::size(AnimationToggles));
@@ -162,7 +164,7 @@ bool ModelsLoaded(const OptionsUi& ui) {
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) && allLoaded(ui.combatMiniatureSources) &&
         allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource) &&
-        allLoaded(ui.extraSources) && loaded(ui.perfCornerSource);
+        allLoaded(ui.extraSources) && loaded(ui.perfCornerSource) && loaded(ui.chatCoordsSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -203,6 +205,7 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     for (size_t i = 0; i < ui.extraSources.size(); ++i)
         SetSource(ui.extraSources[i].get(), settings.*ExtraToggles[i], notify);
     SetSource(ui.perfCornerSource.get(), settings.perfOverlayCorner, notify);
+    SetSource(ui.chatCoordsSource.get(), settings.coordsWorldChatMode, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -271,6 +274,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     toggleSources(prepared.animationSources, AnimationToggles);
     toggleSources(prepared.extraSources, ExtraToggles);
     prepared.perfCornerSource.reset(api.New(integerType, {&defaults.perfOverlayCorner, &readOnly}));
+    prepared.chatCoordsSource.reset(api.New(integerType, {&defaults.coordsWorldChatMode, &readOnly}));
     prepared.autoLoadSource.reset(api.New(booleanType, {&defaults.autoLoad, &readOnly}));
     prepared.githubSource.reset(api.New(booleanType, {&defaults.githubUpdates, &readOnly}));
     prepared.soulSource.reset(api.New(booleanType, {&defaults.soulReminder, &readOnly}));
@@ -310,7 +314,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         prepared.combatMiniatureOptions[i].reset(MakeBoolOption(prepared.combatMiniatureSources[i].get(), current.get(), tooltip.get(),
             CombatMiniatureRows[i].title, CombatMiniatureRows[i].description));
     prepared.roleplayModeOption.reset(MakeChoiceOption(prepared.roleplayModeSource.get(), current.get(), "Hors combat",
-        "Affichage des personnages et monstres hors combat, indépendant du réglage en combat. Les raccourcis utilisent ce même réglage. Miniatures réduit à 60 % de la taille d’origine, avec un minimum automatique de 50 % de la hauteur de référence d’un joueur pour les monstres et invocations, lorsque les mesures sont disponibles. Avec Miniatures, seules les catégories cochées ci-dessous sont réduites ; les PNJ et les autres éléments le sont toujours, et Créatures s’applique à tous.", modes));
+        "Affichage des personnages et monstres hors combat, indépendant du réglage en combat. Les raccourcis utilisent ce même réglage. Miniatures réduit à 60 % de la taille d’origine, avec un minimum automatique de 50 % de la hauteur de référence d’un joueur pour les monstres et invocations, lorsque les mesures sont disponibles. Avec Miniatures, seules les catégories cochées ci-dessous sont réduites ; les autres éléments le sont toujours. Créatures s’applique à tous, sauf aux PNJ, que le jeu laisse tels quels.", modes));
     for (size_t i = 0; i < prepared.roleplayMiniatureOptions.size(); ++i)
         prepared.roleplayMiniatureOptions[i].reset(MakeBoolOption(prepared.roleplayMiniatureSources[i].get(), current.get(), tooltip.get(),
             RoleplayMiniatureRows[i].title, RoleplayMiniatureRows[i].description));
@@ -340,7 +344,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.spouseOption.reset(MakeBoolOption(prepared.spouseSource.get(), current.get(), tooltip.get(), "Téléportation au conjoint",
         "Ajoute un bouton de téléportation, un cœur et la distance sur la vignette de votre conjoint dans le groupe, ainsi qu’une entrée au clic droit. Le bouton est indisponible si votre conjoint est hors ligne ou pendant un combat. La téléportation respecte les conditions du jeu et se lance uniquement au clic. Activé par défaut."));
     prepared.resourcesOption.reset(MakeBoolOption(prepared.resourcesSource.get(), current.get(), tooltip.get(), "Ressources sur la grande carte",
-        "Dans les filtres de la carte (M), ouvrez un métier puis cochez les ressources souhaitées. La carte et la mini-carte affichent leurs points de récolte recensés par case. Cela ne renseigne pas leur disponibilité en temps réel. Désactiver conserve votre sélection."));
+        "Ajoute sur la grande carte (M) un carré « Ressources » sous « Anomalies ». Comme les modes du jeu, il ouvre une fenêtre : ouvre un métier puis coche les ressources souhaitées. La carte et la mini-carte affichent leurs points de récolte recensés par case. Cela ne renseigne pas leur disponibilité en temps réel. Désactiver retire le carré et conserve ta sélection. Activé par défaut."));
     prepared.resourcesMiniOption.reset(MakeBoolOption(prepared.resourcesMiniSource.get(), current.get(), tooltip.get(), "Ressources sur la mini-carte",
         "Affiche les repères et la sélection des ressources sur la mini-carte. Indépendant de la grande carte ; les ressources sélectionnées restent partagées."));
     prepared.miniCenterOption.reset(MakeBoolOption(prepared.miniCenterSource.get(), current.get(), tooltip.get(), "Bouton de recentrage sur la mini-carte",
@@ -371,6 +375,10 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     for (int i = 0; i != static_cast<int>(std::size(PerfCorners)); ++i) corners.emplace_back(i, PerfCorners[i]);
     prepared.perfCornerOption.reset(MakeChoiceOption(prepared.perfCornerSource.get(), current.get(), "Position de l’affichage des performances",
         "Coin de l’écran où s’affichent les FPS et la mémoire quand « Afficher les FPS et la mémoire » est coché. En haut à droite, le cadre se place sous les boutons du menu du jeu. Choisir un autre coin y replace l’affichage déplacé à la souris. En haut à gauche par défaut.", corners));
+    Choices chatDimensions;
+    for (int i = 0; i != static_cast<int>(std::size(ChatDimensionChoices)); ++i) chatDimensions.emplace_back(i, ChatDimensionChoices[i]);
+    prepared.chatCoordsOption.reset(MakeChoiceOption(prepared.chatCoordsSource.get(), current.get(), "Dimension avec les coordonnées dans le chat",
+        "Les positions et les groupes de monstres partagés dans le chat s’affichent avec leur dimension : [x,y, dimension]. « Oui, sauf dans le Monde des Douze » ne l’ajoute qu’aux autres dimensions (Incarnam, Srambad…). Le lien du jeu, son clic et le bouton TP ne changent pas ; des coordonnées simplement écrites [x,y] restent comme le joueur les a tapées. « Oui » par défaut.", chatDimensions));
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
@@ -415,6 +423,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.extraOptions = std::move(prepared.extraOptions);
     ui.perfCornerSource = std::move(prepared.perfCornerSource);
     ui.perfCornerOption = std::move(prepared.perfCornerOption);
+    ui.chatCoordsSource = std::move(prepared.chatCoordsSource);
+    ui.chatCoordsOption = std::move(prepared.chatCoordsOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -944,7 +954,7 @@ bool OptionsUi::Attach(Obj page) {
         {"Carnet", {extra(NotebookPingRow), extra(MapAddPositionRow)}},
         {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get(), templeOption.get()}},
         {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
-        {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get(), extra(ChatCoordsRow)}},
+        {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get(), chatCoordsOption.get()}},
         {"Calendrier", {calendarKraloveOption.get()}},
         {"Performances", {extra(PerfOverlayRow), extra(PerfGpuRow), extra(PerfDiskRow), extra(PerfDragRow), perfCornerOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
@@ -1031,10 +1041,12 @@ void OptionsUi::Tick() {
     for (size_t i = 0; i < extraSources.size(); ++i)
         next.*ExtraToggles[i] = api.Value<bool>(api.Call(extraSources[i].get(), "get_property"));
     next.perfOverlayCorner = api.Value<int>(api.Call(perfCornerSource.get(), "get_property"));
+    next.coordsWorldChatMode = api.Value<int>(api.Call(chatCoordsSource.get(), "get_property"));
     // Another corner, or the mouse placement turned off: back to the corner.
     if (!next.perfOverlayDrag || next.perfOverlayCorner != module->settings.perfOverlayCorner) next.perfOverlayX = next.perfOverlayY = -1;
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
-        !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidPerfOverlayCorner(next.perfOverlayCorner)) {
+        !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidPerfOverlayCorner(next.perfOverlayCorner) ||
+        !Settings::ValidCoordsWorldChatMode(next.coordsWorldChatMode)) {
         Sync(); return;
     }
     if (!(next == module->settings)) {
@@ -1117,6 +1129,7 @@ void OptionsUi::Restore() {
     for (auto& ref : extraSources) ref.reset();
     for (auto& ref : extraOptions) ref.reset();
     perfCornerSource.reset(); perfCornerOption.reset();
+    chatCoordsSource.reset(); chatCoordsOption.reset();
     creditsOption.reset(); creditsMarker.reset();
     metamobSyncSource.reset(); metamobSyncOption.reset();
     metamobKeyOption.reset(); metamobKeyMarker.reset();

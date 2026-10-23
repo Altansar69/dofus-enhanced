@@ -21,6 +21,13 @@ enum class View { None, Mini, Big };
 // the price and an 18 px kamas icon). While this module writes the coordinates,
 // #ctr_coords keeps its width (flex-shrink 0: its lines never wrap) and the root
 // gets the row's measured width, so the tooltip is placed with its real size.
+// #ctr_coords draws the black background around #lbl_coords, a DofusLabel,
+// single-line by default: it then takes the one-line height of its text style
+// (--line-height, DofusLabel.SetTextHeight), so the zone's line would overflow
+// a box kept on one line. While the label shows several lines it is not
+// single-line, as the game's own multi-line labels of that style (bestiary and
+// buff properties): DofusLabel drops that height and the box grows with every
+// line. One line keeps the label's own height (the game's look).
 constexpr float TemplateWidth = 154, BoxPadding = 20, KamasIcon = 18, Margin = 2, MaxWidth = 480;
 constexpr float CharWidth = 8; // per code point, for a text that cannot be measured yet
 constexpr size_t RecordBudget = 8, AdjustedBudget = 4;
@@ -35,16 +42,17 @@ BerzFn originalBerz = nullptr;
 UpdateFn originalUpdate = nullptr;
 struct Natives {
     Klass bannerView{}, mapView{}, label{}, length{};
-    Method coordsLabel{}, priceLabel{}, setText{}, getText{}, measure{}, subAreaName{}, worldName{};
+    Method coordsLabel{}, priceLabel{}, setText{}, getText{}, getSingleLine{}, setSingleLine{}, measure{}, subAreaName{}, worldName{};
     Method parent{}, name{}, panel{}, style{}, getMinWidth{}, setMinWidth{}, setLength{}, getShrink{}, setShrink{}, setFloat{};
 } n;
 // A tooltip the game is building: its infos, its map and that map's dimension,
 // remembered when the map asks for the tooltip (fhw.berz).
 struct Record { Ref infos; View view = View::None; std::string world; };
 // Template elements this module changed, with their own values: the
-// coordinates box (#ctr_coords, flex-shrink) and its root (#cartographyTooltip,
-// min-width), given back when the game's text returns or at cleanup.
-struct Adjusted { Ref coords, shrink, root, width; };
+// coordinates box (#ctr_coords, flex-shrink), its root (#cartographyTooltip,
+// min-width) and its label (#lbl_coords, single-line), given back when the
+// game's text returns or at cleanup.
+struct Adjusted { Ref coords, shrink, root, width, label; bool singleLine = true; };
 struct State {
     bool installed = false;
     std::vector<Record> records; // most recent last
@@ -146,6 +154,7 @@ float TextWidth(Obj label, const std::string& text) {
 }
 // The row's width: the coordinates box, and the zaap price box beside it when
 // the game shows one (zaapPrice >= 0, its label already written by Update).
+// Unbounded: the root gets at most MaxWidth.
 float RowWidth(Obj builder, Obj label, const std::string& shown, int zaapPrice) {
     float width = BoxPadding + TextWidth(label, shown);
     if (zaapPrice >= 0) {
@@ -153,7 +162,7 @@ float RowWidth(Obj builder, Obj label, const std::string& shown, int zaapPrice) 
         const auto text = price.get() ? api.String(api.Invoke(n.getText, price.get())) : std::to_string(zaapPrice);
         width += BoxPadding + (price.get() ? TextWidth(price.get(), text) : CharWidth * static_cast<float>(LongestLine(text))) + KamasIcon;
     }
-    return (std::min)(MaxWidth, width + Margin);
+    return width + Margin;
 }
 // The tooltip template's root (#cartographyTooltip), an ancestor of its
 // coordinates box: only the cartography tooltip owns it.
@@ -188,9 +197,12 @@ void SetNoShrink(Obj element) {
     api.Invoke(n.setFloat, api.object_unbox(box.get()), {&none});
     WriteStyle(element, n.setShrink, box.get());
 }
+// DofusLabel.isSingleLine: its setter gives or drops the one-line height itself.
+void SetSingleLine(Obj label, bool single) { api.Invoke(n.setSingleLine, label, {&single}); }
 void GiveBack(const Adjusted& a) {
     WriteStyle(a.coords.get(), n.setShrink, a.shrink.get());
     if (a.root.get()) WriteStyle(a.root.get(), n.setMinWidth, a.width.get());
+    if (a.label.get()) SetSingleLine(a.label.get(), a.singleLine);
 }
 void Release(Obj coords) {
     for (auto it = s.adjusted.begin(); it != s.adjusted.end(); ++it) {
@@ -201,8 +213,9 @@ void Release(Obj coords) {
     }
 }
 // While this module writes the coordinates: the box keeps its width, the root
-// gets the measured row (a short row keeps the template's own 154 px).
-void Adjust(Obj coords, Obj root, float width) {
+// gets the measured row (a short row keeps the template's own 154 px) and the
+// label is single-line only for one line.
+void Adjust(Obj coords, Obj root, Obj label, float width, bool lines) {
     auto found = std::find_if(s.adjusted.begin(), s.adjusted.end(), [&](const Adjusted& a) { return a.coords.get() == coords; });
     if (found == s.adjusted.end()) {
         if (s.adjusted.size() >= AdjustedBudget) {
@@ -212,11 +225,14 @@ void Adjust(Obj coords, Obj root, float width) {
         Adjusted entry;
         entry.coords.reset(coords);
         entry.shrink.reset(StyleBox(coords, n.getShrink));
+        entry.label.reset(label);
+        entry.singleLine = api.Value<bool>(api.Invoke(n.getSingleLine, label));
         if (root) { entry.root.reset(root); entry.width.reset(StyleBox(root, n.getMinWidth)); }
         s.adjusted.push_back(std::move(entry));
         found = s.adjusted.end() - 1;
     }
     SetNoShrink(coords);
+    SetSingleLine(found->label.get(), found->singleLine && !lines);
     if (!found->root.get()) return;
     if (width > TemplateWidth) SetMinWidth(found->root.get(), width);
     else WriteStyle(found->root.get(), n.setMinWidth, found->width.get());
@@ -245,13 +261,18 @@ void Decorate(Obj builder, Obj infos) {
     s.label.reset(label.get());
     s.shown = shown;
     s.native = PositionText(x, y, {});
-    const auto width = RowWidth(builder, label.get(), shown, price);
-    Adjust(coords.get(), root.get(), width);
+    const auto row = RowWidth(builder, label.get(), shown, price);
+    const auto width = (std::min)(MaxWidth, row);
+    // Several lines: the zone above the coordinates, or a row wider than its
+    // root can grow (the template's 154 px without that root), which wraps.
+    const bool lines = shown.find('\n') != std::string::npos || row > (root.get() ? MaxWidth : TemplateWidth);
+    Adjust(coords.get(), root.get(), label.get(), width, lines);
     auto& logged = view == View::Mini ? s.loggedMini : s.loggedBig;
     if (!logged) {
         logged = true;
         Log(std::string("MAP_INFO_TOOLTIP view=") + (view == View::Mini ? "mini" : "big") +
-            " width=" + (root.get() ? std::to_string(static_cast<int>(width)) : std::string("none")));
+            " width=" + (root.get() ? std::to_string(static_cast<int>(width)) : std::string("none")) +
+            " lines=" + (lines ? "several" : "one"));
     }
 }
 bool Pending() { return !s.adjusted.empty() || !s.records.empty() || s.label.get(); }
@@ -309,6 +330,8 @@ void Install() {
     n.label = api.Class("Core.dll", "Core.UILogic.Components", "DofusLabel");
     n.setText = api.FindVerified(n.label, "set_text", 1, 0x1594570);
     n.getText = api.FindVerified(n.label, "get_text", 0, 0x1593FA0);
+    n.getSingleLine = api.FindVerified(n.label, "get_isSingleLine", 0, 0x1593B70);
+    n.setSingleLine = api.FindVerified(n.label, "set_isSingleLine", 1, 0x1593FB0);
     n.measure = api.FindVerified(api.Class(UiImage, UiSpace, "TextElement"), "MeasureTextSize", 5, 0x5645AF0);
     n.subAreaName = api.FindVerified(api.Class(DataImage, WorldSpace, "SubAreaData"), "get_name", 0, 0x7D0F60);
     n.worldName = api.FindVerified(api.Class(DataImage, WorldSpace, "WorldMapData"), "get_name", 0, 0x7D3DE0);

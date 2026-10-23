@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.13.1**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.14.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
 trajets rapides (passage secret des Roublards compris), ressources, archimonstres
@@ -8,7 +8,7 @@ manquants et infobulles enrichies sur les cartes, ouvertures Kralamoure dans le
 calendrier et panneau natif de recherche manuelle DofusDB. Carnet personnel avec
 repères sur la carte, planification de l’XP des métiers et affichage des performances.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](../package/LISEZ-MOI.txt).
-Les nouveautés de la 1.13.0 sont vérifiées hors jeu ; leur rendu en jeu reste à confirmer.
+Les nouveautés depuis la 1.13.0 sont vérifiées hors jeu ; leur rendu en jeu reste à confirmer.
 
 ## Mises à jour
 
@@ -168,9 +168,13 @@ choisissent chacun Normal, Créatures ou Miniatures. Avec Miniatures, les cases
 placées sous chaque choix disent qui est réduit : en combat **Moi**, **Joueurs
 alliés**, **Invocations alliées**, **Mes invocations**, **Ennemis** et
 **Invocations ennemies** ; hors combat **Moi**, **Membres du groupe**, **Autres
-joueurs** et **Monstres**. Une catégorie décochée garde sa taille normale. Hors
-combat, les PNJ et les autres éléments restent réduits ; Créatures s’applique à
-tous. Tout est coché par défaut, comme avant ces cases.
+joueurs**, **Monstres** et **PNJ**. Une catégorie décochée garde sa taille
+normale ; les autres éléments restent réduits. Tout est coché par défaut, comme
+avant ces cases, sauf **PNJ** (depuis la 1.14.0) : la plupart des PNJ n’étaient
+jamais réduits, et ceux qui l’étaient gardent désormais leur taille tant que la
+case reste décochée. Les mêmes cases sont aussi dans le **clic droit sur la carte →
+Affichage**, sous Normal / Créatures / Miniatures : celles du combat en combat,
+celles du hors combat en dehors, comme les cases de **Surbrillance**.
 
 **Options → Dofus Enhanced → Animations** (en combat uniquement) compte six
 cases indépendantes :
@@ -223,16 +227,22 @@ La barre conserve sa taille au zoom et au dézoom de la carte. Une main signale
 les boutons cliquables ; leur survol ne sélectionne pas la case de carte située
 derrière. La molette dans le sélecteur fait défiler les ressources sans zoomer
 la carte.
-Sur la grande carte (**M**), ouvrir le volet **Ressources**, à droite : chaque
-catégorie affiche la première ressource du métier : eau, frêne, fer, ortie,
-blé ou goujon. Les mêmes images servent de boutons sur la mini-carte et
-proviennent du catalogue des objets du jeu.
+Sur la grande carte (**M**), le carré **Ressources**, sous **Anomalies** dans la
+colonne des modes, ouvre à droite la fenêtre des ressources, faite comme celles
+du jeu (cadre, titre, bouton de fermeture, pied de page avec la case
+d’affichage). Comme pour les modes du jeu, un seul est ouvert à la fois : choisir
+**Anomalies** ou **Conquête** ferme la fenêtre des ressources, et l’ouvrir
+referme le mode du jeu ou le mode **Ocre** ; la carte reste en mode monde, avec
+ses repères. Chaque catégorie affiche la première ressource du métier : eau,
+frêne, fer, ortie, blé ou goujon. Les mêmes images servent de boutons sur la
+mini-carte et proviennent du catalogue des objets du jeu.
 
 La sélection des ressources est commune aux deux cartes et sauvegardée entre
 les lancements. **Afficher sur la mini-carte** et **Afficher sur la grande carte**
 se règlent indépendamment. Les filtres restent accessibles sans ressource
-sélectionnée. Décocher l’affichage d’une carte, dans son volet ou dans les
-options, masque aussi le volet de sélection de cette carte jusqu’à réactivation
+sélectionnée. Décocher l’affichage d’une carte, dans sa fenêtre ou dans les
+options, masque aussi son choix des ressources (le carré **Ressources** de la
+grande carte, la barre de la mini-carte) jusqu’à réactivation
 par l’option ou par l’autre carte. Le bouton de recentrage de la mini-carte, en
 bas à gauche, reprend le composant et l’icône du bouton joueur de la grande
 carte, avec son survol et son infobulle natifs ; son clic est lu directement sur
@@ -277,9 +287,10 @@ jeu avec ses coordonnées [x,y]. Le mod ne réécrit que ce texte : **Dimension
 avec les coordonnées sur la grande carte** et **… sur la mini-carte** y ajoutent
 la dimension de la carte affichée, par exemple [4,-19, Monde des Douze] ou
 Incarnam ; **Nom de la zone au survol de la mini-carte** affiche au-dessus le
-nom de la zone de la case (par exemple Village d’Amakna). Le clic, le glisser,
-le zoom, le double-clic et le clic droit des cartes ne changent pas ; toutes les
-cases décochées, l’infobulle redevient celle du jeu.
+nom de la zone de la case (par exemple Village d’Amakna). Depuis la 1.14.0, le
+fond noir de l’infobulle englobe toutes ses lignes, même pour un long nom de
+zone. Le clic, le glisser, le zoom, le double-clic et le clic droit des cartes
+ne changent pas ; toutes les cases décochées, l’infobulle redevient celle du jeu.
 
 **Barre des ressources sur la mini-carte** décochée retire de la mini-carte la
 barre des six métiers et sa liste ; les repères des ressources choisies restent
@@ -288,8 +299,10 @@ fait depuis la grande carte.
 
 Dans le chat, **Options → Dofus Enhanced → Chat → Dimension avec les coordonnées
 dans le chat** affiche les positions et les groupes de monstres partagés sous la
-forme [x,y, dimension] ; le lien reste celui du jeu (clic, infobulle), le bouton
-TP ne change pas, et les coordonnées tapées à la main restent telles quelles.
+forme [x,y, dimension] : **Oui** (par défaut), **Oui, sauf dans le Monde des
+Douze** (seules les autres dimensions, Incarnam, Srambad…, l’affichent) ou
+**Non**. Le lien reste celui du jeu (clic, infobulle), le bouton TP ne change
+pas, et les coordonnées tapées à la main restent telles quelles.
 
 ## Mode « Ocre » de la carte
 
@@ -426,7 +439,7 @@ colle la nouvelle.
 Après chaque combat où ton personnage obtient l’âme d’un archimonstre ou d’un
 boss, le mod ajoute 1 à ce monstre dans ta quête Ocre Dofus Unity, sans rien
 modifier d’autre, et l’écrit dans le chat (« Metamob : +1 « Tofumanchou
-l’Empereur » (2 → 3). »). Il lit le rapport de fin de combat du jeu : seul le
+l’Empereur » (de 2 à 3). »). Il lit le rapport de fin de combat du jeu : seul le
 butin du personnage de ce client compte, donc avec un client par personnage
 chaque capture est comptée une fois. Les achats, échanges, la banque et le
 courrier ne sont jamais comptés. Metamob n’accepte que des quantités absolues :
@@ -497,15 +510,26 @@ reste visible une seconde). La deuxième ligne donne la mémoire vive occupée p
 le jeu (plage de travail) et sa mémoire privée. La troisième donne le tas géré,
 la mémoire des objets du jeu gérée par son ramasse-miettes (utilisée /
 réservée), et la part du processeur utilisée par le jeu sur l’ensemble des cœurs
-(100 % : tous les cœurs occupés).
+(100 % : tous les cœurs occupés). Une quatrième ligne, mesurée une fois par
+seconde, donne **Charge du GPU** (la part de la carte graphique due au jeu,
+celle de son moteur le plus chargé, comme la colonne GPU du Gestionnaire des
+tâches) et **Activité du disque** (le temps d’activité et le débit du disque
+où le jeu est installé, tous programmes confondus), par exemple « GPU 23 % ·
+Disque C: 4 % · 1,2 Mo/s ». Chacune a sa case ; une mesure que Windows ne
+fournit pas n’apparaît simplement pas.
 
-**Position de l’affichage des performances** choisit le coin ; en haut à droite,
-le cadre se place sous les boutons du menu du jeu. Le cadre suit l’échelle de
-l’interface et ne capte ni les clics ni le clavier ; il passe au-dessus du HUD
-et des fenêtres du jeu, mais les menus, fenêtres de confirmation, infobulles et
-écrans de chargement restent au-dessus de lui, et il disparaît avec l’interface
-quand le jeu la masque. Décoché, il disparaît aussitôt et plus rien n’est
-mesuré.
+Avec **Déplacer l’affichage à la souris** (coché par défaut), le cadre se fait
+glisser au clic gauche et se pose où tu veux ; il reste entièrement visible et
+sa place est gardée, même après un redémarrage ou un changement de résolution.
+Les clics sur le cadre ne vont alors pas au jeu. Décochée, le cadre reprend son
+coin et laisse passer les clics. **Position de l’affichage des performances**
+choisit le coin ; choisir un autre coin y replace un cadre déplacé ; en haut à
+droite, le cadre se place sous les boutons du menu du jeu. Le cadre suit
+l’échelle de l’interface et ne capte jamais le clavier ; il passe au-dessus du
+HUD et des fenêtres du jeu, mais les menus, fenêtres de confirmation, infobulles
+et écrans de chargement restent au-dessus de lui, et il disparaît avec
+l’interface quand le jeu la masque. Décoché, il disparaît aussitôt et plus rien
+n’est mesuré.
 
 ## Compilation et publication
 

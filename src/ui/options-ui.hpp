@@ -26,7 +26,7 @@ struct OptionsUi {
     // « Apparence »: a checkbox per miniature category after each context's
     // choice (Settings' CombatMiniatureToggles and RoleplayMiniatureToggles).
     std::array<managed::Ref, 6> combatMiniatureSources, combatMiniatureOptions;
-    std::array<managed::Ref, 4> roleplayMiniatureSources, roleplayMiniatureOptions;
+    std::array<managed::Ref, 5> roleplayMiniatureSources, roleplayMiniatureOptions;
     // « Animations »: one checkbox per toggle (Settings' AnimationToggles).
     std::array<managed::Ref, 6> animationSources, animationOptions;
     managed::Ref githubSource, githubOption;
@@ -50,10 +50,12 @@ struct OptionsUi {
     // « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
     managed::Ref calendarKraloveSource, calendarKraloveOption;
     // The checkboxes added in 1.13.0 and 1.14.0 (Settings' ExtraToggles), spread
-    // over « Cartes », « Carnet », « Chat » and « Performances »; then the corner
+    // over « Cartes », « Carnet » and « Performances »; then the corner
     // choice of the performance overlay.
-    std::array<managed::Ref, 11> extraSources, extraOptions;
+    std::array<managed::Ref, 10> extraSources, extraOptions;
     managed::Ref perfCornerSource, perfCornerOption;
+    // « Chat »: the dimension of shared positions, a choice of three.
+    managed::Ref chatCoordsSource, chatCoordsOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
     // Metamob rows, after the two soul rows of the « Pierre d’âme » section:

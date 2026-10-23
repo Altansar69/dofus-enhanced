@@ -237,7 +237,7 @@ const std::string KeyInvalid = "Metamob : clé invalide (lettres, chiffres et sy
     NoQuest = "Metamob : aucune quête Ocre Dofus Unity sur ton compte, rien n’a été modifié.",
     SeveralQuests = "Metamob : plusieurs quêtes Ocre sur ton compte ; indique le nom de ce personnage dans « Personnage à contacter » de la bonne quête.";
 std::string Added(const Row& row, int before, int after) {
-    return "Metamob : +" + std::to_string(after - before) + " « " + row.name + " » (" + std::to_string(before) + " → " + std::to_string(after) + ").";
+    return "Metamob : +" + std::to_string(after - before) + " « " + row.name + " » (de " + std::to_string(before) + " à " + std::to_string(after) + ").";
 }
 std::string NoKey(const std::string& name) {
     return "Metamob : capture de « " + name + " » non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
@@ -245,7 +245,7 @@ std::string NoKey(const std::string& name) {
 std::string Unmatched(const std::string& name) { return "Metamob : « " + name + " » introuvable dans ta quête Ocre, rien n’a été modifié."; }
 std::string Capped(const Row& row) { return "Metamob : « " + row.name + " » est déjà à 30, la quantité maximale."; }
 std::string Changed(const Row& row, int before, int after) {
-    return "Metamob : « " + row.name + " » a changé pendant l’envoi (" + std::to_string(before) + " → " + std::to_string(after) +
+    return "Metamob : « " + row.name + " » a changé pendant l’envoi (de " + std::to_string(before) + " à " + std::to_string(after) +
         ") ; vérifie ta quête sur Metamob.";
 }
 std::string Refused(const Row& row) { return "Metamob : mise à jour refusée pour « " + row.name + " »."; }
@@ -516,7 +516,7 @@ void HappyPath() {
     Tick(1999);
     Check(Sent() == 0 && notices.empty(), "Nothing is sent within 2 s of the last capture");
     Tick(1);
-    Said({"Metamob : +1 « Tofumanchou l'Empereur » (2 → 3)."}, "Happy path");
+    Said({"Metamob : +1 « Tofumanchou l'Empereur » (de 2 à 3)."}, "Happy path");
     {
         std::lock_guard<std::mutex> guard(scriptLock);
         Check(calls.size() == 5, "Quests, two list pages, the step, the write");
@@ -533,7 +533,7 @@ void HappyPath() {
     ExpectWrite(Slug, Mob, 1, Written(Mob, 1));
     EnqueueCapture(Captured(Mob));
     Tick(2000);
-    Said({"Metamob : +1 « Mob l'Éponge » (0 → 1)."}, "Cached quest and list");
+    Said({"Metamob : +1 « Mob l'Éponge » (de 0 à 1)."}, "Cached quest and list");
     // A typographic apostrophe in the game name: the same monster, shown with Metamob's name.
     auto curly = Captured(Tiwa);
     curly.name = "Tiwa’Missou le Gateux";
@@ -554,7 +554,7 @@ void Grouping() {
     Tick(1999);
     Check(Sent() == 0, "A new capture restarts the 2 s wait");
     Tick(1);
-    Said({"Metamob : +2 « Tofumanchou l'Empereur » (2 → 4)."}, "Two captures, one write");
+    Said({"Metamob : +2 « Tofumanchou l'Empereur » (de 2 à 4)."}, "Two captures, one write");
     // A fight with two souls of one monster and one of another: one write each.
     ExpectStep(Slug, Abrakroc, 0);
     ExpectWrite(Slug, Abrakroc, 2, Written(Abrakroc, 2));

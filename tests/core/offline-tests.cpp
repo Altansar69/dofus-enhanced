@@ -5,6 +5,7 @@
 #include <cmath>
 #include <MinHook.h>
 #include <fstream>
+#include <sstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
@@ -58,26 +59,31 @@ static void PolicyTests() {
     Require(ClassifyMiniature(true, false, false, -1, 0) == G::Unknown && ClassifyMiniature(true, false, false, 0, 4) == G::Unknown,
         "Unknown or unsupported teams keep original appearance");
     // Out of combat.
-    for (int flags = 0; flags < 16; ++flags) {
-        const bool player = (flags & 1) != 0, monster = (flags & 2) != 0, self = (flags & 4) != 0, party = (flags & 8) != 0;
-        const G expected = self ? G::RoleplaySelf : player ? (party ? G::PartyMember : G::OtherPlayer) : monster ? G::Monster : G::RoleplayOther;
-        Require(ClassifyRoleplayMiniature(player, monster, self, party) == expected, "Roleplay category differs from its reference");
+    for (int flags = 0; flags < 32; ++flags) {
+        const bool player = (flags & 1) != 0, monster = (flags & 2) != 0, self = (flags & 4) != 0, party = (flags & 8) != 0, npc = (flags & 16) != 0;
+        const G expected = self ? G::RoleplaySelf : player ? (party ? G::PartyMember : G::OtherPlayer) : monster ? G::Monster :
+            npc ? G::Npc : G::RoleplayOther;
+        Require(ClassifyRoleplayMiniature(player, monster, self, party, npc) == expected, "Roleplay category differs from its reference");
+        if (!npc) Require(ClassifyRoleplayMiniature(player, monster, self, party) == expected, "An entity not told an NPC keeps its group");
     }
-    // Each group follows exactly its own checkbox, for all 1024 combinations;
+    // Each group follows exactly its own checkbox, for all 2048 combinations;
     // Unknown never and RoleplayOther always reduced.
     const std::pair<G, bool Settings::*> owners[] = {
         {G::Self, &Settings::miniatureSelf}, {G::AlliedPlayer, &Settings::miniatureAllies}, {G::AlliedSummon, &Settings::miniatureAllySummons},
         {G::OwnSummon, &Settings::miniatureOwnSummons}, {G::Enemy, &Settings::miniatureEnemies}, {G::EnemySummon, &Settings::miniatureEnemySummons},
         {G::RoleplaySelf, &Settings::roleplayMiniatureSelf}, {G::PartyMember, &Settings::roleplayMiniatureParty},
-        {G::OtherPlayer, &Settings::roleplayMiniaturePlayers}, {G::Monster, &Settings::roleplayMiniatureMonsters}};
+        {G::OtherPlayer, &Settings::roleplayMiniaturePlayers}, {G::Monster, &Settings::roleplayMiniatureMonsters},
+        {G::Npc, &Settings::roleplayMiniatureNpcs}};
     std::vector<unsigned> masks;
-    for (unsigned mask = 0; mask < 1024; ++mask) {
+    for (unsigned mask = 0; mask < 2048; ++mask) {
         Settings s;
         for (size_t i = 0; i < std::size(CombatMiniatureToggles); ++i) s.*CombatMiniatureToggles[i] = ((mask >> i) & 1) != 0;
         for (size_t i = 0; i < std::size(RoleplayMiniatureToggles); ++i) s.*RoleplayMiniatureToggles[i] = ((mask >> (6 + i)) & 1) != 0;
         for (const auto& [group, field] : owners) Require(MiniatureGroupEnabled(s, group) == s.*field, "A category does not follow its own checkbox");
         Require(!MiniatureGroupEnabled(s, G::Unknown) && MiniatureGroupEnabled(s, G::RoleplayOther), "Unknown and other entities keep their policy");
-        Require(MiniatureCategoryMask(s) == mask, "Category mask must hold exactly the ten checkboxes");
+        Require(MiniatureCategoryMask(s) == mask, "Category mask must hold exactly the eleven checkboxes");
+        // An NPC is told apart from the other entities whenever « PNJ » can change its look.
+        if (!RoleplayNpcMatters(s)) Require(MiniatureGroupEnabled(s, G::Npc) == MiniatureGroupEnabled(s, G::RoleplayOther), "NPC skipped while it matters");
         // The local identity is read whenever it can change a result.
         if (!CombatSelfMatters(s)) Require(MiniatureGroupEnabled(s, G::Self) == MiniatureGroupEnabled(s, G::AlliedPlayer), "Own fighter skipped while it matters");
         if (!CombatOwnSummonMatters(s)) Require(MiniatureGroupEnabled(s, G::OwnSummon) == MiniatureGroupEnabled(s, G::AlliedSummon), "Own summon skipped while it matters");
@@ -86,7 +92,9 @@ static void PolicyTests() {
         masks.push_back(MiniatureCategoryMask(s));
     }
     Require(!CombatSelfMatters(Settings{}) && !CombatOwnSummonMatters(Settings{}) && !RoleplayIdentityMatters(Settings{}),
-        "The default (all ticked) needs no extra native read");
+        "The default (every player box ticked) needs no extra identity read");
+    Require(RoleplayNpcMatters(Settings{}) && !MiniatureGroupEnabled(Settings{}, G::Npc),
+        "By default NPCs keep their normal size, as before « PNJ »: they are told apart from the other entities");
     // « Animations »: every toggle combination against the reference.
     const uintptr_t effectCaller = 0x1ECE82C, castCallers[] = {0x272E250, 0x2744303};
     for (unsigned mask = 0; mask < 64; ++mask) {
@@ -169,16 +177,18 @@ int main() {
         Require(defaults.archiZonesMap && !defaults.archiZonesMiniMap && defaults.calendarKralamoure && defaults.travelRoublardTemple,
             "Missing-archimonster zones start on the big map only; Kralamoure openings start shown");
         for (auto field : CombatMiniatureToggles) Require(defaults.*field, "Every combat category starts in Miniatures, as before its checkbox");
-        for (auto field : RoleplayMiniatureToggles) Require(defaults.*field, "Every roleplay category starts in Miniatures, as before its checkbox");
+        for (auto field : RoleplayMiniatureToggles)
+            Require(defaults.*field == (field != &Settings::roleplayMiniatureNpcs),
+                "Every roleplay category starts in Miniatures, as before its checkbox, except the NPCs the game never reduced");
         {
-            // The sixteen new checkboxes: each one alone away from its default,
+            // The seventeen new checkboxes: each one alone away from its default,
             // all at once, and mixed patterns, through Save and Read.
             std::vector<bool Settings::*> flags(std::begin(CombatMiniatureToggles), std::end(CombatMiniatureToggles));
             flags.insert(flags.end(), std::begin(RoleplayMiniatureToggles), std::end(RoleplayMiniatureToggles));
             flags.insert(flags.end(), std::begin(AnimationToggles), std::end(AnimationToggles));
-            Require(flags.size() == 16, "Sixteen appearance and animation checkboxes");
-            std::vector<unsigned> patterns{0u, 0xFFFFu, 0x5555u, 0xAAAAu, 0x0F0Fu, 0xF0F0u, 0x1234u, 0xFEDCu};
-            for (unsigned bit = 0; bit < 16; ++bit) { patterns.push_back(1u << bit); patterns.push_back(0xFFFFu ^ (1u << bit)); }
+            Require(flags.size() == 17, "Seventeen appearance and animation checkboxes");
+            std::vector<unsigned> patterns{0u, 0x1FFFFu, 0x15555u, 0x0AAAAu, 0x10F0Fu, 0x0F0F0u, 0x11234u, 0x0FEDCu};
+            for (unsigned bit = 0; bit < 17; ++bit) { patterns.push_back(1u << bit); patterns.push_back(0x1FFFFu ^ (1u << bit)); }
             for (unsigned pattern : patterns) {
                 auto choices = defaults;
                 for (size_t i = 0; i < flags.size(); ++i) choices.*flags[i] = ((pattern >> i) & 1) != 0;
@@ -191,6 +201,14 @@ int main() {
                 { std::ofstream invalid(path, std::ios::app); invalid << "miniatureSelf=2\nnoSpellEffects=-1\ninstantMovements=yes\n"; }
                 Require(Settings::Read(path) == choices, "Malformed checkbox values preserve the saved choices");
             }
+            // « PNJ » (1.14.0): its own line; a file written before it keeps the NPCs at their size.
+            auto npcs = defaults; npcs.roleplayMiniatureNpcs = true; npcs.Save(path);
+            Require(FileText(path).find("\nroleplayMiniatureNpcs=1\n") != std::string::npos && Settings::Read(path) == npcs, "« PNJ » saved on its own line");
+            { std::ofstream file(path); file << "mode=2\nroleplayMode=2\nroleplayMiniatureMonsters=0\n"; }
+            const auto older = Settings::Read(path);
+            Require(!older.roleplayMiniatureNpcs && !older.roleplayMiniatureMonsters && older.roleplayMiniaturePlayers, "A file without « PNJ » keeps NPCs unreduced");
+            { std::ofstream file(path); file << "roleplayMiniatureNpcs=1\nroleplayMiniatureNpcs=2\n"; }
+            Require(Settings::Read(path).roleplayMiniatureNpcs, "A malformed « PNJ » line preserves the saved choice");
         }
         // Migration: a file without the new keys takes the toggles of its legacy
         // animationMode (or noAnimations); present keys win whatever the order.
@@ -217,16 +235,17 @@ int main() {
         // additions on by default, the overlay off and in its corner; each one
         // persists alone and together, with the overlay's corner and place.
         Require(defaults.resourceMiniMapBar && defaults.miniMapZoneName && defaults.coordsWorldMap && defaults.coordsWorldMiniMap &&
-            defaults.notebookPingButton && defaults.mapAddPosition && defaults.coordsWorldChat && !defaults.perfOverlay &&
+            defaults.notebookPingButton && defaults.mapAddPosition && defaults.coordsWorldChatMode == 2 && !defaults.perfOverlay &&
             defaults.perfOverlayCorner == 0 && defaults.perfOverlayGpu && defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
             defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1,
             "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden in the top left corner");
-        static_assert(std::size(ExtraToggles) == 11);
+        static_assert(std::size(ExtraToggles) == 10);
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
-            // Every combination of the first eight; the 1.14.0 ones follow inverted bits.
-            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = (((mask >> (i % 8)) & 1) != 0) != (i >= 8);
+            // Every combination of the first seven, twice; the 1.14.0 ones follow inverted bits.
+            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = (((mask >> (i % 7)) & 1) != 0) != (i >= 7);
             extra.perfOverlayCorner = static_cast<int>(mask % 4);
+            extra.coordsWorldChatMode = static_cast<int>(mask % 3);
             if (mask % 3) {
                 extra.perfOverlayX = static_cast<int>(mask * 39 % 10001);
                 extra.perfOverlayY = static_cast<int>(10000 - mask * 23 % 10001);
@@ -234,7 +253,7 @@ int main() {
             extra.Save(path);
             Require(Settings::Read(path) == extra, "Each checkbox, the overlay corner and its place persist independently");
             { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayCorner=4\nperfOverlayCorner=-1\nminiMapZoneName=2\nperfOverlay=x\n"
-                "perfOverlayX=10001\nperfOverlayY=-2\nperfOverlayGpu=2\nperfOverlayDrag=-1\n"; }
+                "perfOverlayX=10001\nperfOverlayY=-2\nperfOverlayGpu=2\nperfOverlayDrag=-1\ncoordsWorldChatMode=3\ncoordsWorldChat=2\n"; }
             Require(Settings::Read(path) == extra, "Malformed values preserve the saved choices");
         }
         {
@@ -245,6 +264,26 @@ int main() {
             bool rejected = false;
             try { lone.Save(path); } catch (const std::exception&) { rejected = true; }
             Require(rejected, "A lone overlay coordinate is never saved");
+        }
+        {
+            // 1.13.x had a checkbox for the chat dimension: checked is « Oui », unchecked « Non »;
+            // the three-way choice wins once written, and the checkbox stays written for 1.13.x.
+            for (int legacy : {0, 1}) {
+                { std::ofstream old(path); old << "coordsWorldChat=" << legacy << "\n"; }
+                Require(Settings::Read(path).coordsWorldChatMode == (legacy ? 2 : 0), "The 1.13.x chat checkbox becomes Oui or Non");
+                { std::ofstream both(path); both << "coordsWorldChatMode=1\ncoordsWorldChat=" << legacy << "\n"; }
+                Require(Settings::Read(path).coordsWorldChatMode == 1, "The three-way choice wins over the old checkbox");
+            }
+            auto chat = defaults; chat.coordsWorldChatMode = 1; chat.Save(path);
+            std::stringstream lines;
+            { std::ifstream saved(path); lines << saved.rdbuf(); } // closed: an open file would make any Save fail
+            Require(lines.str().find("coordsWorldChatMode=1\n") != std::string::npos && lines.str().find("coordsWorldChat=1\n") != std::string::npos,
+                "The choice and the 1.13.x checkbox are both written");
+            auto invalid = defaults; invalid.coordsWorldChatMode = 3;
+            std::string refusal;
+            try { invalid.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+            Require(refusal == "Invalid chat dimension choice" && Settings::Read(path).coordsWorldChatMode == 1,
+                "An unknown chat dimension choice is never saved");
         }
         {
             auto corner = defaults; corner.perfOverlayCorner = 4;
@@ -496,7 +535,7 @@ int main() {
         Require(MH_EnableHook(pointer) == MH_OK && invoke(3) == 55, "Local hook dispatch and trampoline");
         Require(MH_DisableHook(pointer) == MH_OK && invoke(3) == 34, "Local hook restoration");
         MH_Uninitialize();
-        std::cout << "PASS: settings migration (former animation modes to toggles, legacy keys kept), sixteen appearance/animation checkboxes round trip, exhaustive category and animation policies, modes, fixed sizing presets, version refusal, startup status and local hook roundtrip. No game process accessed.\n";
+        std::cout << "PASS: settings migration (former animation modes to toggles, legacy keys kept), seventeen appearance/animation checkboxes round trip (« PNJ » off by default), exhaustive category and animation policies, modes, fixed sizing presets, version refusal, startup status and local hook roundtrip. No game process accessed.\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n'; return 1;

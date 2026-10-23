@@ -53,11 +53,15 @@ static void ConvertHook(Obj service, Obj info, Obj* look, Method method) {
 }
 static Obj CreatureLookHook(Obj entity, Method method) {
     uint64_t generation = 0;
+    bool rebuilt = false;
     if (module && module->ready.load()) {
         try {
             // Stop restores the native appearance before removing hooks, so
             // cache invalidation must remain active while stopped is true.
             generation = module->features->PrepareCreatureLook(entity);
+            // An empty cache is rebuilt by this native call: only its result
+            // may be an NPC's fresh look.
+            rebuilt = generation && !Read<Obj>(entity, 0x310);
             if (!module->stopped) {
                 if (auto look = module->features->SubentityLook(entity)) return look;
             }
@@ -67,6 +71,13 @@ static Obj CreatureLookHook(Obj entity, Method method) {
         }
     }
     auto result = originalCreatureLook(entity, method);
+    if (rebuilt) {
+        try { result = module->features->RoleplayNpcLook(entity, result); }
+        catch (const std::exception& error) {
+            Log(std::string("MINIATURE_NPC_ERROR ") + error.what());
+            module->stopRequested.store(true);
+        }
+    }
     if (generation) {
         try { module->features->RememberCreatureLook(entity, generation); }
         catch (const std::exception& error) {
@@ -112,6 +123,13 @@ void Features::Install() {
     partyMembersGet = api.FindVerified(partyClass, "bfmh", 0, 0x752E20);
     partyMemberIdGet = api.FindVerified(partyMemberClass, "oab", 0, 0x68D2B0);
     RequireField(partyMemberClass, "ddku", 0x20);
+    // « PNJ »: EntityInfo.baks reads integer metadata, where gwu.bmpa and
+    // gwz.bmni store an NPC's ID under key 15. An NPC's look is the creature
+    // look cache AnimatedEntity.dhhm (+0x310) of its root, found by its ID
+    // Animated.fhtc (+0x1C8).
+    npcIdTryGet = api.FindVerified(info, "baks", 2, 0x1952330);
+    RequireField(lookAnimatedEntityClass, "dhhm", 0x310);
+    RequireField(api.Class("Ankama.Dofus.Core.Characters.dll", "CoreAnimated", "Animated"), "fhtc", 0x1C8);
     sizes.Install();
     AddHook(api.Find(converter, "bazg", 2), 0x19755D0, reinterpret_cast<void*>(ConvertHook), reinterpret_cast<void**>(&originalConvert));
     AddHook(api.Find(lookAnimatedEntityClass, "rez", 0), 0x2614FF0, reinterpret_cast<void*>(CreatureLookHook), reinterpret_cast<void**>(&originalCreatureLook));
@@ -242,25 +260,87 @@ bool Features::Convert(Obj service, Obj info, Obj* look) {
     }
     // Reduction works before measurements load; refresh when the floor is ready.
     if (!factor || *factor == 1.0f) return true;
-    Ref copy(api.Invoke(cloneLook, *look));
-    float x = Read<float>(copy.get(), 0x2C) * *factor;
-    float y = Read<float>(copy.get(), 0x30) * *factor;
-    if (!std::isfinite(x) || !std::isfinite(y)) throw std::runtime_error("Non-finite entity scale");
-    api.Invoke(scaleX, copy.get(), {&x});
-    api.Invoke(scaleY, copy.get(), {&y});
+    auto copy = ScaledCopy(*look, *factor);
     // look can point directly into the owner's cached-look field: preserve the GC write barrier.
     api.gc_wbarrier_set_field(nullptr, look, copy.get());
     ++miniatureCount;
     return true;
 }
+// A copy of a look scaled on both axes (native clone dbfj, setters dbev and
+// dbex), keeping the signs of its scales: the source is never modified.
+Ref Features::ScaledCopy(Obj look, float factor) {
+    Ref copy(api.Invoke(cloneLook, look));
+    float x = Read<float>(copy.get(), 0x2C) * factor;
+    float y = Read<float>(copy.get(), 0x30) * factor;
+    if (!std::isfinite(x) || !std::isfinite(y)) throw std::runtime_error("Non-finite entity scale");
+    api.Invoke(scaleX, copy.get(), {&x});
+    api.Invoke(scaleY, copy.get(), {&y});
+    return copy;
+}
+// An NPC, as the game's own context menu tells one (eun.zzt opens its NPC menu
+// for an NPC ID, integer property 15): the NPC flag 2 and that ID, none of the
+// fighter (1), monster (8), player (0x80), 0x10 or 0x20 flags. The same test as
+// the PNJ of « Surbrillance » (monster-glow-entities.cpp).
+bool Features::IsNpc(Obj info) const {
+    int npcFlag = 2;
+    if (!api.Value<bool>(api.Invoke(flagsTest, info, {&npcFlag}))) return false;
+    for (int other : {1, 8, 0x80, 0x10, 0x20})
+        if (api.Value<bool>(api.Invoke(flagsTest, info, {&other}))) return false;
+    int key = 15, npc = 0;
+    return api.Value<bool>(api.Invoke(npcIdTryGet, info, {&key, &npc})) && npc > 0;
+}
+// « PNJ » out of combat with Miniatures: the NPC's look, just rebuilt by
+// native rez, reduced like the other categories. The game writes bool property
+// 9 into every NPC's EntityInfo (gwu.bmpa), and rez then caches a plain copy of
+// the NPC's own look without ever calling the creature service: Convert never
+// sees an NPC, which is why NPCs kept their size. Unticked, the look stays the
+// game's own, as before 1.14.0.
+Obj Features::RoleplayNpcLook(Obj entity, Obj look) {
+    const auto& settings = module->settings;
+    if (!look || module->stopped || module->InCombat() || ActiveDisplayMode(settings, false) != 2 ||
+        !MiniatureGroupEnabled(settings, MiniatureGroup::Npc)) return look;
+    auto service = module->creatures.get();
+    if (!service || !Read<bool>(service, 0x48) || Read<Obj>(entity, 0x310) != look ||
+        !api.class_is_assignable_from(entityLookClass, api.object_get_class(look))) return look;
+    Ref registry(module->FindService("fso"));
+    if (!registry.get() || !api.class_is_assignable_from(lookEntityRegistryClass, api.object_get_class(registry.get())))
+        return look;
+    auto id = Read<int64_t>(entity, 0x1C8);
+    Obj found = nullptr;
+    if (!api.Value<bool>(api.Invoke(fighterTryGet, registry.get(), {&id, &found})) || !found) return look;
+    Ref info(found);
+    // Every other entity reached Convert: only rez's bool 9 copy is an NPC's here.
+    int exclusion = 9;
+    if (!api.Value<bool>(api.Invoke(excludedTest, info.get(), {&exclusion})) || !IsNpc(info.get())) return look;
+    // Convert's rule for a reduced non-monster: 60 %, no player-relative floor.
+    const auto factor = SizeFactor(SimpleReducedPercent, SimpleMinimumMonsterPercent, false, 0, sizes.playerHeight);
+    if (!factor || *factor == 1.0f) return look;
+    auto copy = ScaledCopy(look, *factor);
+    api.gc_wbarrier_set_field(entity, reinterpret_cast<Obj*>(static_cast<char*>(entity) + 0x310), copy.get());
+    ++miniatureCount;
+    return copy.get();
+}
 void Features::Refresh(bool active) {
-    // baza emits synchronous callbacks. Clear first so their rez calls cannot
-    // observe a cache stamped under the previous size policy or display mode.
-    InvalidateLookCache();
-    if (module->creatures.get()) api.Invoke(refreshCreatures, module->creatures.get(), {&active});
-    // Both creature and miniature modes set the same native bool. Explicitly
-    // rebuild current combat roots instead of depending on event deduplication.
-    RefreshCombatAppearance();
+    const auto refresh = [this](bool on) {
+        // baza emits synchronous callbacks. Clear first so their rez calls cannot
+        // observe a cache stamped under the previous size policy or display mode.
+        InvalidateLookCache();
+        if (module->creatures.get()) api.Invoke(refreshCreatures, module->creatures.get(), {&on});
+        // Both creature and miniature modes set the same native bool. Explicitly
+        // rebuild current combat roots instead of depending on event deduplication.
+        RefreshCombatAppearance();
+    };
+    // Stop's last refresh with the game's own mode off: native rhx then shows
+    // each entity's own look without calling rez, so a look this module cached
+    // in +0x310 (a miniature, an NPC's reduced copy) would outlive the hooks and
+    // come back once the player turns the game's mode on. Stopped, the hook
+    // clears every root's cache and native rez rebuilds it: one active pass first,
+    // best effort, as the game's own mode is restored below whatever happens.
+    if (!active && module->stopped && miniatureCount) {
+        try { refresh(true); }
+        catch (const std::exception& error) { Log(std::string("MINIATURE_STOP_RELEASE_ERROR ") + error.what()); }
+    }
+    refresh(active);
 }
 Features::LocalFighterIdentity Features::LocalFighter() const {
     LocalFighterIdentity unknown;
@@ -359,7 +439,10 @@ MiniatureGroup Features::RoleplayGroup(Obj info, bool player, bool monster) {
         self = identity.self != 0 && id == identity.self;
         partyMember = player && !self && std::binary_search(identity.party.begin(), identity.party.end(), id);
     }
-    return ClassifyRoleplayMiniature(player, monster, self, partyMember);
+    // An NPC whose EntityInfo lacks bool 9 (gwz.bmni's NPC ID actors) reaches
+    // Convert: it follows « PNJ », told apart once that box is unticked.
+    const bool npc = !player && !monster && !self && RoleplayNpcMatters(module->settings) && IsNpc(info);
+    return ClassifyRoleplayMiniature(player, monster, self, partyMember, npc);
 }
 void Features::Tick() {
     const bool combat = module->InCombat();

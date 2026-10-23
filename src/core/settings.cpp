@@ -21,7 +21,8 @@ constexpr Flag AppearanceFlags[] = {
     {"miniatureAllySummons", &Settings::miniatureAllySummons}, {"miniatureOwnSummons", &Settings::miniatureOwnSummons},
     {"miniatureEnemies", &Settings::miniatureEnemies}, {"miniatureEnemySummons", &Settings::miniatureEnemySummons},
     {"roleplayMiniatureSelf", &Settings::roleplayMiniatureSelf}, {"roleplayMiniatureParty", &Settings::roleplayMiniatureParty},
-    {"roleplayMiniaturePlayers", &Settings::roleplayMiniaturePlayers}, {"roleplayMiniatureMonsters", &Settings::roleplayMiniatureMonsters}};
+    {"roleplayMiniaturePlayers", &Settings::roleplayMiniaturePlayers}, {"roleplayMiniatureMonsters", &Settings::roleplayMiniatureMonsters},
+    {"roleplayMiniatureNpcs", &Settings::roleplayMiniatureNpcs}};
 constexpr Flag AnimationFlags[] = {
     {"noSpellEffects", &Settings::noSpellEffects}, {"shortSpellCasts", &Settings::shortSpellCasts},
     {"noAttackAnimations", &Settings::noAttackAnimations}, {"noDeathAnimations", &Settings::noDeathAnimations},
@@ -32,7 +33,7 @@ constexpr Flag ExtraFlags[] = {
     {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
     {"coordsWorldMap", &Settings::coordsWorldMap}, {"coordsWorldMiniMap", &Settings::coordsWorldMiniMap},
     {"notebookPingButton", &Settings::notebookPingButton}, {"mapAddPosition", &Settings::mapAddPosition},
-    {"coordsWorldChat", &Settings::coordsWorldChat}, {"perfOverlay", &Settings::perfOverlay},
+    {"perfOverlay", &Settings::perfOverlay},
     {"perfOverlayGpu", &Settings::perfOverlayGpu}, {"perfOverlayDisk", &Settings::perfOverlayDisk},
     {"perfOverlayDrag", &Settings::perfOverlayDrag}};
 static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
@@ -44,7 +45,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     std::ifstream file(path);
     std::string line;
     bool preferredRead = false, preferredRoleplayRead = false, animationModeRead = false, monsterGlowModeRead = false;
-    bool resourceMiniMapRead = false;
+    bool resourceMiniMapRead = false, chatModeRead = false;
+    int legacyChatDimension = -1; // 1.13.0's checkbox, before the chat's three choices
     int legacyAnimationMode = 1; // the default of every revision that had it
     unsigned animationFlagsRead = 0;
     while (std::getline(file, line)) {
@@ -103,6 +105,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "calendarKralamoure" && (value == 0 || value == 1)) settings.calendarKralamoure = value != 0;
             else if (key == "mapTravelPlanner" && (value == 0 || value == 1)) settings.mapTravelPlanner = value != 0;
             else if (key == "perfOverlayCorner" && ValidPerfOverlayCorner(value)) settings.perfOverlayCorner = value;
+            else if (key == "coordsWorldChatMode" && ValidCoordsWorldChatMode(value)) { settings.coordsWorldChatMode = value; chatModeRead = true; }
+            else if (key == "coordsWorldChat" && (value == 0 || value == 1)) legacyChatDimension = value;
             else if (key == "perfOverlayX" && ValidPerfOverlayPlace(value)) settings.perfOverlayX = value;
             else if (key == "perfOverlayY" && ValidPerfOverlayPlace(value)) settings.perfOverlayY = value;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
@@ -131,6 +135,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     // Earlier revisions used one switch for both maps. Preserve that choice
     // until the new mini-map preference has been explicitly saved.
     if (!resourceMiniMapRead) settings.resourceMiniMapEnabled = settings.resourceMapEnabled;
+    // A file of 1.13.x: its checkbox becomes « Oui » or « Non ».
+    if (!chatModeRead && legacyChatDimension >= 0) settings.coordsWorldChatMode = legacyChatDimension ? 2 : 0;
     // A place needs both coordinates; one alone means the chosen corner.
     if (!ValidPerfOverlayPlace(settings.perfOverlayX, settings.perfOverlayY)) settings.perfOverlayX = settings.perfOverlayY = -1;
     return settings;
@@ -155,6 +161,7 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
     if (!ValidPanelPosition(soulPanelX) || !ValidPanelPosition(soulPanelY))
         throw std::runtime_error("Invalid soul panel position");
     if (!ValidPerfOverlayCorner(perfOverlayCorner)) throw std::runtime_error("Invalid performance overlay corner");
+    if (!ValidCoordsWorldChatMode(coordsWorldChatMode)) throw std::runtime_error("Invalid chat dimension choice");
     if (!ValidPerfOverlayPlace(perfOverlayX, perfOverlayY)) throw std::runtime_error("Invalid performance overlay place");
     static std::atomic_uint64_t nextSave{0};
     auto temporary = path;
@@ -202,6 +209,8 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         for (const auto& [name, field] : AnimationFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         for (const auto& [name, field] : ExtraFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         file << "\nperfOverlayCorner=" << perfOverlayCorner << "\nperfOverlayX=" << perfOverlayX << "\nperfOverlayY=" << perfOverlayY;
+        // The 1.13.x checkbox too, for a client of that revision sharing this file.
+        file << "\ncoordsWorldChatMode=" << coordsWorldChatMode << "\ncoordsWorldChat=" << (coordsWorldChatMode != 0 ? 1 : 0);
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

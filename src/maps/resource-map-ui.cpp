@@ -10,6 +10,8 @@
 #include <cmath>
 #include <memory>
 #include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace resourceMap {
@@ -18,22 +20,53 @@ using namespace managed;
 constexpr const char* UiAssembly="UnityEngine.UIElementsModule.dll";
 constexpr const char* UiNamespace="UnityEngine.UIElements";
 constexpr const char* Figma="Core.UILogic.Components.Figma";
+constexpr const char* Tooltips="Core.UILogic.Components.Tooltips";
 constexpr size_t MaxRows=128;
 // Mini-map centering control: the native button component and icon of the
 // full map's btn_player in a square host; its click is observed through the
 // shared native button hook and consumed by the next UI tick.
 constexpr float CenterSize=40;
 constexpr int PlayerIcon=228; // FigmaIcons.player
+// Big map « Ressources » mode, made as the game's own Anomalies and Conquête
+// (CartographyMapUI, fhi):
+// - its square is a mode button of ctr_worldmapButtons, right after
+//   btn_anomaly: DofusButtonCustom, main-style secondary, an icon of the
+//   game's set, no rich text, 4 px above the next square (btn_anomaly's
+//   margin), and the game's text tooltip (TooltipManipulator, placed as
+//   btn_anomaly's: its top left beside the square's top right, 12 px away,
+//   hidden when the mouse goes out);
+// - its content is a WindowFigma placed as the game's mode windows
+//   (ctr_locTreeConquest: secondary header, 392 x 700, 16 px from the right
+//   and 10 % from the top), right after ctr_locTreeAnomaly in their parent;
+//   inside, the conquest window's padding, a list with the game's
+//   scrollbarPadding class and the anomaly window's Footer. No colour or
+//   rounded box of the mod's own.
+// The game's squares keep one look (no selected state): the open window tells
+// the mode, one at a time. Selecting ours leaves the game's anomaly or conquest
+// mode with fhi.bejv(0), the game's own way back to its world map mode (its
+// windows hidden, its world map layers back), where the resource markers
+// belong; a game mode chosen closes ours. Nothing of the game's is restyled.
+constexpr int ResourcesIcon=247; // FigmaIcons.resources
+constexpr int SecondaryStyle=1;  // DofusButtonCustom and HeaderWindow ComponentStyleEnum.secondary
+constexpr int WorldMapMode=0;    // fhi+fgq: 0 world map, 1 anomalies, 2 conquest
+constexpr int TipTopLeft=0,TipTopRight=2,TipOut=1; // TooltipPositioning+Location; TooltipManipulatorBehavior.Out
+constexpr float WindowWidth=392,WindowHeight=700;
+constexpr const char* TabTitle="Ressources";
 struct Rect {float x,y,width,height;};
 struct Color {float r,g,b,a;};
 using LifeFn=void(*)(Obj,Method);
 LifeFn originalEnable{},originalDisable{};
 Klass cursorClass{},checkboxClass{},headerClass{},scrollClass{},labelClass{},elementClass{},buttonClass{};
-Method buttonCtor{},buttonIcon{};
+Klass bindingClass{},windowClass{},tooltipClass{};
+Method buttonCtor{},buttonIcon{},buttonStyle{},buttonRichText{};
 Method checkboxCtor{},checkboxValue{},checkboxSet{},checkboxText{},checkboxSize{},checkboxLevel{},checkboxIcon{};
 Method headerCtor{},headerTitle{},headerOpen{},headerCanOpen{},headerAdd{},scrollCtor{},scrollContent{};
 Method scrollHorizontal{},scrollVertical{};
 Method labelCtor{},labelText{},labelSingleLine{},tooltip{},bringToFront{},enableCursor{},removeCursor{};
+Method worldButtons{},anomalyButton{},conquestButton{},anomalyWindow{},leaveMode{};
+Method windowCtor{},windowTitle{},windowHeaderStyle{},windowClose{};
+Method tooltipCtor{},hideTooltip{},addManipulator{},removeManipulator{};
+Method addChild{},insert{},indexOf{},addClass{},removeFromHierarchy{};
 bool installed=false;
 Ref pending;
 struct Row {int id=0; Ref checkbox;};
@@ -43,8 +76,15 @@ struct State {
     std::vector<int> selection;
     Ref toolbar,center,centerButton;
     std::vector<Ref> tabs,groups,cursorTargets;
+    // Big map: the game's mode column and squares, our square and its game
+    // tooltip, the parent of the game's mode windows, our window's close button.
+    // resources is our window there.
+    Ref buttons,anomaly,conquest,tab,tip,host,close;
     int activeJob=-1;
     bool enabled=true,attached=false,mini=false,cleaning=false,shown=true,centerShown=true,centerRequested=false;
+    // Big map: the mode selected; its square shown; the tooltip added to it;
+    // a selection to apply (leaving the game's mode) at the next tick.
+    bool open=false,tabShown=true,tipAdded=false,switchRequested=false;
     float height=-1,width=-1,left=-1,top=-1,centerLeft=-1,centerTop=-1;
 };
 std::unique_ptr<State> owned,miniOwned;
@@ -54,6 +94,12 @@ bool CurrentOwner(Obj owner){
         api.Field(owner,"dtzz")==module->FindService("fkc")&&
         *static_cast<bool*>(api.FieldAddress(owner,"dtzx"));
 }
+// The map window's mode (fhi.dubo, fhi+fgq).
+int Mode(Obj owner){return *static_cast<int*>(api.FieldAddress(owner,"dubo"));}
+void RequireField(Klass type,const char* name,size_t offset){
+    auto field=api.class_get_field_from_name(type,name);
+    if(!field||api.field_get_offset(field)!=offset)throw std::runtime_error(std::string("Resource map window field mismatch: ")+name);
+}
 void Text(Obj object,Method setter,const char* text){Ref value(api.string_new(text));api.Invoke(setter,object,{value.get()});}
 Obj ReadStyle(Obj element,const char* property){
     Ref style(api.Call(element,"get_style"));
@@ -61,19 +107,35 @@ Obj ReadStyle(Obj element,const char* property){
     if(!value||!api.class_is_valuetype(api.object_get_class(value)))throw std::runtime_error("Resource filters expected boxed style");
     return value;
 }
-void Pixels(Obj element,const char* property,float value){
-    Ref box(ReadStyle(element,property));int unit=0;
+void Length(Obj element,const char* property,float value,int unit){
+    Ref box(ReadStyle(element,property));
     Ref length(api.New(api.Class(UiAssembly,UiNamespace,"Length"),{&value,&unit}));
     api.Call(box.get(),"set_value",{api.object_unbox(length.get())});
     Ref style(api.Call(element,"get_style"));
     api.Call(style.get(),(std::string("UnityEngine.UIElements.IStyle.set_")+property).c_str(),{api.object_unbox(box.get())});
 }
+void Pixels(Obj element,const char* property,float value){Length(element,property,value,0);}
+void Percent(Obj element,const char* property,float value){Length(element,property,value,1);}
 template<class T> void Style(Obj element,const char* property,T value){
     Ref box(ReadStyle(element,property));api.Call(box.get(),"set_value",{&value});
     Ref style(api.Call(element,"get_style"));
     api.Call(style.get(),(std::string("UnityEngine.UIElements.IStyle.set_")+property).c_str(),{api.object_unbox(box.get())});
 }
 Obj Parent(Obj element){return api.Call(element,"get_parent");}
+Obj New(Klass type,Method ctor){
+    Ref value(api.object_new(type));
+    if(!value.get())throw std::runtime_error("Resource map allocation failed");
+    api.Invoke(ctor,value.get());
+    return value.get();
+}
+void Classes(Obj element,std::initializer_list<const char*> names){for(const auto* name:names)Text(element,addClass,name);}
+// The position of a native child, -1 when it is not one.
+int IndexOf(Obj parent,Obj child){return api.Value<int>(api.Invoke(indexOf,parent,{child}));}
+void InsertAfter(Obj parent,Obj sibling,Obj child){
+    const int index=IndexOf(parent,sibling);
+    if(index<0)throw std::runtime_error("Resource map native sibling unavailable");
+    int at=index+1;api.Invoke(insert,parent,{&at,child});
+}
 bool Detach(std::unique_ptr<State>& target){
     if(!target)return true;
     auto& state=*target;
@@ -94,6 +156,14 @@ bool Detach(std::unique_ptr<State>& target){
             }
             state.cursorTargets.pop_back();
         }
+        // Big map: the game's tooltip closed and taken off our square, which
+        // then leaves the mode column; the game's squares stay as they are.
+        if(state.tipAdded){
+            api.Invoke(hideTooltip,state.tip.get());
+            api.Invoke(removeManipulator,nullptr,{state.tab.get(),state.tip.get()});
+            state.tipAdded=false;
+        }
+        if(state.tab.get()&&Parent(state.tab.get()))api.Invoke(removeFromHierarchy,state.tab.get());
         if(state.center.get()&&Parent(state.center.get()))api.Call(state.center.get(),"RemoveFromHierarchy");
         if(state.resources.get()&&Parent(state.resources.get()))api.Call(state.resources.get(),"RemoveFromHierarchy");
         target.reset();return true;
@@ -147,27 +217,25 @@ void PollTabs(State& state){
         if(int(i)!=state.activeJob&&api.Value<bool>(api.Invoke(checkboxValue,state.tabs[i].get()))){ShowJob(state,int(i));return;}
     if(state.activeJob>=0&&!api.Value<bool>(api.Invoke(checkboxValue,state.tabs[state.activeJob].get())))ShowJob(state,-1);
 }
-bool Layout(State& state,const MiniMapSurface* mini=nullptr){
-    const auto root=api.Value<Rect>(api.Call(state.root.get(),"get_worldBound"));
-    const float width=mini?(std::min)(320.0f,mini->width-16.0f):(std::min)(320.0f,root.width-112.0f);
-    if(!std::isfinite(width)||width<(mini?128:200))return false;
+// Mini-map picker geometry. The big map's window takes the game's own sizes.
+bool Layout(State& state,const MiniMapSurface& mini){
+    const float width=(std::min)(320.0f,mini.width-16.0f);
+    if(!std::isfinite(width)||width<128)return false;
     const int columns=(std::max)(1,int(width/52));
     const float toolbarHeight=52.0f*float((std::size(Jobs)+columns-1)/columns);
-    const float height=mini?mini->height-48.0f-toolbarHeight:root.height-192.0f;
-    if(!std::isfinite(height)||height<(mini?48:96))return false;
+    const float height=mini.height-48.0f-toolbarHeight;
+    if(!std::isfinite(height)||height<48)return false;
     const float bounded=(std::min)(height,520.0f);
     if(state.height!=bounded){Pixels(state.scroll.get(),"height",bounded);state.height=bounded;}
     if(state.width!=width){Pixels(state.resources.get(),"width",width);state.width=width;}
-    if(mini){
-        const float left=mini->left+mini->width-width-8,top=mini->top+40;
-        if(state.left!=left){Pixels(state.resources.get(),"left",left);state.left=left;}
-        if(state.top!=top){Pixels(state.resources.get(),"top",top);state.top=top;}
-        if(state.center.get()){
-            // Bottom-left corner: clear of the native header, the drawer and the resize grip.
-            const float centerLeft=mini->left+8,centerTop=mini->top+mini->height-CenterSize-8;
-            if(state.centerLeft!=centerLeft){Pixels(state.center.get(),"left",centerLeft);state.centerLeft=centerLeft;}
-            if(state.centerTop!=centerTop){Pixels(state.center.get(),"top",centerTop);state.centerTop=centerTop;}
-        }
+    const float left=mini.left+mini.width-width-8,top=mini.top+40;
+    if(state.left!=left){Pixels(state.resources.get(),"left",left);state.left=left;}
+    if(state.top!=top){Pixels(state.resources.get(),"top",top);state.top=top;}
+    if(state.center.get()){
+        // Bottom-left corner: clear of the native header, the drawer and the resize grip.
+        const float centerLeft=mini.left+8,centerTop=mini.top+mini.height-CenterSize-8;
+        if(state.centerLeft!=centerLeft){Pixels(state.center.get(),"left",centerLeft);state.centerLeft=centerLeft;}
+        if(state.centerTop!=centerTop){Pixels(state.center.get(),"top",centerTop);state.centerTop=centerTop;}
     }
     return true;
 }
@@ -175,20 +243,39 @@ bool Fresh(const State& state,const MiniMapSurface* mini=nullptr){
     const bool ownerCurrent=mini?(mini->root.get()==state.root.get()&&mini->mapRoot.get()==state.mapRoot.get()&&
         mini->mapRoot.get()&&Parent(mini->mapRoot.get())==state.root.get()):
         CurrentOwner(state.owner.get())&&api.Field(state.owner.get(),"dzyj")==state.root.get();
-    return !state.cleaning&&ownerCurrent&&Session()&&state.compositor.get()==module->compositor.get()&&
-        state.character.get()==module->FindService("fng")&&state.cartography.get()==module->FindService("fkc")&&
-        api.Call(state.root.get(),"get_panel")==state.panel.get()&&
-        (!state.attached||(Parent(state.resources.get())==state.root.get()&&(!state.center.get()||Parent(state.center.get())==state.root.get())));
+    if(state.cleaning||!ownerCurrent||!Session()||state.compositor.get()!=module->compositor.get()||
+        state.character.get()!=module->FindService("fng")||state.cartography.get()!=module->FindService("fkc")||
+        api.Call(state.root.get(),"get_panel")!=state.panel.get())return false;
+    if(!state.attached)return true;
+    if(state.mini)return Parent(state.resources.get())==state.root.get()&&(!state.center.get()||Parent(state.center.get())==state.root.get());
+    // Big map: our square still in the game's mode column and our window beside
+    // the game's mode windows, both in the map's panel.
+    return Parent(state.tab.get())==state.buttons.get()&&Parent(state.resources.get())==state.host.get()&&
+        api.Call(state.tab.get(),"get_panel")==state.panel.get()&&api.Call(state.resources.get(),"get_panel")==state.panel.get();
 }
 void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=nullptr){
     if(!mini&&!CurrentOwner(owner))return;
     Ref root(mini?mini->root.get():api.Field(owner,"dzyj"));
     if(!root.get())return;
     Ref panel(api.Call(root.get(),"get_panel"));if(!panel.get())return;
-    const auto bounds=api.Value<Rect>(api.Call(root.get(),"get_worldBound"));
-    if(!std::isfinite(bounds.width)||!std::isfinite(bounds.height))return;
-    if(mini){if(mini->width<144||mini->height<160)return;}
-    else if(bounds.width<312||bounds.height<288)return;
+    // Big map: the game's mode column, its squares and the anomaly window
+    // (CartographyMapUIBinding, a value type read on a boxed copy).
+    Ref buttons,anomaly,conquest,anomalyFrame,host;
+    if(mini){
+        const auto bounds=api.Value<Rect>(api.Call(root.get(),"get_worldBound"));
+        if(!std::isfinite(bounds.width)||!std::isfinite(bounds.height))return;
+        if(mini->width<144||mini->height<160)return;
+    }else{
+        Ref binding(api.Field(owner,"dzyi"));
+        if(!binding.get()||api.object_get_class(binding.get())!=bindingClass)throw std::runtime_error("Cartography binding unavailable");
+        auto* data=api.object_unbox(binding.get());
+        buttons.reset(api.Invoke(worldButtons,data));anomaly.reset(api.Invoke(anomalyButton,data));
+        conquest.reset(api.Invoke(conquestButton,data));anomalyFrame.reset(api.Invoke(anomalyWindow,data));
+        if(!buttons.get()||!anomaly.get()||!conquest.get()||Parent(anomaly.get())!=buttons.get()||Parent(conquest.get())!=buttons.get())
+            throw std::runtime_error("Cartography mode column unavailable");
+        if(anomalyFrame.get())host.reset(Parent(anomalyFrame.get()));
+        if(!host.get()||api.Call(host.get(),"get_panel")!=panel.get())throw std::runtime_error("Cartography mode windows unavailable");
+    }
     const auto catalog=Catalog();
     if(catalog.empty()||catalog.size()>MaxRows)throw std::runtime_error("Resource catalog bounds");
     std::set<int> ids;
@@ -205,11 +292,13 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
     next->content.reset(api.Invoke(scrollContent,next->scroll.get()));
     if(!next->content.get())throw std::runtime_error("Resource filter scroll content unavailable");
     int hidden=2,automatic=0;api.Invoke(scrollHorizontal,next->scroll.get(),{&hidden});api.Invoke(scrollVertical,next->scroll.get(),{&automatic});
-    next->resources.reset(mini?Element():Header("Ressources",false));
-    Style(next->resources.get(),"position",1);
-    if(!mini){Pixels(next->resources.get(),"right",64.0f);Pixels(next->resources.get(),"top",80.0f);}
-    Text(next->resources.get(),tooltip,"Choisir les ressources affichées sur la carte et la mini-carte.");
+    // Where the master checkbox and the source note go: the mini-map's list,
+    // the footer of the big map's window.
+    Ref options;
     if(mini){
+        next->resources.reset(Element());
+        Style(next->resources.get(),"position",1);
+        Text(next->resources.get(),tooltip,"Choisir les ressources affichées sur la carte et la mini-carte.");
         next->toolbar.reset(Element());
         Style(next->toolbar.get(),"flexDirection",2);Style(next->toolbar.get(),"flexWrap",1);
         api.Call(next->resources.get(),"Add",{next->toolbar.get()});
@@ -224,25 +313,66 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         Text(next->center.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
         // Same native component and icon as btn_player on the full map: native
         // hover state, cursor and tooltip. Its clickable stops pointer
-        // propagation, so the click is reported by nativeClick (CenterClick).
+        // propagation, so the click is reported by nativeClick (Clicked).
         Ref button(api.object_new(buttonClass));api.Invoke(buttonCtor,button.get());
         int player=PlayerIcon;api.Invoke(buttonIcon,button.get(),{&player});
         Text(button.get(),tooltip,"Recentrer la mini-carte sur mon personnage");
         api.Call(next->center.get(),"Add",{button.get()});next->centerButton.reset(button.get());
+        options.reset(next->content.get());
     }else{
-        Style(next->resources.get(),"backgroundColor",Color{.105f,.115f,.12f,.97f});
-        Rounded(next->resources.get(),8);
-        AddSub(next->resources.get(),next->scroll.get());
+        next->buttons=std::move(buttons);next->anomaly=std::move(anomaly);next->conquest=std::move(conquest);next->host=std::move(host);
+        // The window: the game's mode window component and layout, closed until
+        // the square is selected.
+        next->resources.reset(New(windowClass,windowCtor));
+        const Obj window=next->resources.get();
+        Text(window,windowTitle,TabTitle);
+        int secondary=SecondaryStyle;api.Invoke(windowHeaderStyle,window,{&secondary});
+        next->close.reset(api.Invoke(windowClose,window));
+        if(!next->close.get())throw std::runtime_error("Resource window close button unavailable");
+        Style(window,"position",1);Percent(window,"top",10);Pixels(window,"right",16);
+        Pixels(window,"width",WindowWidth);Pixels(window,"height",WindowHeight);
+        // As the Ocre panel: the window stays on small screens.
+        Percent(window,"maxHeight",86);Style(window,"flexShrink",0.0f);
+        Style(window,"display",1);next->shown=false;
+        Ref body(Element());
+        Pixels(body.get(),"paddingTop",16);Pixels(body.get(),"paddingLeft",24);Style(body.get(),"flexGrow",1.0f);
+        api.Invoke(addChild,window,{body.get()});
+        Classes(next->scroll.get(),{"scrollbarPadding"});Style(next->scroll.get(),"flexGrow",1.0f);
+        api.Invoke(addChild,body.get(),{next->scroll.get()});
+        options.reset(Element());
+        Classes(options.get(),{"Footer"});
+        Pixels(options.get(),"paddingTop",12);Pixels(options.get(),"paddingBottom",12);
+        Pixels(options.get(),"paddingRight",16);Pixels(options.get(),"paddingLeft",16);
+        Style(options.get(),"flexShrink",0.0f);
+        api.Invoke(addChild,window,{options.get()});
+        // The square: the game's own mode button, with the game's tooltip.
+        next->tab.reset(New(buttonClass,buttonCtor));
+        bool rich=false;api.Invoke(buttonRichText,next->tab.get(),{&rich});
+        api.Invoke(buttonStyle,next->tab.get(),{&secondary});
+        int icon=ResourcesIcon;api.Invoke(buttonIcon,next->tab.get(),{&icon});
+        Pixels(next->tab.get(),"marginBottom",4);
+        Ref service(module->FindService("fou"));
+        if(!service.get())throw std::runtime_error("Tooltip service unavailable");
+        Ref caption(api.string_new(TabTitle));
+        next->tip.reset(api.object_new(tooltipClass));
+        int origin=TipTopLeft,source=TipTopRight,behavior=TipOut;bool front=false;
+        api.Invoke(tooltipCtor,next->tip.get(),{service.get(),caption.get(),&origin,&source,&behavior,&front});
     }
     auto add=[&](Obj child){api.Call(next->content.get(),"Add",{child});};
     next->master.reset(Checkbox(mini?"Afficher sur la mini-carte":"Afficher sur la grande carte",next->enabled));
-    add(next->master.get());
+    api.Call(options.get(),"Add",{next->master.get()});
     Ref note(api.object_new(labelClass));api.Invoke(labelCtor,note.get());
     Text(note.get(),labelText,"DofusDB · Points de récolte recensés");
     bool multiline=false;api.Invoke(labelSingleLine,note.get(),{&multiline});
     Text(note.get(),tooltip,"Source : DofusDB. Quantités recensées par carte, intérieurs inclus. La présence actuelle après récolte n’est pas connue.");
-    Pixels(note.get(),"fontSize",12.0f);Pixels(note.get(),"marginBottom",6.0f);
-    Style(note.get(),"color",Color{.75f,.79f,.81f,1});add(note.get());
+    if(mini){
+        Pixels(note.get(),"fontSize",12.0f);Pixels(note.get(),"marginBottom",6.0f);
+        Style(note.get(),"color",Color{.75f,.79f,.81f,1});
+    }else{
+        // The game's footer text, as the Ocre panel's legend.
+        Classes(note.get(),{"textColor_white_white80"});Pixels(note.get(),"marginTop",6.0f);
+    }
+    api.Call(options.get(),"Add",{note.get()});
     for(const auto& job:Jobs){
         Ref header(Header(job.name,mini!=nullptr));bool hasRows=false;
         Ref title(api.Call(header.get(),"get_titleLabel"));
@@ -288,10 +418,20 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         bool canOpen=hasRows&&!mini;api.Invoke(headerCanOpen,header.get(),{&canOpen});add(header.get());
     }
     if(next->rows.size()!=catalog.size())throw std::runtime_error("Resource catalog job unsupported");
-    if(mini)ShowJob(*next,-1);
-    if(!Layout(*next,mini))return;
+    if(mini){ShowJob(*next,-1);if(!Layout(*next,*mini))return;}
     // The transport filters and their original parent/order are never modified.
     target=std::move(next);
+    if(!mini){
+        // The game's squares, windows and their order stay; ours go right after
+        // its Anomalies square and window. Registered only after retaining the
+        // tree so a partial failure is retryable.
+        InsertAfter(target->buttons.get(),target->anomaly.get(),target->tab.get());
+        api.Invoke(addManipulator,nullptr,{target->tab.get(),target->tip.get()});target->tipAdded=true;
+        InsertAfter(target->host.get(),anomalyFrame.get(),target->resources.get());
+        target->attached=true;
+        Log("RESOURCE_MAP_UI_READY view=full mode=tab rows="+std::to_string(target->rows.size()));
+        return;
+    }
     api.Call(root.get(),"Add",{target->resources.get()});target->attached=true;
     if(target->center.get())api.Call(root.get(),"Add",{target->center.get()});
     // Native handlers manage enter/leave. These owned category controls stay
@@ -303,7 +443,7 @@ void Attach(std::unique_ptr<State>& target,Obj owner,const MiniMapSurface* mini=
         api.Invoke(enableCursor,nullptr,{tab.get(),&hand,&normal});
     }
     // The centering button's native component carries its own hover cursor.
-    Log("RESOURCE_MAP_UI_READY view="+std::string(mini?"mini":"full")+" rows="+std::to_string(target->rows.size()));
+    Log("RESOURCE_MAP_UI_READY view=mini rows="+std::to_string(target->rows.size()));
 }
 void Sync(State& state){
     const auto& settings=module->settings;
@@ -312,6 +452,28 @@ void Sync(State& state){
     api.Invoke(checkboxSet,state.master.get(),{&enabled});
     state.selection=settings.resourceMapItems;state.enabled=enabled;
 }
+// Big map: our window hidden at once (a game square's click); the next tick
+// would hide it anyway.
+void HideWindow(State& state){
+    if(!state.shown)return;
+    Style(state.resources.get(),"display",1);state.shown=false;
+}
+// Big map: the mode selected or left by its square, its window's close button
+// and the game's modes, applied once per tick.
+void Tabs(State& state){
+    const bool switching=std::exchange(state.switchRequested,false);
+    // Off (« Ressources sur la grande carte »): no square, so no mode.
+    if(!state.enabled){state.open=false;return;}
+    // Selected while the game shows its anomalies or conquest: the game's own
+    // way back to its world map mode, as its windows' close buttons and a
+    // second click on its square do (fhi.bejv toggles the asked mode off).
+    if(switching&&state.open&&Mode(state.owner.get())!=WorldMapMode){
+        int worldMap=WorldMapMode;api.Invoke(leaveMode,state.owner.get(),{&worldMap});
+    }
+    // A game mode chosen by other means than its square (its anomaly
+    // notifications, a link that opens the map in a mode…): ours closes.
+    if(state.open&&Mode(state.owner.get())!=WorldMapMode)state.open=false;
+}
 void ApplyVisibility(State& state){
     // A map whose resource display is off also hides its picker; the option
     // or the other map's picker re-enables it.
@@ -319,11 +481,20 @@ void ApplyVisibility(State& state){
         const bool center=module->settings.miniMapCenterButton;
         if(state.centerShown!=center){Style(state.center.get(),"display",center?0:1);state.centerShown=center;}
     }
+    if(!state.mini){
+        // The square follows « Ressources sur la grande carte »; the window, the
+        // mode being selected.
+        if(state.tabShown!=state.enabled){Style(state.tab.get(),"display",state.enabled?0:1);state.tabShown=state.enabled;}
+        const bool shown=state.enabled&&state.open;
+        if(state.shown==shown)return;
+        Style(state.resources.get(),"display",shown?0:1);state.shown=shown;
+        return;
+    }
     // The mini-map's bar of the six jobs, with the list it opens, also follows
     // « Barre des ressources sur la mini-carte »: unchecked, it leaves while the
     // markers of the chosen resources stay (resource-map-render follows
     // resourceMiniMapEnabled only); the choice is then made on the big map.
-    const bool shown=state.enabled&&(!state.mini||module->settings.resourceMiniMapBar);
+    const bool shown=state.enabled&&module->settings.resourceMiniMapBar;
     if(state.shown==shown)return;
     Style(state.resources.get(),"display",shown?0:1);state.shown=shown;
 }
@@ -357,12 +528,26 @@ void DisableHook(Obj owner,Method method){
     catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_DISABLE_ERROR ")+error.what());}
     originalDisable(owner,method);
 }
+// Native clicks (shared ExtendedClickable hook, after the game's own handling):
+// the mini-map's centering button, our square and our window's close button,
+// remembered for the next UI tick, which validates the surface first. The
+// game's Anomalies and Conquête squares are never claimed: their ClickEvent
+// switches the game's mode; ours closes at once, as one of the game's own
+// windows does, and a selection of ours still waiting for its tick is dropped
+// (the later click wins).
+bool Clicked(Obj button){
+    if(!button)return false;
+    if(miniOwned&&button==miniOwned->centerButton.get()){miniOwned->centerRequested=true;return true;}
+    if(!owned||owned->cleaning||!owned->attached)return false;
+    auto& state=*owned;
+    if(button==state.tab.get()){state.open=!state.open;state.switchRequested=state.open;return true;}
+    if(button==state.close.get()){state.open=false;state.switchRequested=false;return true;}
+    if(button==state.anomaly.get()||button==state.conquest.get()){
+        state.open=false;state.switchRequested=false;
+        try{HideWindow(state);}catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_ERROR ")+error.what());}
+    }
+    return false;
 }
-// Native click on the mini-map's centering button: remembered for the next
-// UI tick, which validates the surface before centering.
-bool CenterClick(Obj owner){
-    if(!miniOwned||!owner||owner!=miniOwned->centerButton.get())return false;
-    miniOwned->centerRequested=true;return true;
 }
 void InstallUi(){
     if(installed)return;
@@ -372,7 +557,7 @@ void InstallUi(){
     labelClass=api.Class("Core.dll","Core.UILogic.Components","DofusLabel");
     elementClass=api.Class(UiAssembly,UiNamespace,"VisualElement");
     api.FindVerified(elementClass,".ctor",0,0x55F50B0);
-    api.FindVerified(elementClass,"Insert",2,0x55E5710);
+    insert=api.FindVerified(elementClass,"Insert",2,0x55E5710);
     api.FindVerified(elementClass,"set_pickingMode",1,0x55F97B0);
     buttonClass=api.Class("Core.dll",Figma,"DofusButtonCustom");
     buttonCtor=api.FindVerified(buttonClass,".ctor",0,0x170D6F0);
@@ -414,9 +599,39 @@ void InstallUi(){
     labelSingleLine=api.FindVerified(labelClass,"set_isSingleLine",1,0x1593FB0);
     tooltip=api.FindVerified(api.Class(UiAssembly,UiNamespace,"VisualElement"),"set_tooltip",1,0x55F9AB0);
     bringToFront=api.FindVerified(api.Class(UiAssembly,UiNamespace,"VisualElement"),"BringToFront",0,0x55E08E0);
+    // Big map « Ressources » mode: the map window's mode (fhi.dubo, fhi+fgq)
+    // and the game's way back to its world map mode, the binding's mode column,
+    // squares and anomaly window, and the game's components for ours.
+    RequireField(native,"dtzx",0x408);
+    RequireField(native,"dtzy",0x410);
+    RequireField(native,"dtzz",0x418);
+    RequireField(native,"dubo",0x52C);
+    leaveMode=api.FindVerified(native,"bejv",1,0x1BB4090);
+    bindingClass=api.Class("Core.dll","Core.UILogic.Bindings","CartographyMapUIBinding");
+    worldButtons=api.FindVerified(bindingClass,"get_ctr_worldmapButtons",0,0x2EA2830);
+    anomalyButton=api.FindVerified(bindingClass,"get_btn_anomaly",0,0x2EA0940);
+    conquestButton=api.FindVerified(bindingClass,"get_btn_conquest",0,0x2EA0A00);
+    anomalyWindow=api.FindVerified(bindingClass,"get_ctr_locTreeAnomaly",0,0x2EA2530);
+    buttonStyle=api.FindVerified(buttonClass,"set_mainStyle",1,0x170E210);
+    buttonRichText=api.FindVerified(buttonClass,"set_enableRichText",1,0x170DEE0);
+    windowClass=api.Class("Core.dll",Figma,"WindowFigma");
+    windowCtor=api.FindVerified(windowClass,".ctor",0,0x17987B0);
+    windowTitle=api.FindVerified(windowClass,"set_title",1,0x1799210);
+    windowHeaderStyle=api.FindVerified(windowClass,"set_headerStyle",1,0x1798F30);
+    windowClose=api.FindVerified(windowClass,"get_closeButton",0,0x1798CF0);
+    tooltipClass=api.Class("Core.dll",Tooltips,"TooltipManipulator");
+    tooltipCtor=api.FindVerified(tooltipClass,".ctor",6,0x15DFAE0);
+    hideTooltip=api.FindVerified(api.Class("Core.dll",Tooltips,"BaseTooltipManipulator"),"HideTooltip",0,0x15CD030);
+    auto extensions=api.Class(UiAssembly,UiNamespace,"VisualElementExtensions");
+    addManipulator=api.FindVerified(extensions,"AddManipulator",2,0x56755F0);
+    removeManipulator=api.FindVerified(extensions,"RemoveManipulator",2,0x5676A90);
+    addChild=api.FindVerified(elementClass,"Add",1,0x55DFAD0);
+    indexOf=api.FindVerified(elementClass,"IndexOf",1,0x55E55B0);
+    addClass=api.FindVerified(elementClass,"AddToClassList",1,0x55DF820);
+    removeFromHierarchy=api.FindVerified(elementClass,"RemoveFromHierarchy",0,0x55E7BD0);
     AddHook(api.Find(native,"OnEnable",0),0x1BAEA20,reinterpret_cast<void*>(EnableHook),reinterpret_cast<void**>(&originalEnable));
     AddHook(api.Find(native,"OnDisable",0),0x1BAE560,reinterpret_cast<void*>(DisableHook),reinterpret_cast<void**>(&originalDisable));
-    nativeClick::AddHandler(CenterClick);
+    nativeClick::AddHandler(Clicked);
     installed=true;
 }
 void TickUi(){
@@ -427,7 +642,7 @@ void TickUi(){
             if(!CurrentOwner(pending.get()))pending.reset();
             else if(!owned){Attach(owned,pending.get());if(owned)pending.reset();}
         }
-        if(owned){if(!Layout(*owned))Detach(owned);else{Poll(*owned);ApplyVisibility(*owned);}}
+        if(owned){Poll(*owned);Tabs(*owned);ApplyVisibility(*owned);}
     }catch(const std::exception& error){Log(std::string("RESOURCE_MAP_UI_ERROR ")+error.what());pending.reset();Detach(owned);}
     // Discover the mini-map even when the full map was never opened. Its
     // controls must remain reachable with rendering disabled or no selection.
@@ -437,7 +652,7 @@ void TickUi(){
         if(miniOwned&&!Fresh(*miniOwned,&surface)){if(!Detach(miniOwned))return;}
         if(!miniOwned&&surface.root.get())Attach(miniOwned,nullptr,&surface);
         if(miniOwned){
-            if(!Layout(*miniOwned,&surface)){Detach(miniOwned);return;}
+            if(!Layout(*miniOwned,surface)){Detach(miniOwned);return;}
             if(miniOwned->centerRequested){
                 miniOwned->centerRequested=false;
                 if(module->settings.miniMapCenterButton)CenterMiniMap(surface);
@@ -453,4 +668,6 @@ void TickUi(){
 void RestoreUi(){pending.reset();Detach(owned);Detach(miniOwned);}
 Obj CartographyWindow(){return owned?owned->owner.get():pending.get();}
 bool UiCleanupPending(){return owned!=nullptr||miniOwned!=nullptr;}
+bool ResourceTabOpen(){return owned&&owned->open;}
+void CloseResourceTab(){if(owned){owned->open=false;owned->switchRequested=false;}}
 }

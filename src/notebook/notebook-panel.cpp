@@ -375,7 +375,7 @@ constexpr const char* Unreadable="Carnet illisible. Le fichier est conservé ; i
 // What to do next in the current tab and layout (shown at opening, on tab and layout changes).
 void TabStatus() {
     if(!state.readable){Status(Unreadable);return;}
-    if(state.compact)Status(Noted(state.visible.empty()?"Aucune entrée ici. Passe en Version complète (menu ⋯) pour en créer.":"Choisis une entrée, puis Voyager, Envoyer ou Copier."));
+    if(state.compact)Status(Noted(state.visible.empty()?"Aucune entrée ici. Passe en Version complète (menu …) pour en créer.":"Choisis une entrée, puis Voyager, Envoyer ou Copier."));
     else Status(Noted(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche."));
 }
 // The file changed on disk (another client, a position added from a map, a

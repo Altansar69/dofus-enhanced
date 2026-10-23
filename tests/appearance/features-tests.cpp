@@ -30,6 +30,8 @@ struct Object {
     int8_t team = 0;
     int64_t id = 0, summoner = 0;       // EntityInfo.bajh, long metadata key 2 (balc); lg.oab
     bool summonerPresent = false;
+    int npcId = 0;                      // integer metadata key 15 (baks), present when npcIdPresent
+    bool npcIdPresent = false;
     std::vector<Obj> items;             // party member list (fti.bfmh)
     std::map<int64_t, Obj> fighters;
     std::string text;
@@ -51,6 +53,7 @@ constexpr Declaration declarations[] = {
     {"yh", "rmo", 1, 0x2652CF0}, {"yh", "rmp", 1, 0x2652E50},
     {"EntityInfo", "bajh", 0, 0x1951440}, {"EntityInfo", "balc", 2, 0x1952710},
     {"fti", "bfmh", 0, 0x752E20}, {"lg", "oab", 0, 0x68D2B0},
+    {"EntityInfo", "baks", 2, 0x1952330},
 };
 std::map<std::string, std::unique_ptr<Class>> classes;
 std::vector<std::unique_ptr<Object>> objects;
@@ -58,8 +61,8 @@ std::vector<std::unique_ptr<MethodInfo>> methods;
 std::unordered_map<GCHandle, Obj> handles;
 GCHandle nextHandle = 0x123456780000ULL;
 unsigned clones = 0, barriers = 0;
-// Category reads: entity IDs, summoners, local character lookups out of combat.
-unsigned idReads = 0, summonerReads = 0, characterLookups = 0;
+// Category reads: entity IDs, summoners, local character lookups out of combat, NPC IDs.
+unsigned idReads = 0, summonerReads = 0, characterLookups = 0, npcIdReads = 0;
 Obj characterService = nullptr, partyService = nullptr;
 unsigned nativeCreatureLookCalls = 0;
 unsigned nativeCacheClears = 0, nativeCacheComputations = 0;
@@ -70,6 +73,7 @@ CreatureHideFn creatureHideHook = nullptr, creatureForcedHideHook = nullptr;
 using ConvertFn = void(*)(Obj, Obj, Obj*, Method);
 ConvertFn convertHook = nullptr;
 Obj activeRegistry = nullptr;
+Obj nativeRegistry = nullptr; // the registry native rez reads, when it differs from the service lookup
 std::function<void()> duringRefresh, beforeNativeLookReturn;
 void** lastBarrierAddress = nullptr;
 std::vector<std::pair<Obj, bool>> refreshes;
@@ -141,9 +145,15 @@ void InitializeApi() {
     api.gc_wbarrier_set_field = [](Obj, void** address, Obj value) {
         ++barriers; lastBarrierAddress = address; *address = value;
     };
-    // lg.ddku, the accepted-member flag, verified at offset 0x20.
+    // lg.ddku, the accepted-member flag, verified at offset 0x20; the NPC look's
+    // cache AnimatedEntity.dhhm and ID Animated.fhtc, at 0x310 and 0x1C8.
     api.class_get_field_from_name = [](Klass type, const char* name) -> void* {
-        return static_cast<Class*>(type)->name == "lg" && std::string(name) == "ddku" ? reinterpret_cast<void*>(0x20) : nullptr;
+        const auto& owner = static_cast<Class*>(type)->name;
+        const std::string field = name;
+        if (owner == "lg" && field == "ddku") return reinterpret_cast<void*>(0x20);
+        if (owner == "AnimatedEntity" && field == "dhhm") return reinterpret_cast<void*>(0x310);
+        if (owner == "Animated" && field == "fhtc") return reinterpret_cast<void*>(0x1C8);
+        return nullptr;
     };
     api.field_get_offset = [](void* field) -> size_t { return reinterpret_cast<size_t>(field); };
 }
@@ -210,6 +220,12 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
         ++summonerReads;
         if (value.summonerPresent) *static_cast<int64_t*>(parameters[1]) = value.summoner;
         return Box(value.summonerPresent);
+    }
+    if (call.name == "baks") {
+        Check(*static_cast<int*>(parameters[0]) == 15, "The NPC ID is integer metadata key 15");
+        ++npcIdReads;
+        if (value.npcIdPresent) *static_cast<int*>(parameters[1]) = value.npcId;
+        return Box(value.npcIdPresent);
     }
     if (call.name == "bfmh") { auto found = value.fields.find("members"); return found == value.fields.end() ? nullptr : found->second; }
     if (call.name == "oab") return BoxId(value.id);
@@ -296,8 +312,9 @@ static managed::Obj NativeCreatureLook(managed::Obj self, managed::Method) {
     if (!source) return nullptr;
     ++fake::nativeCacheComputations;
     auto result = fake::CloneLook(source);
-    auto info = fake::Get(fake::activeRegistry).fighters.at(managed::Read<int64_t>(self, 0x1C8));
-    if (module->creatures.get() && managed::Read<bool>(module->creatures.get(), 0x48))
+    auto registry = fake::nativeRegistry ? fake::nativeRegistry : fake::activeRegistry;
+    auto info = fake::Get(registry).fighters.at(managed::Read<int64_t>(self, 0x1C8));
+    if (!fake::Get(info).excluded && module->creatures.get() && managed::Read<bool>(module->creatures.get(), 0x48))
         fake::convertHook(module->creatures.get(), info, &result, nullptr);
     fake::Put(self, 0x310, result);
     if (fake::beforeNativeLookReturn) fake::beforeNativeLookReturn();
@@ -339,7 +356,7 @@ struct Fixture {
         state.settings.mode = 2; state.settings.roleplayMode = 0;
         service = Make("exf"); fight = Make("fxc"); aggregate = Make("fyb"); character = Make("esg");
         identity = Make("z"); registry = Make("evv"); local = Info(0x81, 0); Get(local).id = LocalId;
-        idReads = summonerReads = characterLookups = 0;
+        idReads = summonerReads = characterLookups = npcIdReads = 0; nativeRegistry = nullptr;
         Put(service, 0x48, true); Put(fight, 0xB0, true); Put(fight, 0x18, aggregate);
         Put(aggregate, 0xF0, character); Put(aggregate, 0x58, registry);
         Put(character, 0x128, identity); Put(identity, 0x10, LocalId);
@@ -567,6 +584,12 @@ void CheckDisplayLook(Obj look, int mode, float miniatureScale = 0.6f) {
     Check(Read<int>(look, 0x1C) == (mode == 1 ? 3451 : 1), "Wrong root appearance mode");
     Near(Read<float>(look, 0x30), mode == 2 ? miniatureScale : 1.0f);
 }
+// Native rhx, the look provider: it calls rez (the hook) only while the creature
+// service is active (+0x48); otherwise it shows the entity's own look (+0x170)
+// and never reads or clears its cache (+0x310).
+Obj Rendered(Obj root) {
+    return Read<bool>(module->creatures.get(), 0x48) ? creatureLookHook(root, nullptr) : Read<Obj>(root, 0x170);
+}
 void RootCacheAllDisplayTransitions() {
     for (bool combat : {false, true}) {
         for (int from = 0; from <= 2; ++from) {
@@ -624,15 +647,61 @@ void PreloadedRootCachePolicyChangesAndStop() {
     f.state.settings.mode = 2;
     CheckDisplayLook(creatureLookHook(root, nullptr), 2);
     f.state.stopped = true;
-    duringRefresh = [&] { CheckDisplayLook(creatureLookHook(root, nullptr), 1); };
+    // Stop's refreshes render through native rhx: rez only while the mode is on.
+    const auto stopRender = [&] { CheckDisplayLook(Rendered(root), Read<bool>(module->creatures.get(), 0x48) ? 1 : 0); };
+    duringRefresh = stopRender;
     f.F().Refresh(true); duringRefresh = {};
     CheckDisplayLook(creatureLookHook(root, nullptr), 1);
-    duringRefresh = [&] { CheckDisplayLook(creatureLookHook(root, nullptr), 0); };
+    duringRefresh = stopRender;
     f.F().Refresh(false); duringRefresh = {};
     CheckDisplayLook(creatureLookHook(root, nullptr), 0);
     Check(f.F().lookCacheStamps.empty(), "Stopped callbacks retained new look stamps");
     f.F().InvalidateLookCache();
     Check(f.F().lookCacheStamps.empty(), "Stop cache ownership was not released");
+}
+// Module::Stop's last Refresh(false), the game's own mode off: native rhx then
+// never reaches rez, so the looks Miniatures cached in +0x310 (a player's
+// miniature, an NPC's reduced copy) would outlive the hooks and be shown again
+// once the game's creature mode is turned on. One active pass first lets the
+// stopped hook clear them and native rez rebuild the game's own; a module that
+// never wrote a look (Créatures only) skips it.
+void StopWithGameModeOffReleasesModuleLooks() {
+    for (const bool miniatures : {true, false}) {
+        Fixture f; f.Combat(false);
+        f.state.settings.roleplayMode = miniatures ? 2 : 1; f.state.settings.roleplayMiniatureNpcs = true;
+        constexpr int64_t NpcId = -88;
+        auto info = Info(0x02, -1); Get(info).id = NpcId; Get(info).excluded = true; Get(info).npcId = 2673; Get(info).npcIdPresent = true;
+        Get(f.registry).fighters[NpcId] = info;
+        auto player = f.Root(SizedLook(1, 100)), npc = f.Root(SizedLook(1, 100)); Put(npc, 0x1C8, NpcId);
+        const auto render = [&] { Rendered(player); Rendered(npc); };
+        render();
+        CheckDisplayLook(Read<Obj>(player, 0x310), miniatures ? 2 : 1);
+        Near(Read<float>(Read<Obj>(npc, 0x310), 0x30), miniatures ? 0.6f : 1.0f);
+        Check((f.F().miniatureCount != 0) == miniatures, "Only Miniatures writes the module's own looks");
+        // Stopped, the game's option restored (off), then the last refresh.
+        f.state.stopped = true; refreshes.clear(); duringRefresh = render;
+        f.F().Refresh(false); duringRefresh = {};
+        Check(!Read<bool>(f.service, 0x48), "Stop leaves the game's own mode off");
+        Check(refreshes.size() == (miniatures ? 2u : 1u) && refreshes.front().second == miniatures && !refreshes.back().second,
+            "One active pass first, and only once the module wrote a look");
+        Check(f.F().lookCacheStamps.empty(), "Stopped callbacks retained new look stamps");
+        // The hooks are gone; later, the player turns the game's own mode on.
+        const auto hook = convertHook; convertHook = NativeConvert; Put(f.service, 0x48, true);
+        CheckDisplayLook(NativeCreatureLook(player, nullptr), 1);
+        const auto shown = NativeCreatureLook(npc, nullptr);
+        Check(Read<int>(shown, 0x1C) == 1, "The NPC keeps the game's own look");
+        Near(Read<float>(shown, 0x30), 1.0f);
+        convertHook = hook;
+    }
+    // A failure of that pass never leaves the game's mode on: the last pass runs.
+    Fixture f; f.Combat(false); f.state.settings.roleplayMode = 2;
+    auto root = f.Root(SizedLook(1, 100));
+    CheckDisplayLook(Rendered(root), 2);
+    f.state.stopped = true; refreshes.clear();
+    duringRefresh = [&] { if (Read<bool>(f.service, 0x48)) throw std::runtime_error("Native refresh failure"); };
+    f.F().Refresh(false); duringRefresh = {};
+    Check(refreshes.size() == 2 && !refreshes.back().second && !Read<bool>(f.service, 0x48),
+        "A failed release pass at Stop still restores the game's mode");
 }
 void RootCacheExclusionsAndReentrancy() {
     Fixture f; auto source = SizedLook(1, 100), root = f.Root(source);
@@ -866,8 +935,9 @@ void CombatCategoriesFollowTheirCheckbox() {
     Check(!f.F().Convert(f.service, me, &displayed), "Créatures must stay native for every category");
 }
 // « Apparence » out of combat: the local character, accepted party members,
-// other players and monster groups each follow their checkbox; NPCs and other
-// entities stay reduced. Identity is only read once a player box is unticked.
+// other players, monster groups and NPCs each follow their checkbox; other
+// entities stay reduced. Identity is only read once a player box is unticked,
+// an NPC ID once « PNJ » is.
 void RoleplayCategoriesFollowTheirCheckbox() {
     Fixture f; f.Combat(false); f.state.settings.roleplayMode = 2;
     constexpr int64_t PartnerId = 0x3333, GuestId = 0x4444, StrangerId = 0x5555;
@@ -877,16 +947,22 @@ void RoleplayCategoriesFollowTheirCheckbox() {
     auto guest = Info(0x82, -1); Get(guest).id = GuestId; // invited only: another player
     auto stranger = Info(0x82, -1); Get(stranger).id = StrangerId;
     auto monsters = Info(0x0A, -1); Get(monsters).id = -77;
-    auto npc = Info(0x02, -1); Get(npc).id = -88;
+    // An NPC ID without bool property 9 (gwz.bmni): an NPC the creature service sees.
+    auto npc = Info(0x02, -1); Get(npc).id = -88; Get(npc).npcId = 2673; Get(npc).npcIdPresent = true;
+    auto other = Info(0x02, -1); Get(other).id = -89; // no NPC ID: another entity
+    auto humanoid = Info(0x06, -1); Get(humanoid).id = -90; // a merchant-like humanoid
+    auto taxed = Info(0x22, -1); Get(taxed).id = -91; Get(taxed).npcId = 5; Get(taxed).npcIdPresent = true; // 0x20: never an NPC
+    auto zero = Info(0x02, -1); Get(zero).id = -92; Get(zero).npcIdPresent = true; // NPC ID 0
     using G = MiniatureGroup;
     struct Case { Obj info; G group; };
     const Case cases[] = {{me, G::RoleplaySelf}, {partner, G::PartyMember}, {guest, G::OtherPlayer}, {stranger, G::OtherPlayer},
-        {monsters, G::Monster}, {npc, G::RoleplayOther}};
-    for (unsigned mask = 0; mask < 16; ++mask) {
+        {monsters, G::Monster}, {npc, G::Npc}, {other, G::RoleplayOther}, {humanoid, G::RoleplayOther}, {taxed, G::RoleplayOther},
+        {zero, G::RoleplayOther}};
+    for (unsigned mask = 0; mask < 32; ++mask) {
         auto& settings = f.state.settings;
         for (size_t i = 0; i < std::size(RoleplayMiniatureToggles); ++i) settings.*RoleplayMiniatureToggles[i] = ((mask >> i) & 1) != 0;
         f.F().roleplayIdentityKnown = false;
-        const auto lookups = characterLookups;
+        const auto lookups = characterLookups, npcReads = npcIdReads;
         for (const auto& item : cases) {
             const auto original = Look(); Obj displayed = original;
             Check(f.F().Convert(f.service, item.info, &displayed), "Miniatures handles every roleplay entity");
@@ -895,12 +971,89 @@ void RoleplayCategoriesFollowTheirCheckbox() {
         }
         Check((characterLookups != lookups) == RoleplayIdentityMatters(settings) && characterLookups - lookups <= 1,
             "The local identity is read once, and only when a player category is unticked");
+        Check((npcIdReads != npcReads) == RoleplayNpcMatters(settings), "An NPC ID is only read while « PNJ » is unticked");
     }
     // No party service or character: everyone is another player.
     partyService = nullptr; characterService = nullptr; f.F().roleplayIdentityKnown = false;
     f.state.settings.roleplayMiniaturePlayers = false; f.state.settings.roleplayMiniatureSelf = f.state.settings.roleplayMiniatureParty = true;
     for (auto info : {me, partner}) { const auto original = Look(); Obj displayed = original;
         Check(f.F().Convert(f.service, info, &displayed) && displayed == original, "Unknown identity: players follow Autres joueurs"); }
+}
+// « PNJ »: the game writes bool property 9 into every NPC's EntityInfo, so
+// native rez caches a plain copy of its look and never calls the creature
+// service. Out of combat with Miniatures and « PNJ » ticked, that fresh cache is
+// replaced by a copy reduced like the other categories; in every other case the
+// NPC keeps the game's look, as before 1.14.0.
+void RoleplayNpcLooksFollowTheirCheckbox() {
+    Fixture f; f.Combat(false); f.state.settings.roleplayMode = 2;
+    constexpr int64_t NpcId = -88;
+    auto source = SizedLook(1, 100, 1.25f);
+    auto info = Info(0x02, -1); Get(info).id = NpcId; Get(info).excluded = true; Get(info).npcId = 2673; Get(info).npcIdPresent = true;
+    Get(f.registry).fighters[NpcId] = info;
+    auto root = f.Root(source); Put(root, 0x1C8, NpcId);
+    const auto look = [&] { return creatureLookHook(root, nullptr); };
+    // Default: unticked, the game's look (no clone beyond native rez's, no write).
+    Check(!f.state.settings.roleplayMiniatureNpcs, "PNJ starts unticked");
+    auto native = look();
+    Near(Read<float>(native, 0x30), 1.25f);
+    Check(native == Read<Obj>(root, 0x310) && barriers == 0 && f.F().miniatureCount == 0 && nativeCacheComputations == 1,
+        "Unticked, an NPC keeps native rez's own copy");
+    // Ticked: the category change rebuilds the cache once, reduced like the others.
+    f.state.settings.roleplayMiniatureNpcs = true;
+    const auto clonesBefore = clones;
+    auto reduced = look();
+    Check(reduced != native && reduced == Read<Obj>(root, 0x310) && nativeCacheClears == 1 && nativeCacheComputations == 2,
+        "Ticking PNJ invalidates the NPC's cached look");
+    Near(Read<float>(reduced, 0x30), 0.75f); Near(Read<float>(reduced, 0x2C), 0.75f);
+    Near(Read<float>(source, 0x30), 1.25f);
+    Check(clones == clonesBefore + 2 && barriers == 1 && lastBarrierAddress == reinterpret_cast<void**>(static_cast<char*>(root) + 0x310) &&
+        f.F().miniatureCount == 1, "The reduced copy replaces rez's copy in the cache through the GC write barrier");
+    Check(f.F().sizes.pending.empty() && f.F().sizes.playerHeight == 0, "An NPC is reduced without measurement or player reference");
+    for (int repeat = 0; repeat < 3; ++repeat)
+        Check(look() == reduced && nativeCacheComputations == 2 && barriers == 1, "The stamped reduced look is reused, never reduced twice");
+    Near(Read<float>(reduced, 0x30), 0.75f);
+    // The same rule as the other categories: the monster floor never applies.
+    f.F().sizes.playerHeight = 1000; f.F().InvalidateLookCache();
+    Near(Read<float>(look(), 0x30), 0.75f);
+    // Every other case keeps the game's look.
+    const auto stays = [&](const char* message) {
+        f.F().InvalidateLookCache();
+        const auto computations = nativeCacheComputations, writes = barriers;
+        auto shown = look();
+        Check(shown == Read<Obj>(root, 0x310) && nativeCacheComputations == computations + 1 && barriers == writes, message);
+        Near(Read<float>(shown, 0x30), 1.25f);
+    };
+    f.state.settings.roleplayMiniatureNpcs = false; stays("Unticked again, the NPC's look is the game's");
+    f.state.settings.roleplayMiniatureNpcs = true;
+    for (int mode : {0, 1}) { f.state.settings.roleplayMode = mode; Put(f.service, 0x48, mode != 0); stays("Normal and Créatures never reduce an NPC"); }
+    f.state.settings.roleplayMode = 2; Put(f.service, 0x48, true);
+    f.Combat(true); f.state.settings.mode = 2; stays("Miniatures in combat leaves NPCs alone"); f.Combat(false);
+    f.state.stopped = true; stays("Stop restores the game's NPC look"); f.state.stopped = false;
+    Get(info).excluded = false; f.F().InvalidateLookCache();
+    Near(Read<float>(look(), 0x30), 0.75f); // Without bool 9 the NPC reaches Convert, where a ticked PNJ reduces it too.
+    Get(info).excluded = true;
+    for (int flag : {0x01, 0x08, 0x10, 0x20, 0x80}) { Get(info).flags = 0x02 | flag; stays("A fighter, monster, player or 0x10/0x20 entity is never an NPC"); }
+    Get(info).flags = 0x00; stays("Without the NPC flag no NPC");
+    Get(info).flags = 0x02; Get(info).npcIdPresent = false; stays("Without an NPC ID no NPC");
+    Get(info).npcIdPresent = true; Get(info).npcId = 0; stays("NPC ID 0 is no NPC"); Get(info).npcId = 2673;
+    // Native rez's own data stays authoritative: the service lookup missing or
+    // unrelated, or the NPC unknown, leaves its copy untouched.
+    nativeRegistry = f.registry;
+    activeRegistry = nullptr; stays("No entity registry service, no reduction");
+    activeRegistry = Make("OtherRegistry"); stays("An unrelated registry is never read");
+    activeRegistry = Make("evv"); stays("An NPC missing from the registry keeps its look");
+    activeRegistry = f.registry; nativeRegistry = nullptr; f.F().InvalidateLookCache();
+    Near(Read<float>(look(), 0x30), 0.75f); // Back to the ticked NPC.
+    // A cache that native rez did not rebuild in this call is never touched.
+    auto preloaded = Look(1, 1); Put(preloaded, 0x1C, 1);
+    f.F().InvalidateLookCache(); Put(root, 0x310, preloaded);
+    auto rebuiltLook = look();
+    Check(rebuiltLook != preloaded && nativeCacheClears > 1, "An unstamped preloaded cache is rebuilt first");
+    Near(Read<float>(rebuiltLook, 0x30), 0.75f);
+    const auto writes = barriers;
+    Put(f.service, 0x10, Make("OtherContext")); look(); Put(f.service, 0x10, f.context);
+    Check(barriers == writes, "Another compositor's entity is never reduced");
+    Check(!f.state.stopRequested.load(), "Guarded unavailable data never stopped the module");
 }
 // A party change re-renders out of combat only while a player box is unticked,
 // read at most once a second, never in combat.
@@ -945,15 +1098,17 @@ int main() {
         const auto run = [](void (*test)()) { test(); fake::Check(fake::handles.empty(), "Test leaked GC handles"); };
         run(fake::GroupsAndOriginalScale); run(fake::UnknownAppearancesPreserved); run(fake::ContextAndEligibility);
         run(fake::CombatCategoriesFollowTheirCheckbox); run(fake::RoleplayCategoriesFollowTheirCheckbox);
+        run(fake::RoleplayNpcLooksFollowTheirCheckbox);
         run(fake::RoleplayIdentityChangesRefresh); run(fake::CategoryChangeInvalidatesCachedLooks);
         run(fake::MountedSubentityKeepsItsOwnLook); run(fake::SubentityEligibilityAndNativeFallback);
         run(fake::MountedVisibilityNativePolicies);
         run(fake::RootCacheAllDisplayTransitions); run(fake::PreloadedRootCachePolicyChangesAndStop);
+        run(fake::StopWithGameModeOffReleasesModuleLooks);
         run(fake::RootCacheExclusionsAndReentrancy); run(fake::RootCacheBoundedOwnership);
         run(fake::LocalTeamAndLateArrival); run(fake::RefreshAndInvalidScale);
         run(fake::ProportionalHeightAndReference); run(fake::MinimumAcrossContexts); run(fake::MissingAssetsAndDeferredRefresh);
         run(fake::ProportionalReductionBeforeMeasurements);
-        std::cout << "PASS: actual Features conversion, per-category miniatures in combat (64 combinations) and out of combat (16, party and identity reads), mounted child looks, root cache generations/transitions/Stop/bounds/category changes, classification, reduction and deferred refresh\n";
+        std::cout << "PASS: actual Features conversion, per-category miniatures in combat (64 combinations) and out of combat (32, party, identity and NPC ID reads), NPC looks (bool 9) reduced only with PNJ, mounted child looks, root cache generations/transitions/Stop (module looks released with the game's mode off)/bounds/category changes, classification, reduction and deferred refresh\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
 }

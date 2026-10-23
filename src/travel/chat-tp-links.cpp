@@ -151,7 +151,10 @@ void Register(Obj element) {
     state.labels.push_back(std::move(label));
 }
 // « Dimension avec les coordonnées dans le chat », read live like the parts.
-bool Dimensions() { return state.dimensions && module->settings.coordsWorldChat; }
+bool Dimensions() { return state.dimensions && module->settings.coordsWorldChatMode != 0; }
+// « Oui, sauf dans le Monde des Douze »: the game's World 1 keeps its plain [x,y].
+constexpr int TwelveWorld = 1;
+bool DimensionShown(int world) { return module->settings.coordsWorldChatMode == 2 || world != TwelveWorld; }
 std::string WorldName(int world) {
     const auto found = state.worlds.find(world);
     if (found != state.worlds.end()) return found->second;
@@ -202,6 +205,7 @@ void Rename(Label& label, const std::vector<std::pair<Obj, ChatTpTarget>>& posit
     std::vector<Renamed> next;
     std::vector<std::string> texts;
     if (Dimensions()) for (const auto& [manager, target] : positions) {
+        if (!DimensionShown(target.world)) continue;
         const auto old = std::find_if(label.renamed.begin(),label.renamed.end(),[&](const Renamed& r) { return r.manager.get() == manager; });
         Renamed entry;
         if (old != label.renamed.end()) { entry.native = old->native; entry.original.reset(old->original.get()); }
@@ -378,7 +382,8 @@ std::string Caption(int monster, LinkPart part) {
 // plain coordinates, then each enabled part's caption for every source.
 std::string Signature(const Label& label) {
     std::string signature(label.coordinates && Enabled(LinkPart::Travel) ? "P" : "-");
-    signature += !label.sources.empty() && Dimensions() ? 'W' : '-'; // positions with their dimension
+    // Positions with their dimension: every one, or all but the Monde des Douze's.
+    signature += !label.sources.empty() && Dimensions() ? (module->settings.coordsWorldChatMode == 2 ? 'W' : 'w') : '-';
     for (const auto& source : label.sources) for (const auto part : LinkParts) {
         if (Enabled(part)) signature += Caption(source.monster, part);
         signature += '\x1F';
