@@ -29,9 +29,10 @@ dans un jeu déjà ouvert. Il laisse intact un client sans version compatible.
 Depuis la 1.9.2, si GitHub renvoie une liste de publications vide (service
 dégradé), il consulte la dernière publication avant de conclure qu’aucune
 version n’est compatible. Les publications portent leur numéro de version
-(`v1.13.0`, `v1.14.0`…), sauf la 1.13.1, publiée sous `r113` pour les lanceurs
-plus anciens ; les archives et les dossiers gardent la révision `rN`, que la
-mise à jour vérifie toujours.
+(`v1.13.0`, `v1.14.0`…) ; les archives et les dossiers gardent la révision `rN`,
+que la mise à jour vérifie toujours. Une installation antérieure à la 1.13.1 ne
+lit que les anciennes étiquettes `rN` : elle se met à jour une fois à la main
+(voir la FAQ du README).
 
 L’assistant de démarrage peut reconnaître une future version du jeu et lancer
 le chargeur livré avec son correctif. Cela ne rend pas les fonctions natives du mod

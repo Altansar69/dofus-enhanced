@@ -96,7 +96,7 @@ Pour trouver `Dofus.exe` : jeu lancé, Gestionnaire des tâches → clic droit s
 - **Windows uniquement** (64 bits).
 - **Une version de Dofus par version du mod** : actuellement **Dofus Unity 3.7.12.12**. Le mod vérifie les empreintes exactes du jeu avant de se charger.
 - **Mise à jour de Dofus par Ankama ?** Le mod peut devoir être adapté : tant qu’aucune version compatible n’est publiée, il ne se charge pas et le jeu reste intact. Dès qu’elle sort, la mise à jour automatique l’installe.
-- **Version antérieure à 1.11.0 ?** Après le renommage du dépôt en `dofus-enhanced`, sa mise à jour automatique ne trouve plus les nouvelles versions. Télécharge la dernière, extrais-la dans le dossier qui contient déjà `DofusMiniatures-3.7.11.11-rN` (pas dans un sous-dossier), puis décoche et recoche **Chargement automatique** en jeu (ou lance `.\ModuleLoader.exe --enable-auto "C:\chemin\vers\Dofus.exe"` depuis le nouveau dossier). Tes réglages sont conservés.
+- **Version antérieure à 1.13.1 ?** Depuis le renommage du dépôt en `dofus-enhanced` et les publications nommées par version (`v1.15.0`…), sa mise à jour automatique ne trouve plus les nouvelles versions. Télécharge la dernière, extrais-la dans le dossier qui contient déjà `DofusMiniatures-3.7.11.11-rN` (pas dans un sous-dossier), puis décoche et recoche **Chargement automatique** en jeu (ou lance `.\ModuleLoader.exe --enable-auto "C:\chemin\vers\Dofus.exe"` depuis le nouveau dossier). Tes réglages sont conservés.
 - **Journaux** : `module.log` dans le dossier de la version chargée (`DofusMiniatures-3.7.11.11-rN`), `autoload.log` dans celui de l’assistant de chargement automatique.
 - **Connexions** : GitHub pour les mises à jour, DofusDB pour la chasse au trésor et l’XP des métiers, Metamob seulement si tu enregistres ta clé.
 - **Langue** : l’interface du mod est en français. La synchro Metamob demande un jeu en français, en anglais ou en espagnol.
@@ -113,7 +113,7 @@ Pour trouver `Dofus.exe` : jeu lancé, Gestionnaire des tâches → clic droit s
 
 ## 🔢 Versionnage
 
-Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, qui est aussi son étiquette GitHub (`v1.13.0`, `v1.14.0`…), sauf la 1.13.1 publiée sous `r113` pour les anciennes mises à jour automatiques. Les révisions publiées avant la 1.0.0 sont numérotées 0.y.0 (`v0.75.0` à `v0.91.0`).
+Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). Chaque version porte un numéro **x.y.z**, affiché en jeu dans **Options → Dofus Enhanced → À propos**, qui est aussi son étiquette GitHub (`v1.13.0`, `v1.14.0`…). Les révisions publiées avant la 1.0.0 sont numérotées 0.y.0 (`v0.75.0` à `v0.91.0`).
 
 ## 🤝 Crédits
 

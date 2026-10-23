@@ -37,12 +37,12 @@
 - Since 1.13.1 (r113), releases are tagged with the public version `vX.Y.Z`
   (`tools/publish-release.py`'s default). The archive, folder and `release.ini`
   keep the revision `rN`, which the updater checks. Updaters before 1.13.1 only
-  read `rN` tags: 1.13.1 itself was published as `r113` (`--revision-tag`). It is
-  the only release those updaters can select, so it keeps that tag unless the
-  owner asks otherwise; installs still below 1.13.1 would then need a manual
-  reinstall. Never use `--revision-tag` again. At the owner's request
-  (2026-10-23), the older releases are renamed once r113 is published: r92–r112
-  to `v1.0.0`–`v1.13.0`, and r75–r91 (before 1.0.0) to `v0.75.0`–`v0.91.0`.
+  read `rN` tags: 1.13.1 itself was published as `r113` (`--revision-tag`), then
+  renamed `v1.13.1` on 2026-10-23 at the owner's request once the owner's game
+  ran 1.14.0; installs still below 1.13.1 need a manual reinstall (README FAQ).
+  Never use `--revision-tag` again. At the owner's request (2026-10-23), the
+  older releases were renamed: r92–r112 to `v1.0.0`–`v1.13.0`, and r75–r91
+  (before 1.0.0) to `v0.75.0`–`v0.91.0`. No release tag starts with `r` any more.
 - Never publish game assemblies/metadata, installed game assets, user settings,
   logs, personal paths, credentials or analysis snapshots. The runtime archive
   has nine explicitly allowed entries. Keep all third-party licenses.

@@ -96,7 +96,7 @@ To find `Dofus.exe`: with the game running, Task Manager → right-click Dofus �
 - **Windows only** (64-bit).
 - **One Dofus version per mod version**: currently **Dofus Unity 3.7.12.12**. The mod checks the game’s exact fingerprints before loading.
 - **Ankama updated Dofus?** The mod may need an update: until a compatible version is published, it does not load and the game is left untouched. As soon as it is out, the automatic update installs it.
-- **On a version older than 1.11.0?** Once the repository is renamed to `dofus-enhanced`, its automatic update no longer finds new versions. Download the latest one, extract it into the folder that already contains `DofusMiniatures-3.7.11.11-rN` (not into a subfolder), then untick and tick **Chargement automatique** in game (or run `.\ModuleLoader.exe --enable-auto "C:\path\to\Dofus.exe"` from the new folder). Your settings are kept.
+- **On a version older than 1.13.1?** Since the repository was renamed to `dofus-enhanced` and releases are named by version (`v1.15.0`…), its automatic update no longer finds new versions. Download the latest one, extract it into the folder that already contains `DofusMiniatures-3.7.11.11-rN` (not into a subfolder), then untick and tick **Chargement automatique** in game (or run `.\ModuleLoader.exe --enable-auto "C:\path\to\Dofus.exe"` from the new folder). Your settings are kept.
 - **Logs**: `module.log` in the folder of the loaded version (`DofusMiniatures-3.7.11.11-rN`), `autoload.log` in the folder of the automatic loading helper.
 - **Connections**: GitHub for updates, DofusDB for the treasure hunt and profession XP, Metamob only if you save your key.
 - **Language**: the mod’s interface is in French. Metamob sync needs the game in French, English or Spanish.
@@ -113,7 +113,7 @@ To find `Dofus.exe`: with the game running, Task Manager → right-click Dofus �
 
 ## 🔢 Versioning
 
-This project is following [semantic versioning schema](https://semver.org/). Each version has an **x.y.z** number, shown in game in **Options → Dofus Enhanced → À propos** (about), which is also its GitHub tag (`v1.13.0`, `v1.14.0`…), except 1.13.1, published as `r113` for older automatic updaters. The revisions published before 1.0.0 are numbered 0.y.0 (`v0.75.0` to `v0.91.0`).
+This project is following [semantic versioning schema](https://semver.org/). Each version has an **x.y.z** number, shown in game in **Options → Dofus Enhanced → À propos** (about), which is also its GitHub tag (`v1.13.0`, `v1.14.0`…). The revisions published before 1.0.0 are numbered 0.y.0 (`v0.75.0` to `v0.91.0`).
 
 ## 🤝 Credits
 
