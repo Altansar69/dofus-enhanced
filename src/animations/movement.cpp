@@ -1,5 +1,6 @@
 #include "animations/instant-combat.hpp"
 #include "core/module.hpp"
+#include "stats/stats-travel.hpp"
 #include <array>
 #include <intrin.h>
 #include <memory>
@@ -109,6 +110,7 @@ bool LandingHook(int bone, Method method) {
     return LandingAt(bone, method, reinterpret_cast<uintptr_t>(_ReturnAddress()));
 }
 void NextHook(Obj behavior, Obj state, bool restart, Method method) {
+    StatsWalkStep(state); // « Statistiques »: the cell this walk has just reached (raw reads, never throws)
     // Every invocation masks the enclosing permission, including other
     // entities with the same appearance, stale states and non-combat calls.
     LandingScope scope(CheckedLandingOverride(behavior, state));

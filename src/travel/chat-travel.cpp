@@ -4,6 +4,7 @@
 #include "travel/roublard-passage.hpp"
 #include "core/module.hpp"
 #include "maps/map-transitions.hpp"
+#include "stats/stats-travel.hpp"
 #include <algorithm>
 
 // Ends the journey but keeps the passive trip watch (defined below).
@@ -404,11 +405,11 @@ void ContinueOnward() {
     if (active && nativeTarget==goal) {
         const bool follows=Following();
         Log("CHAT_TRAVEL_ONWARD_ACTIVE target="+std::to_string(targetMap)+" following="+std::to_string(follows));
-        StartWatch(); EndJourney();
+        StartWatch(); EndJourney(); StatsModTrip();
         Notice(follows?"autopilote lancé. Ton personnage suit un membre du groupe : le jeu relancera son propre trajet vers ce membre après une annulation ou un changement de carte. Arrête le suivi dans le groupe pour voyager seul.":"autopilote lancé.");
         return;
     }
-    if (Map()==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
+    if (Map()==targetMap) { StatsModTrip(); RestoreChatTravel(); Notice("destination atteinte."); return; }
     if (Map()!=journey.arrivalMap) { Cancel("left arrival before onward confirmation"); return; }
     if (pending) { journey.onwardAccepted=true; return; }
     const auto elapsed=GetTickCount64()-journey.onwardAt;
@@ -440,7 +441,7 @@ void Replan(const std::string& reason) {
     passageLink=-1;passageMap=0;passageOff=true;
     const auto map=Map();
     if (!map) { Cancel("no current map after the passage"); return; }
-    if (map==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
+    if (map==targetMap) { StatsModTrip(); RestoreChatTravel(); Notice("destination atteinte."); return; }
     const auto target=journey.target;
     journey.Clear(); journey.Begin(target,map,GetTickCount64());
     freshList.reset(); freshSource=-1; quotedMap=0; quotedCost=-1; quoteReceived=false; directPlan=false; havenbagDeparture=false;
@@ -614,11 +615,11 @@ void TickChatTravel() {
             if (teleportOnly) {
                 if (journey.CanWalk(Map()) && !api.Value<bool>(api.Invoke(inBag,character.get()))) {
                     Log("MAP_HAVENBAG_ZAAP arrived map="+std::to_string(targetMap));
-                    RestoreChatTravel(); Notice("arrivée au zaap choisi.");
+                    StatsModTrip(); RestoreChatTravel(); Notice("arrivée au zaap choisi.");
                 }
                 return;
             }
-            if (journey.CanWalk(Map()) && Map()==targetMap) { RestoreChatTravel(); Notice("destination atteinte."); return; }
+            if (journey.CanWalk(Map()) && Map()==targetMap) { StatsModTrip(); RestoreChatTravel(); Notice("destination atteinte."); return; }
             // Departure on Bad Aboum's own map: no autopilot before the passage.
             if (passageLink>=0 && journey.CanWalk(Map()) && Map()==passageMap) { journey.WalkToPassage(passageMap,GetTickCount64()); return; }
             if (journey.Settled(journey.CanWalk(Map()) && ArrivalReady())) RequestOnward();

@@ -58,6 +58,33 @@ struct OptionsUi {
     managed::Ref chatCoordsSource, chatCoordsOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
+    // « Statistiques » (1.15.0): the counting checkbox, the choice of what is
+    // shown (0 this character, 1 every character; kept for the session), then
+    // one text-button row per line of statistics, known by its unique
+    // description reference (statsMarkers); the last line resets what is shown.
+    managed::Ref statsSource, statsOption, statsScopeSource, statsScopeOption;
+    std::vector<managed::Ref> statsRows, statsMarkers;
+    // Each pooled row view showing a statistics line: its label follows the
+    // line while the page is open, its native button is hidden (except the
+    // reset's, whose caption follows the reset) and given back as it was when
+    // the view leaves (Restore, Abandon, or another row in that view).
+    struct StatsView {
+        managed::Ref element, button, buttonDisplay;
+        size_t line = 0;
+        std::string shown, caption;  // label and reset caption shown, empty before the first
+        bool hidden = false;         // its native button hidden
+    };
+    std::vector<StatsView> statsViews;
+    std::vector<std::string> statsTexts;  // each line's current label
+    int statsScope = 0;                   // what the labels show
+    // The reset: asked until statsConfirmDeadline (for the scope and the
+    // character shown then), Confirmer taken only from statsConfirmFrom (the
+    // same button: a double click never erases), its outcome (1 erased, 2
+    // impossible) shown until statsResultUntil.
+    bool statsConfirm = false, statsConfirmAll = false;
+    int64_t statsConfirmCharacter = 0;
+    int statsResult = 0;
+    ULONGLONG statsConfirmDeadline = 0, statsConfirmFrom = 0, statsResultUntil = 0, nextStatsRefresh = 0, nextStatsLog = 0;
     // Metamob rows, after the two soul rows of the « Pierre d’âme » section:
     // capture sync toggle, then the API key row, a text-button row known by its
     // unique description reference.

@@ -1,12 +1,13 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.14.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.15.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
 trajets rapides (passage secret des Roublards compris), ressources, archimonstres
 manquants et infobulles enrichies sur les cartes, ouvertures Kralamoure dans le
 calendrier et panneau natif de recherche manuelle DofusDB. Carnet personnel avec
-repères sur la carte, planification de l’XP des métiers et affichage des performances.
+repères sur la carte, planification de l’XP des métiers, affichage des performances
+et statistiques par personnage.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](../package/LISEZ-MOI.txt).
 Les nouveautés depuis la 1.13.0 sont vérifiées hors jeu ; leur rendu en jeu reste à confirmer.
 
@@ -52,7 +53,8 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence, Animations,
 Surbrillance, Cartes, Carnet, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
-Performances, Chargement et mises à jour et À propos. La version chargée (x.y.z)
+Performances, Statistiques, Chargement et mises à jour et À propos. La version
+chargée (x.y.z)
 figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
 **Ouvrir GitHub** vers le dépôt.
 
@@ -531,6 +533,47 @@ et écrans de chargement restent au-dessus de lui, et il disparaît avec
 l’interface quand le jeu la masque. Décoché, il disparaît aussitôt et plus rien
 n’est mesuré.
 
+## Statistiques
+
+**Options → Dofus Enhanced → Statistiques** compte, pour chacun de tes
+personnages, ce que le jeu ne garde pas, à partir de la 1.15.0 et seulement
+pendant que le mod est chargé. **Compter mes statistiques** (coché par défaut)
+les active ; décoché, plus rien n’est compté et ce qui l’a été reste affiché.
+**Statistiques affichées** montre le personnage connecté ou la somme de tous tes
+personnages comptés sur ce PC (les records gardent la plus grande valeur). Les
+valeurs se mettent à jour pendant que la page est ouverte :
+
+- Temps et déplacements : temps de jeu, plus longue session, cases parcourues
+  hors combat et en combat, cartes parcourues, changements de dimension et la
+  dimension la plus visitée.
+- Progression : expérience et niveaux gagnés.
+- Kamas : gagnés et dépensés, sans les dépôts et retraits à la banque ou dans un
+  coffre ni les échanges avec tes autres personnages joués avec le mod sur ce
+  PC ; les ventes à l’hôtel des ventes, créditées à la banque, ne sont pas
+  comptées.
+- Récolte et artisanat : récoltes (une par ressource récoltée, quelle que soit la
+  quantité), objets fabriqués, quêtes terminées et succès obtenus.
+- Combats : combats JcM, JcJ et Kolizéum avec leurs victoires, temps en combat,
+  tours, dégâts infligés et subis, soins, plus gros coup, monstres vaincus,
+  morts, âmes capturées, donjons terminés et le plus fait. Un combat regardé en
+  spectateur ne compte pas ; un combat déjà commencé au chargement du mod ne
+  compte pas parmi les combats, mais ses sorts lancés, ses coups et les morts du
+  personnage le sont. La part des éléments et le plus gros coup ne comptent que
+  les coups du personnage, pas ceux de ses invocations.
+- Sorts et éléments : sorts lancés, les plus lancés, et la part de chaque élément
+  dans les dégâts infligés.
+- Téléportations : zaaps, zaapis, prismes, potions de rappel, entrées dans un
+  Havre-Sac, trajets du mod et téléportations par une anomalie.
+
+Tout reste sur ce PC, dans `DofusMiniatures-stats.json`, à côté des préférences
+partagées ; plusieurs jeux ouverts (un par personnage) y écrivent sans
+s’effacer. Il est écrit au plus toutes les 15 secondes et dès que le comptage
+s’arrête (déconnexion, choix du personnage) : fermer le jeu peut perdre les
+dernières secondes. **Réinitialiser**, en bas de la section, demande une confirmation
+dans sa ligne (« Confirmer », à cliquer entre une et dix secondes après) et
+n’efface que ce qui est affiché ; le bouton de réinitialisation de la section
+ne remet que ses deux réglages.
+
 ## Compilation et publication
 
 Windows x64, outils C++ Visual Studio, CMake, Ninja, Python 3 et Windows PowerShell.
@@ -545,7 +588,7 @@ python tools/package-release.py --output "C:\chemin\vers\releases"
 
 Le code est rangé par domaine : `src/<domaine>/` pour le mod (core, loader, ui,
 appearance, animations, glow, souls, metamob, maps, travel, treasure, notebook,
-jobs, social), `tests/<domaine>/` pour les tests hors jeu (un programme par
+jobs, social, stats), `tests/<domaine>/` pour les tests hors jeu (un programme par
 fonction, déclaré avec `dofus_test()` dans `CMakeLists.txt`), `package/` pour les
 fichiers livrés tels quels dans l’archive et `tools/` pour l’empaquetage et la
 publication.

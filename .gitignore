@@ -14,3 +14,4 @@ offline-test-data/
 # Metamob personal key (DPAPI) and sync state: local only, never committed.
 DofusMiniatures-metamob*
 DofusMiniatures-roublard-passage.json*
+DofusMiniatures-stats.json*

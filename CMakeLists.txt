@@ -47,7 +47,8 @@ add_library(DofusMiniatures SHARED
   src/maps/resource-map-data.cpp src/maps/resource-map-policy.cpp src/maps/resource-map-ui.cpp
   src/maps/resource-map-render.cpp src/maps/resource-map-icons.cpp
   src/maps/map-info.cpp src/ui/perf-overlay.cpp src/travel/route-graph.cpp src/travel/roublard-passage.cpp
-  src/stats/stats.cpp src/stats/stats-travel.cpp src/stats/stats-economy.cpp src/stats/stats-fights.cpp)
+  src/stats/stats.cpp src/stats/stats-travel.cpp src/stats/stats-economy.cpp src/stats/stats-fights.cpp
+  src/stats/stats-store.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -188,10 +189,10 @@ if(EXISTS "${ROUTE_GRAPH_LOCAL_FIXTURE}")
 endif()
 dofus_test(RoublardPassageTests tests/travel/roublard-passage-tests.cpp)
 # 1.15.0 « Statistiques »: the store and the three trackers.
-dofus_test(StatsStoreTests tests/stats/stats-store-tests.cpp)
+dofus_test(StatsStoreTests tests/stats/stats-store-tests.cpp src/stats/stats-store.cpp)
 dofus_test(StatsTravelTests tests/stats/stats-travel-tests.cpp)
-dofus_test(StatsEconomyTests tests/stats/stats-economy-tests.cpp)
-dofus_test(StatsFightsTests tests/stats/stats-fights-tests.cpp)
+dofus_test(StatsEconomyTests tests/stats/stats-economy-tests.cpp src/stats/stats-economy.cpp)
+dofus_test(StatsFightsTests tests/stats/stats-fights-tests.cpp src/stats/stats-fights.cpp)
 dofus_test(ChatTpLinksTests tests/travel/chat-tp-links-tests.cpp src/travel/chat-tp-links.cpp)
 add_test(NAME ChatTpColorFallbackTests COMMAND ChatTpLinksTests --missing-color-layout)
 add_test(NAME ChatDimensionFallbackTests COMMAND ChatTpLinksTests --missing-dimension-layout)

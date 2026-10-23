@@ -13,7 +13,7 @@
 
 - `src/<area>/`: the mod's sources, which include each other as `"<area>/<file>"`
   from `src/`. Areas: core, loader, ui, appearance, animations, glow, souls,
-  metamob, maps, travel, treasure, notebook, jobs, social.
+  metamob, maps, travel, treasure, notebook, jobs, social, stats.
 - `tests/<area>/`: the offline tests, one program per feature, registered with
   `dofus_test()` in `CMakeLists.txt`. `tests/support/` holds the fake native
   runtime fixture and `tests/update/` the updater's PowerShell tests.

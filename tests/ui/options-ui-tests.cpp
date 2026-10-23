@@ -1,11 +1,13 @@
 #include "ui/options-ui.hpp"
 #include "core/version.hpp"
 #include "core/module.hpp"
+#include "core/signatures.hpp"
 #include "appearance/features.hpp"
 #include "glow/glow-mode-labels.hpp"
 #include "animations/animation-mode-labels.hpp"
 #include "appearance/miniature-category-labels.hpp"
 #include "treasure/treasure-launch.hpp"
+#include "stats/stats.hpp"
 #include <algorithm>
 #include <iostream>
 #include <map>
@@ -20,10 +22,56 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The ten native sections of the mod, in display order: section i has the id
-// ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
+// The thirteen native sections of the mod, in display order: section i has the
+// id ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
 enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, NotebookSection, TravelSection, SoulSection, ChatSection,
-    CalendarSection, PerformanceSection, LoadingSection, AboutSection, SectionCount };
+    CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
+// « Statistiques »: the checkbox, the scope choice, then 51 text rows (the
+// last one the reset); the store behind them is the fake below.
+constexpr size_t StatsLines = 51, StatsResetLine = StatsLines - 1;
+struct StatsFake {
+    stats::Totals mine, all;
+    int64_t current = 0;
+    bool clearWorks = true;
+    unsigned shown = 0;
+    std::vector<bool> clears;
+    std::map<int, std::string> spells, dungeons, worlds;
+};
+StatsFake statsFake;
+constexpr int64_t Oct23 = 1792756800, Oct1 = 1790856000; // 2026-10-23 and 2026-10-01 at noon UTC: the same day in any time zone
+void Set(stats::Totals& totals, stats::Counter counter, int64_t value) { totals.counters[static_cast<size_t>(counter)] = value; }
+// This character (Altansar, 101) and every character's sums, as the store shows them.
+StatsFake DefaultStats() {
+    using stats::Counter;
+    StatsFake data;
+    data.current = 101;
+    auto& mine = data.mine;
+    mine.character = 101; mine.name = "Altansar"; mine.characters = 1; mine.first = Oct23; mine.last = Oct23 + 3600;
+    const std::pair<Counter, int64_t> counts[] = {
+        {Counter::PlayMs, 43500000}, {Counter::CellsRoleplay, 12345}, {Counter::CellsFight, 2345}, {Counter::Maps, 1234},
+        {Counter::Dimensions, 12}, {Counter::Xp, 12345678}, {Counter::Levels, 3}, {Counter::KamasEarned, 1234567},
+        {Counter::KamasSpent, 234567}, {Counter::Harvests, 1234}, {Counter::Crafts, 567}, {Counter::Quests, 12},
+        {Counter::Achievements, 34}, {Counter::Captures, 3}, {Counter::FightsPve, 123}, {Counter::FightsPvp, 4},
+        {Counter::WinsPve, 98}, {Counter::WinsPvp, 1}, {Counter::FightMs, 18720000}, {Counter::FightTurns, 1234},
+        {Counter::DamageDealt, 1234567}, {Counter::DamageTaken, 234567}, {Counter::Heals, 123456}, {Counter::Kills, 2345},
+        {Counter::Deaths, 12}, {Counter::Dungeons, 12}, {Counter::SpellCasts, 12345}, {Counter::TeleportZaap, 123},
+        {Counter::TeleportZaapi, 45}, {Counter::TeleportPrism, 6}, {Counter::TeleportOther, 3}, {Counter::RecallPotions, 7},
+        {Counter::HavenBag, 89}, {Counter::ModTrips, 12}};
+    for (const auto& [counter, value] : counts) Set(mine, counter, value);
+    mine.records = {3456, 10800000};
+    mine.tables[static_cast<size_t>(stats::Table::Spells)] = {{413, 1234}, {4567, 987}, {12, 455}};
+    mine.tables[static_cast<size_t>(stats::Table::Elements)] = {{1, 450}, {2, 300}, {4, 200}, {0, 42}, {3, 8}};
+    mine.tables[static_cast<size_t>(stats::Table::Dungeons)] = {{5, 5}, {7, 2}};
+    mine.tables[static_cast<size_t>(stats::Table::Dimensions)] = {{14, 8}, {1, 6}};
+    auto& all = data.all;
+    all.characters = 4; all.first = Oct1; all.last = Oct23 + 3600;
+    Set(all, Counter::PlayMs, 4442400000); // 1 234 h
+    Set(all, Counter::KamasEarned, 1000); Set(all, Counter::KamasSpent, 2000);
+    data.spells = {{413, "Pression"}, {12, "Mot curatif"}};
+    data.dungeons = {{5, "Donjon des Bouftous"}};
+    data.worlds = {{14, "Srambad"}, {1, "Monde des Douze"}};
+    return data;
+}
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra, NotebookPingExtra, MapAddPositionExtra,
     PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra };
@@ -75,7 +123,7 @@ TextButtonFn textInitHook = nullptr; // TextButtonOptionElement.Init(TextButtonO
 constexpr const char* FakeKey = "TEST-KEY-0123456789-NOT-REAL";
 // The fake capture sync's key status: fakeStatus for a key file there
 // (fakeKeyStored), None without one or while a forget runs (fakeForgetting).
-bool fakeKeyStored = false, fakeForgetting = false, failKeyInsert = false, failKeyRemove = false, failTextRead = false;
+bool fakeKeyStored = false, fakeForgetting = false, failKeyInsert = false, failKeyRemove = false, failTextRead = false, failUpdateText = false;
 metamob::KeyStatus fakeStatus = metamob::KeyStatus::Verified;
 std::vector<bool> keyChecks; // checkKey calls: false the silent check of a key shown, true « Clé non vérifiée » clicked
 // keyCopies: characters of a field copied out (api.String on a get_text result); lengthReads: lengths only.
@@ -99,6 +147,9 @@ const std::string CheckingNotice = "Metamob : vérification de la clé enregistr
 constexpr int NativeDisplay = 7;
 
 void Check(bool condition, const char* message) {
+    if (!condition) throw std::runtime_error(message);
+}
+void Check(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
 }
 Settings Config(int mode, int animations) {
@@ -237,6 +288,16 @@ void InitializeApi() {
         return found->second;
     };
     api.gchandle_free = [](GCHandle handle) { Check(handles.erase(handle) == 1, "GC handle freed twice"); };
+    // The statistics lines' labels: OptionElement`1.displayedText, on the
+    // generic base of TextButtonOptionElement, at the pinned offset.
+    api.class_get_parent = [](Klass type) -> Klass {
+        return static_cast<Class*>(type)->name == "TextButtonOptionElement" ? Type("OptionElement`1") : nullptr;
+    };
+    api.class_get_field_from_name = [](Klass type, const char* name) -> void* {
+        static size_t displayedText = 0x2F0;
+        return static_cast<Class*>(type)->name == "OptionElement`1" && std::string(name) == "<displayedText>k__BackingField" ? &displayedText : nullptr;
+    };
+    api.field_get_offset = [](void* field) -> size_t { return *static_cast<size_t*>(field); };
 }
 
 struct Fixture {
@@ -250,10 +311,11 @@ struct Fixture {
         treasureOpens = notebookOpens = foreignButtonClicks = 0; openedUrls.clear();
         changes = 0;
         sourceModels = optionModels = uiHooks = 0;
-        fakeKeyStored = fakeForgetting = failKeyInsert = failKeyRemove = failTextRead = false;
+        fakeKeyStored = fakeForgetting = failKeyInsert = failKeyRemove = failTextRead = failUpdateText = false;
         fakeStatus = metamob::KeyStatus::Verified;
         keyForgets = keyCopies = lengthReads = nativeTextInits = inputsCreated = 0;
         submittedKeys.clear(); notices.clear(); verifiedRvas.clear(); keyChecks.clear();
+        statsFake = DefaultStats();
         state.servicesReady = true;
         state.ready.store(true);
         state.settings = Config(2, 1);
@@ -329,7 +391,8 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
         {0x55D26B0, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_whiteSpace", 0}, {0x55D6370, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_whiteSpace", 1},
         {0x170D6F0, "DofusButtonCustom", ".ctor", 0}, {0x170E330, "DofusButtonCustom", "set_size", 1}, {0x170E210, "DofusButtonCustom", "set_mainStyle", 1},
         {0x170E400, "DofusButtonCustom", "set_status", 1}, {0x170DFE0, "DofusButtonCustom", "set_icon", 1}, {0x170E5F0, "DofusButtonCustom", "set_text", 1},
-        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1}};
+        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1},
+        {0x2D88830, "TextButtonOptionElement", "UpdateText", 0}};
     const auto& owner = static_cast<fake::Class*>(klass)->name;
     fake::Check(std::any_of(std::begin(contracts), std::end(contracts), [&](const Contract& contract) {
         return contract.rva == rva && owner == contract.owner && std::string(name) == contract.method && argc == contract.argc;
@@ -408,7 +471,15 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
     if (name == "get_m_textButtonOption") return value.refs.at("option");
     if (name == "blrl") return value.refs.at("tooltip");
     if (name == "blqu") return value.refs.at("root");
-    if (name == "get_panel") return value.refs.at("panel");
+    if (name == "get_panel") { const auto found = value.refs.find("panel"); return found != value.refs.end() ? found->second : nullptr; }
+    // TextButtonOptionElement.UpdateText: its label shows displayedText.
+    if (name == "UpdateText") {
+        Check(value.klass->name == "TextButtonOptionElement", "UpdateText on a text-button row view only");
+        if (failUpdateText) throw std::runtime_error("Synthetic label failure");
+        ++value.integers["updateText"];
+        value.refs["label"] = value.refs["<displayedText>k__BackingField"];
+        return nullptr;
+    }
     if (name == "get_gd_category") return value.refs.at("grid");
     if (name == "get_itemsSource") return value.refs.at("itemsSource");
     if (name == "Init") {
@@ -561,6 +632,25 @@ void OpenTreasureOverlay(const std::filesystem::path& folder) {
     ++fake::treasureOpens;
 }
 void OpenNotebookPanel() { ++fake::notebookOpens; }
+// The statistics store as the options read it (stats.cpp is not linked here).
+namespace stats {
+int64_t Current() { return fake::statsFake.current; }
+Totals Shown(bool everyCharacter) {
+    ++fake::statsFake.shown;
+    return everyCharacter ? fake::statsFake.all : fake::statsFake.mine;
+}
+bool Clear(bool everyCharacter) {
+    fake::statsFake.clears.push_back(everyCharacter);
+    return fake::statsFake.clearWorks;
+}
+std::string KeyName(Table table, int key) {
+    static const char* const elements[] = {"neutre", "terre", "feu", "eau", "air"};
+    if (table == Table::Elements) return key >= 0 && key < 5 ? elements[key] : "";
+    const auto& names = table == Table::Spells ? fake::statsFake.spells : table == Table::Dungeons ? fake::statsFake.dungeons : fake::statsFake.worlds;
+    const auto found = names.find(key);
+    return found != names.end() ? found->second : "";
+}
+}
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
     ++fake::uiHooks;
     if (rva == 0x2D80470) {
@@ -597,6 +687,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.chatCoordsSource.get(),
         ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
         ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.perfCornerSource.get(),
+        ui.statsSource.get(), ui.statsScopeSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
     appearance.insert(appearance.end(), rest.begin(), rest.end());
     return appearance;
@@ -626,6 +717,13 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             defaults.*RoleplayMiniatureToggles[i]));
     for (size_t i = 0; i < ui.animationOptions.size(); ++i)
         animations.rows.push_back(CheckRow(ui.animationOptions[i], ui.animationSources[i], AnimationToggleLabels[i], defaults.*AnimationToggles[i]));
+    // « Statistiques »: the checkbox (ticked by default), what is shown (this
+    // character by default), then its lines, owned text buttons without a
+    // source whose labels follow the store (see StatsLinesAndFormats).
+    ExpectedSection statistics{"Statistiques", {CheckRow(ui.statsOption, ui.statsSource, "Compter mes statistiques", true),
+        ChoiceRow(ui.statsScopeOption, ui.statsScopeSource, "Statistiques affichées", 0)}};
+    for (const auto& row : ui.statsRows)
+        statistics.rows.push_back({row.get(), nullptr, Get(Get(row.get()).refs.at("text")).text, "TextButtonOption", 0});
     return {
         appearance, animations,
         {"Surbrillance", {ChoiceRow(ui.glowOption, ui.glowSource, "Surbrillance", 1),
@@ -662,6 +760,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.extraOptions[PerfDiskExtra], ui.extraSources[PerfDiskExtra], "Activité du disque", true),
             CheckRow(ui.extraOptions[PerfDragExtra], ui.extraSources[PerfDragExtra], "Déplacer l’affichage à la souris", true),
             ChoiceRow(ui.perfCornerOption, ui.perfCornerSource, "Position de l’affichage des performances", 0)}},
+        statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
         {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.15.0 — par Altansar")}}};
@@ -705,6 +804,7 @@ RowView MakeRowView() {
     const auto binding = Make("TextButtonOptionElementBinding");
     Get(binding).refs["button"] = view.button;
     Get(view.element).refs["m_binding"] = binding;
+    Get(view.element).refs["panel"] = Make("Panel"); // in the open options page
     return view;
 }
 // The key row's owned container in a view (between its label and its native
@@ -774,7 +874,7 @@ void CheckLayout(Fixture& f) {
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its ten native sections, from Apparence and Animations to À propos, and no row of its own");
+        "Mod must hold its thirteen native sections, from Apparence and Animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -821,11 +921,11 @@ void CheckLayout(Fixture& f) {
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 54 && optionModels == 56,
-        "The UI must create fifty-four private sources and fifty-six rows");
+    Check(sourceModels == 56 && optionModels == 56 + 2 + StatsLines,
+        "The UI must create fifty-six private sources and a hundred and nine rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
-        uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
+        uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}, uintptr_t{0x2D88830}})
         Check(std::find(verifiedRvas.begin(), verifiedRvas.end(), rva) != verifiedRvas.end(), "The view Init and the key row's calls must be exact verified contracts");
     Check(clickHandler != nullptr, "The key row's buttons are handled through the game's click");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
@@ -1241,6 +1341,7 @@ Settings AwayFromDefaults() {
     for (auto field : ExtraToggles) settings.*field = !(Settings{}.*field);
     settings.perfOverlayCorner = 2;
     settings.coordsWorldChatMode = 1;
+    settings.statsEnabled = false;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -1277,6 +1378,8 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == PerformanceSection) {
         for (auto extra : {PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
         settings.perfOverlayCorner = defaults.perfOverlayCorner;
+    } else if (index == StatsSection) {
+        settings.statsEnabled = defaults.statsEnabled; // the scope choice is not a setting
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
     }
@@ -1289,6 +1392,7 @@ void SectionResetOwnsItsRows() {
         Fixture f;
         f.state.settings = AwayFromDefaults();
         initHook(f.page, false, true, SectionId(index), nullptr);
+        Get(f.Ui().statsScopeSource.get()).integer = 1; // « Tous mes personnages » shown
         const auto before = f.state.settings;
         for (const auto source : AllSources(f.Ui())) Check(!AtDefault(source), "Every row starts away from its reset default");
         const auto layout = Layout(f.Ui());
@@ -1374,6 +1478,12 @@ void ValidationAndLoadingGate() {
         Get(f.Ui().perfCornerSource.get()).integer = invalid;
         f.Ui().Tick();
         Check(changes == 0 && Get(f.Ui().perfCornerSource.get()).integer == 0, "Invalid overlay corner must revert without persistence");
+    }
+    for (int invalid : {-1, 2, 99}) {
+        Get(f.Ui().statsScopeSource.get()).integer = invalid;
+        f.Ui().Tick();
+        Check(changes == 0 && Get(f.Ui().statsScopeSource.get()).integer == 0 && f.Ui().statsScope == 0,
+            "An invalid statistics choice goes back to the one shown, without persistence");
     }
     CheckLayout(f);
     f.StopAndRestore();
@@ -2023,6 +2133,360 @@ void MetamobFieldsLeaveOnAbandon() {
     f.Ui().Restore();
 }
 
+// « Statistiques »: one pooled view per line, as the game fills the open section.
+std::vector<RowView> OpenStats(Fixture& f) {
+    std::vector<RowView> views;
+    for (const auto& row : f.Ui().statsRows) {
+        views.push_back(MakeRowView());
+        textInitHook(views.back().element, row.get(), nullptr);
+    }
+    return views;
+}
+std::string Shown(const RowView& view) { return Text(Get(view.element).refs["label"]); }
+// The labels follow the store at the next refresh (once a second).
+void RefreshNow(Fixture& f) { f.Ui().nextStatsRefresh = 0; f.Ui().Tick(); }
+std::string Thin(const std::string& digits) { // « 1 234 567 » with thin no-break spaces
+    std::string text;
+    for (size_t i = 0; i < digits.size(); ++i) { if (i && (digits.size() - i) % 3 == 0) text += "\u202F"; text += digits[i]; }
+    return text;
+}
+const std::string Nb = "\u00A0";
+// What each line shows for DefaultStats(): this character.
+std::vector<std::string> MineLabels() {
+    return {
+        "Ce personnage : Altansar, compté depuis le 23 octobre 2026",
+        "— Temps et déplacements —",
+        "Temps de jeu : 12" + Nb + "h" + Nb + "05" + Nb + "min",
+        "Plus longue session : 3" + Nb + "h" + Nb + "00" + Nb + "min",
+        "Cases parcourues : " + Thin("12345") + " hors combat, " + Thin("2345") + " en combat",
+        "Cartes parcourues : " + Thin("1234"),
+        "Changements de dimension : 12",
+        "Dimension la plus visitée : Srambad (8 arrivées)",
+        "— Progression —",
+        "Expérience gagnée : " + Thin("12345678"),
+        "Niveaux gagnés : 3",
+        "— Kamas —",
+        "Kamas gagnés : " + Thin("1234567") + Nb + "kamas",
+        "Kamas dépensés : " + Thin("234567") + Nb + "kamas",
+        "Solde : +" + Thin("1000000") + Nb + "kamas",
+        "— Récolte et artisanat —",
+        "Ressources récoltées : " + Thin("1234"),
+        "Objets fabriqués : 567",
+        "Quêtes terminées : 12",
+        "Succès obtenus : 34",
+        "— Combats —",
+        "Combats JcM : 123 (98 victoires, 25 défaites)",
+        "Combats JcJ : 4 (1 victoire, 3 défaites)",
+        "Combats Kolizéum : 0 (0 victoire, 0 défaite)",
+        "Temps en combat : 5" + Nb + "h" + Nb + "12" + Nb + "min (2" + Nb + "min" + Nb + "27" + Nb + "s en moyenne)",
+        "Tours joués : " + Thin("1234"),
+        "Dégâts : " + Thin("1234567") + " infligés, " + Thin("234567") + " subis",
+        "Soins prodigués : " + Thin("123456"),
+        "Plus gros coup : " + Thin("3456"),
+        "Monstres vaincus : " + Thin("2345"),
+        "Morts : 12",
+        "Âmes capturées : 3",
+        "Donjons terminés : 12",
+        "Donjon le plus fait : Donjon des Bouftous (5 fois)",
+        "— Sorts et éléments —",
+        "Sorts lancés : " + Thin("12345"),
+        "Sort n° 1 : Pression, lancé " + Thin("1234") + " fois",
+        "Sort n° 2 : sort 4567, lancé 987 fois",
+        "Sort n° 3 : Mot curatif, lancé 455 fois",
+        "Sort n° 4 : aucun",
+        "Sort n° 5 : aucun",
+        "Dégâts par élément : neutre 4,2" + Nb + "%, terre 45" + Nb + "%, feu 30" + Nb + "%, eau 0,8" + Nb + "%, air 20" + Nb + "%",
+        "— Téléportations —",
+        "Zaaps : 123",
+        "Zaapis : 45",
+        "Prismes : 6",
+        "Potions de rappel : 7",
+        "Entrées dans un Havre-Sac : 89",
+        "Trajets du mod : 12",
+        "Autres téléportations : 3",
+        "Réinitialiser les statistiques de ce personnage"};
+}
+
+// The section's rows: the checkbox and the scope choice (native rows with
+// their own sources), then 51 owned text-button lines, each with its own
+// description reference, no source and no native action; every label in
+// French formats from the store's totals and the game's names.
+void StatsLinesAndFormats() {
+    Fixture f;
+    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
+    CheckLayout(f);
+    const auto parent = f.Categories().back();
+    const auto& rows = Rows(Section(parent, StatsSection));
+    Check(rows.size() == 2 + StatsLines && rows[0] == f.Ui().statsOption.get() && rows[1] == f.Ui().statsScopeOption.get(),
+        "Statistiques: the checkbox, the scope choice, then its 51 lines");
+    Check(Name(Section(parent, StatsSection)) == "Statistiques" && Name(Section(parent, StatsSection - 1)) == "Performances" &&
+        Name(Section(parent, StatsSection + 1)) == "Chargement et mises à jour", "« Statistiques » after « Performances », before « Chargement et mises à jour »");
+    const auto description = Description(f.Ui().statsOption.get());
+    for (const char* term : {"Compte pour chacun de tes personnages", "temps de jeu", "kamas", "combats", "téléportations", "version 1.15.0",
+            "pendant que le mod est chargé", "Tout reste sur ce PC", "rien n’est envoyé", "Décoché, rien n’est compté", "Activé par défaut."})
+        Check(description.find(term) != std::string::npos, std::string("The checkbox says what is counted, where it stays, since when and unticked: ") + term);
+    const auto& scopes = Get(Get(f.Ui().statsScopeOption.get()).refs.at("choices")).items;
+    Check(scopes.size() == 2 && Get(scopes[0]).choice.id == 0 && Text(Get(scopes[0]).choice.label) == "Ce personnage" &&
+        Get(scopes[1]).choice.id == 1 && Text(Get(scopes[1]).choice.label) == "Tous mes personnages", "« Ce personnage » or « Tous mes personnages »");
+    Check(Description(f.Ui().statsScopeOption.get()).find("additionnées") != std::string::npos, "The choice says the sums");
+    std::vector<Obj> markers;
+    for (size_t line = 0; line < StatsLines; ++line) {
+        const auto row = f.Ui().statsRows.at(line).get();
+        const auto& option = Get(row);
+        Check(option.klass->name == "TextButtonOption" && !option.refs.at("source") && f.Ui().statsMarkers.at(line).get() == option.refs.at("description"),
+            "Each line is an owned text button known by its description reference");
+        Check(std::find(markers.begin(), markers.end(), option.refs.at("description")) == markers.end() && option.refs.at("description") != f.Ui().creditsMarker.get() &&
+            option.refs.at("description") != f.Ui().metamobKeyMarker.get(), "Every line has its own description reference");
+        markers.push_back(option.refs.at("description"));
+        Check(!Description(row).empty(), "Every line has its hover text");
+        if (line == StatsResetLine) Check(ButtonText(row) == "Réinitialiser" && option.integers.at("icon") == 249, "The reset line: Réinitialiser, the game's reset icon");
+        else Check(ButtonText(row).empty() && !option.integers.count("icon"), "The other lines: no caption, no icon (their button stays hidden)");
+    }
+    const auto mine = MineLabels();
+    for (size_t line = 0; line < StatsLines; ++line)
+        Check(Label(f.Ui().statsRows[line].get()) == mine[line], "Line " + std::to_string(line) + ": " + Label(f.Ui().statsRows[line].get()));
+    Check(Description(f.Ui().statsRows[StatsResetLine].get()).find("Confirmer dans les 10 secondes") != std::string::npos, "The reset line says it asks first");
+    // Every character's sums once chosen (the open section's views follow).
+    auto views = OpenStats(f);
+    Get(f.Ui().statsScopeSource.get()).integer = 1;
+    f.Ui().Tick();
+    Check(f.Ui().statsScope == 1 && changes == 0, "The choice is not a setting");
+    const std::map<size_t, std::string> every = {
+        {0, "Tous mes personnages : 4 personnages, comptés depuis le 1er octobre 2026"},
+        {2, "Temps de jeu : " + Thin("1234") + Nb + "h" + Nb + "00" + Nb + "min"},
+        {5, "Cartes parcourues : 0"}, {7, "Dimension la plus visitée : aucune"}, {14, "Solde : -" + Thin("1000") + Nb + "kamas"},
+        {24, "Temps en combat : 0" + Nb + "min"}, {33, "Donjon le plus fait : aucun"}, {36, "Sort n° 1 : aucun"},
+        {41, "Dégâts par élément : aucun dégât compté"}, {50, "Réinitialiser les statistiques de tous mes personnages"}};
+    for (const auto& [line, label] : every)
+        Check(Label(f.Ui().statsRows[line].get()) == label && Shown(views[line]) == label, "Every character, line " + std::to_string(line) + ": " + Shown(views[line]));
+    // Edge formats: under a minute, no character, a character without a name or counts, shares rounded.
+    Get(f.Ui().statsScopeSource.get()).integer = 0;
+    f.Ui().Tick();
+    auto& mineTotals = statsFake.mine;
+    const auto check = [&](size_t line, const std::string& label) {
+        RefreshNow(f);
+        Check(Label(f.Ui().statsRows[line].get()) == label && Shown(views[line]) == label, "Line " + std::to_string(line) + ": " + Shown(views[line]));
+    };
+    Set(mineTotals, stats::Counter::PlayMs, 45000); check(2, "Temps de jeu : 45" + Nb + "s");
+    Set(mineTotals, stats::Counter::PlayMs, 0); check(2, "Temps de jeu : 0" + Nb + "min");
+    Set(mineTotals, stats::Counter::PlayMs, 60000); check(2, "Temps de jeu : 1" + Nb + "min");
+    mineTotals.tables[static_cast<size_t>(stats::Table::Elements)] = {{1, 996}, {0, 3}, {7, 1}};
+    check(41, "Dégâts par élément : neutre 0,3" + Nb + "%, terre 100" + Nb + "%, feu 0" + Nb + "%, eau 0" + Nb + "%, air 0" + Nb + "%, autres 0,1" + Nb + "%");
+    mineTotals.tables[static_cast<size_t>(stats::Table::Elements)] = {{2, 900}, {3, 100}};
+    check(41, "Dégâts par élément : neutre 0" + Nb + "%, terre 0" + Nb + "%, feu 90" + Nb + "%, eau 10" + Nb + "%, air 0" + Nb + "%");
+    mineTotals.name.clear(); mineTotals.character = 77; mineTotals.first = 0;
+    check(0, "Ce personnage : n° 77, rien de compté pour l’instant");
+    mineTotals = stats::Totals{};
+    check(0, "Ce personnage : aucun personnage connecté pour l’instant");
+    statsFake.all = stats::Totals{};
+    Get(f.Ui().statsScopeSource.get()).integer = 1;
+    f.Ui().Tick();
+    Check(Shown(views[0]) == "Tous mes personnages : rien de compté pour l’instant", "Nothing counted for any character");
+    f.StopAndRestore();
+}
+
+// Views of the lines: the label follows the store once a second while the page
+// is open, the native button stays hidden (the reset's shown), and a view
+// recycled for another row (the key row too) gets its button back as it was.
+void StatsViewsFollowTheStore() {
+    Fixture f;
+    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
+    auto views = OpenStats(f);
+    const auto mine = MineLabels();
+    Check(f.Ui().statsViews.size() == StatsLines, "Each view of a line is followed");
+    for (size_t line = 0; line < StatsLines; ++line) {
+        Check(Shown(views[line]) == mine[line], "Each view shows its line");
+        Check(line == StatsResetLine ? SaveShown(views[line]) : SaveHidden(views[line]), "Only the reset line keeps its native button");
+    }
+    Check(Caption(views[StatsResetLine].button) == "Réinitialiser" && Get(views[StatsResetLine].button).integers.at("icon") == 249,
+        "The reset button: Réinitialiser with the game's reset icon");
+    // Once a second: a new count shows at the next refresh, only on its line.
+    const auto reads = statsFake.shown;
+    const auto updates = Get(views[3].element).integers["updateText"];
+    Set(statsFake.mine, stats::Counter::PlayMs, 43560000);
+    f.Ui().Tick();
+    Check(statsFake.shown == reads && Shown(views[2]) == mine[2], "Not before the second is over");
+    RefreshNow(f);
+    const auto playTime = "Temps de jeu : 12" + Nb + "h" + Nb + "06" + Nb + "min";
+    Check(statsFake.shown == reads + 1 && Shown(views[2]) == playTime && Label(f.Ui().statsRows[2].get()) == playTime &&
+        Get(views[3].element).integers["updateText"] == updates, "The changed line follows (view and model), the others are left as they are");
+    // A closed page reads nothing.
+    for (auto& view : views) Get(view.element).refs["panel"] = nullptr;
+    Set(statsFake.mine, stats::Counter::PlayMs, 50000000);
+    RefreshNow(f);
+    Check(statsFake.shown == reads + 1 && Shown(views[2]) == playTime, "A closed page: nothing read, nothing written");
+    for (auto& view : views) Get(view.element).refs["panel"] = Make("Panel");
+    RefreshNow(f);
+    Check(Shown(views[2]) == "Temps de jeu : 13" + Nb + "h" + Nb + "53" + Nb + "min", "Open again: the line follows at the next refresh");
+    // A search clone of a line, in another view: recognized by its description.
+    const auto clone = Make("TextButtonOption");
+    Get(clone).refs["description"] = Get(f.Ui().statsRows[9].get()).refs.at("description");
+    Get(clone).refs["text"] = String("old text");
+    auto cloneView = MakeRowView();
+    textInitHook(cloneView.element, clone, nullptr);
+    Check(Shown(cloneView) == mine[9] && SaveHidden(cloneView) && f.Ui().statsViews.size() == StatsLines + 1, "A search clone shows the current line");
+    // Clicking a line does nothing: no native action, no reset.
+    Click(views[9]);
+    Click(cloneView);
+    Check(foreignButtonClicks == 0 && statsFake.clears.empty() && !f.Ui().statsConfirm, "A line's click does nothing");
+    // Recycled for the credits row: its button as it was, the view no longer followed.
+    textInitHook(views[5].element, f.Ui().creditsOption.get(), nullptr);
+    Check(SaveShown(views[5]) && f.Ui().statsViews.size() == StatsLines, "Recycled: the native button back as it was");
+    // Recycled for the key row, then back to a line: each takes the button as the other left it.
+    textInitHook(views[6].element, f.Ui().metamobKeyOption.get(), nullptr);
+    Check(Slot(views[6]) && SaveHidden(views[6]) && f.Ui().keyFields.size() == 1, "The key row takes the view (Enregistrer hidden until typed)");
+    textInitHook(views[6].element, f.Ui().statsRows[6].get(), nullptr);
+    Check(!Slot(views[6]) && f.Ui().keyFields.empty() && SaveHidden(views[6]) && Shown(views[6]) == mine[6], "Back to a line");
+    textInitHook(views[6].element, f.Ui().metamobKeyOption.get(), nullptr);
+    Check(Slot(views[6]) && f.Ui().keyFields.size() == 1, "And to the key row again");
+    textInitHook(views[6].element, f.Ui().creditsOption.get(), nullptr);
+    Check(!Slot(views[6]) && SaveShown(views[6]), "Its button as it was at the end");
+    // A view whose label cannot be written is let go, logged, never a stop.
+    Check(f.Ui().statsViews.size() == StatsLines - 1, "Fifty lines and the clone followed");
+    failUpdateText = true;
+    Set(statsFake.mine, stats::Counter::Xp, 99);
+    f.Ui().nextStatsLog = 0;
+    RefreshNow(f);
+    failUpdateText = false;
+    Check(std::any_of(logs.begin(), logs.end(), [](const std::string& line) { return line.rfind("STATS_UI_ERROR step=refresh", 0) == 0; }) &&
+        !f.state.stopRequested.load() && !f.state.stopped.load(), "A failing view is logged; the mod goes on");
+    Check(SaveShown(views[9]) && SaveShown(cloneView) && f.Ui().statsViews.size() == StatsLines - 3, "The views let go get their button back");
+    textInitHook(views[9].element, f.Ui().statsRows[9].get(), nullptr);
+    Check(Shown(views[9]) == "Expérience gagnée : 99" && SaveHidden(views[9]), "Its next Init follows the line again");
+    // Restore gives every button back and releases the section.
+    f.StopAndRestore();
+    for (const auto& view : views) Check(SaveShown(view), "Restore gives every native button back");
+    Check(SaveShown(cloneView) && f.Ui().statsViews.empty() && !f.Ui().statsSource.get() && !f.Ui().statsScopeOption.get() &&
+        f.Ui().statsRows.empty() && f.Ui().statsMarkers.empty(), "Restore releases the section");
+    textInitHook(views[2].element, clone, nullptr);
+    Check(f.Ui().statsViews.empty(), "After restore no view is followed");
+}
+
+// Abandon (logout): the followed views give their buttons back too.
+void StatsViewsLeaveOnAbandon() {
+    Fixture f;
+    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
+    auto views = OpenStats(f);
+    Check(SaveHidden(views[1]), "Fixture");
+    f.state.stopped.store(true);
+    f.Ui().Abandon();
+    for (const auto& view : views) Check(SaveShown(view), "Abandon gives every native button back");
+    Check(f.Ui().statsViews.empty(), "And follows no view");
+    f.Ui().Restore();
+}
+
+// « Réinitialiser » asks first: the line names what would be erased and the
+// button becomes Confirmer; Confirmer within 10 s erases what was shown (this
+// character, or every character), for the same character; otherwise nothing.
+// Confirmer is the same button: a click in the first second after the question
+// (a double click, Enter twice) never erases.
+void StatsResetAsksFirst() {
+    Fixture f;
+    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
+    auto views = OpenStats(f);
+    const auto& reset = views[StatsResetLine];
+    const auto label = [&] { return Shown(reset); };
+    // Confirmer once the second after the question is over (the clock is the real one).
+    const auto confirm = [&] { f.Ui().statsConfirmFrom = GetTickCount64(); Click(reset); };
+    const auto before = GetTickCount64();
+    Click(reset);
+    const auto after = GetTickCount64();
+    const auto question = "Effacer les statistiques d’Altansar ? Clique sur Confirmer dans les 10 secondes.";
+    Check(f.Ui().statsConfirm && statsFake.clears.empty() && label() == question &&
+        Caption(reset.button) == "Confirmer" && Get(reset.button).integers.at("icon") == 316 && Label(f.Ui().statsRows[StatsResetLine].get()) == label(),
+        "The first click asks, naming the character");
+    Check(f.Ui().statsConfirmFrom >= before + 1000 && f.Ui().statsConfirmFrom <= after + 1000, "Confirmer counts a second after the question");
+    // A double click on Réinitialiser (or Enter twice): the second click is the same gesture.
+    Click(reset);
+    Click(reset);
+    Check(f.Ui().statsConfirm && statsFake.clears.empty() && label() == question && Caption(reset.button) == "Confirmer",
+        "Clicks within the second keep the question and erase nothing");
+    confirm();
+    Check(statsFake.clears == std::vector<bool>{false} && label() == "Statistiques d’Altansar effacées." && Caption(reset.button) == "Réinitialiser" &&
+        Get(reset.button).integers.at("icon") == 249, "Confirmer erases this character's statistics, and says so");
+    f.Ui().statsResultUntil = 1;
+    f.Ui().Tick();
+    Check(label() == "Réinitialiser les statistiques de ce personnage", "The outcome goes after a while");
+    // Unanswered: nothing erased; the next click asks again.
+    Click(reset);
+    f.Ui().statsConfirmDeadline = 1;
+    f.Ui().Tick();
+    Check(!f.Ui().statsConfirm && label() == "Réinitialiser les statistiques de ce personnage" && Caption(reset.button) == "Réinitialiser", "An unanswered question goes");
+    Click(reset);
+    Check(f.Ui().statsConfirm && statsFake.clears.size() == 1, "After it, a click asks again");
+    // Another choice drops the question.
+    Get(f.Ui().statsScopeSource.get()).integer = 1;
+    f.Ui().Tick();
+    Check(!f.Ui().statsConfirm && label() == "Réinitialiser les statistiques de tous mes personnages", "Another choice drops the question");
+    Click(reset);
+    Check(label() == "Effacer les statistiques de tous tes personnages ? Clique sur Confirmer dans les 10 secondes.", "Every character: asked");
+    Click(reset);
+    Check(statsFake.clears.size() == 1 && f.Ui().statsConfirm, "Every character: a double click erases nothing either");
+    confirm();
+    Check(statsFake.clears == std::vector<bool>({false, true}) && label() == "Statistiques de tous tes personnages effacées.", "Every character erased");
+    // Impossible now (another client holds the file, or no character): said, nothing else.
+    statsFake.clearWorks = false;
+    Click(reset);
+    confirm();
+    Check(statsFake.clears.size() == 3 && label() == "Effacement impossible pour l’instant : réessaie dans un moment.", "A failed reset says so");
+    statsFake.clearWorks = true;
+    // Another character played meanwhile: not erased.
+    Get(f.Ui().statsScopeSource.get()).integer = 0;
+    f.Ui().Tick();
+    Click(reset);
+    statsFake.current = 202;
+    confirm();
+    Check(statsFake.clears.size() == 3 && label() == "Effacement impossible pour l’instant : réessaie dans un moment.", "Never another character than the one named");
+    statsFake.current = 101;
+    // Names starting with a vowel, or none.
+    statsFake.mine.name = "Bob";
+    RefreshNow(f);
+    Click(reset);
+    Check(label() == "Effacer les statistiques de Bob ? Clique sur Confirmer dans les 10 secondes.", "« de Bob »");
+    f.Ui().statsConfirmDeadline = 1;
+    statsFake.mine.name = "Élodie";
+    f.Ui().Tick();
+    Click(reset);
+    Check(label() == "Effacer les statistiques d’Élodie ? Clique sur Confirmer dans les 10 secondes.", "« d’Élodie »");
+    f.Ui().statsConfirmDeadline = 1;
+    statsFake.mine.name.clear();
+    f.Ui().Tick();
+    Click(reset);
+    Check(label() == "Effacer les statistiques de ce personnage ? Clique sur Confirmer dans les 10 secondes.", "Without a name");
+    // A stopping module ignores the button; no native action ever.
+    f.Ui().statsConfirmDeadline = 1;
+    f.Ui().Tick();
+    f.state.stopRequested.store(true);
+    Click(reset);
+    Click(reset);
+    f.state.stopRequested.store(false);
+    Check(!f.Ui().statsConfirm && statsFake.clears.size() == 3 && foreignButtonClicks == 0, "A stopping module ignores it; never the native action");
+    f.StopAndRestore();
+    Check(!f.Ui().statsConfirm && SaveShown(reset), "Restore drops the question");
+}
+
+// « Compter mes statistiques »: its own source (ticked by default), committing
+// statsEnabled once per change and following external changes.
+void StatsCheckboxCommits() {
+    Fixture f;
+    f.state.settings.statsEnabled = false;
+    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
+    auto& source = Get(f.Ui().statsSource.get());
+    Check(source.klass->name == "BoolSource" && !source.boolean && source.defaultBoolean, "The saved choice shown, ticked by default");
+    source.boolean = true;
+    f.Ui().Tick();
+    Check(f.state.settings.statsEnabled && changes == 1, "Ticking it counts again");
+    auto expected = f.state.settings;
+    source.boolean = false;
+    f.Ui().Tick();
+    expected.statsEnabled = false;
+    Check(f.state.settings == expected && changes == 2, "Unticking changes only statsEnabled");
+    f.state.settings.statsEnabled = true;
+    f.Ui().Sync();
+    Check(source.boolean, "An external change shows in the checkbox");
+    f.StopAndRestore();
+}
+
 }
 
 int main() {
@@ -2059,9 +2523,14 @@ int main() {
         run(fake::MetamobNativeResetStopsSyncKeepsKey);
         run(fake::MetamobKeyFieldErrorsStayLocal);
         run(fake::MetamobFieldsLeaveOnAbandon);
+        run(fake::StatsLinesAndFormats);
+        run(fake::StatsViewsFollowTheStore);
+        run(fake::StatsViewsLeaveOnAbandon);
+        run(fake::StatsResetAsksFirst);
+        run(fake::StatsCheckboxCommits);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: twelve native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows; layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace)\n";
+        std::cout << "PASS: thirteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows; layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, this character or every character, 51 lines in French formats following the store once a second in the open page, native buttons hidden and given back, Réinitialiser asking first, a double click never erasing, then Confirmer erasing what is shown)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

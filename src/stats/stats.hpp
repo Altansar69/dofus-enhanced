@@ -4,8 +4,11 @@
 // DofusMiniatures-stats.json: one record per character id, merged under a file
 // lock with the other game clients (one client per character). With
 // settings.statsEnabled off nothing is counted and the trackers read nothing.
+#include <array>
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace stats {
 // Plain sums: durations in milliseconds, kamas in kamas.
@@ -47,9 +50,42 @@ void Name(int64_t character, const std::string& name);
 bool Counting();
 }
 
+// The store's side for the options (« Statistiques »), added by the store: the
+// statistics shown, their reset and the names of the table keys.
+namespace stats {
+constexpr size_t CounterCount = static_cast<size_t>(Counter::Count);
+constexpr size_t RecordCount = static_cast<size_t>(Record::Count);
+constexpr size_t TableCount = static_cast<size_t>(Table::Count);
+// One character's statistics, or the sums of every character's (records: the
+// largest). Each table is sorted by value, largest first.
+struct Totals {
+    int64_t character = 0;        // the character shown; 0 for every character
+    std::string name;             // its name, when known
+    int characters = 0;           // characters with something counted
+    int64_t first = 0, last = 0;  // first and last counted, Unix time in seconds; 0: nothing counted
+    std::array<int64_t, CounterCount> counters{};
+    std::array<int64_t, RecordCount> records{};
+    std::array<std::vector<std::pair<int, int64_t>>, TableCount> tables{};
+    int64_t Count(Counter counter) const { return counters[static_cast<size_t>(counter)]; }
+    int64_t Best(Record record) const { return records[static_cast<size_t>(record)]; }
+    const std::vector<std::pair<int, int64_t>>& Entries(Table table) const { return tables[static_cast<size_t>(table)]; }
+};
+// The character played in this client; 0 while unknown.
+int64_t Current();
+// What the options show: this client's character, or every character's sums.
+// Main thread; never throws.
+Totals Shown(bool everyCharacter);
+// Erases what the options show, in the file under its lock; false when that is
+// not possible now (no character, file in use or unwritable).
+bool Clear(bool everyCharacter);
+// A table key's name: the game's for spells, dungeons and worlds, the
+// element's for elements; empty when unknown. Main thread; never throws.
+std::string KeyName(Table table, int key);
+}
+
 // Module lifecycle: Install on the worker thread before the hooks (never
-// throws); Tick from Module::Pump on the main thread (writes the file at most
-// once a minute); Flush at Stop.
+// throws); Tick from Module::Pump on the main thread (writes the file every
+// 15 s at most, and at once when counting stops); Flush at Stop.
 void InstallStats();
 void TickStats();
 void FlushStats();

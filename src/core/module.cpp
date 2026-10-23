@@ -251,6 +251,7 @@ void Module::Pump(Obj source) {
         // The notebook stays: its entries are the player's, not the character's,
         // and a draft being typed must survive an automatic reconnection.
         RestorePerfOverlay(); RestoreTreasurePanel();
+        TickStats(); // the statistics counted until now are written at once
         return;
     }
     bool combat = InCombat();
