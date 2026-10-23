@@ -21,7 +21,11 @@ using namespace managed;
 constexpr int ModId = 0x4D4F44;
 // The ten native sections of the mod, in display order: section i has the id
 // ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
-enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, TravelSection, SoulSection, ChatSection, CalendarSection, LoadingSection, AboutSection, SectionCount };
+enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, NotebookSection, TravelSection, SoulSection, ChatSection,
+    CalendarSection, PerformanceSection, LoadingSection, AboutSection, SectionCount };
+// Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
+enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra, NotebookPingExtra, MapAddPositionExtra,
+    ChatCoordsExtra, PerfOverlayExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
@@ -583,10 +587,14 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
     for (const auto& source : ui.animationSources) appearance.push_back(source.get());
     std::vector<Obj> rest{
         ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(),
-        ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.miniCenterSource.get(), ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(),
+        ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.extraSources[MiniMapBarExtra].get(), ui.miniCenterSource.get(),
+        ui.extraSources[MiniMapZoneNameExtra].get(), ui.extraSources[MapCoordsExtra].get(), ui.extraSources[MiniMapCoordsExtra].get(),
+        ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(),
+        ui.extraSources[NotebookPingExtra].get(), ui.extraSources[MapAddPositionExtra].get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
-        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.calendarKraloveSource.get(),
+        ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.extraSources[ChatCoordsExtra].get(),
+        ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.perfCornerSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
     appearance.insert(appearance.end(), rest.begin(), rest.end());
     return appearance;
@@ -622,14 +630,20 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.glowInteractivesOption, ui.glowInteractivesSource, "Inclure les éléments interactifs", false)}},
         {"Cartes", {CheckRow(ui.resourcesOption, ui.resourcesSource, "Ressources sur la grande carte", true),
             CheckRow(ui.resourcesMiniOption, ui.resourcesMiniSource, "Ressources sur la mini-carte", true),
+            CheckRow(ui.extraOptions[MiniMapBarExtra], ui.extraSources[MiniMapBarExtra], "Barre des ressources sur la mini-carte", true),
             CheckRow(ui.miniCenterOption, ui.miniCenterSource, "Bouton de recentrage sur la mini-carte", true),
+            CheckRow(ui.extraOptions[MiniMapZoneNameExtra], ui.extraSources[MiniMapZoneNameExtra], "Nom de la zone au survol de la mini-carte", true),
+            CheckRow(ui.extraOptions[MapCoordsExtra], ui.extraSources[MapCoordsExtra], "Dimension avec les coordonnées sur la grande carte", true),
+            CheckRow(ui.extraOptions[MiniMapCoordsExtra], ui.extraSources[MiniMapCoordsExtra], "Dimension avec les coordonnées sur la mini-carte", true),
             CheckRow(ui.archiZonesOption, ui.archiZonesSource, "Archimonstres manquants sur la grande carte", true),
             CheckRow(ui.archiZonesMiniOption, ui.archiZonesMiniSource, "Archimonstres manquants sur la mini-carte", false)}},
+        {"Carnet", {CheckRow(ui.extraOptions[NotebookPingExtra], ui.extraSources[NotebookPingExtra], "Bouton de repère à côté des positions", true),
+            CheckRow(ui.extraOptions[MapAddPositionExtra], ui.extraSources[MapAddPositionExtra], "« Ajouter aux positions » au clic droit sur les cartes", true)}},
         {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
             CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true),
             CheckRow(ui.travelPlannerOption, ui.travelPlannerSource, "Remplacer l’autopilote du jeu", true),
-            CheckRow(ui.templeOption, ui.templeSource, "Passer par le temple Roublard", true)}},
+            CheckRow(ui.templeOption, ui.templeSource, "Passage secret et temple des Roublards", true)}},
         {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
             CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true),
             CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
@@ -637,11 +651,14 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         {"Chat", {CheckRow(ui.chatTravelOption, ui.chatTravelSource, "Bouton TP dans le chat", true),
             CheckRow(ui.chatSoulOption, ui.chatSoulSource, "Âme en sac dans le chat", true),
             CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true),
-            CheckRow(ui.chatMetamobOption, ui.chatMetamobSource, "Metamob dans le chat", true)}},
+            CheckRow(ui.chatMetamobOption, ui.chatMetamobSource, "Metamob dans le chat", true),
+            CheckRow(ui.extraOptions[ChatCoordsExtra], ui.extraSources[ChatCoordsExtra], "Dimension avec les coordonnées dans le chat", true)}},
         {"Calendrier", {CheckRow(ui.calendarKraloveOption, ui.calendarKraloveSource, "Ouvertures Kralamoure dans le calendrier", true)}},
+        {"Performances", {CheckRow(ui.extraOptions[PerfOverlayExtra], ui.extraSources[PerfOverlayExtra], "Afficher les FPS et la mémoire", false),
+            ChoiceRow(ui.perfCornerOption, ui.perfCornerSource, "Position de l’affichage des performances", 0)}},
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.12.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.13.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -747,7 +764,7 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.12.0" && std::string(ModVersion) == "r111",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.13.0" && std::string(ModVersion) == "r112",
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -792,13 +809,13 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.12.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
-        description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos && description.find("r111") != std::string::npos,
+    Check(Label(credits).find("1.13.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+        description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos && description.find("r112") != std::string::npos,
         "Credits must name the version, the author, the project page and the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 41 && optionModels == 43,
-        "The UI must create forty-one private sources and forty-three rows");
+    Check(sourceModels == 50 && optionModels == 52,
+        "The UI must create fifty private sources and fifty-two rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1186,6 +1203,8 @@ Settings AwayFromDefaults() {
     settings.mapTravelPlanner = false;
     settings.travelRoublardTemple = false;
     settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = settings.chatMetamobStatus = false;
+    for (auto field : ExtraToggles) settings.*field = !(Settings{}.*field);
+    settings.perfOverlayCorner = 2;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -1203,6 +1222,10 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.resourceMapEnabled = defaults.resourceMapEnabled; settings.resourceMiniMapEnabled = defaults.resourceMiniMapEnabled;
         settings.miniMapCenterButton = defaults.miniMapCenterButton;
         settings.archiZonesMap = defaults.archiZonesMap; settings.archiZonesMiniMap = defaults.archiZonesMiniMap;
+        for (auto extra : {MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra})
+            settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
+    } else if (index == NotebookSection) {
+        for (auto extra : {NotebookPingExtra, MapAddPositionExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
     } else if (index == TravelSection) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
         settings.mapTravelPlanner = defaults.mapTravelPlanner; settings.travelRoublardTemple = defaults.travelRoublardTemple;
@@ -1212,8 +1235,12 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == ChatSection) {
         settings.chatTravelLinks = defaults.chatTravelLinks; settings.chatSoulInventory = defaults.chatSoulInventory;
         settings.chatOcreStatus = defaults.chatOcreStatus; settings.chatMetamobStatus = defaults.chatMetamobStatus;
+        settings.*ExtraToggles[ChatCoordsExtra] = defaults.*ExtraToggles[ChatCoordsExtra];
     } else if (index == CalendarSection) {
         settings.calendarKralamoure = defaults.calendarKralamoure;
+    } else if (index == PerformanceSection) {
+        settings.*ExtraToggles[PerfOverlayExtra] = defaults.*ExtraToggles[PerfOverlayExtra];
+        settings.perfOverlayCorner = defaults.perfOverlayCorner;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
     }

@@ -14,7 +14,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 10;
+constexpr int ModSections = 12;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -44,6 +44,23 @@ constexpr const char* AnimationDescriptions[] = {
     "En combat, un combattant vaincu disparaît sans jouer son animation de mort. Sans effet quand Déplacements instantanés ou Sans attentes visuelles est coché : sa mort reste alors celle du jeu, qui retire ensuite le combattant. Expérimental. Désactivé par défaut.",
     "En combat, la marche, les poussées, les lancers de personnage porté et les sauts arrivent aussitôt à destination, cases intermédiaires comprises. Un trajet inhabituel garde son animation. Expérimental. Désactivé par défaut.",
     "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
+// The checkboxes added in 1.13.0, in the order of Settings' ExtraToggles.
+enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, MapCoordsRow, MiniMapCoordsRow, NotebookPingRow, MapAddPositionRow,
+    ChatCoordsRow, PerfOverlayRow };
+constexpr CheckRow ExtraRows[] = {
+    {"Barre des ressources sur la mini-carte", "Affiche sur la mini-carte la barre des six métiers qui ouvre le choix des ressources. Décochée, la barre disparaît mais les repères des ressources choisies restent affichés si « Ressources sur la mini-carte » est cochée ; le choix se fait alors depuis la grande carte. Activé par défaut."},
+    {"Nom de la zone au survol de la mini-carte", "Sur la mini-carte, la case survolée par la souris affiche le nom de sa zone, comme sur la grande carte. Activé par défaut."},
+    {"Dimension avec les coordonnées sur la grande carte", "Sur la grande carte, les coordonnées de la case survolée s’affichent avec leur dimension : [x, y, dimension], par exemple le Monde des Douze ou Incarnam. Activé par défaut."},
+    {"Dimension avec les coordonnées sur la mini-carte", "Sur la mini-carte, les coordonnées s’affichent avec leur dimension : [x, y, dimension]. Activé par défaut."},
+    {"Bouton de repère à côté des positions", "Dans les positions du carnet, un petit bouton à droite de chaque nom place un repère sur cette position, visible sur la grande carte et la mini-carte ; un second clic le retire. Activé par défaut."},
+    {"« Ajouter aux positions » au clic droit sur les cartes", "Au clic droit sur une case de la grande carte ou de la mini-carte, ajoute l’entrée « Ajouter aux positions », qui enregistre cette case (coordonnées et dimension) dans les positions du carnet. Activé par défaut."},
+    {"Dimension avec les coordonnées dans le chat", "Les positions partagées dans le chat s’affichent avec leur dimension : [x, y, dimension]. Activé par défaut."},
+    {"Afficher les FPS et la mémoire", "Affiche discrètement, dans un coin de l’écran, les images par seconde, la durée d’une image et la mémoire utilisée par le jeu. Désactivé par défaut."}};
+constexpr const char* PerfCorners[] = {"En haut à gauche", "En haut à droite", "En bas à gauche", "En bas à droite"};
+constexpr const char* TempleTitle = "Passage secret et temple des Roublards";
+constexpr const char* TempleDescription = "Le trajet du mod peut emprunter le passage secret des Roublards, entre la Cité d’Astrub [5,-15] et le temple Roublard [10,16], quand ton personnage y a accès, et passer par le temple quand cela raccourcit le trajet. La statue du temple reste réservée aux Roublards par le jeu. Décoché, le mod n’emprunte ni le passage ni le temple. Activé par défaut.";
+static_assert(std::size(ExtraRows) == std::size(ExtraToggles) &&
+    std::tuple_size_v<decltype(OptionsUi::extraSources)> == std::size(ExtraToggles) && std::size(PerfCorners) == 4);
 static_assert(std::size(CombatMiniatureRows) == std::size(CombatMiniatureToggles) &&
     std::size(RoleplayMiniatureRows) == std::size(RoleplayMiniatureToggles) &&
     std::size(AnimationDescriptions) == std::size(AnimationToggles) && AnimationToggleLabels.size() == std::size(AnimationToggles));
@@ -141,7 +158,8 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return true;
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) && allLoaded(ui.combatMiniatureSources) &&
-        allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource);
+        allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource) &&
+        allLoaded(ui.extraSources) && loaded(ui.perfCornerSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -179,6 +197,9 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.archiZonesMiniSource.get(), settings.archiZonesMiniMap, notify);
     SetSource(ui.calendarKraloveSource.get(), settings.calendarKralamoure, notify);
     SetSource(ui.templeSource.get(), settings.travelRoublardTemple, notify);
+    for (size_t i = 0; i < ui.extraSources.size(); ++i)
+        SetSource(ui.extraSources[i].get(), settings.*ExtraToggles[i], notify);
+    SetSource(ui.perfCornerSource.get(), settings.perfOverlayCorner, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -245,6 +266,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     toggleSources(prepared.combatMiniatureSources, CombatMiniatureToggles);
     toggleSources(prepared.roleplayMiniatureSources, RoleplayMiniatureToggles);
     toggleSources(prepared.animationSources, AnimationToggles);
+    toggleSources(prepared.extraSources, ExtraToggles);
+    prepared.perfCornerSource.reset(api.New(integerType, {&defaults.perfOverlayCorner, &readOnly}));
     prepared.autoLoadSource.reset(api.New(booleanType, {&defaults.autoLoad, &readOnly}));
     prepared.githubSource.reset(api.New(booleanType, {&defaults.githubUpdates, &readOnly}));
     prepared.soulSource.reset(api.New(booleanType, {&defaults.soulReminder, &readOnly}));
@@ -325,8 +348,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Colore aussi sur la mini-carte les zones où il te manque des archimonstres ou des boss de donjon, selon le choix Tous / Archimonstres / Boss de donjon du panneau Ocre de la grande carte (sans sa recherche ni ses filtres de territoire et de niveau), même quand ce mode est fermé. Désactivé par défaut."));
     prepared.travelPlannerOption.reset(MakeBoolOption(prepared.travelPlannerSource.get(), current.get(), tooltip.get(), "Remplacer l’autopilote du jeu",
         "Le double-clic sur la grande carte ou la mini-carte et l’entrée « Voyager jusqu’à cette position » de leur clic droit lancent le trajet du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu. Ctrl + double-clic, le menu d’un point de repère et la commande /travel gardent l’autopilote du jeu. Décoché, le double-clic et cette entrée lancent directement l’autopilote du jeu. Activé par défaut."));
-    prepared.templeOption.reset(MakeBoolOption(prepared.templeSource.get(), current.get(), tooltip.get(), "Passer par le temple Roublard",
-        "Le trajet du mod peut passer par le temple Roublard, sous le cimetière d’Amakna, et par les téléportations de sa statue quand elles le raccourcissent. Le jeu réserve la statue aux Roublards (quête « Dévotion à Dralbour » pour le Temple des Douze, « La colère des dieux » pour le Domaine des dieux) ; les portes du temple sont ouvertes à tous. Décoché, le mod choisit son départ sans passer par le temple ; l’autopilote du jeu, qui finit le trajet, garde ses propres chemins. Activé par défaut."));
+    prepared.templeOption.reset(MakeBoolOption(prepared.templeSource.get(), current.get(), tooltip.get(), TempleTitle, TempleDescription));
     // Section « Chat »: each addition next to positions and monster groups shared in chat.
     prepared.chatTravelOption.reset(MakeBoolOption(prepared.chatTravelSource.get(), current.get(), tooltip.get(), "Bouton TP dans le chat",
         "Ajoute TP à côté des positions et des groupes de monstres partagés dans le chat, et fait des coordonnées écrites [x,y] des liens de position. Un clic lance le trajet du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu (indisponible en combat). Activé par défaut."));
@@ -339,6 +361,13 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     // Section « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
     prepared.calendarKraloveOption.reset(MakeBoolOption(prepared.calendarKraloveSource.get(), current.get(), tooltip.get(), "Ouvertures Kralamoure dans le calendrier",
         "Dans le calendrier du jeu, ajoute sous les jours une ligne Kralamoure avec les ouvertures planifiées sur Metamob pour le serveur de ta quête : heure locale et personnages inscrits ; survole pour l’organisateur et la description, clique pour ouvrir l’événement sur metamob.fr. Nécessite une clé Metamob enregistrée ; la liste n’est lue que calendrier ouvert, au plus toutes les 10 minutes. Activé par défaut."));
+    for (size_t i = 0; i < prepared.extraOptions.size(); ++i)
+        prepared.extraOptions[i].reset(MakeBoolOption(prepared.extraSources[i].get(), current.get(), tooltip.get(),
+            ExtraRows[i].title, ExtraRows[i].description));
+    Choices corners;
+    for (int i = 0; i != static_cast<int>(std::size(PerfCorners)); ++i) corners.emplace_back(i, PerfCorners[i]);
+    prepared.perfCornerOption.reset(MakeChoiceOption(prepared.perfCornerSource.get(), current.get(), "Position de l’affichage des performances",
+        "Coin de l’écran où s’affichent les FPS et la mémoire quand « Afficher les FPS et la mémoire » est coché. En haut à gauche par défaut.", corners));
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
@@ -379,6 +408,10 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.calendarKraloveOption = std::move(prepared.calendarKraloveOption);
     ui.templeSource = std::move(prepared.templeSource);
     ui.templeOption = std::move(prepared.templeOption);
+    ui.extraSources = std::move(prepared.extraSources);
+    ui.extraOptions = std::move(prepared.extraOptions);
+    ui.perfCornerSource = std::move(prepared.perfCornerSource);
+    ui.perfCornerOption = std::move(prepared.perfCornerOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -898,15 +931,19 @@ bool OptionsUi::Attach(Obj page) {
     appearance.push_back(roleplayModeOption.get());
     for (const auto& option : roleplayMiniatureOptions) appearance.push_back(option.get());
     for (const auto& option : animationOptions) animations.push_back(option.get());
+    const auto extra = [&](ExtraRow row) { return extraOptions[row].get(); };
     const Section layout[] = {
         {"Apparence", appearance},
         {"Animations", animations},
         {"Surbrillance", {glowOption.get(), glowNpcsOption.get(), glowInteractivesOption.get()}},
-        {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), miniCenterOption.get(), archiZonesOption.get(), archiZonesMiniOption.get()}},
+        {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), extra(MiniMapBarRow), miniCenterOption.get(), extra(MiniMapZoneNameRow),
+            extra(MapCoordsRow), extra(MiniMapCoordsRow), archiZonesOption.get(), archiZonesMiniOption.get()}},
+        {"Carnet", {extra(NotebookPingRow), extra(MapAddPositionRow)}},
         {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get(), templeOption.get()}},
         {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
-        {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get()}},
+        {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get(), extra(ChatCoordsRow)}},
         {"Calendrier", {calendarKraloveOption.get()}},
+        {"Performances", {extra(PerfOverlayRow), perfCornerOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
         {"À propos", {creditsOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
@@ -988,8 +1025,11 @@ void OptionsUi::Tick() {
     next.archiZonesMiniMap = api.Value<bool>(api.Call(archiZonesMiniSource.get(), "get_property"));
     next.calendarKralamoure = api.Value<bool>(api.Call(calendarKraloveSource.get(), "get_property"));
     next.travelRoublardTemple = api.Value<bool>(api.Call(templeSource.get(), "get_property"));
+    for (size_t i = 0; i < extraSources.size(); ++i)
+        next.*ExtraToggles[i] = api.Value<bool>(api.Call(extraSources[i].get(), "get_property"));
+    next.perfOverlayCorner = api.Value<int>(api.Call(perfCornerSource.get(), "get_property"));
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
-        !Settings::ValidMonsterGlowMode(next.monsterGlowMode)) {
+        !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidPerfOverlayCorner(next.perfOverlayCorner)) {
         Sync(); return;
     }
     if (!(next == module->settings)) {
@@ -1069,6 +1109,9 @@ void OptionsUi::Restore() {
     archiZonesSource.reset(); archiZonesOption.reset(); archiZonesMiniSource.reset(); archiZonesMiniOption.reset();
     calendarKraloveSource.reset(); calendarKraloveOption.reset();
     templeSource.reset(); templeOption.reset();
+    for (auto& ref : extraSources) ref.reset();
+    for (auto& ref : extraOptions) ref.reset();
+    perfCornerSource.reset(); perfCornerOption.reset();
     creditsOption.reset(); creditsMarker.reset();
     metamobSyncSource.reset(); metamobSyncOption.reset();
     metamobKeyOption.reset(); metamobKeyMarker.reset();

@@ -30,6 +30,8 @@
 #include "metamob/calendar-kralove.hpp"
 #include "metamob/metamob-sync.hpp"
 #include "souls/capture-detect.hpp"
+#include "maps/map-info.hpp"
+#include "ui/perf-overlay.hpp"
 #include <MinHook.h>
 #include <fstream>
 #include <mutex>
@@ -284,6 +286,8 @@ void Module::Pump(Obj source) {
     startupStage("map-travel", [] { TickMapTravel(); });
     startupStage("resource-map-render", [] { resourceMap::PumpRender(GetTickCount64()); });
     startupStage("resource-map-ui", [] { resourceMap::TickUi(); });
+    startupStage("map-info", [] { TickMapInfo(); });
+    startupStage("perf-overlay", [] { TickPerfOverlay(); });
     if (!startupConfirmed) {
         WriteStartupStatus(folder, GetCurrentProcessId(), "READY");
         startupConfirmed = true;
@@ -396,11 +400,13 @@ static void UpdateHook(Obj self, Method method) {
             if (JobsXpCleanupPending()) RestoreJobsXp();
             if (ArchiZonesCleanupPending()) RestoreArchiZones();
             if (CalendarKraloveCleanupPending()) RestoreCalendarKralove();
+            if (MapInfoCleanupPending()) RestoreMapInfo();
+            if (PerfOverlayCleanupPending()) RestorePerfOverlay();
             if (SoulHelperCleanupPending()) RestoreSoulHelper();
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -410,6 +416,7 @@ static void UpdateHook(Obj self, Method method) {
     } else if (self != module->compositor.get()) return;
     if (module->servicesReady) TickMapPreload();
     if (module->servicesReady) TickChatTravelPlanning();
+    if (module->servicesReady) { MapInfoFrame(now); PerfOverlayFrame(now); }
     if (module->servicesReady && now < nextPump) { if (CompositorGlowTick(now)) TickMonsterGlow(); resourceMap::PumpRender(now); return; }
     nextPump = now + 200;
     try { module->Pump(self); }
@@ -477,6 +484,8 @@ static DWORD WINAPI Worker(void*) {
         resourceMap::InstallUi();
         resourceMap::InstallRender();
         InstallChatTpLinks(StartChatTravel);
+        InstallMapInfo();
+        InstallPerfOverlay();
         for (auto target : hookTargets) {
             auto result = MH_QueueEnableHook(target);
             if (result != MH_OK) throw std::runtime_error(MH_StatusToString(result));

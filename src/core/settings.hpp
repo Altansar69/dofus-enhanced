@@ -38,6 +38,16 @@ struct Settings {
     bool calendarKralamoure = true; // Calendrier : ouvertures Kralamoure de Metamob dans le calendrier du jeu
     bool chatMetamobStatus = true; // Chat : quantité de ta quête Metamob à côté des monstres de L’éternelle moisson partagés
     bool mapTravelPlanner = true; // Trajet du mod au double-clic sur la carte ou la mini-carte et à « Voyager jusqu'à cette position »
+    // 1.13.0: one checkbox each, in the order of ExtraToggles below.
+    bool resourceMiniMapBar = true; // Cartes : la barre des six métiers sur la mini-carte
+    bool miniMapZoneName = true; // Cartes : le nom de la zone de la case survolée sur la mini-carte
+    bool coordsWorldMap = true; // Cartes : [x, y, dimension] pour les coordonnées de la grande carte
+    bool coordsWorldMiniMap = true; // Cartes : [x, y, dimension] pour les coordonnées de la mini-carte
+    bool notebookPingButton = true; // Carnet : bouton de repère sur la carte à droite de chaque position
+    bool mapAddPosition = true; // Carnet : « Ajouter aux positions » au clic droit d'une case des cartes
+    bool coordsWorldChat = true; // Chat : [x, y, dimension] pour les positions partagées
+    bool perfOverlay = false; // Performances : images par seconde et mémoire dans un coin de l'écran
+    int perfOverlayCorner = 0; // 0 en haut à gauche, 1 en haut à droite, 2 en bas à gauche, 3 en bas à droite
     // Apparence : avec le mode Miniatures, chaque catégorie cochée est réduite et
     // les autres gardent leur taille normale (Créatures reste pour tous). Par
     // défaut toutes cochées, comme avant ces cases.
@@ -80,6 +90,7 @@ struct Settings {
         instantMovements = noVisualWaits = level >= 3;
     }
     static bool ValidMonsterGlowMode(int value) { return value >= 0 && value <= 3; }
+    static bool ValidPerfOverlayCorner(int value) { return value >= 0 && value <= 3; }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
     // metamobSync as the shared file holds it now; nullopt when the file is
     // unreadable or was last written by a revision that does not know it.
@@ -103,3 +114,7 @@ inline constexpr bool Settings::* CombatMiniatureToggles[] = {
 inline constexpr bool Settings::* RoleplayMiniatureToggles[] = {
     &Settings::roleplayMiniatureSelf, &Settings::roleplayMiniatureParty,
     &Settings::roleplayMiniaturePlayers, &Settings::roleplayMiniatureMonsters};
+// The checkboxes added in 1.13.0, in the order of OptionsUi's extra rows.
+inline constexpr bool Settings::* ExtraToggles[] = {
+    &Settings::resourceMiniMapBar, &Settings::miniMapZoneName, &Settings::coordsWorldMap, &Settings::coordsWorldMiniMap,
+    &Settings::notebookPingButton, &Settings::mapAddPosition, &Settings::coordsWorldChat, &Settings::perfOverlay};

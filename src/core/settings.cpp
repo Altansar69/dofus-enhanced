@@ -27,6 +27,13 @@ constexpr Flag AnimationFlags[] = {
     {"noAttackAnimations", &Settings::noAttackAnimations}, {"noDeathAnimations", &Settings::noDeathAnimations},
     {"instantMovements", &Settings::instantMovements}, {"noVisualWaits", &Settings::noVisualWaits}};
 static_assert(std::size(AnimationFlags) == std::size(AnimationToggles));
+// The checkboxes added in 1.13.0 (ExtraToggles), each its own 0/1 line.
+constexpr Flag ExtraFlags[] = {
+    {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
+    {"coordsWorldMap", &Settings::coordsWorldMap}, {"coordsWorldMiniMap", &Settings::coordsWorldMiniMap},
+    {"notebookPingButton", &Settings::notebookPingButton}, {"mapAddPosition", &Settings::mapAddPosition},
+    {"coordsWorldChat", &Settings::coordsWorldChat}, {"perfOverlay", &Settings::perfOverlay}};
+static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
 }
 
 Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecified) {
@@ -57,6 +64,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             if (!ParseInt(line.substr(split + 1), value)) continue;
             bool flag = false;
             for (const auto& [name, field] : AppearanceFlags)
+                if (key == name) { if (value == 0 || value == 1) settings.*field = value != 0; flag = true; }
+            for (const auto& [name, field] : ExtraFlags)
                 if (key == name) { if (value == 0 || value == 1) settings.*field = value != 0; flag = true; }
             for (size_t index = 0; index != std::size(AnimationFlags); ++index)
                 if (key == AnimationFlags[index].key) {
@@ -91,6 +100,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "archiZonesMiniMap" && (value == 0 || value == 1)) settings.archiZonesMiniMap = value != 0;
             else if (key == "calendarKralamoure" && (value == 0 || value == 1)) settings.calendarKralamoure = value != 0;
             else if (key == "mapTravelPlanner" && (value == 0 || value == 1)) settings.mapTravelPlanner = value != 0;
+            else if (key == "perfOverlayCorner" && ValidPerfOverlayCorner(value)) settings.perfOverlayCorner = value;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
             else if (key == "resourceMiniMapEnabled" && (value == 0 || value == 1)) { settings.resourceMiniMapEnabled = value != 0; resourceMiniMapRead = true; }
             else if (key == "resourceMapItem" && value > 0 && value <= 1000000) {
@@ -138,6 +148,7 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         throw std::runtime_error("Invalid context display preferences");
     if (!ValidPanelPosition(soulPanelX) || !ValidPanelPosition(soulPanelY))
         throw std::runtime_error("Invalid soul panel position");
+    if (!ValidPerfOverlayCorner(perfOverlayCorner)) throw std::runtime_error("Invalid performance overlay corner");
     static std::atomic_uint64_t nextSave{0};
     auto temporary = path;
     temporary += L".tmp-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++nextSave);
@@ -182,6 +193,8 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\nmapTravelPlanner=" << (mapTravelPlanner ? 1 : 0);
         for (const auto& [name, field] : AppearanceFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         for (const auto& [name, field] : AnimationFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
+        for (const auto& [name, field] : ExtraFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
+        file << "\nperfOverlayCorner=" << perfOverlayCorner;
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

@@ -213,6 +213,26 @@ int main() {
             { std::ofstream file(path); file << "noAnimations=" << legacyBool << "\n"; }
             Require(Settings::Read(path).LegacyAnimationMode() == legacyBool, "Oldest noAnimations migrates to Normal or Raccourcies");
         }
+        // The 1.13.0 checkboxes: map, notebook, chat and overlay additions on
+        // by default, the overlay off; each one persists alone and together.
+        Require(defaults.resourceMiniMapBar && defaults.miniMapZoneName && defaults.coordsWorldMap && defaults.coordsWorldMiniMap &&
+            defaults.notebookPingButton && defaults.mapAddPosition && defaults.coordsWorldChat && !defaults.perfOverlay &&
+            defaults.perfOverlayCorner == 0, "The 1.13.0 additions start shown, the performance overlay hidden in the top left corner");
+        for (unsigned mask = 0; mask < (1u << std::size(ExtraToggles)); ++mask) {
+            auto extra = defaults;
+            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = ((mask >> i) & 1) != 0;
+            extra.perfOverlayCorner = static_cast<int>(mask % 4);
+            extra.Save(path);
+            Require(Settings::Read(path) == extra, "Each 1.13.0 checkbox and the overlay corner persist independently");
+            { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayCorner=4\nperfOverlayCorner=-1\nminiMapZoneName=2\nperfOverlay=x\n"; }
+            Require(Settings::Read(path) == extra, "Malformed 1.13.0 values preserve the saved choices");
+        }
+        {
+            auto corner = defaults; corner.perfOverlayCorner = 4;
+            bool rejected = false;
+            try { corner.Save(path); } catch (const std::runtime_error&) { rejected = true; }
+            Require(rejected, "An invalid overlay corner is never saved");
+        }
         for (int mask = 0; mask < 512; ++mask) {
             auto flags = defaults;
             flags.chatTravelLinks = (mask & 1) != 0; flags.chatSoulInventory = (mask & 2) != 0;

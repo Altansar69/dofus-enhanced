@@ -19,6 +19,7 @@ std::priority_queue<Node,std::vector<Node>,Later> queue;
 std::unordered_set<uint64_t> visited;
 std::unordered_map<uint64_t,std::pair<int,size_t>> best;
 std::vector<chat_travel::Destination> choices;
+std::vector<Shortcut> shortcuts; // not yet taken by the search (1.13.0 route work)
 Ref graph, vertices, outgoing, filter, loader, pathService, dependencies;
 Method getGraph{},init{},edgeAllowed{},areaAllowed{},initFilter{};
 Klass graphClass{},vertexClass{},edgeClass{},filterClass{},loaderClass{},serviceClass{};
@@ -128,6 +129,7 @@ void Install() {
     edgeAllowed=api.FindVerified(filterClass,"wvs",1,0x17E6C60);
     areaAllowed=api.FindVerified(filterClass,"wvt",1,0x17E6E70);
 }
+void SetShortcuts(std::vector<Shortcut> next) { shortcuts=std::move(next); }
 void Clear() {
     queue={};visited.clear();best.clear();choices.clear();graph.reset();vertices.reset();outgoing.reset();filter.reset();loader.reset();
     pathService.reset();dependencies.reset();target=current=0;currentZone=-1;templeAllowed=true;seeded=loading=false;inspected=0;

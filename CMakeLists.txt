@@ -45,7 +45,8 @@ add_library(DofusMiniatures SHARED
   src/maps/archi-zones.cpp src/metamob/calendar-kralove.cpp
   src/souls/chat-soul-status.cpp
   src/maps/resource-map-data.cpp src/maps/resource-map-policy.cpp src/maps/resource-map-ui.cpp
-  src/maps/resource-map-render.cpp src/maps/resource-map-icons.cpp)
+  src/maps/resource-map-render.cpp src/maps/resource-map-icons.cpp
+  src/maps/map-info.cpp src/ui/perf-overlay.cpp src/travel/route-graph.cpp src/travel/roublard-passage.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -105,6 +106,7 @@ set_tests_properties(GitHubUpdateTests PROPERTIES TIMEOUT 30)
 # Options window and the toolbar module menu.
 dofus_test(OptionsUiTests tests/ui/options-ui-tests.cpp src/ui/options-ui.cpp)
 dofus_test(ToolsUiTests tests/ui/tools-ui-tests.cpp src/ui/tools-ui.cpp)
+dofus_test(PerfOverlayTests tests/ui/perf-overlay-tests.cpp)
 
 # Appearance: miniatures, creatures, sizes and display shortcuts.
 dofus_test(FeaturesTests tests/appearance/features-tests.cpp src/appearance/features.cpp src/appearance/size-measurements.cpp)
@@ -168,13 +170,16 @@ dofus_test(ResourceMapUiTests tests/maps/resource-map-ui-tests.cpp src/maps/reso
 dofus_test(ResourceMapRenderTests tests/maps/resource-map-render-tests.cpp src/maps/resource-map-render.cpp
   src/maps/resource-map-policy.cpp)
 dofus_test(ArchiZonesTests tests/maps/archi-zones-tests.cpp)
+dofus_test(MapInfoTests tests/maps/map-info-tests.cpp)
 
 # Travel: chat coordinates, routes, TP links and the map autopilot.
-dofus_test(ChatRouteTests tests/travel/chat-route-tests.cpp src/travel/chat-route.cpp)
+dofus_test(ChatRouteTests tests/travel/chat-route-tests.cpp src/travel/chat-route.cpp src/travel/route-graph.cpp)
+dofus_test(RouteGraphTests tests/travel/route-graph-tests.cpp src/travel/route-graph.cpp)
+dofus_test(RoublardPassageTests tests/travel/roublard-passage-tests.cpp)
 dofus_test(ChatTpLinksTests tests/travel/chat-tp-links-tests.cpp src/travel/chat-tp-links.cpp)
 add_test(NAME ChatTpColorFallbackTests COMMAND ChatTpLinksTests --missing-color-layout)
 dofus_test(TravelActionsTests tests/travel/travel-actions-tests.cpp src/travel/chat-travel.cpp
-  src/travel/map-travel.cpp src/souls/soul-group-menu.cpp src/souls/soul-spell.cpp)
+  src/travel/map-travel.cpp src/souls/soul-group-menu.cpp src/souls/soul-spell.cpp src/travel/roublard-passage.cpp)
 
 # Treasure hunts.
 dofus_test(TreasureDataTests tests/treasure/treasure-data-tests.cpp src/treasure/treasure-data.cpp
