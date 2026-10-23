@@ -20,13 +20,13 @@ assert len(cases) >= 48 and all(
     and case.get("status", "run") in ("run", "passed")
     for case in cases
 ), "All release checks must pass before packaging"
-revision = int(re.search(r"ModRevision = (\d+)", (source / "version.hpp").read_text()).group(1))
-semantic = re.search(r'ModSemanticVersion\[\] = "([0-9]+\.[0-9]+\.[0-9]+)"', (source / "version.hpp").read_text(encoding="utf8")).group(1)
+revision = int(re.search(r"ModRevision = (\d+)", (source / "src/core/version.hpp").read_text()).group(1))
+semantic = re.search(r'ModSemanticVersion\[\] = "([0-9]+\.[0-9]+\.[0-9]+)"', (source / "src/core/version.hpp").read_text(encoding="utf8")).group(1)
 assert revision >= 75
-constants = (source / "common.hpp").read_text()
+constants = (source / "src/core/common.hpp").read_text()
 game = re.search(r'ExpectedGameHash\[\] = "([a-f0-9]{64})"', constants).group(1)
 metadata = re.search(r'ExpectedMetadataHash\[\] = "([a-f0-9]{64})"', constants).group(1)
-version = re.search(r'ClientVersion = "([0-9.]+)"', (source / "release-policy.hpp").read_text()).group(1)
+version = re.search(r'ClientVersion = "([0-9.]+)"', (source / "src/core/release-policy.hpp").read_text()).group(1)
 root = args.output.resolve()
 root.mkdir(parents=True, exist_ok=True)
 folder = root / f"DofusMiniatures-3.7.11.11-r{revision}"
@@ -35,9 +35,9 @@ folder.mkdir()
 names = ("DofusMiniatures.dll", "ModuleLoader.exe", "ModuleAutoLoader.exe", "TreasureOverlay.exe", "Update-GitHub.ps1")
 sha = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
 for name in names:
-    origin = source / name if name.endswith(".ps1") else source / "build" / name
+    origin = source / "package" / name if name.endswith(".ps1") else source / "build" / name
     shutil.copy2(origin, folder / name)
-shutil.copy2(source / "LISEZ-MOI.txt", folder / "LISEZ-MOI.txt")
+shutil.copy2(source / "package/LISEZ-MOI.txt", folder / "LISEZ-MOI.txt")
 shutil.copy2(source / "third_party/webview2/LICENSE.txt", folder / "WEBVIEW2-LICENSE.txt")
 hashes = {name: sha(folder / name) for name in names}
 manifest = [

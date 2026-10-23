@@ -6,7 +6,7 @@ Miniatures au choix, animations à la carte, surbrillance, aide à la capture d�
 raccourcis de trajet, ressources et archimonstres manquants sur la carte, ouvertures
 Kralamoure dans le calendrier et panneau natif de recherche manuelle DofusDB.
 Carnet personnel et planification de l’XP des métiers.
-Les détails et les limites figurent dans [LISEZ-MOI.txt](../LISEZ-MOI.txt).
+Les détails et les limites figurent dans [LISEZ-MOI.txt](../package/LISEZ-MOI.txt).
 
 ## Mises à jour
 
@@ -236,7 +236,7 @@ La barre se répartit sur plusieurs lignes si nécessaire et la liste dispose
 de son propre défilement. Agrandir la mini-carte si elle est trop petite pour
 contenir la barre et au moins une ligne de ressources.
 Les cristaux pliable et liquide apparaissent dans leur monde de Pandala.
-[Détails des données DofusDB](../RESOURCE-DATA.md). La disponibilité après récolte
+[Détails des données DofusDB](RESOURCE-DATA.md). La disponibilité après récolte
 n’est pas connue. La 1.8.0 (r104) est vérifiée hors jeu ; son rendu en jeu reste à confirmer.
 
 Dans le chat, un monstre connu comme absent de L’éternelle moisson conserve
@@ -409,6 +409,13 @@ ctest --test-dir build --output-on-failure --output-junit test-results.xml
 python tools/package-release.py --output "C:\chemin\vers\releases"
 ```
 
+Le code est rangé par domaine : `src/<domaine>/` pour le mod (core, loader, ui,
+appearance, animations, glow, souls, metamob, maps, travel, treasure, notebook,
+jobs, social), `tests/<domaine>/` pour les tests hors jeu (un programme par
+fonction, déclaré avec `dofus_test()` dans `CMakeLists.txt`), `package/` pour les
+fichiers livrés tels quels dans l’archive et `tools/` pour l’empaquetage et la
+publication.
+
 Après incrément de révision, validation, commit et push sur `main`, publier
 avec `tools/publish-release.py --package <rN-package.json> --notes <notes.md>`.
 Cet outil utilise la connexion Git Credential Manager du propriétaire, vérifie
@@ -424,11 +431,11 @@ des métadonnées du jeu.
 ## Dépendances
 
 MinHook est un sous-module, sous sa licence d’origine (BSD à deux clauses, reproduite
-à la fin de `LISEZ-MOI.txt`). Le SDK WebView2 inclut
+à la fin de `package/LISEZ-MOI.txt`). Le SDK WebView2 inclut
 sa licence dans `third_party/webview2`. Le compagnon WebView2 reste dans les archives pour la compatibilité des anciens
 chargeurs, mais le panneau natif r95 ne le lance pas et ne dépend pas de son moteur.
 Le lecteur JSON utilise nlohmann/json 3.12.0 (MIT), licence incluse dans
-`third_party/nlohmann` et `LISEZ-MOI.txt`.
+`third_party/nlohmann` et `package/LISEZ-MOI.txt`.
 
 La compilation et les tests hors jeu ne remplacent pas la vérification de
 l’initialisation et du rendu dans Dofus.

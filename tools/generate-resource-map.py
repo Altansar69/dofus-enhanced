@@ -46,8 +46,8 @@ def generate(skills, maps):
     placements.sort(key=lambda p: (p[1], p[2], p[3], p[4], p[0]))
     # A missing position must never silently remove a resource from the selector.
     resources = sorted(catalog.values(), key=lambda r: (r[1], r[2], r[0]))
-    lines = ["// Generated from DofusDB public gathering facts. See RESOURCE-DATA.md.",
-             "#pragma once", '#include "resource-map-data.hpp"',
+    lines = ["// Generated from DofusDB public gathering facts. See docs/RESOURCE-DATA.md.",
+             "#pragma once", '#include "maps/resource-map-data.hpp"',
              "namespace resourceMap::generated {", "inline constexpr Resource Resources[] = {"]
     for resource in resources:
         lines.append("    {" + ",".join(str(v) for v in resource[:4]) + "," +

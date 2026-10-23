@@ -1,312 +1,199 @@
 cmake_minimum_required(VERSION 3.20)
-project(DofusMiniatures LANGUAGES C CXX)
+project(DofusEnhanced LANGUAGES C CXX)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 add_compile_definitions(UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+# Sources include each other as "<folder>/<file>" from src/, and third-party
+# headers as <nlohmann/json.hpp>.
+include_directories(src third_party)
 add_subdirectory(third_party/minhook EXCLUDE_FROM_ALL)
-add_library(DofusMiniatures SHARED module.cpp runtime.cpp features.cpp animations.cpp movement.cpp movement-dispatch.cpp movement-waits.cpp push-movement.cpp throw-movement.cpp jump-movement.cpp instant-waits.cpp script-waits.cpp combat-cleanup.cpp options-ui.cpp settings.cpp common.cpp autoload.cpp size-measurements.cpp display-shortcut.cpp context-display.cpp)
-target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32)
-target_sources(DofusMiniatures PRIVATE treasure-launch.cpp treasure-data.cpp treasure-http.cpp treasure-hunt.cpp)
-target_sources(DofusMiniatures PRIVATE tools-ui.cpp notebook-data.cpp notebook-panel.cpp notebook-native.cpp native-click.cpp
-  jobs-xp-data.cpp jobs-xp-http.cpp jobs-xp-panel.cpp)
-target_link_libraries(DofusMiniatures PRIVATE winhttp normaliz)
-target_sources(DofusMiniatures PRIVATE startup-options.cpp)
-target_link_libraries(DofusMiniatures PRIVATE user32)
-target_sources(DofusMiniatures PRIVATE soul-helper.cpp soul-combat.cpp soul-inventory.cpp soul-panel.cpp)
-target_sources(DofusMiniatures PRIVATE soul-widget.cpp map-transitions.cpp map-preload.cpp)
-target_sources(DofusMiniatures PRIVATE soul-capture.cpp soul-spell.cpp)
-target_sources(DofusMiniatures PRIVATE soul-item-view.cpp)
-target_sources(DofusMiniatures PRIVATE soul-layout.cpp)
-target_sources(DofusMiniatures PRIVATE appearance-refresh.cpp)
-target_sources(DofusMiniatures PRIVATE monster-glow.cpp monster-glow-entities.cpp monster-glow-ui.cpp monster-glow-render.cpp monster-glow-world.cpp monster-glow-interactives.cpp)
-target_sources(DofusMiniatures PRIVATE chat-tp-links.cpp chat-travel.cpp soul-group-menu.cpp)
-target_sources(DofusMiniatures PRIVATE chat-route.cpp)
-target_sources(DofusMiniatures PRIVATE map-travel.cpp)
-target_sources(DofusMiniatures PRIVATE spouse-party-menu.cpp spouse-party-widget.cpp)
-target_sources(DofusMiniatures PRIVATE metamob-data.cpp metamob-secret.cpp metamob-http.cpp metamob-sync.cpp capture-detect.cpp)
-target_sources(DofusMiniatures PRIVATE archi-zones.cpp calendar-kralove.cpp)
-target_link_libraries(DofusMiniatures PRIVATE crypt32)
-add_library(RuntimeProbe SHARED probe.cpp common.cpp)
-target_link_libraries(RuntimeProbe PRIVATE bcrypt)
-add_executable(ModuleLoader launcher.cpp common.cpp autoload.cpp settings.cpp update-launch.cpp)
+
+# ---------------------------------------------------------------------------
+# Shipped binaries. Their file names are part of the release format (loader,
+# updater and archive allowlist): never rename these targets.
+# ---------------------------------------------------------------------------
+
+# The in-game module. The source order is the link order of every previous
+# release; keep it and append new files at the end.
+add_library(DofusMiniatures SHARED
+  src/core/module.cpp src/core/runtime.cpp src/appearance/features.cpp
+  src/animations/animations.cpp src/animations/movement.cpp src/animations/movement-dispatch.cpp
+  src/animations/movement-waits.cpp src/animations/push-movement.cpp src/animations/throw-movement.cpp
+  src/animations/jump-movement.cpp src/animations/instant-waits.cpp src/animations/script-waits.cpp
+  src/animations/combat-cleanup.cpp src/ui/options-ui.cpp src/core/settings.cpp src/core/common.cpp
+  src/loader/autoload.cpp src/appearance/size-measurements.cpp src/appearance/display-shortcut.cpp
+  src/appearance/context-display.cpp
+  src/treasure/treasure-launch.cpp src/treasure/treasure-data.cpp src/treasure/treasure-http.cpp
+  src/treasure/treasure-hunt.cpp
+  src/ui/tools-ui.cpp src/notebook/notebook-data.cpp src/notebook/notebook-panel.cpp
+  src/notebook/notebook-native.cpp src/ui/native-click.cpp
+  src/jobs/jobs-xp-data.cpp src/jobs/jobs-xp-http.cpp src/jobs/jobs-xp-panel.cpp
+  src/appearance/startup-options.cpp
+  src/souls/soul-helper.cpp src/souls/soul-combat.cpp src/souls/soul-inventory.cpp src/souls/soul-panel.cpp
+  src/souls/soul-widget.cpp src/maps/map-transitions.cpp src/maps/map-preload.cpp
+  src/souls/soul-capture.cpp src/souls/soul-spell.cpp src/souls/soul-item-view.cpp src/souls/soul-layout.cpp
+  src/appearance/appearance-refresh.cpp
+  src/glow/monster-glow.cpp src/glow/monster-glow-entities.cpp src/glow/monster-glow-ui.cpp
+  src/glow/monster-glow-render.cpp src/glow/monster-glow-world.cpp src/glow/monster-glow-interactives.cpp
+  src/travel/chat-tp-links.cpp src/travel/chat-travel.cpp src/souls/soul-group-menu.cpp
+  src/travel/chat-route.cpp src/travel/map-travel.cpp
+  src/social/spouse-party-menu.cpp src/social/spouse-party-widget.cpp
+  src/metamob/metamob-data.cpp src/metamob/metamob-secret.cpp src/metamob/metamob-http.cpp
+  src/metamob/metamob-sync.cpp src/souls/capture-detect.cpp
+  src/maps/archi-zones.cpp src/metamob/calendar-kralove.cpp
+  src/souls/chat-soul-status.cpp
+  src/maps/resource-map-data.cpp src/maps/resource-map-policy.cpp src/maps/resource-map-ui.cpp
+  src/maps/resource-map-render.cpp src/maps/resource-map-icons.cpp)
+target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32)
+
+# Loader (console and silent automatic variants) and the runtime probe.
+set(LOADER_SOURCES src/loader/launcher.cpp src/core/common.cpp src/loader/autoload.cpp
+  src/core/settings.cpp src/loader/update-launch.cpp)
+add_executable(ModuleLoader ${LOADER_SOURCES})
 target_link_libraries(ModuleLoader PRIVATE bcrypt advapi32 user32)
-add_executable(ModuleAutoLoader WIN32 launcher.cpp common.cpp autoload.cpp settings.cpp update-launch.cpp)
+add_executable(ModuleAutoLoader WIN32 ${LOADER_SOURCES})
 target_compile_definitions(ModuleAutoLoader PRIVATE DOFUS_AUTOLOADER)
 target_link_libraries(ModuleAutoLoader PRIVATE bcrypt advapi32 user32 shell32)
-if(MSVC)
-  target_compile_options(DofusMiniatures PRIVATE /W4 /EHsc /utf-8)
-  target_compile_options(RuntimeProbe PRIVATE /W4 /EHsc)
-  target_compile_options(ModuleLoader PRIVATE /W4 /EHsc)
-  target_compile_options(ModuleAutoLoader PRIVATE /W4 /EHsc)
-endif()
-enable_testing()
-add_test(NAME GitHubUpdateTests COMMAND powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass
-  -File "${CMAKE_CURRENT_SOURCE_DIR}/update-tests.ps1")
-set_tests_properties(GitHubUpdateTests PROPERTIES TIMEOUT 30)
-add_executable(StartupOptionsTests startup-options-tests.cpp startup-options.cpp)
-if(MSVC)
-  target_compile_options(StartupOptionsTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME StartupOptionsTests COMMAND StartupOptionsTests)
-add_executable(OfflineTests tests.cpp settings.cpp common.cpp)
-target_link_libraries(OfflineTests PRIVATE bcrypt minhook)
-add_test(NAME OfflineTests COMMAND OfflineTests)
-add_executable(RuntimeTests runtime-tests.cpp runtime.cpp common.cpp)
-target_link_libraries(RuntimeTests PRIVATE bcrypt)
-add_test(NAME RuntimeTests COMMAND RuntimeTests)
-add_executable(OptionsUiTests options-ui-tests.cpp options-ui.cpp)
-if(MSVC)
-  target_compile_options(OptionsUiTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME OptionsUiTests COMMAND OptionsUiTests)
-add_executable(AutoLoadTests autoload-policy-tests.cpp)
-add_test(NAME AutoLoadTests COMMAND AutoLoadTests)
-add_executable(FeaturesTests features-tests.cpp features.cpp size-measurements.cpp)
-if(MSVC)
-  target_compile_options(FeaturesTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME FeaturesTests COMMAND FeaturesTests)
-add_executable(AnimationTests animations-tests.cpp)
-if(MSVC)
-  target_compile_options(AnimationTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME AnimationTests COMMAND AnimationTests)
-add_executable(MovementTests movement-tests.cpp)
-add_executable(InstantWaitTests instant-waits-tests.cpp)
-if(MSVC)
-  target_compile_options(MovementTests PRIVATE /W4 /EHsc /utf-8)
-  target_compile_options(InstantWaitTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME MovementTests COMMAND MovementTests)
-add_test(NAME InstantWaitTests COMMAND InstantWaitTests)
-foreach(movement IN ITEMS Push Throw Jump)
-  string(TOLOWER ${movement} lower)
-  add_executable(${movement}MovementTests ${lower}-movement-tests.cpp ${lower}-movement.cpp)
-  if(MSVC)
-    target_compile_options(${movement}MovementTests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME ${movement}MovementTests COMMAND ${movement}MovementTests)
-endforeach()
+add_library(RuntimeProbe SHARED src/loader/probe.cpp src/core/common.cpp)
+target_link_libraries(RuntimeProbe PRIVATE bcrypt)
 
-add_executable(TreasureOverlay WIN32 treasure-overlay.cpp)
+# Treasure hunt overlay window (WebView2).
+add_executable(TreasureOverlay WIN32 src/treasure/treasure-overlay.cpp)
 target_include_directories(TreasureOverlay PRIVATE third_party/webview2/include)
 target_link_libraries(TreasureOverlay PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/third_party/webview2/lib/x64/WebView2LoaderStatic.lib"
   user32 shell32 ole32 uuid version gdi32 advapi32)
-add_executable(TreasureOverlayTests treasure-overlay-tests.cpp)
+
 if(MSVC)
+  target_compile_options(DofusMiniatures PRIVATE /W4 /EHsc /utf-8)
   target_compile_options(TreasureOverlay PRIVATE /W4 /EHsc /utf-8)
-  target_compile_options(TreasureOverlayTests PRIVATE /W4 /EHsc /utf-8)
+  foreach(tool IN ITEMS ModuleLoader ModuleAutoLoader RuntimeProbe)
+    target_compile_options(${tool} PRIVATE /W4 /EHsc)
+  endforeach()
 endif()
-add_test(NAME TreasureOverlayTests COMMAND TreasureOverlayTests)
-add_test(NAME TreasureOverlayRuntimeTests COMMAND TreasureOverlay --self-test)
-set_tests_properties(TreasureOverlayRuntimeTests PROPERTIES TIMEOUT 25)
-add_executable(ChatTpLinksTests chat-tp-links-tests.cpp chat-tp-links.cpp)
-if(MSVC)
-  target_compile_options(ChatTpLinksTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ChatTpLinksTests COMMAND ChatTpLinksTests)
-add_test(NAME ChatTpColorFallbackTests COMMAND ChatTpLinksTests --missing-color-layout)
-foreach(feature IN ITEMS ChatRoute SoulWidget)
-  if(feature STREQUAL "ChatRoute")
-    set(source "chat-route")
-  else()
-    set(source "soul-widget")
+
+# ---------------------------------------------------------------------------
+# Offline tests: no game, no network, no personal key.
+# ---------------------------------------------------------------------------
+enable_testing()
+
+# dofus_test(<name> <sources>... [LIBS <libraries>...]) adds one test program.
+function(dofus_test name)
+  cmake_parse_arguments(PARSE_ARGV 1 TEST "" "" "LIBS")
+  add_executable(${name} ${TEST_UNPARSED_ARGUMENTS})
+  target_include_directories(${name} PRIVATE tests)
+  if(TEST_LIBS)
+    target_link_libraries(${name} PRIVATE ${TEST_LIBS})
   endif()
-  add_executable(${feature}Tests ${source}-tests.cpp ${source}.cpp)
   if(MSVC)
-    target_compile_options(${feature}Tests PRIVATE /W4 /EHsc /utf-8)
+    target_compile_options(${name} PRIVATE /W4 /EHsc /utf-8)
   endif()
-  add_test(NAME ${feature}Tests COMMAND ${feature}Tests)
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+# Core, loader and updater.
+dofus_test(OfflineTests tests/core/offline-tests.cpp src/core/settings.cpp src/core/common.cpp LIBS bcrypt minhook)
+dofus_test(RuntimeTests tests/core/runtime-tests.cpp src/core/runtime.cpp src/core/common.cpp LIBS bcrypt)
+dofus_test(ReleasePolicyTests tests/core/release-policy-tests.cpp src/core/common.cpp LIBS bcrypt advapi32)
+dofus_test(AutoLoadTests tests/loader/autoload-policy-tests.cpp)
+add_test(NAME GitHubUpdateTests COMMAND powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass
+  -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/update/update-tests.ps1" -BuildDirectory "${CMAKE_CURRENT_BINARY_DIR}")
+set_tests_properties(GitHubUpdateTests PROPERTIES TIMEOUT 30)
+
+# Options window and the toolbar module menu.
+dofus_test(OptionsUiTests tests/ui/options-ui-tests.cpp src/ui/options-ui.cpp)
+dofus_test(ToolsUiTests tests/ui/tools-ui-tests.cpp src/ui/tools-ui.cpp)
+
+# Appearance: miniatures, creatures, sizes and display shortcuts.
+dofus_test(FeaturesTests tests/appearance/features-tests.cpp src/appearance/features.cpp src/appearance/size-measurements.cpp)
+dofus_test(AppearanceRefreshTests tests/appearance/appearance-refresh-tests.cpp src/appearance/appearance-refresh.cpp)
+dofus_test(DisplayShortcutTests tests/appearance/display-shortcut-tests.cpp src/appearance/display-shortcut.cpp)
+dofus_test(ContextDisplayTests tests/appearance/context-display-tests.cpp src/appearance/context-display.cpp)
+dofus_test(StartupOptionsTests tests/appearance/startup-options-tests.cpp src/appearance/startup-options.cpp)
+
+# Animations, movements and visual waits.
+dofus_test(AnimationTests tests/animations/animations-tests.cpp)
+dofus_test(MovementTests tests/animations/movement-tests.cpp)
+dofus_test(MovementDispatchTests tests/animations/movement-dispatch-tests.cpp src/animations/movement-dispatch.cpp)
+dofus_test(MovementWaitTests tests/animations/movement-waits-tests.cpp)
+dofus_test(InstantWaitTests tests/animations/instant-waits-tests.cpp)
+dofus_test(ScriptWaitTests tests/animations/script-waits-tests.cpp)
+dofus_test(CombatCleanupTests tests/animations/combat-cleanup-tests.cpp)
+foreach(movement IN ITEMS Push Throw Jump)
+  string(TOLOWER ${movement} lower)
+  dofus_test(${movement}MovementTests tests/animations/${lower}-movement-tests.cpp src/animations/${lower}-movement.cpp)
 endforeach()
-add_executable(R23ActionsTests r23-actions-tests.cpp chat-travel.cpp map-travel.cpp soul-group-menu.cpp soul-spell.cpp)
-if(MSVC)
-  target_compile_options(R23ActionsTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME R23ActionsTests COMMAND R23ActionsTests)
-add_executable(SpousePartyMenuTests spouse-party-menu-tests.cpp spouse-party-menu.cpp)
-if(MSVC)
-  target_compile_options(SpousePartyMenuTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME SpousePartyMenuTests COMMAND SpousePartyMenuTests)
-add_executable(MovementDispatchTests movement-dispatch-tests.cpp movement-dispatch.cpp)
-if(MSVC)
-  target_compile_options(MovementDispatchTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME MovementDispatchTests COMMAND MovementDispatchTests)
-add_executable(MovementWaitTests movement-waits-tests.cpp)
-if(MSVC)
-  target_compile_options(MovementWaitTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME MovementWaitTests COMMAND MovementWaitTests)
-add_executable(ScriptWaitTests script-waits-tests.cpp)
-if(MSVC)
-  target_compile_options(ScriptWaitTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ScriptWaitTests COMMAND ScriptWaitTests)
-add_executable(ReleasePolicyTests release-policy-tests.cpp common.cpp)
-target_link_libraries(ReleasePolicyTests PRIVATE bcrypt advapi32)
-if(MSVC)
-  target_compile_options(ReleasePolicyTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ReleasePolicyTests COMMAND ReleasePolicyTests)
-add_executable(CombatCleanupTests combat-cleanup-tests.cpp)
-if(MSVC)
-  target_compile_options(CombatCleanupTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME CombatCleanupTests COMMAND CombatCleanupTests)
-add_executable(DisplayShortcutTests display-shortcut-tests.cpp display-shortcut.cpp)
-if(MSVC)
-  target_compile_options(DisplayShortcutTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME DisplayShortcutTests COMMAND DisplayShortcutTests)
-add_executable(ContextDisplayTests context-display-tests.cpp context-display.cpp)
-if(MSVC)
-  target_compile_options(ContextDisplayTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ContextDisplayTests COMMAND ContextDisplayTests)
-add_executable(SoulPolicyTests soul-policy-tests.cpp)
-foreach(soul IN ITEMS Combat Inventory Panel Helper Capture)
-  string(TOLOWER ${soul} lower)
-  add_executable(Soul${soul}Tests soul-${lower}-tests.cpp soul-${lower}.cpp)
-  if(MSVC)
-    target_compile_options(Soul${soul}Tests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME Soul${soul}Tests COMMAND Soul${soul}Tests)
-endforeach()
-if(MSVC)
-  target_compile_options(SoulPolicyTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-target_sources(SoulInventoryTests PRIVATE soul-helper.cpp)
-add_test(NAME SoulPolicyTests COMMAND SoulPolicyTests)
-add_executable(SoulItemViewTests soul-item-view-tests.cpp soul-item-view.cpp)
-if(MSVC)
-  target_compile_options(SoulItemViewTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME SoulItemViewTests COMMAND SoulItemViewTests)
-add_executable(SoulLayoutTests soul-layout-tests.cpp soul-layout.cpp)
-if(MSVC)
-  target_compile_options(SoulLayoutTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME SoulLayoutTests COMMAND SoulLayoutTests)
-add_executable(AppearanceRefreshTests appearance-refresh-tests.cpp appearance-refresh.cpp)
-if(MSVC)
-  target_compile_options(AppearanceRefreshTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME AppearanceRefreshTests COMMAND AppearanceRefreshTests)
-add_executable(MonsterGlowTests monster-glow-tests.cpp)
-if(MSVC)
-  target_compile_options(MonsterGlowTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME MonsterGlowTests COMMAND MonsterGlowTests)
+
+# Monster glow.
+dofus_test(MonsterGlowTests tests/glow/monster-glow-tests.cpp)
 foreach(glow IN ITEMS Entities Ui Render World Interactives)
   string(TOLOWER ${glow} lower)
-  add_executable(MonsterGlow${glow}Tests monster-glow-${lower}-tests.cpp monster-glow-${lower}.cpp)
-  if(MSVC)
-    target_compile_options(MonsterGlow${glow}Tests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME MonsterGlow${glow}Tests COMMAND MonsterGlow${glow}Tests)
+  dofus_test(MonsterGlow${glow}Tests tests/glow/monster-glow-${lower}-tests.cpp src/glow/monster-glow-${lower}.cpp)
 endforeach()
 
-add_executable(MapTransitionTests map-transitions-tests.cpp)
-if(MSVC)
-  target_compile_options(MapTransitionTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME MapTransitionTests COMMAND MapTransitionTests)
+# Soul stones, captures and their chat status.
+dofus_test(SoulPolicyTests tests/souls/soul-policy-tests.cpp)
+dofus_test(SoulCombatTests tests/souls/soul-combat-tests.cpp src/souls/soul-combat.cpp)
+dofus_test(SoulInventoryTests tests/souls/soul-inventory-tests.cpp src/souls/soul-inventory.cpp src/souls/soul-helper.cpp)
+dofus_test(SoulPanelTests tests/souls/soul-panel-tests.cpp src/souls/soul-panel.cpp)
+dofus_test(SoulHelperTests tests/souls/soul-helper-tests.cpp src/souls/soul-helper.cpp)
+dofus_test(SoulCaptureTests tests/souls/soul-capture-tests.cpp src/souls/soul-capture.cpp)
+dofus_test(SoulWidgetTests tests/souls/soul-widget-tests.cpp src/souls/soul-widget.cpp)
+dofus_test(SoulItemViewTests tests/souls/soul-item-view-tests.cpp src/souls/soul-item-view.cpp)
+dofus_test(SoulLayoutTests tests/souls/soul-layout-tests.cpp src/souls/soul-layout.cpp)
+dofus_test(CaptureDetectTests tests/souls/capture-detect-tests.cpp src/souls/capture-detect.cpp)
+dofus_test(ChatSoulStatusTests tests/souls/chat-soul-status-tests.cpp)
 
-add_executable(MapPreloadTests map-preload-tests.cpp)
-if(MSVC)
-  target_compile_options(MapPreloadTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME MapPreloadTests COMMAND MapPreloadTests)
-
-add_executable(ResourceMapPolicyTests resource-map-policy-tests.cpp resource-map-policy.cpp resource-map-data.cpp)
-if(MSVC)
-  target_compile_options(ResourceMapPolicyTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ResourceMapPolicyTests COMMAND ResourceMapPolicyTests)
-
-
-target_sources(DofusMiniatures PRIVATE chat-soul-status.cpp)
-add_executable(ChatSoulStatusTests chat-soul-status-tests.cpp)
-if(MSVC)
-  target_compile_options(ChatSoulStatusTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ChatSoulStatusTests COMMAND ChatSoulStatusTests)
-
-
-target_sources(DofusMiniatures PRIVATE resource-map-data.cpp resource-map-policy.cpp resource-map-ui.cpp resource-map-render.cpp resource-map-icons.cpp)
-add_executable(ResourceMapUiTests resource-map-ui-tests.cpp resource-map-ui.cpp resource-map-policy.cpp resource-map-icons.cpp)
-add_executable(ResourceMapRenderTests resource-map-render-tests.cpp resource-map-render.cpp resource-map-policy.cpp)
-foreach(resource IN ITEMS Ui Render)
-  if(MSVC)
-    target_compile_options(ResourceMap${resource}Tests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME ResourceMap${resource}Tests COMMAND ResourceMap${resource}Tests)
-endforeach()
-
-add_executable(TreasureDataTests treasure-data-tests.cpp treasure-data.cpp treasure-http.cpp)
-target_link_libraries(TreasureDataTests PRIVATE winhttp normaliz)
-add_executable(TreasurePanelTests treasure-panel-tests.cpp treasure-launch.cpp treasure-data.cpp soul-panel.cpp tools-ui.cpp native-click.cpp)
-target_link_libraries(TreasurePanelTests PRIVATE normaliz)
-if(MSVC)
-  target_compile_options(TreasureDataTests PRIVATE /W4 /EHsc /utf-8)
-  target_compile_options(TreasurePanelTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME TreasureDataTests COMMAND TreasureDataTests)
-add_test(NAME TreasurePanelTests COMMAND TreasurePanelTests)
-add_executable(TreasureHuntTests treasure-hunt-tests.cpp treasure-hunt.cpp)
-if(MSVC)
-  target_compile_options(TreasureHuntTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME TreasureHuntTests COMMAND TreasureHuntTests)
-
-add_executable(ToolsUiTests tools-ui-tests.cpp tools-ui.cpp)
-if(MSVC)
-  target_compile_options(ToolsUiTests PRIVATE /W4 /EHsc /utf-8)
-endif()
-add_test(NAME ToolsUiTests COMMAND ToolsUiTests)
-
-add_executable(NotebookDataTests notebook-data-tests.cpp notebook-data.cpp)
-add_executable(NotebookPanelTests notebook-panel-tests.cpp notebook-panel.cpp notebook-data.cpp soul-panel.cpp tools-ui.cpp native-click.cpp)
-add_executable(NotebookNativeTests notebook-native-tests.cpp notebook-native.cpp notebook-data.cpp)
-target_link_libraries(NotebookNativeTests PRIVATE user32)
-add_executable(JobsXpDataTests jobs-xp-data-tests.cpp jobs-xp-data.cpp jobs-xp-http.cpp)
-target_link_libraries(JobsXpDataTests PRIVATE winhttp)
-add_executable(JobsXpPanelTests jobs-xp-panel-tests.cpp jobs-xp-data.cpp)
-# Metamob capture sync: offline only (a live test needs a personal key, which
-# must never be shipped or committed).
-add_executable(MetamobDataTests metamob-data-tests.cpp metamob-data.cpp)
-target_link_libraries(MetamobDataTests PRIVATE normaliz)
-add_executable(MetamobSecretTests metamob-secret-tests.cpp metamob-secret.cpp)
-target_link_libraries(MetamobSecretTests PRIVATE crypt32)
-add_executable(MetamobSyncTests metamob-sync-tests.cpp metamob-sync.cpp metamob-data.cpp metamob-secret.cpp)
-target_link_libraries(MetamobSyncTests PRIVATE crypt32 normaliz)
-add_executable(CaptureDetectTests capture-detect-tests.cpp capture-detect.cpp)
+# Metamob: data, key, transport, sync and the Kralamoure calendar. Offline only:
+# a live test would need a personal key, which is never shipped or committed.
+dofus_test(MetamobDataTests tests/metamob/metamob-data-tests.cpp src/metamob/metamob-data.cpp LIBS normaliz)
+dofus_test(MetamobSecretTests tests/metamob/metamob-secret-tests.cpp src/metamob/metamob-secret.cpp LIBS crypt32)
+dofus_test(MetamobSyncTests tests/metamob/metamob-sync-tests.cpp src/metamob/metamob-sync.cpp
+  src/metamob/metamob-data.cpp src/metamob/metamob-secret.cpp LIBS crypt32 normaliz)
 # The real transport with every WinHTTP call renamed to a scripted fake;
 # deliberately no winhttp: a real WinHTTP call cannot even link.
-add_executable(MetamobHttpTests metamob-http-tests.cpp metamob-data.cpp metamob-secret.cpp)
-target_link_libraries(MetamobHttpTests PRIVATE crypt32 normaliz)
-foreach(metamobTool IN ITEMS MetamobData MetamobSecret MetamobSync MetamobHttp CaptureDetect)
-  if(MSVC)
-    target_compile_options(${metamobTool}Tests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME ${metamobTool}Tests COMMAND ${metamobTool}Tests)
-endforeach()
-# Zones of the missing archimonsters on the maps (r111).
-add_executable(ArchiZonesTests archi-zones-tests.cpp)
-# Metamob Kralamoure openings in the game's calendar (r111).
-add_executable(CalendarKraloveTests calendar-kralove-tests.cpp metamob-data.cpp)
-foreach(r111Tool IN ITEMS ArchiZones CalendarKralove)
-  if(MSVC)
-    target_compile_options(${r111Tool}Tests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME ${r111Tool}Tests COMMAND ${r111Tool}Tests)
-endforeach()
-foreach(nativeTool IN ITEMS NotebookData NotebookPanel NotebookNative JobsXpData JobsXpPanel)
-  if(MSVC)
-    target_compile_options(${nativeTool}Tests PRIVATE /W4 /EHsc /utf-8)
-  endif()
-  add_test(NAME ${nativeTool}Tests COMMAND ${nativeTool}Tests)
-endforeach()
+dofus_test(MetamobHttpTests tests/metamob/metamob-http-tests.cpp src/metamob/metamob-data.cpp
+  src/metamob/metamob-secret.cpp LIBS crypt32 normaliz)
+dofus_test(CalendarKraloveTests tests/metamob/calendar-kralove-tests.cpp src/metamob/metamob-data.cpp)
+
+# Maps: transitions, preload, resources and the « Ocre » mode.
+dofus_test(MapTransitionTests tests/maps/map-transitions-tests.cpp)
+dofus_test(MapPreloadTests tests/maps/map-preload-tests.cpp)
+dofus_test(ResourceMapPolicyTests tests/maps/resource-map-policy-tests.cpp src/maps/resource-map-policy.cpp
+  src/maps/resource-map-data.cpp)
+dofus_test(ResourceMapUiTests tests/maps/resource-map-ui-tests.cpp src/maps/resource-map-ui.cpp
+  src/maps/resource-map-policy.cpp src/maps/resource-map-icons.cpp)
+dofus_test(ResourceMapRenderTests tests/maps/resource-map-render-tests.cpp src/maps/resource-map-render.cpp
+  src/maps/resource-map-policy.cpp)
+dofus_test(ArchiZonesTests tests/maps/archi-zones-tests.cpp)
+
+# Travel: chat coordinates, routes, TP links and the map autopilot.
+dofus_test(ChatRouteTests tests/travel/chat-route-tests.cpp src/travel/chat-route.cpp)
+dofus_test(ChatTpLinksTests tests/travel/chat-tp-links-tests.cpp src/travel/chat-tp-links.cpp)
+add_test(NAME ChatTpColorFallbackTests COMMAND ChatTpLinksTests --missing-color-layout)
+dofus_test(TravelActionsTests tests/travel/travel-actions-tests.cpp src/travel/chat-travel.cpp
+  src/travel/map-travel.cpp src/souls/soul-group-menu.cpp src/souls/soul-spell.cpp)
+
+# Treasure hunts.
+dofus_test(TreasureDataTests tests/treasure/treasure-data-tests.cpp src/treasure/treasure-data.cpp
+  src/treasure/treasure-http.cpp LIBS winhttp normaliz)
+dofus_test(TreasurePanelTests tests/treasure/treasure-panel-tests.cpp src/treasure/treasure-launch.cpp
+  src/treasure/treasure-data.cpp src/souls/soul-panel.cpp src/ui/tools-ui.cpp src/ui/native-click.cpp LIBS normaliz)
+dofus_test(TreasureHuntTests tests/treasure/treasure-hunt-tests.cpp src/treasure/treasure-hunt.cpp)
+dofus_test(TreasureOverlayTests tests/treasure/treasure-overlay-tests.cpp)
+add_test(NAME TreasureOverlayRuntimeTests COMMAND TreasureOverlay --self-test)
+set_tests_properties(TreasureOverlayRuntimeTests PROPERTIES TIMEOUT 25)
+
+# Notebook and job XP panels.
+dofus_test(NotebookDataTests tests/notebook/notebook-data-tests.cpp src/notebook/notebook-data.cpp)
+dofus_test(NotebookPanelTests tests/notebook/notebook-panel-tests.cpp src/notebook/notebook-panel.cpp
+  src/notebook/notebook-data.cpp src/souls/soul-panel.cpp src/ui/tools-ui.cpp src/ui/native-click.cpp)
+dofus_test(NotebookNativeTests tests/notebook/notebook-native-tests.cpp src/notebook/notebook-native.cpp
+  src/notebook/notebook-data.cpp LIBS user32)
+dofus_test(JobsXpDataTests tests/jobs/jobs-xp-data-tests.cpp src/jobs/jobs-xp-data.cpp src/jobs/jobs-xp-http.cpp LIBS winhttp)
+dofus_test(JobsXpPanelTests tests/jobs/jobs-xp-panel-tests.cpp src/jobs/jobs-xp-data.cpp)
+
+# Spouse in the party menu.
+dofus_test(SpousePartyMenuTests tests/social/spouse-party-menu-tests.cpp src/social/spouse-party-menu.cpp)

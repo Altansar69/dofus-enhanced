@@ -103,8 +103,9 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 ## 📖 Documentation
 
 - 📘 [Guide détaillé (français)](docs/GUIDE.md) : chaque fonction en détail, Metamob, compilation et publication.
-- 📜 [LISEZ-MOI.txt](LISEZ-MOI.txt) : historique des versions, aussi inclus dans l’archive.
-- ⛏️ [RESOURCE-DATA.md](RESOURCE-DATA.md) : origine des données des ressources.
+- 📜 [LISEZ-MOI.txt](package/LISEZ-MOI.txt) : historique des versions, aussi inclus dans l’archive.
+- ⛏️ [RESOURCE-DATA.md](docs/RESOURCE-DATA.md) : origine des données des ressources.
+- 🗂️ Le code : `src/` (le mod, un dossier par domaine), `tests/` (tests hors jeu), `package/` (fichiers livrés tels quels dans l’archive), `tools/` (empaquetage et publication).
 
 ## 🔢 Versionnage
 
@@ -122,6 +123,6 @@ Ce projet suit un schéma de [versionnement sémantique](https://semver.org/). C
 
 Ce logiciel est sous [Unlicense](https://unlicense.org/), dont les termes sont disponibles dans [LICENSE](LICENSE).
 
-Les composants tiers gardent leur propre licence : MinHook (BSD 2-Clause, `third_party/minhook`), nlohmann/json (MIT, `third_party/nlohmann`) et le SDK WebView2 de Microsoft (`third_party/webview2/LICENSE.txt`). Les textes de MinHook et nlohmann/json figurent aussi à la fin de `LISEZ-MOI.txt`.
+Les composants tiers gardent leur propre licence : MinHook (BSD 2-Clause, `third_party/minhook`), nlohmann/json (MIT, `third_party/nlohmann`) et le SDK WebView2 de Microsoft (`third_party/webview2/LICENSE.txt`). Les textes de MinHook et nlohmann/json figurent aussi à la fin de `package/LISEZ-MOI.txt`.
 
-L’Unlicense ne couvre que le code écrit pour Dofus Enhanced : ni les composants tiers ci-dessus, ni les données de ressources issues de DofusDB (`resource-map-generated.hpp`, voir [RESOURCE-DATA.md](RESOURCE-DATA.md)), ni Dofus et ses contenus, qui restent la propriété d’Ankama.
+L’Unlicense ne couvre que le code écrit pour Dofus Enhanced : ni les composants tiers ci-dessus, ni les données de ressources issues de DofusDB (`src/maps/resource-map-generated.hpp`, voir [RESOURCE-DATA.md](docs/RESOURCE-DATA.md)), ni Dofus et ses contenus, qui restent la propriété d’Ankama.

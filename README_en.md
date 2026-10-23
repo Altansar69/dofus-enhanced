@@ -103,8 +103,9 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 ## 📖 Documentation
 
 - 📘 [Detailed guide (French)](docs/GUIDE.md): every feature in detail, Metamob, build and release.
-- 📜 [LISEZ-MOI.txt](LISEZ-MOI.txt): version history (in French), also included in the archive.
-- ⛏️ [RESOURCE-DATA.md](RESOURCE-DATA.md): where the resource data comes from.
+- 📜 [LISEZ-MOI.txt](package/LISEZ-MOI.txt): version history (in French), also included in the archive.
+- ⛏️ [RESOURCE-DATA.md](docs/RESOURCE-DATA.md): where the resource data comes from.
+- 🗂️ The code: `src/` (the mod, one folder per area), `tests/` (offline tests), `package/` (files shipped as they are in the archive), `tools/` (packaging and publishing).
 
 ## 🔢 Versioning
 
@@ -122,6 +123,6 @@ This project is following [semantic versioning schema](https://semver.org/). Eac
 
 This software is under the [Unlicense](https://unlicense.org/), terms of which are available in [LICENSE](LICENSE).
 
-Third-party components keep their own licenses: MinHook (BSD 2-Clause, `third_party/minhook`), nlohmann/json (MIT, `third_party/nlohmann`) and Microsoft’s WebView2 SDK (`third_party/webview2/LICENSE.txt`). The MinHook and nlohmann/json texts are also reproduced at the end of `LISEZ-MOI.txt`.
+Third-party components keep their own licenses: MinHook (BSD 2-Clause, `third_party/minhook`), nlohmann/json (MIT, `third_party/nlohmann`) and Microsoft’s WebView2 SDK (`third_party/webview2/LICENSE.txt`). The MinHook and nlohmann/json texts are also reproduced at the end of `package/LISEZ-MOI.txt`.
 
-The Unlicense only covers the code written for Dofus Enhanced: not the third-party components above, not the DofusDB resource data (`resource-map-generated.hpp`, see [RESOURCE-DATA.md](RESOURCE-DATA.md)), and not Dofus and its content, which remain Ankama’s property.
+The Unlicense only covers the code written for Dofus Enhanced: not the third-party components above, not the DofusDB resource data (`src/maps/resource-map-generated.hpp`, see [RESOURCE-DATA.md](docs/RESOURCE-DATA.md)), and not Dofus and its content, which remain Ankama’s property.
