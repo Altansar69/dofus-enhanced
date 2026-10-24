@@ -15,8 +15,9 @@ constexpr const char* UiSpace="UnityEngine.UIElements";
 constexpr const char* Figma="Core.UILogic.Components.Figma";
 constexpr size_t Rows=6;
 // FigmaIcons used by the panel: pin (window and positions), text (notes),
-// chat (messages), plus, floppy, trash, zaap, copy, playerStanding, lines, edit,
-// flag (the map pin of a position).
+// chat (messages), plus, floppy, trash, zaap and copy (the travel and copy
+// buttons of a position's line; copy also under the form of notes and
+// messages), playerStanding, lines, edit, flag (the map pin of a position).
 constexpr int IconPin=225,IconText=305,IconChat=78,IconPlus=230,IconSave=148,IconTrash=316,IconZaap=336,IconCopy=99,IconPlayer=229,IconList=185,IconEdit=124,IconPrevious=44,IconNext=45,IconSend=262,IconChannel=193,IconFlag=145;
 // While the panel is open, the notebook file and the map pins are checked
 // every half second (TickNotebookPanel runs at the module's pump, about every
@@ -32,15 +33,18 @@ struct FileStamp {
 };
 constexpr const char* PinShow="Afficher cette position sur la carte : un repère sur la grande carte et la mini-carte.";
 constexpr const char* PinHide="Retirer le repère de cette position de la carte.";
+constexpr const char* CopyTip="Copier les coordonnées de cette position dans le presse-papiers.";
+constexpr const char* TravelTip="Lancer le trajet vers cette position : zaaps, bateaux puis /travel.";
 struct State {
     Ref root,window,header,dragger,dependencies,cached,compositor,closeButton;
-    Ref title,body,x,y,world,coordinates,status,save,remove,add,travel,prepare,copy,current,previous,next,count,useRow,send,channelButton,channelRow;
+    Ref title,body,x,y,world,coordinates,status,save,remove,add,prepare,copy,current,previous,next,count,useRow,send,channelButton,channelRow;
     Ref library,entries,editorColumn,editor,channelSlot; // Layouts: the two columns and the places of the use actions.
     int channelChoice=0; // Messages: notebook::Channels value shown on the channel button.
     Ref worldDropdown; int worldChoice=1; std::vector<notebook::World> worlds; // Positions: native dropdown of the game's worlds.
     std::array<Ref,3> tabs;
     std::array<Ref,4> inputEvents;
-    std::array<Ref,Rows> rows,lines,pins; // Each entry row, its line and the map pin button at its right.
+    // Each entry row, its line and, at its right, the map pin, copy and travel buttons of a position.
+    std::array<Ref,Rows> rows,lines,pins,copies,travels;
     std::array<int,Rows> pinStates{}; // Pin button drawn: 0 not yet, 1 hidden, 2 no flag, 3 flag on the map.
     std::vector<Ref> manipulators;
     notebook::Document document;
@@ -52,6 +56,7 @@ struct State {
     bool cleanup=false,confirmDelete=false,confirmDiscard=false,readable=true;
     bool compact=false; // Compact layout: entries and use actions only, no editor (settings.notebookCompact, applied in place).
     bool pinButtons=false; // Pin buttons shown: option on, positions tab, game flags available.
+    bool copyButtons=false,travelButtons=false; // Copy and travel buttons shown: their option on, positions tab.
     FileStamp loaded; uint64_t nextPoll=0;
     bool retry=false; // The last read failed: read again at the next check, changed or not.
     std::array<bool,Rows> rowMenus{}; // Rows that have the game's right-click menu.
@@ -134,16 +139,23 @@ Obj ListRow(Obj parent) {
     Pixels(row.get(),"minHeight",36); Pixels(row.get(),"minWidth",0); Float(row.get(),"flexGrow",1);
     Add(parent,row.get()); return row.get();
 }
-// An entry line: the native list row, then the map pin button of a position.
-// The row also opens the game's right-click menu (notebook-native).
+// A small flat icon button (tertiary style, like the paging arrows) at the right of an entry line.
+void LineButton(Ref& button, Obj line, int icon, const char* tooltip) {
+    button.reset(Button(line,"",icon,2,0,tooltip));
+    Pixels(button.get(),"marginRight",0); Pixels(button.get(),"marginBottom",0); Pixels(button.get(),"marginLeft",4);
+    Float(button.get(),"flexShrink",0);
+}
+// An entry line: the native list row, then the map pin, copy and travel
+// buttons of a position (copy and travel hidden until shown). The row also
+// opens the game's right-click menu (notebook-native).
 void EntryLine(Obj parent, size_t index) {
     Ref line(api.New(api.Class(Ui,UiSpace,"VisualElement")));
     Enum(line.get(),"flexDirection",2); Enum(line.get(),"alignItems",2); Pixels(line.get(),"marginBottom",2); Enum(line.get(),"display",1);
     Add(parent,line.get()); state.lines[index].reset(line.get());
     state.rows[index].reset(ListRow(line.get()));
-    state.pins[index].reset(Button(line.get(),"",IconFlag,2,0,PinShow));
-    Pixels(state.pins[index].get(),"marginRight",0); Pixels(state.pins[index].get(),"marginBottom",0); Pixels(state.pins[index].get(),"marginLeft",4);
-    Float(state.pins[index].get(),"flexShrink",0);
+    LineButton(state.pins[index],line.get(),IconFlag,PinShow);
+    LineButton(state.copies[index],line.get(),IconCopy,CopyTip);Enum(state.copies[index].get(),"display",1);
+    LineButton(state.travels[index],line.get(),IconZaap,TravelTip);Enum(state.travels[index].get(),"display",1);
     state.rowMenus[index]=notebook::AttachRowMenu(state.rows[index].get());
 }
 Obj Tab(Obj parent, const char* text) {
@@ -257,6 +269,21 @@ void UpdatePins() {
         PinState(i,state.pinButtons&&index<state.visible.size()?(Pinned(state.visible[index])?3:2):1);
     }
 }
+// « Bouton de copie à côté des positions » and « Bouton de voyage à côté des
+// positions » (Settings::notebookCopyButton, notebookTravelButton), read every
+// frame like the pin option: switching one shows or hides its buttons at once.
+bool CopyButtonsWanted() {return module&&module->settings.notebookCopyButton&&state.kind==notebook::Kind::Position;}
+bool TravelButtonsWanted() {return module&&module->settings.notebookTravelButton&&state.kind==notebook::Kind::Position;}
+// The copy and travel buttons of every line, redrawn when their option or the
+// tab changes (the hidden line of an empty row hides them with it).
+void UpdateLineButtons() {
+    const bool copy=CopyButtonsWanted(),travel=TravelButtonsWanted();
+    for(size_t i=0;i<Rows;++i){
+        if(copy!=state.copyButtons)Enum(state.copies[i].get(),"display",copy?0:1);
+        if(travel!=state.travelButtons)Enum(state.travels[i].get(),"display",travel?0:1);
+    }
+    state.copyButtons=copy;state.travelButtons=travel;
+}
 // The row's right-click menu, told on hover where the row has it.
 std::string RowTip(size_t row) {
     if(!state.rowMenus[row])return {};
@@ -282,7 +309,7 @@ void ShowRows() {
     const auto total=state.visible.size();
     Text(state.count.get(),total==0?std::string("Aucune entrée"):total==1?std::string("1 entrée"):std::to_string(total)+" entrées");
     Enabled(state.previous.get(),state.offset>0);Enabled(state.next.get(),state.offset+Rows<state.visible.size());
-    UpdatePins();
+    UpdatePins();UpdateLineButtons();
 }
 // Save and delete follow the file: disabled while it cannot be read.
 void Actions() {Enabled(state.remove.get(),state.editing.id!=0&&state.readable);Enabled(state.save.get(),state.readable);}
@@ -293,8 +320,9 @@ void Fill(notebook::Entry entry) {
     Text(state.title.get(),state.editing.title);Text(state.body.get(),state.editing.body);
     Text(state.x.get(),std::to_string(state.editing.x));Text(state.y.get(),std::to_string(state.editing.y));SelectWorld(state.editing.world);
     const bool position=state.kind==notebook::Kind::Position;
-    Enum(state.coordinates.get(),"display",position?0:1);
-    Enum(state.travel.get(),"display",position?0:1);Enum(state.body.get(),"display",position?1:0);
+    Enum(state.coordinates.get(),"display",position?0:1);Enum(state.body.get(),"display",position?1:0);
+    // A position is copied and travelled to from its own line: « Copier » here is for notes and messages.
+    Enum(state.copy.get(),"display",position?1:0);
     Enum(state.prepare.get(),"display",state.kind==notebook::Kind::Message?0:1);
     Enum(state.send.get(),"display",state.kind==notebook::Kind::Message?0:1);
     Enum(state.channelRow.get(),"display",state.kind==notebook::Kind::Message?0:1);
@@ -372,10 +400,24 @@ void Reload() {
 }
 // A read failure stays reported until the file can be read again (saving stays disabled meanwhile).
 constexpr const char* Unreadable="Carnet illisible. Le fichier est conservé ; il sera relu dès qu’il aura été corrigé.";
-// What to do next in the current tab and layout (shown at opening, on tab and layout changes).
+// The compact layout's actions in the current tab: a position's are the
+// buttons of its line (those its options show) and its right-click menu; a
+// note's or a message's are under the list.
+const char* CompactHint() {
+    if(state.kind==notebook::Kind::Note)return "Choisis une entrée, puis Copier.";
+    if(state.kind==notebook::Kind::Message)return "Choisis une entrée, puis Envoyer, Préparer dans le chat ou Copier.";
+    const bool copy=CopyButtonsWanted(),travel=TravelButtonsWanted();
+    if(copy&&travel)return "Copie les coordonnées d’une position ou lance le trajet avec les boutons de sa ligne.";
+    if(copy)return "Copie les coordonnées d’une position avec le bouton de sa ligne.";
+    if(travel)return "Lance le trajet vers une position avec le bouton de sa ligne.";
+    if(std::any_of(state.rowMenus.begin(),state.rowMenus.end(),[](bool menu){return menu;}))return "Clic droit sur une position pour lancer le trajet.";
+    return "Les boutons de copie et de voyage des positions sont désactivés dans les options du mod.";
+}
+// What to do next in the current tab and layout (shown at opening, on tab and
+// layout changes, and in the compact layout when the copy or travel option changes).
 void TabStatus() {
     if(!state.readable){Status(Unreadable);return;}
-    if(state.compact)Status(Noted(state.visible.empty()?"Aucune entrée ici. Passe en Version complète (menu …) pour en créer.":"Choisis une entrée, puis Voyager, Envoyer ou Copier."));
+    if(state.compact)Status(Noted(state.visible.empty()?"Aucune entrée ici. Passe en Version complète (menu …) pour en créer.":CompactHint()));
     else Status(Noted(state.visible.empty()?"Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.":"Choisis une entrée dans la liste de gauche."));
 }
 // The file changed on disk (another client, a position added from a map, a
@@ -434,13 +476,24 @@ void TogglePin(const notebook::Entry& entry) {
     } catch(...){UpdatePins();throw;}
     UpdatePins();
 }
+// The copy and travel buttons of a line act on that line's position, never on
+// the form: the selection, the editor and an unsaved draft stay. Their status
+// replaces « reclique pour les abandonner »: dropping the draft asks again.
+void CopyLine(notebook::Entry entry) {
+    state.confirmDiscard=false;notebook::Copy(Coordinates(entry));Status("Copié dans le presse-papiers.");
+}
+void TravelLine(notebook::Entry entry) {
+    state.confirmDiscard=false;notebook::Travel(entry);Status("Trajet demandé vers "+Coordinates(entry)+".");
+}
 bool Action(Obj owner) {
-    int row=-1,pin=-1;
+    int row=-1,pin=-1,copy=-1,travel=-1;
     for(size_t i=0;i<Rows;++i){
         if(owner&&owner==state.rows[i].get())row=static_cast<int>(i);
         if(owner&&owner==state.pins[i].get())pin=static_cast<int>(i);
+        if(owner&&owner==state.copies[i].get())copy=static_cast<int>(i);
+        if(owner&&owner==state.travels[i].get())travel=static_cast<int>(i);
     }
-    const bool own=owner&&(row>=0||pin>=0||owner==state.save.get()||owner==state.remove.get()||owner==state.add.get()||owner==state.travel.get()||
+    const bool own=owner&&(row>=0||pin>=0||copy>=0||travel>=0||owner==state.save.get()||owner==state.remove.get()||owner==state.add.get()||
         owner==state.prepare.get()||owner==state.copy.get()||owner==state.current.get()||owner==state.send.get()||owner==state.channelButton.get()||owner==state.closeButton.get()||owner==state.previous.get()||owner==state.next.get());
     if(!own)return false;
     try {
@@ -449,6 +502,8 @@ bool Action(Obj owner) {
         if(owner==state.closeButton.get()){if(CanDiscard())wanted=false;return true;}
         if(row>=0&&state.offset+row<state.visible.size()){if(!CanDiscard())return true;Fill(state.visible[state.offset+row]);ShowRows();Status("Entrée sélectionnée. Clique sur Enregistrer après modification.");}
         else if(pin>=0){if(state.pinButtons&&state.offset+pin<state.visible.size())TogglePin(state.visible[state.offset+pin]);}
+        else if(copy>=0){if(state.copyButtons&&state.offset+copy<state.visible.size())CopyLine(state.visible[state.offset+copy]);}
+        else if(travel>=0){if(state.travelButtons&&state.offset+travel<state.visible.size())TravelLine(state.visible[state.offset+travel]);}
         else if(owner==state.add.get()){if(!CanDiscard())return true;Fill({});ShowRows();Status("Nouvelle entrée. Renseigne un titre puis enregistre.");}
         else if(owner==state.save.get()){auto saved=notebook::Save(state.path,Editor());Reload();Fill(saved);ShowRows();Status(Noted("Enregistré dans le carnet."));}
         else if(owner==state.remove.get()&&state.editing.id){
@@ -461,11 +516,10 @@ bool Action(Obj owner) {
             const auto position=notebook::CurrentPosition();Text(state.x.get(),std::to_string(position.x));Text(state.y.get(),std::to_string(position.y));SelectWorld(position.world);
             state.captured=position;Status("Position actuelle renseignée. Clique sur Enregistrer pour la conserver.");
         }
-        else if(owner==state.travel.get()){const auto entry=Editor();notebook::Travel(entry);Status("Trajet demandé vers "+Coordinates(entry)+".");}
         else if(owner==state.prepare.get()){const auto entry=Editor();notebook::PrepareMessage(state.kind==notebook::Kind::Position?Coordinates(entry):entry.body);Status("Ajouté au brouillon du chat. À toi de l’envoyer.");}
         else if(owner==state.channelButton.get()){state.channelChoice=notebook::NextChannel(state.channelChoice);ChannelLabel();Status(std::string("Canal d’envoi : ")+notebook::ChannelName(state.channelChoice)+". Enregistre l’entrée pour le conserver.");}
         else if(owner==state.send.get()){const auto entry=Editor();notebook::SendChatMessage(entry.body,entry.channel);Status(std::string("Message envoyé dans le chat (canal ")+notebook::ChannelName(entry.channel)+").");}
-        else if(owner==state.copy.get()){const auto entry=Editor();notebook::Copy(state.kind==notebook::Kind::Position?Coordinates(entry):entry.body);Status("Copié dans le presse-papiers.");}
+        else if(owner==state.copy.get()&&state.kind!=notebook::Kind::Position){const auto entry=Editor();notebook::Copy(entry.body);Status("Copié dans le presse-papiers.");}
     }catch(const std::exception& error){Status(error.what());Log("NOTEBOOK_ACTION_ERROR operation_failed");}
     return true;
 }
@@ -482,8 +536,10 @@ void RowDone(const notebook::Entry&, const std::string& status) {
     UpdatePins();Status(status);
 }
 // Window size of each layout (full, compact); the native resizers start from it.
+// The full one has the 70 pixels its list column gained for the copy and
+// travel buttons of the position lines (1.16.0): the editor keeps its width.
 struct LayoutSize { float width, minWidth, minHeight; };
-constexpr LayoutSize Sizes[2]={{660,560,360},{360,300,240}};
+constexpr LayoutSize Sizes[2]={{730,630,360},{360,300,240}};
 void WindowSize(bool compact) {
     const auto& size=Sizes[compact];
     Pixels(state.window.get(),"width",size.width);
@@ -599,9 +655,10 @@ void Create(Obj root) {
     const char* names[]={"Positions","Notes","Messages"};
     for(size_t i=0;i<3;++i)state.tabs[i].reset(Tab(tabs.get(),names[i]));
     Divider(content.get());
-    // Two columns: the entries, then the editor.
+    // Two columns: the entries, then the editor. The list column holds a
+    // position's name and its three small buttons (pin, copy, travel).
     Ref columns(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Enum(columns.get(),"flexDirection",2); Add(content.get(),columns.get());
-    state.library.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Pixels(state.library.get(),"width",250); Add(columns.get(),state.library.get());
+    state.library.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Pixels(state.library.get(),"width",320); Add(columns.get(),state.library.get());
     // The entries list has no section header: rows, paging and (compact) the
     // use actions sit directly in the column.
     state.entries.reset(api.New(api.Class(Ui,UiSpace,"VisualElement"))); Add(state.library.get(),state.entries.get());
@@ -638,9 +695,9 @@ void Create(Obj root) {
     Ref actions(Row(editor));
     state.save.reset(Button(actions.get(),"Enregistrer",IconSave,0,0,"Conserver cette entrée dans le carnet."));
     state.remove.reset(Button(actions.get(),"Supprimer",IconTrash,2,1,"Supprimer cette entrée (confirmation au second clic)."));
-    // The actions that use the entry, right under the save actions (no separator).
+    // The actions that use a note or a message, right under the save actions (no
+    // separator); a position's are the buttons of its line.
     state.useRow.reset(Row(editor));Pixels(state.useRow.get(),"marginBottom",0);
-    state.travel.reset(Button(state.useRow.get(),"Voyager",IconZaap,1,0,"Lancer le trajet vers cette position : zaaps, bateaux puis /travel."));
     state.send.reset(Button(state.useRow.get(),"Envoyer",IconSend,1,0,"Envoyer ce message dans le chat, sur le canal choisi (ou le canal en cours du chat)."));
     state.prepare.reset(Button(state.useRow.get(),"Préparer dans le chat",IconChat,1,0,"Placer ce message dans le brouillon du chat, sans l’envoyer."));
     state.copy.reset(Button(state.useRow.get(),"Copier",IconCopy,2,0,"Copier dans le presse-papiers."));Pixels(state.copy.get(),"marginRight",0);
@@ -737,9 +794,14 @@ void TickNotebookPanel(){
         return;
     }
     try{PollTabs();PollWorld();}catch(const std::exception& error){Log(std::string("NOTEBOOK_TAB_ERROR ")+error.what());}
-    // The pin option applies at once; the file and the flags are checked every half second.
+    // The pin, copy and travel options apply at once, and so does the compact
+    // status, which names the copy and travel buttons shown (a tab change has
+    // already updated them above); the file and the flags are checked every
+    // half second.
     try{
         if(PinButtonsWanted()!=state.pinButtons)UpdatePins();
+        const bool copy=state.copyButtons,travel=state.travelButtons;UpdateLineButtons();
+        if(state.compact&&(copy!=state.copyButtons||travel!=state.travelButtons))TabStatus();
         if(GetTickCount64()>=state.nextPoll)Check();
     }catch(const std::exception& error){LogLimited(std::string("NOTEBOOK_POLL_ERROR ")+error.what());}
 }

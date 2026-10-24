@@ -105,7 +105,9 @@ Obj Api::New(Klass k,std::initializer_list<void*> args)const{
 Obj Api::Field(Obj o,const char* n)const{return fake::Get(o).fields[n];}
 }
 namespace toolsUi {
-std::vector<Shortcut> Shortcuts(){return {{"treasure","Chasse au trésor · DofusDB",317},{"notebook","Carnet personnel",225}};}
+// The tools whose top-bar button is on (an option can switch one off).
+std::vector<Shortcut> tools{{"treasure","Chasse au trésor · DofusDB",317},{"notebook","Carnet personnel",225}};
+std::vector<Shortcut> Shortcuts(){return tools;}
 bool Visible(const char* key){return std::string(key)=="notebook"?fake::notebook:fake::treasure;}
 bool Toggle(const char* key){
     if(std::string(key)=="notebook"&&fake::refuseNotebook)return false;
@@ -152,6 +154,19 @@ int main(){using namespace fake;try{Init();InstallSoulWidget();{
     failRemoveTooltip=false;RestoreSoulWidget();Check(!SoulWidgetCleanupPending()&&Get(root).children.size()==3,"Cleanup retries remove only owned widget");
     failAddCountdown=1;TickSoulWidget();
     Check(!SoulWidgetCleanupPending()&&Get(root).children.size()==3,"Partial second tooltip installation cleans the entire owned group");
-    RestoreSoulWidget();TickSoulWidget();Owned();owner.stopped=true;TickSoulWidget();Check(Get(root).children.size()==3,"Stop removes mod entry only");RestoreSoulWidget();module=nullptr;
+    RestoreSoulWidget();TickSoulWidget();Owned();Check(Get(root).children.size()==6,"Both tool buttons attached");
+    {   // A tool's button switched off in the options leaves the bar at the next
+        // refresh; switched back on, it returns in its place.
+        auto notebookTool=toolsUi::tools.back();toolsUi::tools.pop_back();TickSoulWidget();
+        Check(Get(root).children.size()==5&&Get(Get(root).children[2]).ints["set_iconValue"]==317&&Get(root).children[3]==menuToggle,
+            "A tool button switched off leaves the bar, the others keep their place");
+        toolsUi::tools.push_back(notebookTool);TickSoulWidget();
+        Check(Get(root).children.size()==6&&Get(Get(root).children[3]).ints["set_iconValue"]==225&&Get(root).children[4]==menuToggle,
+            "Switched back on, the button returns beside the others");
+        auto stale=Get(root).children[3];toolsUi::tools.pop_back();const int before=toolToggles;toggle(stale,nullptr);
+        Check(toolToggles==before,"A button switched off but not yet removed opens nothing");
+        toolsUi::tools.push_back(notebookTool);TickSoulWidget();Check(Get(root).children.size()==6,"Bar rebuilt");
+    }
+    owner.stopped=true;TickSoulWidget();Check(Get(root).children.size()==3,"Stop removes mod entry only");RestoreSoulWidget();module=nullptr;
     }Check(handles.empty(),"Widget GC refs leaked");std::cout<<"PASS: native display toggle, settings sync, callback isolation, replaced UI and cleanup\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

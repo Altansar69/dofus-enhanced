@@ -28,6 +28,7 @@
 #include "jobs/jobs-xp-panel.hpp"
 #include "maps/archi-zones.hpp"
 #include "stats/stats.hpp"
+#include "stats/stats-window.hpp"
 #include "stats/stats-travel.hpp"
 #include "stats/stats-economy.hpp"
 #include "stats/stats-fights.hpp"
@@ -246,11 +247,12 @@ void Module::Pump(Obj source) {
         if (bound) { previousCombat = InCombat(); Change(settings, false); }
     }
     if (!bound) {
-        // Off-game screens: no stale figures nor the last character's hunt. Each
-        // is cheap when nothing is shown; the overlay comes back with the binding.
+        // Off-game screens: no stale figures nor the last character's hunt or
+        // statistics window. Each is cheap when nothing is shown; the overlay
+        // comes back with the binding, the panels with their button.
         // The notebook stays: its entries are the player's, not the character's,
         // and a draft being typed must survive an automatic reconnection.
-        RestorePerfOverlay(); RestoreTreasurePanel();
+        RestorePerfOverlay(); RestoreTreasurePanel(); RestoreStatsWindow();
         TickStats(); // the statistics counted until now are written at once
         return;
     }
@@ -298,6 +300,7 @@ void Module::Pump(Obj source) {
     startupStage("tool-module-menu", [] { toolsUi::Tick(); });
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
     startupStage("notebook-panel", [] { TickNotebookPanel(); });
+    startupStage("stats-window", [] { TickStatsWindow(); });
     startupStage("jobs-xp", [] { TickJobsXp(); });
     startupStage("archi-zones", [] { TickArchiZones(); });
     startupStage("calendar-kralove", [] { TickCalendarKralove(); });
@@ -357,6 +360,7 @@ void Module::Stop() {
     RestoreMonsterGlow();
     RestoreTreasurePanel();
     RestoreNotebookPanel();
+    RestoreStatsWindow();
     toolsUi::Restore();
     RestoreJobsXp();
     RestoreArchiZones();
@@ -387,7 +391,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -431,6 +435,7 @@ static void UpdateHook(Obj self, Method method) {
             if (MapPreloadCleanupPending()) RestoreMapPreload();
             if (TreasurePanelCleanupPending()) RestoreTreasurePanel();
             if (NotebookPanelCleanupPending()) RestoreNotebookPanel();
+            if (StatsWindowCleanupPending()) RestoreStatsWindow();
             if (toolsUi::CleanupPending()) toolsUi::Restore();
             if (JobsXpCleanupPending()) RestoreJobsXp();
             if (ArchiZonesCleanupPending()) RestoreArchiZones();
@@ -441,7 +446,7 @@ static void UpdateHook(Obj self, Method method) {
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -502,6 +507,7 @@ static DWORD WINAPI Worker(void*) {
         InstallTreasurePanel();
         treasure::InstallHunt();
         InstallNotebookPanel();
+        InstallStatsWindow();
         InstallJobsXp();
         InstallArchiZones();
         InstallCalendarKralove();

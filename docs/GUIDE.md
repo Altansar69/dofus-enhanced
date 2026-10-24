@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.15.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.16.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
 trajets rapides (passage secret des Roublards compris), ressources, archimonstres
@@ -64,10 +64,10 @@ figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouto
 Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, en haut à droite.
 Un second clic ou **⋯ → Masquer le module** ferme le panneau.
 Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
-Son entrée **Réduire les titres des modules** propose en revanche les trois
-panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet) à la suite des modules
-du jeu ; le choix est conservé entre les lancements et **Tout réduire** /
-**Tout agrandir** les suivent.
+Son entrée **Réduire les titres des modules** propose en revanche les quatre
+panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet, Statistiques) à la
+suite des modules du jeu ; le choix est conservé entre les lancements et
+**Tout réduire** / **Tout agrandir** les suivent.
 La fenêtre n’utilise que des composants du jeu, comme le carnet : barre de titre
 native avec sa croix de fermeture, poignées de redimensionnement, trois sections
 natives **Point de départ** (X, Y, **Ma position**, onglets natifs Nord / Ouest /
@@ -96,17 +96,18 @@ La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le cha
 Son menu ⋯ liste les deux dispositions comme des choix à puce du jeu, la
 disposition active cochée : **Version complète** (la grande fenêtre, seule à
 permettre de créer et modifier les entrées) et **Version compacte** (une
-fenêtre étroite avec les onglets, la liste des entrées, la pagination et les
-actions Voyager, Envoyer, Préparer dans le chat, Copier et canal des messages
-sous la liste, sans formulaire). Le choix est enregistré et appliqué aussitôt
+fenêtre étroite avec les onglets, la liste des entrées, la pagination, les
+boutons de chaque position sur sa ligne et, sous la liste, Copier pour les
+notes, Envoyer, Préparer dans le chat, Copier et le canal pour les messages,
+sans formulaire). Le choix est enregistré et appliqué aussitôt
 à la fenêtre ouverte, qui garde l’onglet et l’entrée choisis et reste à sa
 place (ramenée dans l’écran si la version complète, plus large, en dépasserait).
 Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
 **Notes** et **Messages**, la liste des entrées sans en-tête (entrée courante
 surlignée, pagination et compteur) et une section **Détail**
 (titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
-**Ma position**, puis, juste en dessous, **Voyager**, **Envoyer**, **Préparer
-dans le chat** et **Copier** selon l’onglet), et une ligne d’état.
+**Ma position**, puis, juste en dessous, **Copier** pour une note, **Envoyer**,
+**Préparer dans le chat** et **Copier** pour un message), et une ligne d’état.
 Le fichier du carnet est relu de lui-même quand il change (un autre client, une
 position ajoutée depuis une carte, une correction à la main) : la liste suit
 sans bouton à presser, et un brouillon en cours n’est jamais remplacé. Un
@@ -115,7 +116,8 @@ Un brouillon modifié demande une confirmation avant d’être abandonné.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
 coordonnées saisies ; le monde se choisit dans une liste déroulante native
-alimentée par les mondes du jeu. Le trajet se lance au clic. Un message s’envoie dans le chat
+alimentée par les mondes du jeu. Le trajet se lance d’un clic sur le bouton zaap
+de sa ligne. Un message s’envoie dans le chat
 par **Envoyer**, par la fonction d’envoi du jeu elle-même (celle de la touche
 Entrée), sur le canal choisi avec le bouton **Canal** : actuel (celui du chat),
 Général, Équipe, Guilde, Alliance, Groupe, Commerce ou Recrutement. Ce canal est
@@ -130,9 +132,22 @@ suit la position quand elle est modifiée et disparaît avec elle quand elle est
 supprimée ; il se retire aussi par le menu du drapeau sur la carte. Seul le
 repère du carnet est retiré, jamais les drapeaux posés par le joueur. Le bouton
 se masque dans **Options → Dofus Enhanced → Carnet**.
+
+Après le drapeau, deux autres petits boutons du jeu agissent sur la position de
+leur ligne, dans les deux versions du carnet : **copier** place ses coordonnées
+dans le presse-papiers (par exemple `[-25,36]`) et **zaap** lance le trajet du
+mod vers elle (zaaps, bateaux puis `/travel`, indisponible en combat). Ils ne
+changent ni l’entrée sélectionnée ni les modifications en cours, et remplacent
+les boutons **Voyager** et **Copier** que le formulaire des positions avait
+avant la 1.16.0. **Bouton de copie à côté des positions** et **Bouton de voyage
+à côté des positions** (cochés par défaut), dans les mêmes options : décoché,
+le bouton correspondant disparaît aussitôt, même carnet ouvert ; sans le bouton
+de copie, le carnet ne propose plus de copier les coordonnées d’une position.
+La version complète du carnet est un peu plus large (730 px) pour leur faire
+place.
 Un clic droit sur une position de la liste ouvre le menu du jeu : **Voyager**
-(le trajet du mod, comme le bouton du même nom) et **Afficher sur la carte** ou
-**Retirer de la carte**.
+(le trajet du mod, comme le bouton zaap de la ligne) et **Afficher sur la
+carte** ou **Retirer de la carte**.
 
 Au clic droit sur une case de la grande carte ou de la mini-carte, l’entrée
 **Ajouter aux positions**, placée après les entrées de téléportation, enregistre
@@ -206,19 +221,25 @@ animations ne disparaissent pas.
 
 **Options → Dofus Enhanced → Surbrillance** choisit le niveau : derrière
 les modules d’affichage, derrière ces modules et les murs, ou tout le temps.
-Les deux cases **Inclure les PNJ** et **Inclure les éléments interactifs** ajoutent
-ces catégories hors combat, indépendamment. Elles sont décochées par défaut.
-Jusqu’à 32 cibles sont contourées en même temps, dans l’ordre monstres, PNJ
-puis éléments interactifs.
+Sous le niveau, six cases indépendantes choisissent ce qui est entouré hors
+combat : **Monstres** (cochée par défaut), **PNJ**, **Éléments interactifs**,
+**Moi** (ton personnage), **Membres du groupe** et **Autres joueurs** (hors de
+ton groupe), ces cinq-là décochées par défaut. Sans case cochée, rien n’est
+entouré. Depuis la 1.16.0, **PNJ** et **Éléments interactifs** remplacent
+« Inclure les PNJ » et « Inclure les éléments interactifs », dont le choix est
+conservé.
 Les mêmes cases sont disponibles dans **clic droit → Surbrillance**, sous les
 quatre modes. Elles sont indépendantes et le menu reste ouvert après sélection.
-Les objets doivent être visibles et proposer une action disponible dans le jeu.
+Les éléments interactifs (ressources récoltables, portes, zaaps…) doivent être
+visibles et proposer une action disponible dans le jeu.
 Aucun contour n’est dessiné pendant un combat. Le contour est calculé en fin
 d’image, après l’animation de zoom du jeu, et dessiné dans la même image : il
 suit la caméra image par image pendant un zoom ou un déplacement de la vue, et
 environ 30 fois par seconde quand la vue est immobile.
 Les grandes fenêtres restent devant les contours et les clics restent natifs.
-Ce budget de 32 contours simultanés est partagé entre les catégories.
+Jusqu’à 32 cibles sont entourées en même temps, toutes catégories confondues.
+Sur une carte bondée, passent d’abord ton personnage, puis ton groupe, les
+monstres, les PNJ, les éléments interactifs et enfin les autres joueurs.
 
 ## Ressources sur les cartes
 
@@ -289,11 +310,18 @@ Au survol d’une case, la grande carte et la mini-carte affichent l’infobulle
 jeu avec ses coordonnées [x,y]. Le mod ne réécrit que ce texte : **Dimension
 avec les coordonnées sur la grande carte** et **… sur la mini-carte** y ajoutent
 la dimension de la carte affichée, par exemple [4,-19, Monde des Douze] ou
-Incarnam ; **Nom de la zone au survol de la mini-carte** affiche au-dessus le
-nom de la zone de la case (par exemple Village d’Amakna). Depuis la 1.14.0, le
-fond noir de l’infobulle englobe toutes ses lignes, même pour un long nom de
-zone. Le clic, le glisser, le zoom, le double-clic et le clic droit des cartes
-ne changent pas ; toutes les cases décochées, l’infobulle redevient celle du jeu.
+Incarnam. Chacune se règle à part, avec les choix de la dimension dans le chat :
+**Oui, sauf dans le Monde des Douze** (par défaut : seules les autres
+dimensions, Incarnam, Srambad…, l’affichent), **Oui** (partout) ou **Non**.
+Avant la 1.16.0, c’étaient des cases : cochée, une case devient « Oui, sauf
+dans le Monde des Douze » ; décochée, « Non ». **Nom de la zone au survol de la
+mini-carte** affiche au-dessus le nom de la zone de la case (par exemple
+Village d’Amakna). Depuis la 1.14.0, le fond noir de l’infobulle englobe toutes
+ses lignes, même pour un long nom de zone. Le clic, le glisser, le zoom et le
+double-clic des cartes ne changent pas, et leur clic droit propose aussi ces
+réglages (voir « Réglages des cartes au clic droit ») ; quand il n’y a rien à
+ajouter (« Non », ou une case du Monde des Douze avec « Oui, sauf dans le Monde
+des Douze », sans nom de zone), l’infobulle reste celle du jeu.
 
 **Barre des ressources sur la mini-carte** décochée retire de la mini-carte la
 barre des six métiers et sa liste ; les repères des ressources choisies restent
@@ -302,10 +330,12 @@ fait depuis la grande carte.
 
 Dans le chat, **Options → Dofus Enhanced → Chat → Dimension avec les coordonnées
 dans le chat** affiche les positions et les groupes de monstres partagés sous la
-forme [x,y, dimension] : **Oui** (par défaut), **Oui, sauf dans le Monde des
-Douze** (seules les autres dimensions, Incarnam, Srambad…, l’affichent) ou
-**Non**. Le lien reste celui du jeu (clic, infobulle), le bouton TP ne change
-pas, et les coordonnées tapées à la main restent telles quelles.
+forme [x,y, dimension], avec les mêmes choix : **Oui, sauf dans le Monde des
+Douze** (par défaut depuis la 1.16.0), **Oui** ou **Non**. Le lien reste celui
+du jeu (clic, infobulle), le bouton TP ne change pas, et les coordonnées tapées
+à la main restent telles quelles. À la mise à jour vers la 1.16.0, **Oui**,
+l’ancien choix par défaut, devient **Oui, sauf dans le Monde des Douze** :
+choisis **Oui** à nouveau pour voir la dimension partout.
 
 ## Mode « Ocre » de la carte
 
@@ -346,6 +376,24 @@ territoire et de niveau). Les deux options décochées : ni carré, ni zones, ni
 lecture. La 1.13.0 corrige la coloration, invisible en 1.12.0 : le jeu crée ces
 zones transparentes et le mod ne les rendait pas visibles. La 1.13.0 est vérifiée
 hors jeu ; son rendu en jeu reste à confirmer.
+
+## Réglages des cartes au clic droit
+
+Au clic droit sur la mini-carte, le menu du jeu se termine par un séparateur
+et les réglages du mod pour la mini-carte, les mêmes que dans **Options →
+Dofus Enhanced → Cartes** : les cases **Ressources**, **Barre des
+ressources**, **Bouton de recentrage**, **Nom de la zone au survol** et
+**Archimonstres manquants**, puis le sous-menu **Dimension avec les
+coordonnées** (**Non**, **Oui, sauf dans le Monde des Douze**, **Oui**). Au
+clic droit sur la grande carte, ceux de la grande carte : **Ressources**,
+**Archimonstres manquants** et **Dimension avec les coordonnées**. Ce sont des
+cases et des choix comme ceux du jeu, chaque case et chaque choix avec son aide
+au survol ; ils viennent après les entrées du jeu et celles du mod (**Ajouter
+aux positions**, zaaps du Havre-Sac), hors combat. Un clic s’applique et
+s’enregistre aussitôt, sans fermer le menu : les repères, la barre, le bouton,
+l’infobulle et les zones suivent, et les options affichent le nouveau choix.
+**Réglages des cartes au clic droit** (coché par défaut, à la fin de
+**Cartes**) : décoché, ces réglages ne sont plus ajoutés aux menus des cartes.
 
 ## Trajets et chat
 
@@ -504,35 +552,62 @@ jeu, leurs cases et leurs couleurs ne sont pas modifiés.
 
 ## Performances
 
-**Options → Dofus Enhanced → Performances → Afficher les FPS et la mémoire**
-(décoché par défaut) affiche dans un coin de l’écran un petit cadre sombre et
-semi-transparent, mis à jour deux fois par seconde. La première ligne donne les
-images par seconde (FPS) et la durée d’une image : la moyenne sur la dernière
-seconde et, entre parenthèses, la plus longue de cette seconde (un à-coup y
-reste visible une seconde). La deuxième ligne donne la mémoire vive occupée par
-le jeu (plage de travail) et sa mémoire privée. La troisième donne le tas géré,
-la mémoire des objets du jeu gérée par son ramasse-miettes (utilisée /
-réservée), et la part du processeur utilisée par le jeu sur l’ensemble des cœurs
-(100 % : tous les cœurs occupés). Une quatrième ligne, mesurée une fois par
-seconde, donne **Charge du GPU** (la part de la carte graphique due au jeu,
-celle de son moteur le plus chargé, comme la colonne GPU du Gestionnaire des
-tâches) et **Activité du disque** (le temps d’activité et le débit du disque
-où le jeu est installé, tous programmes confondus), par exemple « GPU 23 % ·
-Disque C: 4 % · 1,2 Mo/s ». Chacune a sa case ; une mesure que Windows ne
-fournit pas n’apparaît simplement pas.
+**Options → Dofus Enhanced → Performances** affiche un petit cadre sombre et
+semi-transparent dès qu’une de ses trois cases de mesure est cochée, avec
+seulement les mesures cochées ; seul ce qui est affiché est mesuré. Les trois
+cases sont décochées par défaut :
 
-Avec **Déplacer l’affichage à la souris** (coché par défaut), le cadre se fait
-glisser au clic gauche et se pose où tu veux ; il reste entièrement visible et
-sa place est gardée, même après un redémarrage ou un changement de résolution.
-Les clics sur le cadre ne vont alors pas au jeu. Décochée, le cadre reprend son
-coin et laisse passer les clics. **Position de l’affichage des performances**
-choisit le coin ; choisir un autre coin y replace un cadre déplacé ; en haut à
-droite, le cadre se place sous les boutons du menu du jeu. Le cadre suit
-l’échelle de l’interface et ne capte jamais le clavier ; il passe au-dessus du
-HUD et des fenêtres du jeu, mais les menus, fenêtres de confirmation, infobulles
-et écrans de chargement restent au-dessus de lui, et il disparaît avec
-l’interface quand le jeu la masque. Décoché, il disparaît aussitôt et plus rien
-n’est mesuré.
+- **Afficher les FPS et la mémoire** ajoute trois lignes, mises à jour deux fois
+  par seconde. La première donne les images par seconde (FPS) et la durée d’une
+  image : la moyenne sur la dernière seconde et, entre parenthèses, la plus
+  longue de cette seconde (un à-coup y reste visible une seconde). La deuxième
+  donne la mémoire vive occupée par le jeu (plage de travail) et sa mémoire
+  privée. La troisième donne le tas géré, la mémoire des objets du jeu gérée par
+  son ramasse-miettes (utilisée / réservée), et la part du processeur utilisée
+  par le jeu sur l’ensemble des cœurs (100 % : tous les cœurs occupés).
+- **Charge du GPU** : la part de la carte graphique due au jeu, celle de son
+  moteur le plus chargé, comme la colonne GPU du Gestionnaire des tâches.
+- **Activité du disque** : le temps d’activité et le débit du disque où le jeu
+  est installé, tous programmes confondus.
+
+Le GPU et le disque partagent une ligne, mesurée une fois par seconde, par
+exemple « GPU 23 % · Disque C: 4 % · 1,2 Mo/s » ; chacune de ces deux cases
+suffit à faire apparaître le cadre, même sans les FPS et la mémoire. Une mesure
+que Windows ne fournit pas n’apparaît simplement pas. Sans les FPS, le cadre
+affiche « Mesure en cours… » jusqu’à la première mesure (environ une seconde)
+et « Mesure indisponible » si Windows ne fournit aucune des mesures cochées.
+
+Tant que tu ne l’as pas déplacé, le cadre est en haut à gauche, ou dans le coin
+choisi avant la 1.16.0 (en haut à droite, il se place sous les boutons du menu
+du jeu). Avec **Déplacer et redimensionner l’affichage à la souris** (coché par
+défaut), il se fait glisser au clic gauche et se pose où tu veux. Pris par son
+coin en bas à droite, le seul sans arrondi, il s’agrandit ou se réduit d’un
+bloc, texte, marges et coins compris, de la moitié au triple de sa taille
+normale : son coin en haut à gauche reste en place et son coin en bas à droite
+suit la souris, sans jamais sortir de l’écran. Sa place et sa taille sont
+gardées, même après un redémarrage ou un changement de résolution ; un simple
+clic ne change rien. Les clics sur le cadre ne vont alors pas au jeu. Décochée,
+le cadre reste verrouillé à sa place et à sa taille et laisse passer les clics
+vers le jeu. Le cadre suit l’échelle de l’interface et ne capte jamais le
+clavier ; il passe au-dessus du HUD et des fenêtres du jeu, mais les menus,
+fenêtres de confirmation, infobulles et écrans de chargement restent au-dessus
+de lui, et il disparaît avec l’interface quand le jeu la masque. Les trois cases
+de mesure décochées, il disparaît aussitôt et plus rien n’est mesuré.
+
+**Bouton dans la barre du haut** (coché par défaut) ajoute en haut à droite, à
+côté de **Capture d’âme**, un bouton **Performances**, enfoncé tant que le cadre
+est affiché. Un clic masque le cadre sans décocher ses mesures, un autre le
+réaffiche ; si aucune mesure n’est cochée, le clic coche **Afficher les FPS et
+la mémoire** pour montrer quelque chose. Masqué avec ce bouton, le cadre ne
+mesure plus rien et le reste après un redémarrage, jusqu’à un nouveau clic ou
+une mesure cochée dans les options. Décoché, le bouton disparaît et seules les
+cases de mesure commandent le cadre, qui réapparaît s’il était masqué. Le cadre
+garde son style discret : ce n’est pas une fenêtre du jeu.
+
+À la mise à jour vers la 1.16.0, si **Afficher les FPS et la mémoire** était
+décochée, **Charge du GPU** et **Activité du disque** sont décochées aussi
+(avant, elles ne faisaient rien sans elle) : coche-les à nouveau pour les
+afficher seules.
 
 ## Statistiques
 
@@ -540,9 +615,28 @@ n’est mesuré.
 personnages, ce que le jeu ne garde pas, à partir de la 1.15.0 et seulement
 pendant que le mod est chargé. **Compter mes statistiques** (coché par défaut)
 les active ; décoché, plus rien n’est compté et ce qui l’a été reste affiché.
-**Statistiques affichées** montre le personnage connecté ou la somme de tous tes
-personnages comptés sur ce PC (les records gardent la plus grande valeur). Les
-valeurs se mettent à jour pendant que la page est ouverte :
+
+Depuis la 1.16.0, elles s’affichent dans leur propre fenêtre **Statistiques**,
+faite comme celles du jeu, et non plus dans les options. Elle s’ouvre avec son
+bouton en haut à droite, à côté de **Capture d’âme**, **Chasse au trésor** et
+**Carnet personnel**, ou avec **Voir mes statistiques** → **Ouvrir** dans les
+options. **Bouton dans la barre du haut** (coché par défaut) affiche ce bouton ;
+décoché, la fenêtre ne s’ouvre plus que depuis les options. Comme le carnet,
+elle se déplace, se redimensionne avec les poignées du jeu et se ferme avec sa
+croix, un second clic sur son bouton ou **⋯ → Masquer le module** ;
+**Réduire les titres des modules** réduit aussi son titre.
+
+En haut, les onglets **Ce personnage** (le personnage connecté) et **Tous mes
+personnages** (la somme de tous tes personnages comptés sur ce PC ; les records
+gardent la plus grande valeur) : l’onglet choisi reste quand la fenêtre se
+ferme, et revient à **Ce personnage** à chaque lancement du jeu. Une ligne dit
+ensuite quel personnage est affiché, ou combien, et depuis quel jour. Les
+chiffres se mettent à jour chaque seconde tant que la fenêtre est ouverte ;
+fermée, rien n’est lu. Une ligne sans rien à montrer reste cachée (sorts n° 2 à
+5 pas encore lancés, part des éléments avant les premiers dégâts, durée moyenne
+d’un combat avant le premier combat terminé). Dessous, sept sections, sur trois
+colonnes ou deux quand la fenêtre est étroite, avec une ligne par chiffre (son
+nom à gauche, sa valeur à droite, ce qu’elle compte au survol) :
 
 - Temps et déplacements : temps de jeu, plus longue session, cases parcourues
   hors combat et en combat, cartes parcourues, changements de dimension et la
@@ -556,13 +650,14 @@ valeurs se mettent à jour pendant que la page est ouverte :
   quantité), objets fabriqués, quêtes terminées et succès obtenus.
 - Combats : combats JcM, JcJ et Kolizéum avec leurs victoires, temps en combat,
   tours, dégâts infligés et subis, soins, plus gros coup, monstres vaincus,
-  morts, âmes capturées, donjons terminés et le plus fait. Un combat regardé en
-  spectateur ne compte pas ; un combat déjà commencé au chargement du mod ne
-  compte pas parmi les combats, mais ses sorts lancés, ses coups et les morts du
-  personnage le sont. La part des éléments et le plus gros coup ne comptent que
-  les coups du personnage, pas ceux de ses invocations.
-- Sorts et éléments : sorts lancés, les plus lancés, et la part de chaque élément
-  dans les dégâts infligés.
+  morts, âmes capturées, donjons terminés et le plus fait, avec son nom dans le
+  jeu (la 1.15.0 n’en affichait que le numéro). Un combat regardé en spectateur
+  ne compte pas ; un combat déjà commencé au chargement du mod ne compte pas
+  parmi les combats, mais ses sorts lancés, ses coups et les morts du personnage
+  le sont. La part des éléments et le plus gros coup ne comptent que les coups
+  du personnage, pas ceux de ses invocations.
+- Sorts et éléments : sorts lancés, les cinq sorts les plus lancés avec leur nom
+  dans le jeu, et la part de chaque élément dans les dégâts infligés.
 - Téléportations : zaaps, zaapis, prismes, potions de rappel, entrées dans un
   Havre-Sac, trajets du mod et téléportations par une anomalie.
 
@@ -570,10 +665,12 @@ Tout reste sur ce PC, dans `DofusMiniatures-stats.json`, à côté des préfére
 partagées ; plusieurs jeux ouverts (un par personnage) y écrivent sans
 s’effacer. Il est écrit au plus toutes les 15 secondes et dès que le comptage
 s’arrête (déconnexion, choix du personnage) : fermer le jeu peut perdre les
-dernières secondes. **Réinitialiser**, en bas de la section, demande une confirmation
-dans sa ligne (« Confirmer », à cliquer entre une et dix secondes après) et
-n’efface que ce qui est affiché ; le bouton de réinitialisation de la section
-ne remet que ses deux réglages.
+dernières secondes. **Réinitialiser**, en bas de la fenêtre, demande une
+confirmation (« Confirmer », à cliquer entre une et dix secondes après) et
+n’efface que l’onglet affiché : ce personnage, ou tous tes personnages. Changer
+d’onglet ou fermer la fenêtre annule la question. Le bouton de réinitialisation
+de la section des options ne remet que ses deux cases et n’efface aucune
+statistique.
 
 ## Compilation et publication
 

@@ -35,6 +35,13 @@ void Pixels(Obj style,const char* property,float value) {
 using ToggleFn=void(*)(Obj,Method);
 ToggleFn originalToggle=nullptr;
 bool Available() { return installed&&module&&module->ready&&module->servicesReady&&!module->stopped&&!module->stopRequested; }
+// The buttons follow the tools whose top-bar button is on: an option that adds
+// or removes one rebuilds the group at the next refresh.
+bool SameShortcuts() {
+    const auto wanted=toolsUi::Shortcuts();
+    return std::equal(wanted.begin(),wanted.end(),shortcuts.begin(),shortcuts.end(),
+        [](const toolsUi::Shortcut& s,const ShortcutControl& c){return s.key==c.key;});
+}
 bool Current() {
     return Available()&&!removing&&toolbarReady&&button.get()&&tooltip.get()&&module->compositor.get()==compositor.get()&&
         module->FindService("frm")==service.get()&&api.Field(service.get(),"<dzqi>k__BackingField")==manager.get()&&
@@ -44,7 +51,7 @@ bool Current() {
         std::all_of(shortcuts.begin(),shortcuts.end(),[](const ShortcutControl& c){
             return c.button.get()&&c.tooltip.get()&&api.Call(c.button.get(),"get_parent")==parent.get()&&
                 api.Call(c.button.get(),"get_panel")==api.Call(button.get(),"get_panel");
-        });
+        })&&SameShortcuts();
 }
 void Sync() {
     bool on=module->settings.soulReminder;api.Call(button.get(),"SetValueWithoutNotify",{&on});

@@ -29,14 +29,15 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 - Les délais du serveur ne changent pas : toutes les animations ne disparaissent pas. Les mêmes cases sont dans le clic droit sur la carte.
 
 ### Surbrillance
-- **Contour des monstres** hors combat, pour les repérer quand ils sont cachés derrière l’interface, derrière l’interface et les murs, ou tout le temps.
-- En option, les **PNJ** et les **éléments interactifs** (ressources récoltables, portes, zaaps…). Jusqu’à 32 contours à la fois, toutes catégories confondues.
+- **Contour hors combat** de ce que tu coches, pour le repérer quand il est caché derrière l’interface, derrière l’interface et les murs, ou tout le temps.
+- **Six cases indépendantes** : **Monstres** (cochée par défaut), **PNJ**, **Éléments interactifs** (ressources récoltables, portes, zaaps…), **Moi**, **Membres du groupe** et **Autres joueurs**. Les mêmes cases sont dans le clic droit sur la carte. Jusqu’à 32 contours à la fois : ton personnage et ton groupe passent en premier, les autres joueurs en dernier.
 
 ### Cartes
 - **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Sur la grande carte, elles se choisissent dans l’onglet **Ressources**, un vrai mode de la carte comme **Anomalies**. Ce sont les points de récolte connus, pas leur disponibilité en temps réel.
-- **Infobulles des cartes** : au survol d’une case, la mini-carte affiche le nom de sa zone, et les deux cartes ajoutent la dimension aux coordonnées : [x,y, Monde des Douze]. La barre des ressources de la mini-carte peut être masquée en gardant les repères.
+- **Infobulles des cartes** : au survol d’une case, la mini-carte affiche le nom de sa zone, et les deux cartes ajoutent la dimension aux coordonnées, seulement hors du Monde des Douze (par défaut) ou partout, au choix pour chaque carte : [x,y, Incarnam]. La barre des ressources de la mini-carte peut être masquée en gardant les repères.
 - **Mode « Ocre »** : un carré sous « Conquête », sur la grande carte, colore chaque zone des archimonstres et boss de donjon de L’éternelle moisson selon le nombre qu’il te manque (ni validés dans la quête, ni dans ton sac, ni sur Metamob), et en bleu « Complet » celles où tu les as tous. Son panneau, comme celui des anomalies : recherche, territoires, niveaux et filtre Tous / Archimonstres / Boss de donjon ; un clic sur une zone centre la carte et affiche ceux qu’il te manque et ceux que tu as. Les mêmes couleurs peuvent aussi s’afficher sur la mini-carte.
 - **Bouton de recentrage** sur la mini-carte, pour la ramener sur ton personnage.
+- **Réglages au clic droit** : le clic droit sur la mini-carte propose ses réglages (ressources, barre des ressources, bouton de recentrage, nom de la zone au survol, archimonstres manquants, dimension avec les coordonnées), celui de la grande carte les siens (ressources, archimonstres manquants, dimension avec les coordonnées) ; un clic s’applique aussitôt, sans fermer le menu.
 
 ### Déplacements
 - **Trajets améliorés** : bouton **TP** du chat, double-clic sur la grande carte ou la mini-carte, ou « Voyager jusqu’à cette position » au clic droit. Le mod compare en quelques millisecondes le départ à pied et par tes zaaps connus (directement ou depuis le Havre-Sac), puis laisse l’autopilote du jeu finir le trajet. Les prix des zaaps s’appliquent.
@@ -52,7 +53,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ### Chat
 - À côté des positions et des archimonstres ou boss de L’éternelle moisson partagés dans le chat : bouton **TP**, **Âme en sac** / Pas en sac (sac uniquement, pas la banque), avancement **Ocre** (un clic ouvre la quête) et quantité **Metamob** (avec une clé enregistrée).
-- Les positions et groupes de monstres partagés peuvent afficher leur dimension, partout ou seulement hors du Monde des Douze : [x,y, Srambad].
+- Les positions et groupes de monstres partagés peuvent afficher leur dimension, seulement hors du Monde des Douze (par défaut) ou partout : [x,y, Srambad].
 - Chaque ajout s’active séparément. Avec le TP, les coordonnées écrites `[x,y]` deviennent cliquables.
 
 ### Calendrier
@@ -60,10 +61,10 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ### Outils intégrés
 - **Chasse au trésor** : un panneau reprend ta position et l’étape en cours, cherche les indices sur DofusDB et lance le trajet vers l’indice en un clic (**Chemin**). Aucune validation n’est envoyée à ta place.
-- **Carnet personnel** : positions, notes et messages. Voyage vers une position, affiche-la sur la carte ou envoie un message dans le canal choisi en un clic ; ajoute une case par un clic droit sur la carte. Version complète ou compacte.
+- **Carnet personnel** : positions, notes et messages. Voyage vers une position ou copie ses coordonnées depuis sa ligne, affiche-la sur la carte ou envoie un message dans le canal choisi en un clic ; ajoute une case par un clic droit sur la carte. Version complète ou compacte.
 - **XP des métiers** : un onglet **XP** dans la fenêtre Métiers calcule les fabrications et les ingrédients nécessaires pour atteindre le niveau visé, avec les recettes DofusDB.
-- **Performances** : en option, les FPS, la durée d’une image, la mémoire, le processeur et la carte graphique utilisés par le jeu, et l’activité de son disque, dans un petit cadre discret que tu places où tu veux à la souris.
-- **Statistiques** par personnage, comptées depuis la 1.15.0 : temps de jeu, cases et cartes parcourues, dimensions, expérience, kamas gagnés et dépensés, récoltes, objets fabriqués, quêtes, succès, combats (JcM, JcJ, Kolizéum), dégâts, sorts et éléments, téléportations. Elles s’affichent dans les options et restent sur ton PC.
+- **Performances** : en option, les FPS, la durée d’une image, la mémoire, le processeur et la carte graphique utilisés par le jeu, et l’activité de son disque, dans un petit cadre discret que tu places où tu veux à la souris et que tu agrandis ou réduis par son coin en bas à droite. Trois cases indépendantes (FPS et mémoire, GPU, disque) : le cadre ne montre que ce qui est coché. Un bouton en haut à droite, à côté de Capture d’âme, l’affiche ou le masque.
+- **Statistiques** par personnage, comptées depuis la 1.15.0 : temps de jeu, cases et cartes parcourues, dimensions, expérience, kamas gagnés et dépensés, récoltes, objets fabriqués, quêtes, succès, combats (JcM, JcJ, Kolizéum), dégâts, sorts et éléments, téléportations. Elles s’affichent dans leur propre fenêtre, ouverte par son bouton en haut à droite de l’écran ou par **Voir mes statistiques** dans les options, et restent sur ton PC.
 
 ### Mises à jour
 - **Mises à jour automatiques depuis GitHub** au lancement du jeu : chaque archive est vérifiée (SHA-256 et compatibilité exacte avec ta version de Dofus) avant d’être installée. Sans réseau, la version locale compatible est utilisée.

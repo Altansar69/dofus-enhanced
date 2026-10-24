@@ -9,9 +9,13 @@ namespace toolsUi {
 struct Layout {std::string label,help;};
 struct Layouts {std::vector<Layout> choices;int (*current)()=nullptr;bool (*choose)(int)=nullptr;};
 // Registered once at installation; visibility is changed only by an explicit UI action.
-void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)(), Layouts layouts = {});
+// button (optional): whether the tool has its top-bar button, read at each
+// refresh of the bar, so an option adds or removes it (always there without).
+void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)(), Layouts layouts = {},
+    bool (*button)() = nullptr);
 bool ChooseLayout(const char* key, int layout);
 struct Shortcut {std::string key,title;int icon=0;};
+// The top-bar buttons, in registration order: the tools whose button is on.
 std::vector<Shortcut> Shortcuts();
 bool Visible(const char* key);
 bool Toggle(const char* key);

@@ -50,6 +50,12 @@ void (*mapAutoHook)(Obj,Point,Method)=nullptr;
 void (*mapMouseDownHook)(Obj,Obj,Method)=nullptr;
 int nativeMenus=0,nativeWalks=0,nativeAutos=0,nativeMouseDowns=0,stoppedEvents=0; float gameTime=100;
 Point nativeCoordinates{},nativeMouse{}; int nativeWorld=-1; bool nativeImmediate=false;
+// « Réglages des cartes au clic droit »: both maps' menu builders (the game's
+// rows faked by OriginalBuild), the settings saved (Module::Change counts them),
+// and the native checkbox append that fails after adding its nth row (0: never).
+Obj (*miniBuildHook)(Obj,Point,Method)=nullptr;
+Obj (*bigBuildHook)(Obj,Point,Method)=nullptr;
+int nativeBuilds=0,changes=0,failCheckbox=0,checkboxes=0;
 bool sceneReady=true, loadingMap=false, acceptRoute=true, routeRunning=false, routePendingNative=false, followingMember=false;
 int loadedMapOverride=-1;
 int64_t plannedDeparture=104;
@@ -81,6 +87,15 @@ void OriginalMapMenu(Obj,Obj,Point point,Point mouse,Method){++nativeMenus;nativ
 void OriginalMapWalk(Obj,Point point,int world,bool immediate,Method){++nativeWalks;nativeCoordinates=point;nativeWorld=world;nativeImmediate=immediate;}
 void OriginalMapAuto(Obj,Point point,Method){++nativeAutos;nativeCoordinates=point;}
 void OriginalMapMouseDown(Obj,Obj,Method){++nativeMouseDowns;}
+// A map view's right-click menu builder (CartographyBannerView.bedm, fhw.bedm):
+// the menu, fhw.betw first (MenuHook), then the game's other rows; only the
+// mini-map's ends with the filters sub-menu (fhw.bets).
+Obj OriginalBuild(Obj owner,Point mouse,Method){
+    ++nativeBuilds;auto menu=OriginalCreate(nullptr,nullptr);mapMenuHook(owner,menu,{9,10},mouse,nullptr);
+    auto& rows=Get(Get(menu).fields["rows"]).items;rows.push_back(Make("NativeFlag"));rows.push_back(Make("NativeTravel"));
+    if(Get(owner).type!="CartographyMapView")rows.push_back(Make("NativeFilters"));
+    return menu;
+}
 Obj MouseDown(int button,Point mouse,bool ctrl=false){auto e=Make("MouseDownEvent");Get(e).numbers["button"]=button;Get(e).numbers["ctrl"]=ctrl;Get(e).fields["mouse"]=Box(mouse);return e;}
 Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     const auto& m=*static_cast<const MethodData*>(method);std::vector<void*> a(args);const auto& name=m.name;
@@ -92,6 +107,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
         }
         if (m.type=="dhc") { Get(self).numbers["source"]=*static_cast<int*>(a[0]);Get(self).numbers["map"]=*static_cast<int64_t*>(a[2]);Get(self).numbers["cost"]=*static_cast<unsigned*>(a[3]); }
         if (m.type=="dhw") Get(self).numbers["map"]=*static_cast<int64_t*>(a[0]);
+        if (m.type=="DofusContextualMenu") Get(self).fields["rows"]=List();
         return nullptr;
     }
     if(name=="bncy"){auto msg=Make("ChatMessage");Get(msg).text=Get(a[0]).text;return msg;}
@@ -119,6 +135,34 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     if (name=="RemoveItemAt") { Get(n.fields["rows"]).items.erase(Get(n.fields["rows"]).items.begin()+*static_cast<int*>(a[0]));return nullptr; }
     if (name=="RemoveMenu") { n.fields["panel"]=nullptr;return nullptr; }
     if (name=="AppendDefaultItem") { Check(a.size()==13&&!a[1]&&*static_cast<bool*>(a[3]),"Owned native row uses inert managed action and native close");auto item=Make("ContextMenuItem");Get(item).text=Get(a[0]).text;Get(item).numbers["disabled"]=*static_cast<bool*>(a[2]);Get(item).numbers["icon"]=*static_cast<int*>(a[9]);Get(item).fields["callback"]=Make("ClickCallbackHandler");Get(n.fields["rows"]).items.push_back(item);lastView=Make("ContextMenuItemView");Get(lastView).fields["data"]=item;Get(lastView).fields["panel"]=lastView;if(failAppend)throw std::runtime_error("Append failed after adding row");return nullptr; }
+    // The settings rows: native checkboxes and radio rows that keep the menu
+    // open, a separator and a sub-menu entry, all with inert managed actions.
+    if (name=="AppendSeparator") { Check(a.empty(),"Native separator ABI");Get(n.fields["rows"]).items.push_back(Make("ContextMenuSeparatorItem"));return self; }
+    if (name=="AppendCheckboxItem") {
+        Check(a.size()==9&&!a[1]&&!*static_cast<bool*>(a[3])&&!*static_cast<bool*>(a[4])&&!Get(a[5]).text.empty()&&*static_cast<unsigned*>(a[6])==1000&&
+            *static_cast<int*>(a[7])==0&&Get(a[8]).text.empty(),"Owned checkbox: inert action, enabled, menu kept open, its help, no icon nor shortcut");
+        auto item=Make("ContextMenuItem");Get(item).text=Get(a[0]).text;Get(item).numbers["kind"]=1;Get(item).numbers["isOn"]=*static_cast<bool*>(a[2]);
+        Get(item).fields["help"]=a[5];Get(item).fields["callback"]=Make("ClickCallbackHandler");Get(n.fields["rows"]).items.push_back(item);
+        if(++checkboxes==failCheckbox)throw std::runtime_error("Checkbox append failed after adding row");
+        return self;
+    }
+    if (name=="AppendRadioButtonItem") {
+        Check(a.size()==12&&!a[1]&&*static_cast<int*>(a[3])==0&&a[4]&&!*static_cast<bool*>(a[5])&&!*static_cast<bool*>(a[6])&&!*static_cast<bool*>(a[7])&&
+            !Get(a[8]).text.empty()&&Get(a[9]).text.empty()&&*static_cast<unsigned*>(a[10])==1000&&!*static_cast<bool*>(a[11]),
+            "Owned radio row: inert action, its sub-menu's own group, menu kept open, its help, no shortcut");
+        auto item=Make("ContextMenuItem");Get(item).text=Get(a[0]).text;Get(item).numbers["kind"]=2;Get(item).numbers["isOn"]=*static_cast<bool*>(a[2]);
+        Get(item).fields["help"]=a[8];Get(item).fields["callback"]=Make("ClickCallbackHandler");Get(n.fields["rows"]).items.push_back(item);
+        return self;
+    }
+    if (name=="AppendSubMenu") {
+        Check(a.size()==6&&Get(a[1]).type=="DofusContextualMenu"&&!a[2]&&!*static_cast<bool*>(a[3])&&*static_cast<int*>(a[4])==1&&*static_cast<int*>(a[5])==0,
+            "Owned sub-menu entry: the mod's own menu, inert action, enabled, action style without icon, as the game's");
+        auto item=Make("ContextMenuItem");Get(item).text=Get(a[0]).text;Get(item).fields["subMenu"]=a[1];Get(item).fields["callback"]=Make("ClickCallbackHandler");
+        Get(n.fields["rows"]).items.push_back(item);
+        return self;
+    }
+    if (name=="set_isOn") { n.numbers["isOn"]=*static_cast<bool*>(a[0]);++n.numbers["isOnSets"];return nullptr; }
+    if (name=="GetChildItemsInMenu") return n.fields["views"];
     if (name=="beqx") return n.fields["world"];
     if (name=="zeo") return currentMap;
     if (name=="zfr") return Box(bag);
@@ -178,6 +222,11 @@ void Initialize() {
     api.gchandle_free=[](GCHandle id){handles.erase(id);};
     api.method_get_param=[](Method,uint32_t)->const void*{return api.Class("","","ValueStruct");};
     api.class_from_type=[](const void* type)->Klass{return const_cast<void*>(type);};
+    // The two map views derive from fhw; any other class only from itself.
+    api.class_is_assignable_from=[](Klass expected,Klass actual){
+        const auto& base=*static_cast<std::string*>(expected);const auto& type=*static_cast<std::string*>(actual);
+        return expected==actual||(base=="fhw"&&(type=="CartographyBannerView"||type=="CartographyMapView"));};
+    api.class_is_valuetype=[](Klass c){return *static_cast<std::string*>(c)=="ValueStruct";};
     api.class_get_field_from_name=[](Klass,const char* name)->void*{
         static size_t dugt=0x80,cellsData=0x80,cellNumber=0x10;const std::string field(name);
         return field=="dugt"?&dugt:field=="cellsData"?&cellsData:field=="cellNumber"?static_cast<void*>(&cellNumber):nullptr;};
@@ -191,6 +240,7 @@ struct Fixture {
         combat=false;ready=true;allowed=true;bag=false;eligible=true;mapValid=true;controlled=localId=7;fightState={soul::CombatState::Fighting,17,51};inventory={true,0,{{55,9687,3,true}}};
         entered=interacted=teleported=walked=cast=equipped=quotes=0;teleportSource=teleportCost=-1;requestedQuote=0;directKnown=true;synchronousQuote=false;
         synchronousList=failAppend=false;resolvedMaps={123};nativeMenus=nativeWalks=nativeAutos=nativeMouseDowns=stoppedEvents=0;gameTime=100;
+        nativeBuilds=changes=failCheckbox=checkboxes=0;
         plannedDeparture=104;plannedChoices.clear();notices.clear();logs.clear();routePending=false;routeTicks=0;
         walkedMap=plannedTarget=plannedSource=0;resolvedFor={};plannedZone=-2;mapCells=nullptr;plannedTemple=false;
         for(auto name:{"fng","fpf","fkc","frq","fro","frv","fsm","fmz","fnm","fnk","fnr","fjx","frs","fsf","fvq","fns","fsr","fmo"}) services[name]=Make(name);
@@ -211,6 +261,19 @@ struct Fixture {
     Obj Maker() { auto maker=Make("MonsterGroupMenuMaker");Get(maker).fields={{"m_data",entity},{"m_rolePlayEntitiesService",services["fns"]},{"m_staticInfoService",services["fsr"]}};return maker; }
     Obj MapOwner(int world=1,const char* type="CartographyBannerView") {auto cartographer=Make(type),root=Make("MapRoot"),data=Make("WorldMapData");Get(root).fields["panel"]=root;Get(data).fields["id"]=Box(world);Get(cartographer).fields={{"dugy",localCharacter},{"dugv",services["fkc"]},{"dugq",root},{"world",data},{"dugt",Box<float>(-1000.f)}};return cartographer;}
     Obj MapMenu(Obj cartographer) {auto menu=OriginalCreate(nullptr,nullptr);mapMenuHook(cartographer,menu,{9,10},{30,40},nullptr);return menu;}
+    // The game's right-click on a map: its builder (OriginalBuild, hooked for each map).
+    Obj Build(Obj cartographer) {return (Get(cartographer).type=="CartographyMapView"?bigBuildHook:miniBuildHook)(cartographer,{30,40},nullptr);}
+    // A shown menu's views, one per item, as its root lists them.
+    std::vector<Obj> Show(Obj menu) {
+        auto root=Get(menu).fields["dofusContextualMenuRoot"];
+        if(!root){root=Make("Root");Get(root).fields["data"]=menu;Get(root).fields["panel"]=root;Get(menu).fields["dofusContextualMenuRoot"]=root;}
+        std::vector<Obj> views;
+        for(auto item:Get(Get(menu).fields["rows"]).items){
+            auto view=Make("ContextMenuItemView");Get(view).fields["data"]=item;Get(view).fields["panel"]=view;Get(view).numbers["isOn"]=Get(item).numbers["isOn"];views.push_back(view);
+        }
+        auto list=List();Get(list).items=views;Get(root).fields["views"]=list;
+        return views;
+    }
     void Receive() { auto message=Make("hgq");Raw<int>(message,0x28,3);Check(receiveHook(services["fpf"],message,nullptr),"Preserve native list result"); }
     void Price(int cost=25,int64_t map=104) {auto message=Make("hgu");Raw<int64_t>(message,0x28,map);Raw<int>(message,0x30,cost);Check(quoteHook(services["fkc"],message,nullptr),"Preserve native price result");}
     ~Fixture(){RestoreMapTravel();RestoreChatTravel();RestoreSoulGroupMenu();owner.cached.reset();owner.compositor.reset();owner.fight.reset();module=nullptr;}
@@ -224,6 +287,8 @@ Method Api::FindVerified(Klass c,const char* name,int argc,uintptr_t rva)const{a
 void* Api::Native(Method method,uintptr_t rva)const{const_cast<fake::MethodData*>(static_cast<const fake::MethodData*>(method))->rva=rva;return reinterpret_cast<void*>(rva);}
 Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{return fake::Invoke(method,self,args);}
 Obj Api::Call(Obj self,const char* name,std::initializer_list<void*> args)const{return Invoke(Find(object_get_class(self),name,static_cast<int>(args.size())),self,args);}
+Obj Api::New(Klass c,std::initializer_list<void*> args)const{auto self=object_new(c);Invoke(Find(c,".ctor",static_cast<int>(args.size())),self,args);return self;}
+Klass Api::NestedClass(Klass,const char* name)const{return Class("","",name);}
 Obj Api::Field(Obj self,const char* name)const{
     if(std::string(name)=="dsjd") return fake::Box(fake::routePendingNative);
     return fake::Get(self).fields[name];
@@ -234,6 +299,7 @@ Module* module=nullptr;
 bool MapTransitionLoading(){return fake::loadingMap;}
 Module::Module(std::filesystem::path p):folder(p){}
 bool Module::InCombat()const{return fake::combat;}
+void Module::Change(Settings next,bool){++fake::changes;settings=next;} // Saved at once: the fixture counts each save.
 managed::Obj Module::FindService(const char* name)const{return fake::services[name];}
 void Log(const std::string& text){fake::logs.push_back(text);}
 void AddHook(managed::Method,uintptr_t rva,void* replacement,void** original){
@@ -244,6 +310,8 @@ void AddHook(managed::Method,uintptr_t rva,void* replacement,void** original){
     else if(rva==0x1BF5E50){fake::mapWalkHook=reinterpret_cast<decltype(fake::mapWalkHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapWalk);}
     else if(rva==0x1BF8F40){fake::mapAutoHook=reinterpret_cast<decltype(fake::mapAutoHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapAuto);}
     else if(rva==0x1BF88F0){fake::mapMouseDownHook=reinterpret_cast<decltype(fake::mapMouseDownHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMouseDown);}
+    else if(rva==0x1B93460){fake::miniBuildHook=reinterpret_cast<decltype(fake::miniBuildHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalBuild);}
+    else if(rva==0x1BECC50){fake::bigBuildHook=reinterpret_cast<decltype(fake::bigBuildHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalBuild);}
     else throw std::runtime_error("Unexpected hook");
 }
 namespace soul {
@@ -493,6 +561,181 @@ void MapTravelTests() {
     run([](Fixture& f){PositionReset("Zone");auto menu=f.MapMenu(f.MapOwner());auto& rows=Get(Get(menu).fields["rows"]).items;
         TickMapTravel();Check(rows.size()==3,"The shown menu keeps its row");
         Get(Get(menu).fields["dofusContextualMenuRoot"]).fields["panel"]=nullptr;TickMapTravel();Check(rows.size()==2,"Closed, the menu loses its owned row");});
+}
+// « Réglages des cartes au clic droit » (Settings::mapMenuSettings, on by
+// default): below the game's rows and the mod's own, a separator, then the
+// right-clicked map's settings as native checkboxes that keep the menu open,
+// and its dimension as a native sub-menu of three radio rows. A click saves at
+// once (Module::Change) and the rows show it; a change made elsewhere shows at
+// the next tick. OriginalBuild fakes both maps' builders.
+namespace fake {
+// A menu's rows in order: an item by its text, the game's fake rows and the separator by type.
+std::vector<std::string> Labels(Obj menu) {
+    std::vector<std::string> labels;
+    for(auto row:Get(Get(menu).fields["rows"]).items)labels.push_back(Get(row).text.empty()?Get(row).type:Get(row).text);
+    return labels;
+}
+Obj RowNamed(Obj menu,const std::string& label) {
+    for(auto row:Get(Get(menu).fields["rows"]).items)if(Get(row).text==label)return row;
+    throw std::runtime_error("No menu row "+label);
+}
+// A shown row's view, among those its menu's root lists (Fixture::Show).
+Obj ViewOf(Obj menu,Obj item) {
+    for(auto view:Get(Get(Get(menu).fields["dofusContextualMenuRoot"]).fields["views"]).items)if(Get(view).fields["data"]==item)return view;
+    throw std::runtime_error("Menu row not shown");
+}
+// A click on a shown row as the game's view handles it (ContextMenuItemView.
+// SimulateClicked): a checkbox flips its view then its item, a radio row not on
+// yet turns on and the others of its menu off; then the row's handler runs.
+bool ClickRow(Obj menu,Obj item) {
+    auto view=ViewOf(menu,item);
+    if(Get(item).numbers["kind"]==1){const bool on=!Get(view).numbers["isOn"];Get(view).numbers["isOn"]=on;Get(item).numbers["isOn"]=on;}
+    if(Get(item).numbers["kind"]==2&&!Get(view).numbers["isOn"]){
+        for(auto other:Get(Get(Get(menu).fields["dofusContextualMenuRoot"]).fields["views"]).items)Get(other).numbers["isOn"]=0;
+        Get(view).numbers["isOn"]=1;Get(item).numbers["isOn"]=1;
+    }
+    return HandleMapTravelCallback(Get(item).fields["callback"],view);
+}
+}
+void MapMenuSettingsTests() {
+    using namespace fake;
+    const auto run=[](auto scenario) {const auto before=handles.size();{Fixture f;scenario(f);}Check(handles.size()==before,"Map menu settings must release managed references");};
+    // Each map's checkboxes in row order, its dimension (and the other map's), and the game's own rows.
+    struct Toggle { const char* label; bool Settings::* field; };
+    struct MapCase { const char* type; std::vector<Toggle> toggles; int Settings::* dimension; int Settings::* other; std::vector<std::string> game; };
+    const std::vector<std::string> dimensions{"Non","Oui, sauf dans le Monde des Douze","Oui"};
+    const MapCase maps[]={
+        {"CartographyBannerView",{{"Ressources",&Settings::resourceMiniMapEnabled},{"Barre des ressources",&Settings::resourceMiniMapBar},
+            {"Bouton de recentrage",&Settings::miniMapCenterButton},{"Nom de la zone au survol",&Settings::miniMapZoneName},
+            {"Archimonstres manquants",&Settings::archiZonesMiniMap}},&Settings::coordsWorldMiniMapMode,&Settings::coordsWorldMapMode,
+            {"NativeBestiary","NativeShare","NativeFlag","NativeTravel","NativeFilters"}},
+        {"CartographyMapView",{{"Ressources",&Settings::resourceMapEnabled},{"Archimonstres manquants",&Settings::archiZonesMap}},
+            &Settings::coordsWorldMapMode,&Settings::coordsWorldMiniMapMode,{"NativeBestiary","NativeShare","NativeFlag","NativeTravel"}}};
+    // The rows expected: the game's (« Ajouter aux positions » after its first two, where betw adds it), then the map's settings.
+    const auto expected=[](const MapCase& map,bool position,bool settings) {
+        auto rows=map.game;if(position)rows.insert(rows.begin()+2,"Ajouter aux positions");
+        if(settings){rows.push_back("ContextMenuSeparatorItem");for(const auto& toggle:map.toggles)rows.push_back(toggle.label);rows.push_back("Dimension avec les coordonnées");}
+        return rows;};
+    run([](Fixture& f){Check(f.owner.settings.mapMenuSettings,"Each map's settings are in its right-click menu by default");});
+    // The two maps told apart by the owner's exact class: the mini-map's five
+    // checkboxes and its own dimension, the big map's two and its own, each row
+    // showing the saved state (away from the defaults here), each with its help.
+    for(const auto& map:maps)run([&](Fixture& f){
+        for(const auto& toggle:map.toggles)f.owner.settings.*toggle.field=!(Settings{}.*toggle.field);
+        f.owner.settings.*map.dimension=2;f.owner.settings.*map.other=0;const auto saved=f.owner.settings;
+        auto menu=f.Build(f.MapOwner(1,map.type));
+        Check(nativeBuilds==1&&nativeMenus==1&&Labels(menu)==expected(map,true,true),
+            "After the game's rows and « Ajouter aux positions »: a separator, this map's checkboxes, then its dimension's sub-menu");
+        for(const auto& toggle:map.toggles){auto row=RowNamed(menu,toggle.label);const auto help=Get(Get(row).fields["help"]).text;
+            Check(Get(row).numbers["kind"]==1&&Get(row).numbers["isOn"]==(saved.*toggle.field?1:0),"Each setting is a native checkbox showing its saved state");
+            Check(!help.empty()&&help.find('\'')==std::string::npos&&std::string(toggle.label).find("carte")==std::string::npos,
+                "Each checkbox has its short help (typographic apostrophes) and no map in its label: the menu is the map's own");}
+        auto sub=Get(RowNamed(menu,"Dimension avec les coordonnées")).fields["subMenu"];const auto choices=Get(Get(sub).fields["rows"]).items;
+        Check(sub&&Get(sub).type=="DofusContextualMenu"&&sub!=menu&&Labels(sub)==dimensions,"The dimension: the mod's own native sub-menu of the options' three choices");
+        for(size_t choice=0;choice<choices.size();++choice)
+            Check(Get(choices[choice]).numbers["kind"]==2&&Get(choices[choice]).numbers["isOn"]==(choice==2?1:0)&&!Get(Get(choices[choice]).fields["help"]).text.empty(),
+                "Its radio rows show this map's saved choice, not the other map's, each with its help");
+        Check(!changes&&f.owner.settings==saved,"Opening the menu saves nothing");});
+    // Each checkbox: a click saves its setting alone, at once (the other map's
+    // untouched), the row shows it and the menu stays open; a second click undoes it.
+    for(const auto& map:maps)for(const auto& toggle:map.toggles)run([&](Fixture& f){
+        auto menu=f.Build(f.MapOwner(1,map.type));f.Show(menu);const auto rows=Labels(menu);auto wanted=f.owner.settings;
+        for(int click=1;click<=2;++click){
+            wanted.*toggle.field=!(wanted.*toggle.field);auto row=RowNamed(menu,toggle.label);
+            Check(ClickRow(menu,row)&&changes==click&&f.owner.settings==wanted,"A click saves this map's setting alone, at once");
+            Check(Get(row).numbers["isOn"]==(wanted.*toggle.field?1:0)&&Get(ViewOf(menu,row)).numbers["isOn"]==(wanted.*toggle.field?1:0),
+                "The checkbox and its row show the new state");
+            Check(Labels(menu)==rows&&Get(Get(menu).fields["dofusContextualMenuRoot"]).fields["panel"],"The menu stays open with all its rows");
+        }});
+    // Each dimension choice: saved alone, at once, for this map only; the radio
+    // moves; the choice already saved is not saved again; the sub-menu stays open.
+    for(const auto& map:maps)for(int choice=0;choice<3;++choice)run([&](Fixture& f){
+        f.owner.settings.*map.dimension=(choice+1)%3;auto wanted=f.owner.settings;wanted.*map.dimension=choice;
+        auto menu=f.Build(f.MapOwner(1,map.type));f.Show(menu);
+        auto sub=Get(RowNamed(menu,"Dimension avec les coordonnées")).fields["subMenu"];f.Show(sub);const auto choices=Get(Get(sub).fields["rows"]).items;
+        Check(ClickRow(sub,choices[choice])&&changes==1&&f.owner.settings==wanted,"A dimension choice saves this map's dimension alone, at once");
+        for(int row=0;row<3;++row)
+            Check(Get(choices[row]).numbers["isOn"]==(row==choice?1:0)&&Get(ViewOf(sub,choices[row])).numbers["isOn"]==(row==choice?1:0),"The radio moves to the new choice");
+        Check(ClickRow(sub,choices[choice])&&changes==1&&f.owner.settings==wanted,"The choice already saved is not saved again");
+        Check(Labels(sub)==dimensions&&Get(Get(sub).fields["dofusContextualMenuRoot"]).fields["panel"],"The sub-menu stays open");});
+    // Option off: no such rows, with or without « Ajouter aux positions »; back
+    // on, the very next right-click has them, even alone.
+    for(const auto& map:maps)run([&](Fixture& f){
+        auto owner=f.MapOwner(1,map.type);f.owner.settings.mapMenuSettings=false;
+        Check(Labels(f.Build(owner))==expected(map,true,false),"Option off: the game's rows and « Ajouter aux positions » only");
+        f.owner.settings.mapAddPosition=false;
+        Check(Labels(f.Build(owner))==expected(map,false,false),"Both options off: the menu stays the game's");
+        f.owner.settings.mapMenuSettings=true;
+        Check(Labels(f.Build(owner))==expected(map,false,true),"Switched back on, the very next right-click has this map's settings");
+        Check(!changes,"Building menus saves nothing");});
+    run([&](Fixture& f){auto menu=f.Build(f.MapOwner());f.Show(menu);auto item=RowNamed(menu,"Ressources");auto view=ViewOf(menu,item);
+        f.owner.settings.mapMenuSettings=false;TickMapTravel();
+        Check(Labels(menu)==expected(maps[0],true,false),"Unticked while a menu is shown: it loses the settings rows only");
+        Check(!HandleMapTravelCallback(Get(item).fields["callback"],view)&&!changes,"Their handlers are no longer the mod's");});
+    // A stale, closed or mismatched settings row is consumed without saving.
+    for(int invalid=0;invalid<11;++invalid)run([invalid](Fixture& f){
+        auto owner=f.MapOwner();auto menu=f.Build(owner);f.Show(menu);
+        auto sub=Get(RowNamed(menu,"Dimension avec les coordonnées")).fields["subMenu"];f.Show(sub);
+        auto item=RowNamed(menu,"Ressources");auto view=ViewOf(menu,item);
+        if(invalid==0)view=ViewOf(menu,RowNamed(menu,"Barre des ressources"));
+        if(invalid==1)Get(view).fields["panel"]=nullptr;
+        if(invalid==2)view=Make("OtherView");
+        if(invalid==3)combat=true;
+        if(invalid==4)Get(item).numbers["disabled"]=1;
+        if(invalid==5)f.owner.settings.mapMenuSettings=false;
+        if(invalid==6){auto& rows=Get(Get(menu).fields["rows"]).items;rows.erase(std::find(rows.begin(),rows.end(),item));}
+        if(invalid==7)Get(Get(owner).fields["dugq"]).fields["panel"]=nullptr;
+        if(invalid==8)Get(owner).fields["world"]=Make("OtherWorld");
+        if(invalid==9)services["fng"]=Make("AnotherCharacter");
+        if(invalid==10)item=Get(Get(sub).fields["rows"]).items[0]; // a radio row's handler with a checkbox's view
+        const auto saved=f.owner.settings;
+        Check(HandleMapTravelCallback(Get(item).fields["callback"],view)&&!changes&&f.owner.settings==saved,
+            "A stale, closed or mismatched settings row is consumed without saving");});
+    // A replaced or restored menu's rows leave it and stay inert; a foreign handler is not the mod's.
+    run([&](Fixture& f){auto owner=f.MapOwner();auto first=f.Build(owner);f.Show(first);auto old=RowNamed(first,"Ressources");
+        auto second=f.Build(owner);f.Show(second);auto row=RowNamed(second,"Ressources");
+        Check(!HandleMapTravelCallback(Get(old).fields["callback"],ViewOf(first,old))&&!changes,"A replaced menu's settings rows stay inert");
+        Check(Labels(first)==maps[0].game,"The replaced menu keeps the game's rows only");
+        Check(!HandleMapTravelCallback(Make("ClickCallbackHandler"),ViewOf(second,row))&&!changes,"A foreign handler is not the mod's");
+        RestoreMapTravel();
+        Check(Labels(second)==maps[0].game&&!HandleMapTravelCallback(Get(row).fields["callback"],ViewOf(second,row))&&!changes,
+            "Restored: every owned row leaves the menu and its handler stays inert");});
+    run([&](Fixture& f){auto menu=f.Build(f.MapOwner(1,"CartographyMapView"));TickMapTravel();
+        Check(Labels(menu)==expected(maps[1],true,true),"The shown menu keeps its rows");
+        Get(Get(menu).fields["dofusContextualMenuRoot"]).fields["panel"]=nullptr;TickMapTravel();
+        Check(Labels(menu)==maps[1].game,"Closed, the menu loses every owned row");});
+    // A change made elsewhere (the options page) shows at the next tick in the
+    // open menu and in its sub-menu, this map's choice; nothing is saved for it.
+    for(const auto& map:maps)run([&](Fixture& f){auto menu=f.Build(f.MapOwner(1,map.type));f.Show(menu);
+        auto sub=Get(RowNamed(menu,"Dimension avec les coordonnées")).fields["subMenu"];f.Show(sub);const auto choices=Get(Get(sub).fields["rows"]).items;
+        for(const auto& toggle:map.toggles)f.owner.settings.*toggle.field=!(f.owner.settings.*toggle.field);
+        f.owner.settings.*map.dimension=0;f.owner.settings.*map.other=2;TickMapTravel();
+        for(const auto& toggle:map.toggles){auto row=RowNamed(menu,toggle.label);const int on=f.owner.settings.*toggle.field?1:0;
+            Check(Get(row).numbers["isOn"]==on&&Get(ViewOf(menu,row)).numbers["isOn"]==on,"A change made elsewhere shows in the open menu");}
+        for(int row=0;row<3;++row)
+            Check(Get(choices[row]).numbers["isOn"]==(row==0?1:0)&&Get(ViewOf(sub,choices[row])).numbers["isOn"]==(row==0?1:0),"It shows in the sub-menu too, this map's choice");
+        Check(!changes,"Showing it saves nothing");});
+    // Only the banner's and the window's exact classes count: another cartography view gets no settings.
+    run([](Fixture& f){auto menu=bigBuildHook(f.MapOwner(1,"fhw"),{30,40},nullptr);
+        Check(Labels(menu)==std::vector<std::string>({"NativeBestiary","NativeShare","Ajouter aux positions","NativeFlag","NativeTravel","NativeFilters"}),
+            "Another cartography view gets no map settings");});
+    run([&](Fixture& f){combat=true;Check(Labels(f.Build(f.MapOwner()))==maps[0].game,"In combat the menu stays the game's");});
+    // A failed native append takes every settings row back; the game's rows and
+    // « Ajouter aux positions » stay and still work.
+    for(int failing=1;failing<=5;failing+=2)run([&,failing](Fixture& f){PositionReset("Zone");failCheckbox=failing;auto menu=f.Build(f.MapOwner());
+        Check(Labels(menu)==expected(maps[0],true,false),"A failed append takes every settings row back");
+        Check(std::any_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("MAP_MENU_SETTINGS_ERROR")!=std::string::npos;}),"The failure is logged");
+        Check(HandleMapTravelCallback(Get(RowNamed(menu,"Ajouter aux positions")).fields["callback"],lastView)&&addedPositions.size()==1,
+            "« Ajouter aux positions » still works");});
+    // The settings need no valid cell; in the Havre-Sac they follow its zaap rows,
+    // which leave alone with it.
+    run([&](Fixture& f){auto owner=f.MapOwner();Get(Get(owner).fields["world"]).fields["id"]=Box(-1);
+        Check(Labels(f.Build(owner))==expected(maps[0],false,true),"Without a valid cell: the map's settings, no « Ajouter aux positions »");});
+    run([&](Fixture& f){PositionReset("Zone");bag=true;resolvedMaps={104};auto menu=f.Build(f.MapOwner());
+        auto rows=expected(maps[0],true,true);rows.insert(rows.begin()+2,"Se téléporter à ce zaap (Havre-Sac)");
+        Check(!nativeMenus&&Labels(menu)==rows,"In the Havre-Sac: its zaap rows, « Ajouter aux positions », the game's rows, then the map's settings");
+        Get(currentMap).numbers["m_mapId"]=104;bag=false;TickMapTravel();
+        Check(Labels(menu)==expected(maps[0],true,true),"Leaving the Havre-Sac retires the zaap rows only");});
 }
 // r110: already there, the player's own zone, the Havre-Sac start, and the trip
 // toward the game's own destination map (the last map esg.zid gives).
@@ -774,6 +1017,7 @@ int main(){using namespace fake;try{
     Initialize();InstallChatTravel();InstallMapTravel();InstallSoulGroupMenu();soul::InstallSpell();
     Check(std::none_of(logs.begin(),logs.end(),[](const std::string& l){return l.find("CHAT_TRAVEL_HERE_ZONE_UNAVAILABLE")!=std::string::npos;}),"The player's zone contracts install");
     MapTravelTests();
+    MapMenuSettingsTests();
     TravelFixTests();
     RoublardPassageJourneyTests();
     {Fixture f;routePending=true;StartChatTravel({10,10,1});Check(!quotes,"Pending route must not request a price");
@@ -885,5 +1129,5 @@ int main(){using namespace fake;try{
       Get(currentMap).numbers["m_mapId"]=104;TickChatTravel();TickChatTravel();
       auto d=Make("MapInformationData");Get(d).fields["id"]=Box<uint32_t>(999);Get(services["fjs"]).fields["dsjs"]=d;
       routePendingNative=true;TickChatTravel();Sleep(1050);TickChatTravel();Check(walked==1,"Never replace a different native destination");}
-    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, already there on the game's destination map, the Havre-Sac start, the player's own zone, the Roublard temple option, confirmed arrival then native onward travel to the game's map, stale/cancel guards, native group equip and selfcast click validation\n";return 0;
+    std::cout<<"PASS: production TP orchestration, optional replacement of the game's map autopilot, already there on the game's destination map, the Havre-Sac start, the player's own zone, the Roublard temple option, confirmed arrival then native onward travel to the game's map, stale/cancel guards, each map's settings in its right-click menu (checkboxes, dimension sub-menu, option, sync, stale guards), native group equip and selfcast click validation\n";return 0;
 }catch(const std::exception& e){std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}}

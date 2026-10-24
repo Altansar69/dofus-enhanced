@@ -3,7 +3,9 @@
 // missing or later file, bounds), then the module's side (stats.cpp: counting
 // only while statsEnabled is on and the module runs, a write at a change of
 // character, after a minute and at Stop, the played character and the names
-// of the game's data) on a fake runtime. No game, process, window or network.
+// of the game's data, the dungeons' from the list the game's lobby shows) on a
+// fake runtime that answers FindVerified as the client does. No game,
+// process, window or network.
 #include "stats/stats.cpp"
 #include "appearance/features.hpp"
 #include "ui/options-ui.hpp"
@@ -21,10 +23,19 @@ using managed::Obj;
 using managed::Klass;
 using managed::Method;
 using managed::GCHandle;
-struct Object { std::string type, text; std::map<std::string, Obj> fields; int64_t number = 0; };
+// Laid out as IL2CPP lays an object where stats.cpp reads it in place: its
+// class and monitor, then its fields from 0x10 (List`1._items and _size,
+// DungeonData.id). The rest is the fixture's own.
+struct Object {
+    void* klass = nullptr;
+    void* monitor = nullptr;
+    alignas(8) unsigned char raw[0x30]{};
+    std::string type, text; std::map<std::string, Obj> fields; int64_t number = 0;
+};
 struct MethodData { std::string type, name; int argc = 0; uintptr_t rva = 0; };
 struct FieldData { std::string type, name; size_t offset = 0; };
 std::vector<std::unique_ptr<Object>> objects;
+std::vector<std::unique_ptr<uint64_t[]>> arrays;
 std::vector<std::unique_ptr<MethodData>> methods;
 std::map<std::string, std::unique_ptr<std::string>> classes;
 std::map<GCHandle, Obj> handles;
@@ -39,13 +50,38 @@ std::string characterName;
 std::map<int64_t, std::string> spells, dungeons;
 std::map<int, std::string> worlds;
 unsigned nameReads = 0;
-// The fields RequireField checks, at the pinned snapshot's offsets.
-const FieldData Fields[] = {{"esg", "dpzj", 0x128}, {"z", "dbrm", 0x18}};
+// The dungeons' list GetObjects makes (a new one at each call, counted): no
+// data root to make it from, another class than List`1, a List`1 whose _size
+// moved, an array shorter than its count, or a SpellData with a listed
+// dungeon's id before the dungeons.
+bool noRoot = false, sizeMoved = false, shortArray = false, stranger = false;
+std::string listType = "List`1";
+unsigned listCalls = 0;
+// The fields RequireField checks, at the pinned snapshot's offsets; List`1's
+// as Unity 6000.3 lays a list of references (List<DungeonData>).
+const FieldData Fields[] = {{"esg", "dpzj", 0x128}, {"z", "dbrm", 0x18}, {"DungeonData", "id", 0x10},
+    {"List`1", "_items", 0x10}, {"List`1", "_size", 0x18}};
+const FieldData MovedSize{"List`1", "_size", 0x1C};
 // The calls stats.cpp verifies, exactly as in the pinned snapshot.
 const MethodData Contracts[] = {
     {"esg", "zcx", 0, 0x18BB140}, {"SpellData", "GetById", 1, 0x7CCE20}, {"SpellData", "get_name", 0, 0x7CD300},
-    {"DataCenterModule", "get_dungeonsDataRoot", 0, 0x7BC7C0}, {"MetadataRoot`1", "GetObjectById", 1, 0x3874B80},
+    {"DataCenterModule", "get_dungeonsDataRoot", 0, 0x7BC7C0}, {"MetadataRoot`1", "GetObjects", 0, 0x3874CB0},
     {"DungeonData", "get_name", 0, 0x7C24C0}, {"WorldMapData", "GetWorldMapById", 1, 0x7D3D50}, {"WorldMapData", "get_name", 0, 0x7D3DE0}};
+// The method pointer the client's MethodInfo holds, the one FindVerified
+// compares (0: no such method): each contract's own address. Unity 6000.3
+// shares generic code fully: MetadataRoot<DungeonData>.GetObjectById returns
+// its type parameter T, so its MethodInfo holds a signature adapter (an
+// unresolved call stub), the shared code (0x3874B80) only behind it, and
+// FindVerified never finds it there (1.15.0's log: STATS_DUNGEON_NAMES_DISABLED
+// Verified method unavailable: MetadataRoot`1.GetObjectById). GetObjects
+// returns a List<T>, a reference: its MethodInfo holds the shared code.
+constexpr uintptr_t UnresolvedCallStub = 0x5A3D40;
+uintptr_t PointerOf(const std::string& type, const std::string& name, int argc) {
+    if (type == "MetadataRoot`1" && name == "GetObjectById" && argc == 1) return UnresolvedCallStub;
+    for (const auto& contract : Contracts)
+        if (contract.type == type && contract.name == name && contract.argc == argc) return contract.rva;
+    return 0;
+}
 
 void Check(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
@@ -58,6 +94,7 @@ Klass Type(const std::string& name) {
 const std::string& TypeName(Klass type) { return *static_cast<const std::string*>(type); }
 Obj Make(const std::string& type, const std::string& text = {}, int64_t number = 0) {
     auto object = std::make_unique<Object>();
+    object->klass = Type(type);
     object->type = type;
     object->text = text;
     object->number = number;
@@ -68,14 +105,42 @@ Object& Get(Obj object) {
     Check(object != nullptr, "Null fake object");
     return *static_cast<Object*>(object);
 }
+template<class T> void Set(Obj object, size_t offset, T value) {
+    Check(object && offset >= 0x10 && offset + sizeof(T) <= 0x10 + sizeof(Object::raw), "Field outside the fake object");
+    std::memcpy(static_cast<unsigned char*>(object) + offset, &value, sizeof(T));
+}
+// A DungeonData (or, for the stranger, another class) with its id at 0x10.
+Obj Dungeon(const std::string& type, int64_t id, const std::string& name) {
+    const auto dungeon = Make(type, name);
+    Set<int32_t>(dungeon, 0x10, static_cast<int32_t>(id));
+    return dungeon;
+}
+// The list GetObjects makes: every dungeon in a List`1 (_items at 0x10, _size
+// at 0x18) over an IL2CPP array (max_length at 0x18, items from 0x20).
+Obj DungeonList() {
+    std::vector<Obj> items;
+    if (stranger && !dungeons.empty()) items.push_back(Dungeon("SpellData", dungeons.begin()->first, "Intrus"));
+    for (const auto& [id, name] : dungeons) items.push_back(Dungeon("DungeonData", id, name));
+    auto array = std::make_unique<uint64_t[]>(4 + items.size());
+    array[3] = shortArray && !items.empty() ? items.size() - 1 : items.size();
+    for (size_t i = 0; i < items.size(); ++i) array[4 + i] = reinterpret_cast<uint64_t>(items[i]);
+    const auto list = Make(listType);
+    Set<Obj>(list, 0x10, array.get());
+    Set<int32_t>(list, 0x18, static_cast<int32_t>(items.size()));
+    arrays.push_back(std::move(array));
+    return list;
+}
 void InitializeApi() {
     using managed::api;
+    Object probe;
+    Check(reinterpret_cast<unsigned char*>(probe.raw) - reinterpret_cast<unsigned char*>(&probe) == 0x10, "IL2CPP fields start after the object header");
     api.class_is_assignable_from = [](Klass expected, Klass actual) { return expected == actual; };
     api.object_get_class = [](Obj object) -> Klass { return Type(Get(object).type); };
     api.object_unbox = [](Obj object) -> void* { return &Get(object).number; };
     api.class_get_parent = [](Klass type) -> Klass { return TypeName(type) == "DungeonsDataRoot" ? Type("MetadataRoot`1") : nullptr; };
     api.class_get_name = [](Klass type) -> const char* { return TypeName(type).c_str(); };
     api.class_get_field_from_name = [](Klass type, const char* name) -> void* {
+        if (sizeMoved && TypeName(type) == "List`1" && std::string(name) == "_size") return const_cast<FieldData*>(&MovedSize);
         for (const auto& field : Fields)
             if (field.type == TypeName(type) && field.name == name) return const_cast<FieldData*>(&field);
         return nullptr;
@@ -98,16 +163,19 @@ Klass Api::Class(const char*, const char*, const char* name) const {
     if (fake::runtimeMissing) throw std::runtime_error("No runtime in this test");
     return fake::Type(name);
 }
+// As runtime.cpp: the class, then its parents, for a method of this name and
+// arity whose pointer is the expected address; each found one has its guard.
 Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva) const {
-    const auto& type = fake::TypeName(klass);
-    fake::Check(std::any_of(std::begin(fake::Contracts), std::end(fake::Contracts), [&](const fake::MethodData& contract) {
-        return contract.type == type && contract.name == name && contract.argc == argc && contract.rva == rva;
-    }), "Unexpected statistics contract: " + type + "." + name);
-    fake::Check(std::any_of(std::begin(Signatures), std::end(Signatures), [rva](const NativeSignature& guard) { return guard.rva == rva; }),
-        "A statistics contract without its 16-byte guard: " + type + "." + name);
-    fake::verified.push_back(rva);
-    fake::methods.push_back(std::make_unique<fake::MethodData>(fake::MethodData{type, name, argc, rva}));
-    return fake::methods.back().get();
+    for (auto type = klass; type; type = api.class_get_parent(type)) {
+        const auto& owner = fake::TypeName(type);
+        if (!rva || fake::PointerOf(owner, name, argc) != rva) continue;
+        fake::Check(std::any_of(std::begin(Signatures), std::end(Signatures), [rva](const NativeSignature& guard) { return guard.rva == rva; }),
+            "A statistics contract without its 16-byte guard: " + owner + "." + name);
+        fake::verified.push_back(rva);
+        fake::methods.push_back(std::make_unique<fake::MethodData>(fake::MethodData{owner, name, argc, rva}));
+        return fake::methods.back().get();
+    }
+    throw std::runtime_error(std::string("Verified method unavailable: ") + api.class_get_name(klass) + "." + name);
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
     const auto& call = *static_cast<const fake::MethodData*>(method);
@@ -121,11 +189,11 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
         const auto found = fake::spells.find(*static_cast<int64_t*>(argument(0)));
         return found == fake::spells.end() ? nullptr : fake::Make("SpellData", found->second);
     }
-    if (call.name == "get_dungeonsDataRoot") return fake::Make("DungeonsDataRoot");
-    if (call.name == "GetObjectById") {
-        fake::Check(self && fake::Get(self).type == "DungeonsDataRoot" && args.size() == 1, "GetObjectById on the dungeons' root");
-        const auto found = fake::dungeons.find(*static_cast<int64_t*>(argument(0)));
-        return found == fake::dungeons.end() ? nullptr : fake::Make("DungeonData", found->second);
+    if (call.name == "get_dungeonsDataRoot") return fake::noRoot ? nullptr : fake::Make("DungeonsDataRoot");
+    if (call.name == "GetObjects") {
+        fake::Check(self && fake::Get(self).type == "DungeonsDataRoot" && args.size() == 0, "GetObjects on the dungeons' root");
+        ++fake::listCalls;
+        return fake::DungeonList();
     }
     if (call.name == "GetWorldMapById") {
         fake::Check(!self && args.size() == 1, "WorldMapData.GetWorldMapById is static, with an Int32");
@@ -661,7 +729,10 @@ void ModuleSide() {
     fake::spells = {{413, "Pression"}};
     fake::dungeons = {{5, "Donjon des Bouftous"}};
     fake::worlds = {{1, "Monde des Douze"}};
+    fake::logs.clear();
     Install();
+    // The client's own answers: 1.15.0 logged STATS_DUNGEON_NAMES_DISABLED here.
+    for (const auto& line : fake::logs) Check(line.find("_DISABLED") == std::string::npos, "No part disabled on the pinned client: " + line);
     auto expected = std::vector<uintptr_t>{};
     for (const auto& contract : fake::Contracts) expected.push_back(contract.rva);
     auto verified = fake::verified;
@@ -764,6 +835,68 @@ void ModuleSide() {
         "No part disabled on the pinned client");
 }
 
+// The dungeons' names as this client gives them. 1.15.0 looked a dungeon up
+// by its id with MetadataRoot`1.GetObjectById, which the client never lets
+// FindVerified find (its log: STATS_DUNGEON_NAMES_DISABLED Verified method
+// unavailable: MetadataRoot`1.GetObjectById); the list the game's lobby shows
+// (GetObjects) is verified instead, and the dungeon of the id named from it,
+// once per id. A list this module cannot read turns the dungeons' names off,
+// and only them.
+void DungeonNames() {
+    std::string refused;
+    try { managed::api.FindVerified(managed::api.class_get_parent(fake::Type("DungeonsDataRoot")), "GetObjectById", 1, 0x3874B80); }
+    catch (const std::exception& error) { refused = error.what(); }
+    Check(refused == "Verified method unavailable: MetadataRoot`1.GetObjectById", "1.15.0's lookup by id, refused as in the client's log");
+    const auto disabled = [] {
+        return std::count_if(fake::logs.begin(), fake::logs.end(), [](const std::string& line) { return line.rfind("STATS_DUNGEON_NAMES_DISABLED", 0) == 0; });
+    };
+    Client client(Folder("dungeon-names"));
+    fake::spells = {{413, "Pression"}};
+    fake::dungeons = {{5, "Donjon des Bouftous"}, {12, "Donjon des Forgerons"}, {121, "Antre du Kralamoure Géant"}};
+    fake::logs.clear();
+    Install();
+    Check(disabled() == 0, "The dungeons' names ready on the pinned client");
+    auto calls = fake::listCalls;
+    const auto reads = fake::nameReads;
+    Check(stats::KeyName(Table::Dungeons, 12) == "Donjon des Forgerons" && stats::KeyName(Table::Dungeons, 121) == "Antre du Kralamoure Géant" &&
+        stats::KeyName(Table::Dungeons, 12) == "Donjon des Forgerons" && fake::listCalls == calls + 2 && fake::nameReads == reads + 2,
+        "Named from the game's list: one list and one name read per dungeon");
+    Check(stats::KeyName(Table::Dungeons, 99).empty() && stats::KeyName(Table::Dungeons, 99).empty() && fake::listCalls == calls + 3,
+        "A dungeon the game does not list: no name (the options show its id), asked once");
+    // Only a DungeonData is named: another class with the same id is skipped.
+    fake::stranger = true;
+    Check(stats::KeyName(Table::Dungeons, 5) == "Donjon des Bouftous", "Another class among the items is skipped");
+    fake::stranger = false;
+    // The game's dungeons not there yet (no data root, an empty list): nothing kept, asked again.
+    fake::dungeons.emplace(7, "Donjon des Scarafeuilles");
+    fake::noRoot = true;
+    Check(stats::KeyName(Table::Dungeons, 7).empty(), "No data root: no name yet");
+    fake::noRoot = false;
+    const auto listed = fake::dungeons;
+    fake::dungeons.clear();
+    Check(stats::KeyName(Table::Dungeons, 7).empty(), "An empty list: no name yet");
+    fake::dungeons = listed;
+    Check(stats::KeyName(Table::Dungeons, 7) == "Donjon des Scarafeuilles" && disabled() == 0, "Named once the game lists it");
+    // A list this module cannot read: the dungeons' names off, logged once, the
+    // list not made again; the spells keep their names.
+    const std::pair<int, const char*> changes[] = {{0, "Dungeon list type changed"}, {1, "Statistics field mismatch: _size"}, {2, "Dungeon list items"}};
+    for (const auto& [change, reason] : changes) {
+        fake::listType = change == 0 ? "ReadOnlyCollection`1" : "List`1";
+        fake::sizeMoved = change == 1;
+        fake::shortArray = change == 2;
+        fake::logs.clear();
+        Install();
+        calls = fake::listCalls;
+        Check(stats::KeyName(Table::Dungeons, 12).empty() && stats::KeyName(Table::Dungeons, 121).empty() && fake::listCalls == calls + 1 &&
+            disabled() == 1 && std::find(fake::logs.begin(), fake::logs.end(), std::string("STATS_DUNGEON_NAMES_DISABLED ") + reason) != fake::logs.end(),
+            std::string("A list this module cannot read turns the dungeons' names off: ") + reason);
+        Check(stats::KeyName(Table::Spells, 413) == "Pression", "The spells keep their names");
+    }
+    fake::listType = "List`1";
+    fake::sizeMoved = fake::shortArray = false;
+    fake::logs.clear();
+}
+
 // Another client's reset reaches this client within a few seconds (its pump
 // reads the file again once another client wrote it): the counts made before
 // it are dropped, those made after it are written, in its second too.
@@ -837,6 +970,7 @@ int main() {
         Bounds();
         UnknownFieldsKept();
         ModuleSide();
+        DungeonNames();
         ModuleFollowsOtherResets();
         ModuleWithoutRuntime();
         stats::UseGame(nullptr);
@@ -847,7 +981,9 @@ int main() {
                      "or recovered from the backup; a later revision's file never rewritten; a busy lock retried; 512 spells and 256 characters; unknown fields kept) "
                      "and module side (counting only while statsEnabled is on and the module runs, until Stop's flush; the played character from esg; a write after a minute, "
                      "at a change of character and at Stop; another client's reset applied at the next read of the file; this character's and every character's "
-                     "totals; resets; spell, dungeon, world and element names; each contract with its guard)\n";
+                     "totals; resets; spell, dungeon, world and element names; each contract with its guard) and dungeon names "
+                     "(1.15.0's MetadataRoot`1.GetObjectById refused as the client refuses it; every dungeon from GetObjects, the one of an id named "
+                     "once; no data root or an empty list asked again; another class skipped; an unreadable list turns them off, logged once)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

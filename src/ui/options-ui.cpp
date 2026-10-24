@@ -4,13 +4,9 @@
 #include "animations/animation-mode-labels.hpp"
 #include "glow/glow-mode-labels.hpp"
 #include "ui/native-click.hpp"
-#include "stats/stats.hpp"
+#include "stats/stats-window.hpp"
 #include <algorithm>
-#include <cmath>
-#include <cstdio>
-#include <ctime>
 #include <exception>
-#include <optional>
 #include <string>
 
 using namespace managed;
@@ -50,33 +46,47 @@ constexpr const char* AnimationDescriptions[] = {
     "En combat, un combattant vaincu disparaît sans jouer son animation de mort. Sans effet quand Déplacements instantanés ou Sans attentes visuelles est coché : sa mort reste alors celle du jeu, qui retire ensuite le combattant. Expérimental. Désactivé par défaut.",
     "En combat, la marche, les poussées, les lancers de personnage porté et les sauts arrivent aussitôt à destination, cases intermédiaires comprises. Un trajet inhabituel garde son animation. Expérimental. Désactivé par défaut.",
     "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
-// The checkboxes added in 1.13.0 and 1.14.0, in the order of Settings' ExtraToggles.
-enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, MapCoordsRow, MiniMapCoordsRow, NotebookPingRow, MapAddPositionRow,
-    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow };
+// The checkboxes added in 1.13.0, 1.14.0 and 1.16.0, in the order of Settings' ExtraToggles.
+enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, NotebookPingRow, NotebookCopyRow, NotebookTravelRow, MapAddPositionRow,
+    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow, PerfButtonRow };
 constexpr CheckRow ExtraRows[] = {
     {"Barre des ressources sur la mini-carte", "Affiche sur la mini-carte la barre des six métiers qui ouvre le choix des ressources. Décochée, la barre et sa liste disparaissent, mais les repères des ressources choisies restent affichés si « Ressources sur la mini-carte » est cochée ; le choix se fait alors depuis la grande carte. Activé par défaut."},
     {"Nom de la zone au survol de la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche le nom de sa zone au-dessus de ses coordonnées. Activé par défaut."},
-    {"Dimension avec les coordonnées sur la grande carte", "Sur la grande carte, l’infobulle de la case survolée affiche ses coordonnées avec la dimension de la carte affichée : [x,y, dimension], par exemple [4,-19, Monde des Douze]. Activé par défaut."},
-    {"Dimension avec les coordonnées sur la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche ses coordonnées avec leur dimension : [x,y, dimension]. Activé par défaut."},
     {"Bouton de repère à côté des positions", "Dans les positions du carnet, un petit bouton drapeau à droite de chaque nom place un repère sur cette position : le drapeau du jeu, visible sur la grande carte et la mini-carte. Le bouton reste enfoncé tant que le repère est affiché ; un second clic le retire. Décochée, le bouton disparaît ; le clic droit sur une position permet toujours d’afficher ou de retirer son repère. Activé par défaut."},
+    {"Bouton de copie à côté des positions", "Dans les positions du carnet, un petit bouton à droite de chaque nom copie les coordonnées de cette position dans le presse-papiers, par exemple [-25,36]. L’entrée sélectionnée et tes modifications en cours ne changent pas. Décochée, le bouton disparaît et le carnet ne propose plus de copier les coordonnées d’une position. Activé par défaut."},
+    {"Bouton de voyage à côté des positions", "Dans les positions du carnet, un petit bouton zaap à droite de chaque nom lance le trajet du mod vers cette position : zaaps, bateaux puis /travel (indisponible en combat). L’entrée sélectionnée et tes modifications en cours ne changent pas. Décochée, le bouton disparaît ; le clic droit sur une position propose toujours « Voyager », qui lance le même trajet. Activé par défaut."},
     {"« Ajouter aux positions » au clic droit sur les cartes", "Au clic droit sur une case de la grande carte ou de la mini-carte, ajoute l’entrée « Ajouter aux positions » : elle enregistre cette case (coordonnées, dimension et nom de la zone) dans les positions du carnet, même fermé, et le chat le confirme. Une case déjà enregistrée n’est pas ajoutée deux fois. Activé par défaut."},
-    {"Afficher les FPS et la mémoire", "Affiche discrètement, dans un coin de l’écran ou à la place choisie à la souris, les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde, puis la charge du GPU et l’activité du disque si leurs cases sont cochées. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
-    {"Charge du GPU", "Ajoute à l’affichage des performances la part de la carte graphique utilisée par le jeu, comme la colonne GPU du Gestionnaire des tâches : celle de son moteur le plus chargé (la 3D le plus souvent), mesurée une fois par seconde, par exemple « GPU 23 % ». Si Windows ne fournit pas cette mesure, elle n’apparaît pas. Activé par défaut."},
-    {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % · 1,2 Mo/s ». Pour un jeu installé sur le réseau, elle n’apparaît pas. Activé par défaut."},
-    {"Déplacer l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux ; il reste entièrement à l’écran et sa place est gardée, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reprend son coin et laisse passer les clics vers le jeu. Activé par défaut."}};
-constexpr const char* PerfCorners[] = {"En haut à gauche", "En haut à droite", "En bas à gauche", "En bas à droite"};
-constexpr const char* ChatDimensionChoices[] = {"Non", "Oui, sauf dans le Monde des Douze", "Oui"};
+    {"Afficher les FPS et la mémoire", "Ajoute à l’affichage des performances les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde. L’affichage apparaît dès que cette case, « Charge du GPU » ou « Activité du disque » est cochée, avec seulement les mesures cochées, dans un coin de l’écran (en haut à gauche par défaut) jusqu’à ce que tu le déplaces ou le redimensionnes à la souris ; sa place et sa taille sont ensuite gardées. Son bouton dans la barre du haut le masque ou le réaffiche sans décocher ces cases. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
+    {"Charge du GPU", "Ajoute à l’affichage des performances la part de la carte graphique utilisée par le jeu, comme la colonne GPU du Gestionnaire des tâches : celle de son moteur le plus chargé (la 3D le plus souvent), mesurée une fois par seconde, par exemple « GPU 23 % ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Si Windows ne fournit pas cette mesure, elle n’apparaît pas. Désactivé par défaut."},
+    {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % · 1,2 Mo/s ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Pour un jeu installé sur le réseau, elle n’apparaît pas. Désactivé par défaut."},
+    {"Déplacer et redimensionner l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux, ou par son coin en bas à droite, le seul sans arrondi, pour l’agrandir ou le réduire (de la moitié au triple de sa taille normale, texte compris) ; son coin en haut à gauche reste alors en place. Il reste entièrement à l’écran, et sa place et sa taille sont gardées, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu. Activé par défaut."},
+    {"Bouton dans la barre du haut", "Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances sans décocher ses mesures ; si aucune n’est cochée, il coche « Afficher les FPS et la mémoire ». Masqué avec ce bouton, l’affichage le reste après un redémarrage, jusqu’à un nouveau clic ou une mesure cochée ici. Décochée, le bouton disparaît et seules les cases ci-dessus commandent l’affichage, qui réapparaît s’il était masqué. Activé par défaut."}};
+// « Dimension avec les coordonnées » on the big map, the mini-map and in the
+// chat: the same three choices, each id the saved mode (Settings'
+// coordsWorld*Mode), « Oui, sauf dans le Monde des Douze » by default.
+constexpr const char* DimensionChoices[] = {"Non", "Oui, sauf dans le Monde des Douze", "Oui"};
 constexpr const char* TempleTitle = "Passage secret et temple des Roublards";
 constexpr const char* TempleDescription = "Le trajet du mod peut emprunter le passage secret des Roublards : Bad Aboum, dans la crypte sous la vieille chapelle de la Cité d’Astrub [5,-15], conduit au temple Roublard [10,16] et au village d’Amakna [3,3], et en revient. Quand c’est plus court, l’autopilote du jeu le rejoint, puis le mod lui parle et choisit la destination comme un clic, sans jamais rien payer ; si Bad Aboum ne propose pas ce trajet à ton personnage, le trajet continue sans lui et ce refus est retenu. Le trajet peut aussi traverser le temple ; sa statue reste réservée aux Roublards par le jeu. Décoché, le mod n’emprunte ni le passage ni le temple. Activé par défaut.";
 static_assert(std::size(ExtraRows) == std::size(ExtraToggles) &&
-    std::tuple_size_v<decltype(OptionsUi::extraSources)> == std::size(ExtraToggles) && std::size(PerfCorners) == 4 &&
-    std::size(ChatDimensionChoices) == 3);
+    std::tuple_size_v<decltype(OptionsUi::extraSources)> == std::size(ExtraToggles) && std::size(DimensionChoices) == 3);
 static_assert(std::size(CombatMiniatureRows) == std::size(CombatMiniatureToggles) &&
     std::size(RoleplayMiniatureRows) == std::size(RoleplayMiniatureToggles) &&
     std::size(AnimationDescriptions) == std::size(AnimationToggles) && AnimationToggleLabels.size() == std::size(AnimationToggles));
 static_assert(std::tuple_size_v<decltype(OptionsUi::combatMiniatureSources)> == std::size(CombatMiniatureToggles) &&
     std::tuple_size_v<decltype(OptionsUi::roleplayMiniatureSources)> == std::size(RoleplayMiniatureToggles) &&
     std::tuple_size_v<decltype(OptionsUi::animationSources)> == std::size(AnimationToggles));
+// « Surbrillance »: after the level, one checkbox per category, titled as in the
+// map context menu (GlowCategoryLabels), in the order of GlowCategoryToggles.
+constexpr const char* GlowCategoryDescriptions[] = {
+    "Hors combat : les groupes de monstres visibles ont un contour, au niveau de surbrillance choisi ci-dessus. Décoché, ils n’en ont plus. Activé par défaut.",
+    "Hors combat : les personnages non joueurs (PNJ) visibles ont un contour, au niveau de surbrillance choisi ci-dessus. Désactivé par défaut.",
+    "Hors combat : les objets visibles avec une action disponible (ressources récoltables, portes, zaaps…) ont un contour, au niveau de surbrillance choisi ci-dessus. Désactivé par défaut.",
+    "Hors combat : ton personnage a un contour, au niveau de surbrillance choisi ci-dessus. Désactivé par défaut.",
+    "Hors combat : les personnages de ton groupe ont un contour, au niveau de surbrillance choisi ci-dessus. Désactivé par défaut.",
+    "Hors combat : les personnages des autres joueurs, hors de ton groupe, ont un contour, au niveau de surbrillance choisi ci-dessus. Sur une carte bondée, ils passent après les autres catégories. Désactivé par défaut."};
+static_assert(std::size(GlowCategoryDescriptions) == std::size(GlowCategoryToggles) &&
+    GlowCategoryLabels.size() == std::size(GlowCategoryToggles) &&
+    std::tuple_size_v<decltype(OptionsUi::glowCategorySources)> == std::size(GlowCategoryToggles));
 Klass generalClass = nullptr;
 using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
@@ -121,280 +131,17 @@ constexpr Indicator Indicators[] = {
 // key saved), the saved key, or the question after the trash.
 enum KeyState : int { KeyEditable, KeySaved, KeyConfirm };
 
-// « Statistiques » (1.15.0): the counting checkbox, what is shown, then one
-// text-button row per line below (label « name : value »), grouped under title
-// lines, and the reset of what is shown. The labels follow the store while the
-// page is open (once a second).
+// « Statistiques »: the counting checkbox (1.15.0), then the statistics window
+// (stats/stats-window.hpp, 1.16.0): an owned text-button row opens it (see
+// TextButtonHook) and a checkbox gives it its top-bar button.
 constexpr const char* StatsTitle = "Compter mes statistiques";
 constexpr const char* StatsDescription = "Compte pour chacun de tes personnages ce que le jeu ne garde pas : temps de jeu, déplacements, expérience, kamas, récoltes et fabrications, quêtes et succès, combats, sorts et éléments, téléportations. Le comptage commence avec la version 1.15.0 du mod et ne retient que ce qui se passe pendant que le mod est chargé. Tout reste sur ce PC, dans un fichier à côté des réglages du mod ; rien n’est envoyé. Décoché, rien n’est compté et les statistiques déjà comptées restent affichées. Activé par défaut.";
-constexpr const char* StatsScopeTitle = "Statistiques affichées";
-constexpr const char* StatsScopeDescription = "« Ce personnage » : les statistiques du personnage connecté dans ce jeu. « Tous mes personnages » : celles de tous tes personnages comptés sur ce PC, additionnées ; les records gardent la plus grande valeur. Les valeurs se mettent à jour pendant que la page est ouverte. Revient à « Ce personnage » à chaque lancement du jeu.";
-constexpr const char* StatsScopes[] = {"Ce personnage", "Tous mes personnages"};
-enum StatsLine : size_t {
-    StatsWho,
-    TimeTitle, PlayTime, LongestSession, CellsWalked, MapsChanged, DimensionsChanged, TopDimension,
-    ProgressTitle, Experience, LevelsGained,
-    KamasTitle, KamasIn, KamasOut, KamasBalance,
-    GatherTitle, Harvested, Crafted, QuestsDone, AchievementsDone,
-    FightTitle, FightsMonsters, FightsPlayers, FightsKolizeum, FightTime, TurnsPlayed, DamageLine, HealsDone,
-    BiggestHitLine, KillsLine, DeathsLine, CapturesLine, DungeonsDone, TopDungeon,
-    SpellTitle, SpellsCast, TopSpell1, TopSpell2, TopSpell3, TopSpell4, TopSpell5, ElementShares,
-    TeleportTitle, ZaapsLine, ZaapisLine, PrismsLine, RecallLine, HavenBagLine, ModTripsLine, OtherTeleportsLine,
-    StatsReset, StatsLineCount
-};
-// Each line's description (its hover text and its unique identity).
-constexpr const char* StatsDescriptions[] = {
-    "Le personnage dont les statistiques sont affichées, ou le nombre de tes personnages additionnés, et le jour où leur comptage a commencé.",
-    "Temps de jeu, plus longue session, cases parcourues, cartes et dimensions.",
-    "Temps passé en jeu pendant que le mod est chargé.",
-    "La plus longue session de jeu sans interruption.",
-    "Cases parcourues à pied, hors combat et en combat.",
-    "Changements de carte, téléportations comprises.",
-    "Passages d’une dimension à une autre : Monde des Douze, Incarnam, Srambad…",
-    "La dimension la plus souvent rejointe, avec son nom dans le jeu.",
-    "Expérience et niveaux gagnés.",
-    "Points d’expérience gagnés.",
-    "Niveaux gagnés.",
-    "Kamas gagnés et dépensés.",
-    "Kamas gagnés ; les retraits de la banque ou d’un coffre ne comptent pas, ni les ventes à l’hôtel des ventes, créditées à la banque.",
-    "Kamas dépensés ; les dépôts à la banque ou dans un coffre ne comptent pas.",
-    "Kamas gagnés moins kamas dépensés.",
-    "Ressources récoltées, objets fabriqués, quêtes terminées et succès obtenus.",
-    "Récoltes faites : une par ressource récoltée, quelle que soit la quantité obtenue.",
-    "Objets fabriqués.",
-    "Quêtes terminées.",
-    "Succès obtenus.",
-    "Combats terminés, temps, dégâts, soins, morts, âmes capturées et donjons.",
-    "Combats contre des monstres terminés et victoires ; les autres combats sont comptés en défaites.",
-    "Combats contre d’autres joueurs terminés hors Kolizéum et victoires ; les autres combats sont comptés en défaites.",
-    "Combats de Kolizéum terminés et victoires ; les autres combats sont comptés en défaites.",
-    "Temps passé en combat et durée moyenne d’un combat.",
-    "Tours joués en combat.",
-    "Dégâts infligés et subis en combat.",
-    "Points de vie soignés en combat.",
-    "Le plus gros coup infligé en une fois.",
-    "Monstres vaincus dans les combats gagnés.",
-    "Fois où le personnage a été vaincu en combat.",
-    "Âmes capturées dans une pierre d’âme.",
-    "Donjons terminés.",
-    "Le donjon terminé le plus souvent, avec son nom dans le jeu.",
-    "Sorts lancés et part de chaque élément dans les dégâts.",
-    "Sorts lancés en combat.",
-    "Les cinq sorts les plus lancés, avec leur nom dans le jeu.",
-    "Les cinq sorts les plus lancés, avec leur nom dans le jeu.",
-    "Les cinq sorts les plus lancés, avec leur nom dans le jeu.",
-    "Les cinq sorts les plus lancés, avec leur nom dans le jeu.",
-    "Les cinq sorts les plus lancés, avec leur nom dans le jeu.",
-    "Part de chaque élément (neutre, terre, feu, eau, air) dans les dégâts infligés.",
-    "Zaaps, zaapis, prismes, potions de rappel, Havre-Sac et trajets du mod.",
-    "Téléportations par zaap.",
-    "Téléportations par zaapi.",
-    "Téléportations par prisme.",
-    "Potions de rappel utilisées.",
-    "Entrées dans un Havre-Sac.",
-    "Trajets du mod menés à bien : bouton TP du chat, voyage depuis la carte, zaaps du Havre-Sac.",
-    "Téléportations par une anomalie ; les potions de cité, la téléportation au conjoint et les téléportations des PNJ ne sont pas comptées.",
-    "Efface les statistiques affichées : celles de ce personnage, ou celles de tous tes personnages avec « Tous mes personnages ». Clique sur Réinitialiser, puis sur Confirmer dans les 10 secondes ; sinon rien n’est effacé. Des statistiques effacées ne peuvent pas être récupérées."};
-static_assert(std::size(StatsDescriptions) == StatsLineCount && std::size(StatsScopes) == 2);
-constexpr int IconReset = 249; // FigmaIcons.reset, the game's own reset buttons
-constexpr ULONGLONG StatsRefreshMs = 1000, StatsConfirmMs = 10000, StatsResultMs = 6000, StatsLogMs = 10000;
-// Confirmer is the same button as Réinitialiser: a click within this time of the
-// question (a double click, Enter twice) is the same gesture, never a confirmation.
-constexpr ULONGLONG StatsConfirmWaitMs = 1000;
-constexpr size_t MaxStatsViews = 4 * StatsLineCount; // pooled views and search clones showing a line
-// <displayedText>k__BackingField of OptionElement`1: the label UpdateText shows.
-constexpr const char* DisplayedText = "<displayedText>k__BackingField";
-Method statsUpdateText = nullptr; // TextButtonOptionElement.UpdateText; null: labels follow at the next Init
-// French formats: a thin no-break space between thousands, a no-break space
-// before a unit.
-constexpr const char* ThinSpace = "\u202F";
-constexpr const char* NoBreak = "\u00A0";
-std::string Grouped(int64_t value) {
-    const bool negative = value < 0;
-    const auto magnitude = negative ? 0 - static_cast<uint64_t>(value) : static_cast<uint64_t>(value);
-    const auto digits = std::to_string(magnitude);
-    std::string text = negative ? "-" : "";
-    for (size_t i = 0; i < digits.size(); ++i) {
-        if (i && (digits.size() - i) % 3 == 0) text += ThinSpace;
-        text += digits[i];
-    }
-    return text;
-}
-std::string Unit(const std::string& number, const char* unit) { return number + NoBreak + unit; }
-std::string TwoDigits(int64_t value) {
-    char text[8] = {};
-    std::snprintf(text, sizeof(text), "%02d", static_cast<int>(value % 100));
-    return text;
-}
-// « 12 h 05 min », « 34 min », « 45 s ».
-std::string Hours(int64_t ms) {
-    const auto seconds = std::max<int64_t>(0, ms) / 1000, minutes = seconds / 60, hours = minutes / 60;
-    if (hours > 0) return Unit(Grouped(hours), "h") + NoBreak + Unit(TwoDigits(minutes % 60), "min");
-    if (minutes > 0 || seconds == 0) return Unit(std::to_string(minutes), "min");
-    return Unit(std::to_string(seconds), "s");
-}
-// An average: « 3 min 05 s » under an hour.
-std::string Lasting(int64_t ms) {
-    const auto seconds = std::max<int64_t>(0, ms) / 1000;
-    if (seconds >= 3600 || seconds < 60) return Hours(ms);
-    return Unit(std::to_string(seconds / 60), "min") + NoBreak + Unit(TwoDigits(seconds % 60), "s");
-}
-// « kamas » in full: a « k » after a number reads as thousands to Dofus players.
-std::string Kamas(int64_t kamas) { return Unit(Grouped(kamas), "kamas"); }
-std::string Balance(int64_t kamas) { return kamas > 0 ? "+" + Kamas(kamas) : Kamas(kamas); }
-// A share of the total: one decimal under 10 %.
-std::string Share(int64_t part, int64_t total) {
-    if (part <= 0 || total <= 0) return Unit("0", "%");
-    const double percent = 100.0 * static_cast<double>(part) / static_cast<double>(total);
-    const auto tenths = std::llround(percent * 10);
-    if (tenths < 100) return Unit(std::to_string(tenths / 10) + "," + std::to_string(tenths % 10), "%");
-    return Unit(std::to_string(std::llround(percent)), "%");
-}
-std::string Counted(int64_t count, const char* one, const char* many) {
-    return Grouped(count) + " " + (count > 1 || count < -1 ? many : one);
-}
-// « 23 octobre 2026 », « 1er mai 2026 », in local time.
-std::string Day(int64_t seconds) {
-    static constexpr const char* Months[] = {"janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
-        "septembre", "octobre", "novembre", "décembre"};
-    std::tm local{};
-    const __time64_t time = seconds;
-    if (seconds <= 0 || _localtime64_s(&local, &time) != 0 || local.tm_mon < 0 || local.tm_mon > 11) return {};
-    return (local.tm_mday == 1 ? std::string("1er") : std::to_string(local.tm_mday)) + " " + Months[local.tm_mon] + " " +
-        std::to_string(local.tm_year + 1900);
-}
-// A table key's name from the game's data, else its id.
-std::string Named(stats::Table table, int key, const char* kind) {
-    auto name = stats::KeyName(table, key);
-    return name.empty() ? std::string(kind) + " " + std::to_string(key) : name;
-}
-std::string Who(const stats::Totals& totals) {
-    return !totals.name.empty() ? totals.name : "n° " + std::to_string(totals.character);
-}
-// « de Lou », « d’Ana »; without a name, « de ce personnage ».
-std::string Of(const stats::Totals& totals) {
-    if (totals.name.empty()) return "de ce personnage";
-    static constexpr const char* Vowels[] = {"A", "E", "I", "O", "U", "Y", "a", "e", "i", "o", "u", "y",
-        "À", "Â", "Ä", "É", "È", "Ê", "Ë", "Î", "Ï", "Ô", "Ö", "Ù", "Û", "Ü", "à", "â", "é", "è", "ê", "î", "ô", "û"};
-    for (const auto vowel : Vowels) if (totals.name.rfind(vowel, 0) == 0) return "d’" + totals.name;
-    return "de " + totals.name;
-}
-std::string StatsText(size_t line, const stats::Totals& totals, bool every) {
-    using stats::Counter;
-    using stats::Record;
-    using stats::Table;
-    const auto count = [&](Counter counter) { return totals.Count(counter); };
-    const auto fights = [&](const char* kind, Counter all, Counter won) {
-        const auto played = count(all), wins = std::min(count(won), played);
-        return std::string("Combats ") + kind + " : " + Grouped(played) + " (" + Counted(wins, "victoire", "victoires") + ", " +
-            Counted(played - wins, "défaite", "défaites") + ")";
-    };
-    const auto top = [&](Table table, size_t rank) -> const std::pair<int, int64_t>* {
-        const auto& entries = totals.Entries(table);
-        return rank < entries.size() ? &entries[rank] : nullptr;
-    };
-    const auto spell = [&](size_t rank) {
-        const auto entry = top(Table::Spells, rank);
-        const auto label = "Sort n° " + std::to_string(rank + 1) + " : ";
-        if (!entry) return label + "aucun";
-        return label + Named(Table::Spells, entry->first, "sort") + ", lancé " + Counted(entry->second, "fois", "fois");
-    };
-    switch (line) {
-    case StatsWho:
-        if (every) {
-            if (totals.characters <= 0 || totals.first <= 0) return "Tous mes personnages : rien de compté pour l’instant";
-            return "Tous mes personnages : " + Counted(totals.characters, "personnage, compté", "personnages, comptés") + " depuis le " + Day(totals.first);
-        }
-        if (totals.character <= 0) return "Ce personnage : aucun personnage connecté pour l’instant";
-        if (totals.first <= 0) return "Ce personnage : " + Who(totals) + ", rien de compté pour l’instant";
-        return "Ce personnage : " + Who(totals) + ", compté depuis le " + Day(totals.first);
-    case TimeTitle: return "— Temps et déplacements —";
-    case PlayTime: return "Temps de jeu : " + Hours(count(Counter::PlayMs));
-    case LongestSession: return "Plus longue session : " + Hours(totals.Best(Record::LongestSessionMs));
-    case CellsWalked:
-        return "Cases parcourues : " + Grouped(count(Counter::CellsRoleplay)) + " hors combat, " + Grouped(count(Counter::CellsFight)) + " en combat";
-    case MapsChanged: return "Cartes parcourues : " + Grouped(count(Counter::Maps));
-    case DimensionsChanged: return "Changements de dimension : " + Grouped(count(Counter::Dimensions));
-    case TopDimension: {
-        const auto entry = top(Table::Dimensions, 0);
-        if (!entry) return "Dimension la plus visitée : aucune";
-        return "Dimension la plus visitée : " + Named(Table::Dimensions, entry->first, "dimension") + " (" + Counted(entry->second, "arrivée", "arrivées") + ")";
-    }
-    case ProgressTitle: return "— Progression —";
-    case Experience: return "Expérience gagnée : " + Grouped(count(Counter::Xp));
-    case LevelsGained: return "Niveaux gagnés : " + Grouped(count(Counter::Levels));
-    case KamasTitle: return "— Kamas —";
-    case KamasIn: return "Kamas gagnés : " + Kamas(count(Counter::KamasEarned));
-    case KamasOut: return "Kamas dépensés : " + Kamas(count(Counter::KamasSpent));
-    case KamasBalance: return "Solde : " + Balance(count(Counter::KamasEarned) - count(Counter::KamasSpent));
-    case GatherTitle: return "— Récolte et artisanat —";
-    case Harvested: return "Ressources récoltées : " + Grouped(count(Counter::Harvests));
-    case Crafted: return "Objets fabriqués : " + Grouped(count(Counter::Crafts));
-    case QuestsDone: return "Quêtes terminées : " + Grouped(count(Counter::Quests));
-    case AchievementsDone: return "Succès obtenus : " + Grouped(count(Counter::Achievements));
-    case FightTitle: return "— Combats —";
-    case FightsMonsters: return fights("JcM", Counter::FightsPve, Counter::WinsPve);
-    case FightsPlayers: return fights("JcJ", Counter::FightsPvp, Counter::WinsPvp);
-    case FightsKolizeum: return fights("Kolizéum", Counter::FightsKolizeum, Counter::WinsKolizeum);
-    case FightTime: {
-        const auto played = count(Counter::FightsPve) + count(Counter::FightsPvp) + count(Counter::FightsKolizeum);
-        const auto time = "Temps en combat : " + Hours(count(Counter::FightMs));
-        return played > 0 ? time + " (" + Lasting(count(Counter::FightMs) / played) + " en moyenne)" : time;
-    }
-    case TurnsPlayed: return "Tours joués : " + Grouped(count(Counter::FightTurns));
-    case DamageLine: return "Dégâts : " + Grouped(count(Counter::DamageDealt)) + " infligés, " + Grouped(count(Counter::DamageTaken)) + " subis";
-    case HealsDone: return "Soins prodigués : " + Grouped(count(Counter::Heals));
-    case BiggestHitLine: return "Plus gros coup : " + Grouped(totals.Best(Record::BiggestHit));
-    case KillsLine: return "Monstres vaincus : " + Grouped(count(Counter::Kills));
-    case DeathsLine: return "Morts : " + Grouped(count(Counter::Deaths));
-    case CapturesLine: return "Âmes capturées : " + Grouped(count(Counter::Captures));
-    case DungeonsDone: return "Donjons terminés : " + Grouped(count(Counter::Dungeons));
-    case TopDungeon: {
-        const auto entry = top(Table::Dungeons, 0);
-        if (!entry) return "Donjon le plus fait : aucun";
-        return "Donjon le plus fait : " + Named(Table::Dungeons, entry->first, "donjon") + " (" + Counted(entry->second, "fois", "fois") + ")";
-    }
-    case SpellTitle: return "— Sorts et éléments —";
-    case SpellsCast: return "Sorts lancés : " + Grouped(count(Counter::SpellCasts));
-    case TopSpell1: case TopSpell2: case TopSpell3: case TopSpell4: case TopSpell5: return spell(line - TopSpell1);
-    case ElementShares: {
-        // In the game's order of the elements: neutre, terre, feu, eau, air, then the others.
-        int64_t total = 0, others = 0;
-        std::array<int64_t, 5> parts{};
-        for (const auto& [key, damage] : totals.Entries(Table::Elements)) {
-            total += damage;
-            if (key >= 0 && key < static_cast<int>(parts.size())) parts[static_cast<size_t>(key)] += damage;
-            else others += damage;
-        }
-        if (total <= 0) return "Dégâts par élément : aucun dégât compté";
-        std::string text = "Dégâts par élément : ";
-        for (size_t i = 0; i < parts.size(); ++i)
-            text += (i ? ", " : "") + Named(Table::Elements, static_cast<int>(i), "élément") + " " + Share(parts[i], total);
-        if (others > 0) text += ", autres " + Share(others, total);
-        return text;
-    }
-    case TeleportTitle: return "— Téléportations —";
-    case ZaapsLine: return "Zaaps : " + Grouped(count(Counter::TeleportZaap));
-    case ZaapisLine: return "Zaapis : " + Grouped(count(Counter::TeleportZaapi));
-    case PrismsLine: return "Prismes : " + Grouped(count(Counter::TeleportPrism));
-    case RecallLine: return "Potions de rappel : " + Grouped(count(Counter::RecallPotions));
-    case HavenBagLine: return "Entrées dans un Havre-Sac : " + Grouped(count(Counter::HavenBag));
-    case ModTripsLine: return "Trajets du mod : " + Grouped(count(Counter::ModTrips));
-    case OtherTeleportsLine: return "Autres téléportations : " + Grouped(count(Counter::TeleportOther));
-    default: return {};
-    }
-}
-// The reset line: the question while it waits for Confirmer, then its outcome.
-std::string StatsResetText(const OptionsUi& ui, const stats::Totals& totals) {
-    const bool every = ui.statsConfirm ? ui.statsConfirmAll : ui.statsScope == 1;
-    const auto whose = every ? std::string("de tous tes personnages") : Of(totals);
-    if (ui.statsConfirm) return "Effacer les statistiques " + whose + " ? Clique sur Confirmer dans les 10 secondes.";
-    if (ui.statsResult == 1) return "Statistiques " + whose + " effacées.";
-    if (ui.statsResult == 2) return "Effacement impossible pour l’instant : réessaie dans un moment.";
-    return every ? "Réinitialiser les statistiques de tous mes personnages" : "Réinitialiser les statistiques de ce personnage";
-}
-const char* StatsResetCaption(const OptionsUi& ui) { return ui.statsConfirm ? "Confirmer" : "Réinitialiser"; }
-int StatsResetIcon(const OptionsUi& ui) { return ui.statsConfirm ? IconTrash : IconReset; }
+constexpr const char* StatsOpenTitle = "Voir mes statistiques";
+constexpr const char* StatsOpenDescription = "Ouvre la fenêtre « Statistiques » : ce que le mod a compté pour ce personnage ou pour tous tes personnages, rangé par thème (temps et déplacements, progression, kamas, récolte et artisanat, combats, sorts et éléments, téléportations) sur deux ou trois colonnes selon sa largeur, et mis à jour chaque seconde tant qu’elle est ouverte. Le bouton « Réinitialiser » en bas de la fenêtre efface les statistiques affichées. La fenêtre s’ouvre aussi avec son bouton en haut à droite de l’écran, à côté de Capture d’âme.";
+constexpr const char* StatsOpenButton = "Ouvrir";
+constexpr int IconChart = 77; // FigmaIcons.chart, the statistics window's own icon
+constexpr const char* StatsButtonTitle = "Bouton dans la barre du haut";
+constexpr const char* StatsButtonDescription = "Ajoute en haut à droite de l’écran, à côté de Capture d’âme, un bouton qui ouvre ou ferme la fenêtre « Statistiques ». Décoché, le bouton disparaît ; la fenêtre s’ouvre toujours avec « Voir mes statistiques ». Activé par défaut.";
 
 template<class T> T& FieldValue(Obj owner, const char* name) {
     return *static_cast<T*>(api.FieldAddress(owner, name));
@@ -402,16 +149,6 @@ template<class T> T& FieldValue(Obj owner, const char* name) {
 void SetTextField(Obj owner, const char* field, const char* text) {
     Ref value(api.string_new(text));
     api.gc_wbarrier_set_field(owner, static_cast<void**>(api.FieldAddress(owner, field)), value.get());
-}
-// A field of the class or of a parent (a generic base) at its pinned offset.
-void RequireField(Klass type, const char* name, size_t offset) {
-    for (auto current = type; current; current = api.class_get_parent(current)) {
-        const auto field = api.class_get_field_from_name(current, name);
-        if (!field) continue;
-        if (api.field_get_offset(field) == offset) return;
-        break;
-    }
-    throw std::runtime_error(std::string("Options field mismatch: ") + name);
 }
 int Count(Obj list) {
     const int count = api.Value<int>(api.Call(list, "get_Count"));
@@ -453,9 +190,9 @@ bool ModelsLoaded(const OptionsUi& ui) {
         return true;
     };
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) && allLoaded(ui.combatMiniatureSources) &&
-        allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && loaded(ui.glowNpcsSource) && loaded(ui.glowInteractivesSource) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource) &&
-        allLoaded(ui.extraSources) && loaded(ui.perfCornerSource) && loaded(ui.chatCoordsSource) &&
-        loaded(ui.statsSource) && loaded(ui.statsScopeSource);
+        allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && allLoaded(ui.glowCategorySources) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.mapMenuSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource) &&
+        allLoaded(ui.extraSources) && loaded(ui.chatCoordsSource) && loaded(ui.mapCoordsSource) && loaded(ui.miniMapCoordsSource) &&
+        loaded(ui.statsSource) && loaded(ui.statsButtonSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -475,8 +212,8 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.soulSource.get(), settings.soulReminder, notify);
     SetSource(ui.soulAutoSource.get(), settings.soulAutoEquip, notify);
     SetSource(ui.glowSource.get(), settings.monsterGlowMode, notify);
-    SetSource(ui.glowNpcsSource.get(), settings.glowNpcs, notify);
-    SetSource(ui.glowInteractivesSource.get(), settings.glowInteractives, notify);
+    for (size_t i = 0; i < ui.glowCategorySources.size(); ++i)
+        SetSource(ui.glowCategorySources[i].get(), settings.*GlowCategoryToggles[i], notify);
     SetSource(ui.transitionsSource.get(), settings.fastMapTransitions, notify);
     SetSource(ui.preloadSource.get(), settings.preloadNextMap, notify);
     SetSource(ui.spouseSource.get(), settings.spouseTeleport, notify);
@@ -491,13 +228,16 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.chatMetamobSource.get(), settings.chatMetamobStatus, notify);
     SetSource(ui.archiZonesSource.get(), settings.archiZonesMap, notify);
     SetSource(ui.archiZonesMiniSource.get(), settings.archiZonesMiniMap, notify);
+    SetSource(ui.mapMenuSource.get(), settings.mapMenuSettings, notify);
     SetSource(ui.calendarKraloveSource.get(), settings.calendarKralamoure, notify);
     SetSource(ui.templeSource.get(), settings.travelRoublardTemple, notify);
     for (size_t i = 0; i < ui.extraSources.size(); ++i)
         SetSource(ui.extraSources[i].get(), settings.*ExtraToggles[i], notify);
-    SetSource(ui.perfCornerSource.get(), settings.perfOverlayCorner, notify);
     SetSource(ui.chatCoordsSource.get(), settings.coordsWorldChatMode, notify);
+    SetSource(ui.mapCoordsSource.get(), settings.coordsWorldMapMode, notify);
+    SetSource(ui.miniMapCoordsSource.get(), settings.coordsWorldMiniMapMode, notify);
     SetSource(ui.statsSource.get(), settings.statsEnabled, notify);
+    SetSource(ui.statsButtonSource.get(), settings.statsButton, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
 Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
@@ -565,15 +305,15 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     toggleSources(prepared.roleplayMiniatureSources, RoleplayMiniatureToggles);
     toggleSources(prepared.animationSources, AnimationToggles);
     toggleSources(prepared.extraSources, ExtraToggles);
-    prepared.perfCornerSource.reset(api.New(integerType, {&defaults.perfOverlayCorner, &readOnly}));
     prepared.chatCoordsSource.reset(api.New(integerType, {&defaults.coordsWorldChatMode, &readOnly}));
+    prepared.mapCoordsSource.reset(api.New(integerType, {&defaults.coordsWorldMapMode, &readOnly}));
+    prepared.miniMapCoordsSource.reset(api.New(integerType, {&defaults.coordsWorldMiniMapMode, &readOnly}));
     prepared.autoLoadSource.reset(api.New(booleanType, {&defaults.autoLoad, &readOnly}));
     prepared.githubSource.reset(api.New(booleanType, {&defaults.githubUpdates, &readOnly}));
     prepared.soulSource.reset(api.New(booleanType, {&defaults.soulReminder, &readOnly}));
     prepared.soulAutoSource.reset(api.New(booleanType, {&defaults.soulAutoEquip, &readOnly}));
     prepared.glowSource.reset(api.New(integerType, {&defaults.monsterGlowMode, &readOnly}));
-    prepared.glowNpcsSource.reset(api.New(booleanType, {&defaults.glowNpcs, &readOnly}));
-    prepared.glowInteractivesSource.reset(api.New(booleanType, {&defaults.glowInteractives, &readOnly}));
+    toggleSources(prepared.glowCategorySources, GlowCategoryToggles);
     prepared.transitionsSource.reset(api.New(booleanType, {&defaults.fastMapTransitions, &readOnly}));
     prepared.preloadSource.reset(api.New(booleanType, {&defaults.preloadNextMap, &readOnly}));
     prepared.spouseSource.reset(api.New(booleanType, {&defaults.spouseTeleport, &readOnly}));
@@ -588,12 +328,12 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.chatMetamobSource.reset(api.New(booleanType, {&defaults.chatMetamobStatus, &readOnly}));
     prepared.archiZonesSource.reset(api.New(booleanType, {&defaults.archiZonesMap, &readOnly}));
     prepared.archiZonesMiniSource.reset(api.New(booleanType, {&defaults.archiZonesMiniMap, &readOnly}));
+    prepared.mapMenuSource.reset(api.New(booleanType, {&defaults.mapMenuSettings, &readOnly}));
     prepared.calendarKraloveSource.reset(api.New(booleanType, {&defaults.calendarKralamoure, &readOnly}));
     prepared.templeSource.reset(api.New(booleanType, {&defaults.travelRoublardTemple, &readOnly}));
-    // « Statistiques »: the counting checkbox, and what is shown (this character by default).
+    // « Statistiques »: the counting checkbox and the window's top-bar button.
     prepared.statsSource.reset(api.New(booleanType, {&defaults.statsEnabled, &readOnly}));
-    int thisCharacter = 0;
-    prepared.statsScopeSource.reset(api.New(integerType, {&thisCharacter, &readOnly}));
+    prepared.statsButtonSource.reset(api.New(booleanType, {&defaults.statsButton, &readOnly}));
     if (!ModelsLoaded(prepared)) return false;
     // Native reset uses constructor defaults, independently of persisted values.
     ApplySettings(prepared, module->settings, false);
@@ -628,11 +368,10 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Avec l’alerte pierre d’âme activée, tente d’équiper la pierre de la tranche requise pendant le placement d’un combat capturable. Une seule tentative par combat et tranche, uniquement si une pierre utilisable est disponible. En cas de refus, le bouton Équiper reste disponible. Activé par défaut."));
     ui.modeSource = std::move(prepared.modeSource);
     prepared.glowOption.reset(MakeChoiceOption(prepared.glowSource.get(), current.get(), "Surbrillance",
-        "Affiche le contour des monstres derrière les modules d’affichage, derrière ces modules et les murs, ou tout le temps. La grande carte, l’inventaire, les sorts et les autres fenêtres restent devant le contour dans tous les modes. Les clics restent ceux du jeu. Par défaut : derrière l’interface.", glowModes));
-    prepared.glowNpcsOption.reset(MakeBoolOption(prepared.glowNpcsSource.get(), current.get(), tooltip.get(), "Inclure les PNJ",
-        "Ajoute les PNJ visibles hors combat au niveau de surbrillance choisi ci-dessus. Indépendant des éléments interactifs. Désactivé par défaut."));
-    prepared.glowInteractivesOption.reset(MakeBoolOption(prepared.glowInteractivesSource.get(), current.get(), tooltip.get(), "Inclure les éléments interactifs",
-        "Ajoute les objets visibles avec une action disponible hors combat : ressources récoltables, portes, zaaps… Utilise le niveau de surbrillance choisi ci-dessus. Désactivé par défaut."));
+        "Affiche hors combat le contour des catégories cochées ci-dessous (les monstres par défaut) derrière les modules d’affichage, derrière ces modules et les murs, ou tout le temps. La grande carte, l’inventaire, les sorts et les autres fenêtres restent devant le contour dans tous les modes. Les clics restent ceux du jeu. Sans case cochée, rien n’est entouré. Au plus 32 contours à la fois : s’il y en a plus, passent d’abord ton personnage, puis ton groupe, les monstres, les PNJ, les éléments interactifs et enfin les autres joueurs. Par défaut : derrière l’interface.", glowModes));
+    for (size_t i = 0; i < prepared.glowCategoryOptions.size(); ++i)
+        prepared.glowCategoryOptions[i].reset(MakeBoolOption(prepared.glowCategorySources[i].get(), current.get(), tooltip.get(),
+            GlowCategoryLabels[i], GlowCategoryDescriptions[i]));
     prepared.transitionsOption.reset(MakeBoolOption(prepared.transitionsSource.get(), current.get(), tooltip.get(), "Transitions rapides entre cartes",
         "Raccourcit les fondus de sortie et d’arrivée hors combat. Le chargement des ressources et l’attente du serveur restent nécessaires : cette option ne garantit pas des changements de carte sans chargement. Activé par défaut."));
     prepared.preloadOption.reset(MakeBoolOption(prepared.preloadSource.get(), current.get(), tooltip.get(), "Précharger la prochaine carte (expérimental)",
@@ -649,6 +388,9 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Ajoute sur la grande carte un carré « Ocre » sous « Conquête ». Comme le mode Anomalies, il ouvre un panneau (recherche, territoires, niveaux, Tous / Archimonstres / Boss de donjon) et colore chaque zone des archimonstres et boss de donjon de L’éternelle moisson selon le nombre qu’il te manque : ni validés dans la quête, ni dans ton sac, ni sur ta quête Metamob (si une clé est enregistrée). Du jaune au pourpre, plus il en manque ; en bleu, « Complet », quand il ne t’en manque aucun. Un clic sur une zone de la liste centre la carte et montre, sous la ligne, ceux qu’il te manque et ceux que tu as. Activé par défaut."));
     prepared.archiZonesMiniOption.reset(MakeBoolOption(prepared.archiZonesMiniSource.get(), current.get(), tooltip.get(), "Archimonstres manquants sur la mini-carte",
         "Colore aussi les zones sur la mini-carte, avec les mêmes couleurs (bleu « Complet » compris), selon le choix Tous / Archimonstres / Boss de donjon du panneau Ocre de la grande carte (sans sa recherche ni ses filtres de territoire et de niveau), même quand ce mode est fermé. Désactivé par défaut."));
+    // « Réglages des cartes au clic droit » (1.16.0): the rows above in each map's own right-click menu (map-travel).
+    prepared.mapMenuOption.reset(MakeBoolOption(prepared.mapMenuSource.get(), current.get(), tooltip.get(), "Réglages des cartes au clic droit",
+        "Au clic droit sur la grande carte ou la mini-carte, ajoute sous les entrées du jeu les réglages du mod pour cette carte, les mêmes qu’ici : sur la mini-carte, les ressources, leur barre, le bouton de recentrage, le nom de la zone au survol, les archimonstres manquants et la dimension avec les coordonnées ; sur la grande carte, les ressources, les archimonstres manquants et la dimension avec les coordonnées. Un clic s’applique aussitôt, sans fermer le menu. Hors combat. Activé par défaut."));
     prepared.travelPlannerOption.reset(MakeBoolOption(prepared.travelPlannerSource.get(), current.get(), tooltip.get(), "Remplacer l’autopilote du jeu",
         "Le double-clic sur la grande carte ou la mini-carte et l’entrée « Voyager jusqu’à cette position » de leur clic droit lancent le trajet du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu. Ctrl + double-clic, le menu d’un point de repère et la commande /travel gardent l’autopilote du jeu. Décoché, le double-clic et cette entrée lancent directement l’autopilote du jeu. Activé par défaut."));
     prepared.templeOption.reset(MakeBoolOption(prepared.templeSource.get(), current.get(), tooltip.get(), TempleTitle, TempleDescription));
@@ -667,31 +409,23 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     for (size_t i = 0; i < prepared.extraOptions.size(); ++i)
         prepared.extraOptions[i].reset(MakeBoolOption(prepared.extraSources[i].get(), current.get(), tooltip.get(),
             ExtraRows[i].title, ExtraRows[i].description));
-    Choices corners;
-    for (int i = 0; i != static_cast<int>(std::size(PerfCorners)); ++i) corners.emplace_back(i, PerfCorners[i]);
-    prepared.perfCornerOption.reset(MakeChoiceOption(prepared.perfCornerSource.get(), current.get(), "Position de l’affichage des performances",
-        "Coin de l’écran où s’affichent les FPS et la mémoire quand « Afficher les FPS et la mémoire » est coché. En haut à droite, le cadre se place sous les boutons du menu du jeu. Choisir un autre coin y replace l’affichage déplacé à la souris. En haut à gauche par défaut.", corners));
-    Choices chatDimensions;
-    for (int i = 0; i != static_cast<int>(std::size(ChatDimensionChoices)); ++i) chatDimensions.emplace_back(i, ChatDimensionChoices[i]);
+    // « Dimension avec les coordonnées »: on each map (section « Cartes ») and in
+    // the chat (section « Chat »), the same three choices.
+    Choices dimensions;
+    for (int i = 0; i != static_cast<int>(std::size(DimensionChoices)); ++i) dimensions.emplace_back(i, DimensionChoices[i]);
+    prepared.mapCoordsOption.reset(MakeChoiceOption(prepared.mapCoordsSource.get(), current.get(), "Dimension avec les coordonnées sur la grande carte",
+        "Sur la grande carte, l’infobulle de la case survolée affiche ses coordonnées avec la dimension de la carte affichée : [x,y, dimension], par exemple [4,-19, Monde des Douze]. « Oui » l’ajoute partout, « Oui, sauf dans le Monde des Douze » seulement dans les autres dimensions (Incarnam, Srambad…), « Non » jamais : l’infobulle garde les coordonnées du jeu, [x,y]. « Oui, sauf dans le Monde des Douze » par défaut.", dimensions));
+    prepared.miniMapCoordsOption.reset(MakeChoiceOption(prepared.miniMapCoordsSource.get(), current.get(), "Dimension avec les coordonnées sur la mini-carte",
+        "Sur la mini-carte, l’infobulle de la case survolée affiche ses coordonnées avec leur dimension : [x,y, dimension]. « Oui » l’ajoute partout, « Oui, sauf dans le Monde des Douze » seulement dans les autres dimensions (Incarnam, Srambad…), « Non » jamais : l’infobulle garde les coordonnées du jeu, [x,y]. « Oui, sauf dans le Monde des Douze » par défaut.", dimensions));
     prepared.chatCoordsOption.reset(MakeChoiceOption(prepared.chatCoordsSource.get(), current.get(), "Dimension avec les coordonnées dans le chat",
-        "Les positions et les groupes de monstres partagés dans le chat s’affichent avec leur dimension : [x,y, dimension]. « Oui, sauf dans le Monde des Douze » ne l’ajoute qu’aux autres dimensions (Incarnam, Srambad…). Le lien du jeu, son clic et le bouton TP ne changent pas ; des coordonnées simplement écrites [x,y] restent comme le joueur les a tapées. « Oui » par défaut.", chatDimensions));
-    // Section « Statistiques »: the checkbox, what is shown, then one owned
-    // text-button row per line (see BindStatsView), the last one the reset.
+        "Les positions et les groupes de monstres partagés dans le chat s’affichent avec leur dimension : [x,y, dimension]. « Oui, sauf dans le Monde des Douze » ne l’ajoute qu’aux autres dimensions (Incarnam, Srambad…). Le lien du jeu, son clic et le bouton TP ne changent pas ; des coordonnées simplement écrites [x,y] restent comme le joueur les a tapées. « Oui, sauf dans le Monde des Douze » par défaut.", dimensions));
+    // Section « Statistiques »: the counting checkbox, the owned text-button row
+    // that opens the window (see TextButtonHook), then its top-bar button's checkbox.
     prepared.statsOption.reset(MakeBoolOption(prepared.statsSource.get(), current.get(), tooltip.get(), StatsTitle, StatsDescription));
-    Choices scopes;
-    for (int i = 0; i != static_cast<int>(std::size(StatsScopes)); ++i) scopes.emplace_back(i, StatsScopes[i]);
-    prepared.statsScopeOption.reset(MakeChoiceOption(prepared.statsScopeSource.get(), current.get(), StatsScopeTitle, StatsScopeDescription, scopes));
-    {
-        const auto totals = stats::Shown(false);
-        for (size_t line = 0; line < StatsLineCount; ++line) {
-            const bool reset = line == StatsReset;
-            prepared.statsTexts.push_back(reset ? StatsResetText(prepared, totals) : StatsText(line, totals, false));
-            Ref marker;
-            prepared.statsRows.emplace_back(MakeTextButtonOption(tooltip.get(), prepared.statsTexts.back().c_str(), StatsDescriptions[line],
-                reset ? StatsResetCaption(prepared) : "", reset ? StatsResetIcon(prepared) : 0, marker));
-            prepared.statsMarkers.push_back(std::move(marker));
-        }
-    }
+    prepared.statsOpenOption.reset(MakeTextButtonOption(tooltip.get(), StatsOpenTitle, StatsOpenDescription, StatsOpenButton, IconChart,
+        prepared.statsOpenMarker));
+    prepared.statsButtonOption.reset(MakeBoolOption(prepared.statsButtonSource.get(), current.get(), tooltip.get(), StatsButtonTitle,
+        StatsButtonDescription));
     // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
@@ -728,26 +462,26 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.archiZonesOption = std::move(prepared.archiZonesOption);
     ui.archiZonesMiniSource = std::move(prepared.archiZonesMiniSource);
     ui.archiZonesMiniOption = std::move(prepared.archiZonesMiniOption);
+    ui.mapMenuSource = std::move(prepared.mapMenuSource);
+    ui.mapMenuOption = std::move(prepared.mapMenuOption);
     ui.calendarKraloveSource = std::move(prepared.calendarKraloveSource);
     ui.calendarKraloveOption = std::move(prepared.calendarKraloveOption);
     ui.templeSource = std::move(prepared.templeSource);
     ui.templeOption = std::move(prepared.templeOption);
     ui.extraSources = std::move(prepared.extraSources);
     ui.extraOptions = std::move(prepared.extraOptions);
-    ui.perfCornerSource = std::move(prepared.perfCornerSource);
-    ui.perfCornerOption = std::move(prepared.perfCornerOption);
     ui.chatCoordsSource = std::move(prepared.chatCoordsSource);
     ui.chatCoordsOption = std::move(prepared.chatCoordsOption);
+    ui.mapCoordsSource = std::move(prepared.mapCoordsSource);
+    ui.mapCoordsOption = std::move(prepared.mapCoordsOption);
+    ui.miniMapCoordsSource = std::move(prepared.miniMapCoordsSource);
+    ui.miniMapCoordsOption = std::move(prepared.miniMapCoordsOption);
     ui.statsSource = std::move(prepared.statsSource);
     ui.statsOption = std::move(prepared.statsOption);
-    ui.statsScopeSource = std::move(prepared.statsScopeSource);
-    ui.statsScopeOption = std::move(prepared.statsScopeOption);
-    ui.statsRows = std::move(prepared.statsRows);
-    ui.statsMarkers = std::move(prepared.statsMarkers);
-    ui.statsTexts = std::move(prepared.statsTexts);
-    ui.statsScope = 0;
-    ui.statsConfirm = ui.statsConfirmAll = false;
-    ui.statsResult = 0;
+    ui.statsOpenOption = std::move(prepared.statsOpenOption);
+    ui.statsOpenMarker = std::move(prepared.statsOpenMarker);
+    ui.statsButtonSource = std::move(prepared.statsButtonSource);
+    ui.statsButtonOption = std::move(prepared.statsButtonOption);
     ui.resourcesSource = std::move(prepared.resourcesSource);
     ui.resourcesOption = std::move(prepared.resourcesOption);
     ui.spouseSource = std::move(prepared.spouseSource);
@@ -758,10 +492,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.transitionsOption = std::move(prepared.transitionsOption);
     ui.glowSource = std::move(prepared.glowSource);
     ui.glowOption = std::move(prepared.glowOption);
-    ui.glowNpcsSource = std::move(prepared.glowNpcsSource);
-    ui.glowNpcsOption = std::move(prepared.glowNpcsOption);
-    ui.glowInteractivesSource = std::move(prepared.glowInteractivesSource);
-    ui.glowInteractivesOption = std::move(prepared.glowInteractivesOption);
+    ui.glowCategorySources = std::move(prepared.glowCategorySources);
+    ui.glowCategoryOptions = std::move(prepared.glowCategoryOptions);
     ui.combatMiniatureSources = std::move(prepared.combatMiniatureSources);
     ui.combatMiniatureOptions = std::move(prepared.combatMiniatureOptions);
     ui.roleplayMiniatureSources = std::move(prepared.roleplayMiniatureSources);
@@ -1140,178 +872,6 @@ bool KeyButtonClick(Obj button) noexcept {
     } catch (...) { KeyFieldError(*ui, "click"); }
     return true;
 }
-// « Statistiques »: a failure stays in the section (logged at most every ten
-// seconds) and never stops the mod.
-void StatsError(OptionsUi& ui, const char* step, const char* detail = nullptr) noexcept {
-    try {
-        const auto now = GetTickCount64();
-        if (now < ui.nextStatsLog) return;
-        ui.nextStatsLog = now + StatsLogMs;
-        Log(std::string("STATS_UI_ERROR step=") + step + (detail ? std::string(" ") + detail : std::string{}));
-    } catch (...) {}
-}
-// The statistics line a row model shows: native search clones keep its description reference.
-std::optional<size_t> StatsLineOf(const OptionsUi& ui, Obj option) {
-    if (!option || ui.statsMarkers.size() != StatsLineCount) return std::nullopt;
-    const Obj description = api.Call(option, "get_description");
-    if (!description) return std::nullopt;
-    for (size_t line = 0; line < StatsLineCount; ++line)
-        if (ui.statsMarkers[line].get() == description) return line;
-    return std::nullopt;
-}
-std::vector<OptionsUi::StatsView>::iterator FindStatsView(OptionsUi& ui, Obj element) {
-    return std::find_if(ui.statsViews.begin(), ui.statsViews.end(),
-        [element](const OptionsUi::StatsView& view) { return view.element.get() == element; });
-}
-// The view's native button back to its own display, then the view forgotten,
-// even when it is already gone.
-std::vector<OptionsUi::StatsView>::iterator DropStatsView(OptionsUi& ui, std::vector<OptionsUi::StatsView>::iterator view) noexcept {
-    try { if (view->hidden) PutStyle(view->button.get(), "display", view->buttonDisplay.get()); }
-    catch (...) { StatsError(ui, "remove"); }
-    return ui.statsViews.erase(view);
-}
-void DropStatsViews(OptionsUi& ui) noexcept {
-    while (!ui.statsViews.empty()) DropStatsView(ui, ui.statsViews.begin());
-}
-// Each line's label from the store, for what is shown; a changed label goes
-// into its row model too (its next Init, the native search), the reset's
-// caption and icon with it.
-void UpdateStatsTexts(OptionsUi& ui) {
-    if (ui.statsRows.size() != StatsLineCount) return;
-    const bool every = ui.statsScope == 1;
-    const auto totals = stats::Shown(every);
-    ui.statsTexts.resize(StatsLineCount);
-    for (size_t line = 0; line < StatsLineCount; ++line) {
-        const bool reset = line == StatsReset;
-        auto text = reset ? StatsResetText(ui, totals) : StatsText(line, totals, every);
-        if (text == ui.statsTexts[line]) continue;
-        const auto model = ui.statsRows[line].get();
-        Ref label(api.string_new(text.c_str()));
-        api.Call(model, "set_text", {label.get()});
-        if (reset) {
-            SetTextField(model, "buttonText", StatsResetCaption(ui));
-            FieldValue<int>(model, "icon") = StatsResetIcon(ui);
-        }
-        ui.statsTexts[line] = std::move(text);
-    }
-}
-// A view of a line: its label, and its native button hidden, except the
-// reset's, shown with the reset's caption and icon.
-void ShowStatsView(OptionsUi& ui, OptionsUi::StatsView& view) {
-    const bool reset = view.line == StatsReset;
-    if (view.hidden == reset) {
-        if (reset) PutStyle(view.button.get(), "display", view.buttonDisplay.get());
-        else EnumStyle(view.button.get(), "display", DisplayNone);
-        view.hidden = !reset;
-    }
-    if (reset && view.caption != StatsResetCaption(ui)) {
-        Ref caption(api.string_new(StatsResetCaption(ui)));
-        api.Call(view.button.get(), "set_text", {caption.get()});
-        int icon = StatsResetIcon(ui);
-        api.Call(view.button.get(), "set_icon", {&icon});
-        view.caption = StatsResetCaption(ui);
-    }
-    const auto& text = ui.statsTexts.at(view.line);
-    if (statsUpdateText && view.shown != text) {
-        SetTextField(view.element.get(), DisplayedText, text.c_str());
-        api.Invoke(statsUpdateText, view.element.get());
-        view.shown = text;
-    }
-}
-// Every view as its line is now; a view that fails is let go (its next Init follows it again).
-void ShowStatsViews(OptionsUi& ui, const char* step) noexcept {
-    for (auto view = ui.statsViews.begin(); view != ui.statsViews.end();) {
-        try { ShowStatsView(ui, *view); ++view; }
-        catch (const std::exception& error) { StatsError(ui, step, error.what()); view = DropStatsView(ui, view); }
-        catch (...) { StatsError(ui, step); view = DropStatsView(ui, view); }
-    }
-}
-// Once a second while a view of a line is in the open page: the labels follow
-// the store (the play time, another client's writes, a reset). An unanswered
-// question goes after 10 s, an outcome after 6 s.
-void RefreshStats(OptionsUi& ui) noexcept {
-    try {
-        const auto now = GetTickCount64();
-        bool changed = false;
-        if (ui.statsConfirm && now >= ui.statsConfirmDeadline) { ui.statsConfirm = false; changed = true; }
-        if (ui.statsResult && now >= ui.statsResultUntil) { ui.statsResult = 0; changed = true; }
-        if (ui.statsViews.empty() || (!changed && now < ui.nextStatsRefresh)) return;
-        ui.nextStatsRefresh = now + StatsRefreshMs;
-        // A closed page reads nothing: its views follow at their next Init.
-        const bool open = std::any_of(ui.statsViews.begin(), ui.statsViews.end(),
-            [](const OptionsUi::StatsView& view) { return api.Call(view.element.get(), "get_panel") != nullptr; });
-        if (!open) return;
-        UpdateStatsTexts(ui);
-        ShowStatsViews(ui, "refresh");
-    } catch (const std::exception& error) { StatsError(ui, "refresh", error.what()); }
-    catch (...) { StatsError(ui, "refresh"); }
-}
-// Before the key row binds a recycled view: a view that leaves a statistics
-// line gets its native button back as it was.
-void ReleaseStatsView(OptionsUi& ui, Obj element, Obj option) noexcept {
-    try {
-        const auto view = FindStatsView(ui, element);
-        if (view == ui.statsViews.end() || (Active() && StatsLineOf(ui, option))) return;
-        DropStatsView(ui, view);
-    } catch (...) { StatsError(ui, "release"); }
-}
-// After TextButtonOptionElement.Init: a view showing a line (or a search clone
-// of it) is followed, its label current (read again when a second old).
-void BindStatsView(OptionsUi& ui, Obj element, Obj option) noexcept {
-    try {
-        if (!Active()) return;
-        const auto line = StatsLineOf(ui, option);
-        if (!line) return;
-        Ref button(RowButton(element));
-        if (!button.get()) throw std::runtime_error("Statistics row button unavailable");
-        auto view = FindStatsView(ui, element);
-        if (view != ui.statsViews.end() && view->button.get() != button.get()) { DropStatsView(ui, view); view = ui.statsViews.end(); }
-        if (view == ui.statsViews.end()) {
-            if (ui.statsViews.size() >= MaxStatsViews) DropStatsView(ui, ui.statsViews.begin());
-            OptionsUi::StatsView fresh;
-            fresh.element.reset(element);
-            fresh.button.reset(button.get());
-            fresh.buttonDisplay.reset(StyleBox(button.get(), "display"));
-            ui.statsViews.push_back(std::move(fresh));
-            view = std::prev(ui.statsViews.end());
-        }
-        view->line = *line;
-        view->shown.clear();  // the native Init wrote the model's label: written again below when stale
-        view->caption.clear();
-        const auto now = GetTickCount64();
-        if (now >= ui.nextStatsRefresh) { ui.nextStatsRefresh = now + StatsRefreshMs; UpdateStatsTexts(ui); }
-        ShowStatsView(ui, *view);
-    } catch (const std::exception& error) { StatsError(ui, "bind", error.what()); }
-    catch (...) { StatsError(ui, "bind"); }
-}
-// The reset line's button: the first click asks (the line names what would be
-// erased, the button becomes Confirmer); Confirmer within 10 s erases what was
-// shown when asked, for the same character. A click in the first second after
-// the question is ignored: the question stays.
-void StatsResetClick(OptionsUi& ui) noexcept {
-    try {
-        const auto now = GetTickCount64();
-        if (!ui.statsConfirm || now >= ui.statsConfirmDeadline) {
-            ui.statsConfirm = true;
-            ui.statsConfirmAll = ui.statsScope == 1;
-            ui.statsConfirmCharacter = stats::Current();
-            ui.statsConfirmDeadline = now + StatsConfirmMs;
-            ui.statsConfirmFrom = now + StatsConfirmWaitMs;
-            ui.statsResult = 0;
-        } else if (now < ui.statsConfirmFrom) {
-            return;
-        } else {
-            ui.statsConfirm = false;
-            const bool same = ui.statsConfirmAll || (ui.statsConfirmCharacter > 0 && stats::Current() == ui.statsConfirmCharacter);
-            ui.statsResult = same && stats::Clear(ui.statsConfirmAll) ? 1 : 2;
-            ui.statsResultUntil = now + StatsResultMs;
-        }
-        UpdateStatsTexts(ui);
-        ShowStatsViews(ui, "reset");
-        ui.nextStatsRefresh = now + StatsRefreshMs;
-    } catch (const std::exception& error) { StatsError(ui, "reset", error.what()); }
-    catch (...) { StatsError(ui, "reset"); }
-}
 void TextButtonHook(Obj self, Obj element, Method method) {
     const auto ui = module ? module->ui.get() : nullptr;
     Obj description = nullptr;
@@ -1319,7 +879,7 @@ void TextButtonHook(Obj self, Obj element, Method method) {
         Ref option(api.Invoke(textButtonModelGetter, self));
         // Native search/display uses MemberwiseClone: the unique description
         // reference identifies our rows even when the model is cloned. The
-        // credits and Metamob markers are set and released together.
+        // credits, Metamob and statistics markers are set and released together.
         if (ui && ui->creditsMarker.get() && option.get()) description = api.Call(option.get(), "get_description");
         if (description && description == ui->creditsMarker.get()) {
             if (Active()) { Ref url(api.string_new(ProjectUrl)); api.Invoke(openUrl, nullptr, {url.get()}); }
@@ -1332,22 +892,16 @@ void TextButtonHook(Obj self, Obj element, Method method) {
     }
     // The Metamob key row: its own handling, which never throws, never the native action.
     if (description && description == ui->metamobKeyMarker.get()) { if (Active()) SaveKeyClick(*ui, self); return; }
-    // The statistics lines: no native action (null delegate); the reset line asks, then erases.
-    if (description && ui->statsMarkers.size() == StatsLineCount) {
-        if (description == ui->statsMarkers[StatsReset].get()) { if (Active()) StatsResetClick(*ui); return; }
-        for (const auto& marker : ui->statsMarkers) if (description == marker.get()) return;
-    }
+    // « Voir mes statistiques »: opens the statistics window, never the native action.
+    if (description && description == ui->statsOpenMarker.get()) { if (Active()) OpenStatsWindow(); return; }
     originalTextButton(self, element, method);
 }
 // The game pools row views and re-Inits them with any model: after the native
-// Init, the view gets or loses the key row's controls, and follows a
-// statistics line or stops following it (its button given back first).
+// Init, the view gets or loses the key row's controls.
 void TextButtonInitHook(Obj self, Obj option, Method method) {
     originalTextButtonInit(self, option, method);
     if (!module || !module->ui) return;
-    ReleaseStatsView(*module->ui, self, option);
     BindKeyField(*module->ui, self, option);
-    BindStatsView(*module->ui, self, option);
 }
 void EnableHook(Obj self, Method method) {
     originalEnable(self, method);
@@ -1379,16 +933,6 @@ void OptionsUi::Install() {
     // Metamob key row: the game's masked TextInput, buttons and label, kept in the row view.
     AddHook(api.FindVerified(textButton, "Init", 1, 0x2D885A0), 0x2D885A0,
             reinterpret_cast<void*>(TextButtonInitHook), reinterpret_cast<void**>(&originalTextButtonInit));
-    // « Statistiques »: a line's label refreshed in its view, as the game's own
-    // UpdateText shows OptionElement`1.displayedText. Without them, a view
-    // shows its line as it was at its Init.
-    try {
-        RequireField(textButton, "<displayedText>k__BackingField", 0x2F0);
-        statsUpdateText = api.FindVerified(textButton, "UpdateText", 0, 0x2D88830);
-    } catch (const std::exception& error) {
-        statsUpdateText = nullptr;
-        Log(std::string("STATS_LABELS_AT_INIT ") + error.what());
-    }
     auto inputClass = api.Class("Core.dll", Figma, "TextInput");
     api.FindVerified(inputClass, ".ctor", 0, 0x178DC90);
     api.FindVerified(inputClass, "get_text", 0, 0x178DDA0);
@@ -1458,23 +1002,23 @@ bool OptionsUi::Attach(Obj page) {
     appearance.push_back(roleplayModeOption.get());
     for (const auto& option : roleplayMiniatureOptions) appearance.push_back(option.get());
     for (const auto& option : animationOptions) animations.push_back(option.get());
+    // « Surbrillance »: the level, then its category checkboxes.
+    std::vector<Obj> glow{glowOption.get()};
+    for (const auto& option : glowCategoryOptions) glow.push_back(option.get());
     const auto extra = [&](ExtraRow row) { return extraOptions[row].get(); };
-    // « Statistiques »: the checkbox, what is shown, then its lines.
-    std::vector<Obj> statistics{statsOption.get(), statsScopeOption.get()};
-    for (const auto& row : statsRows) statistics.push_back(row.get());
     const Section layout[] = {
         {"Apparence", appearance},
         {"Animations", animations},
-        {"Surbrillance", {glowOption.get(), glowNpcsOption.get(), glowInteractivesOption.get()}},
+        {"Surbrillance", glow},
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), extra(MiniMapBarRow), miniCenterOption.get(), extra(MiniMapZoneNameRow),
-            extra(MapCoordsRow), extra(MiniMapCoordsRow), archiZonesOption.get(), archiZonesMiniOption.get()}},
-        {"Carnet", {extra(NotebookPingRow), extra(MapAddPositionRow)}},
+            mapCoordsOption.get(), miniMapCoordsOption.get(), archiZonesOption.get(), archiZonesMiniOption.get(), mapMenuOption.get()}},
+        {"Carnet", {extra(NotebookPingRow), extra(NotebookCopyRow), extra(NotebookTravelRow), extra(MapAddPositionRow)}},
         {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get(), templeOption.get()}},
         {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
         {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get(), chatCoordsOption.get()}},
         {"Calendrier", {calendarKraloveOption.get()}},
-        {"Performances", {extra(PerfOverlayRow), extra(PerfGpuRow), extra(PerfDiskRow), extra(PerfDragRow), perfCornerOption.get()}},
-        {"Statistiques", statistics},
+        {"Performances", {extra(PerfOverlayRow), extra(PerfGpuRow), extra(PerfDiskRow), extra(PerfDragRow), extra(PerfButtonRow)}},
+        {"Statistiques", {statsOption.get(), statsOpenOption.get(), statsButtonOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
         {"À propos", {creditsOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
@@ -1498,7 +1042,6 @@ bool OptionsUi::Attach(Obj page) {
 void OptionsUi::Tick() {
     if (!module || !module->servicesReady || module->stopped) return;
     RefreshKeyFields(*this);
-    RefreshStats(*this);
     const auto page = pendingPage.get();
     if (page) {
         const bool attached = std::any_of(pages.begin(), pages.end(), [page](const Page& item) {
@@ -1539,8 +1082,8 @@ void OptionsUi::Tick() {
     next.soulReminder = api.Value<bool>(api.Call(soulSource.get(), "get_property"));
     next.soulAutoEquip = api.Value<bool>(api.Call(soulAutoSource.get(), "get_property"));
     next.monsterGlowMode = api.Value<int>(api.Call(glowSource.get(), "get_property"));
-    next.glowNpcs = api.Value<bool>(api.Call(glowNpcsSource.get(), "get_property"));
-    next.glowInteractives = api.Value<bool>(api.Call(glowInteractivesSource.get(), "get_property"));
+    for (size_t i = 0; i < glowCategorySources.size(); ++i)
+        next.*GlowCategoryToggles[i] = api.Value<bool>(api.Call(glowCategorySources[i].get(), "get_property"));
     next.fastMapTransitions = api.Value<bool>(api.Call(transitionsSource.get(), "get_property"));
     next.preloadNextMap = api.Value<bool>(api.Call(preloadSource.get(), "get_property"));
     next.spouseTeleport = api.Value<bool>(api.Call(spouseSource.get(), "get_property"));
@@ -1555,29 +1098,27 @@ void OptionsUi::Tick() {
     next.chatMetamobStatus = api.Value<bool>(api.Call(chatMetamobSource.get(), "get_property"));
     next.archiZonesMap = api.Value<bool>(api.Call(archiZonesSource.get(), "get_property"));
     next.archiZonesMiniMap = api.Value<bool>(api.Call(archiZonesMiniSource.get(), "get_property"));
+    next.mapMenuSettings = api.Value<bool>(api.Call(mapMenuSource.get(), "get_property"));
     next.calendarKralamoure = api.Value<bool>(api.Call(calendarKraloveSource.get(), "get_property"));
     next.travelRoublardTemple = api.Value<bool>(api.Call(templeSource.get(), "get_property"));
     for (size_t i = 0; i < extraSources.size(); ++i)
         next.*ExtraToggles[i] = api.Value<bool>(api.Call(extraSources[i].get(), "get_property"));
-    next.perfOverlayCorner = api.Value<int>(api.Call(perfCornerSource.get(), "get_property"));
+    // « Performances »: a part ticked here, or its top-bar button removed,
+    // shows the overlay again when that button had hidden it.
+    if ((next.perfOverlay && !module->settings.perfOverlay) || (next.perfOverlayGpu && !module->settings.perfOverlayGpu) ||
+        (next.perfOverlayDisk && !module->settings.perfOverlayDisk) || (!next.perfOverlayButton && module->settings.perfOverlayButton))
+        next.perfOverlayShown = true;
     next.coordsWorldChatMode = api.Value<int>(api.Call(chatCoordsSource.get(), "get_property"));
+    next.coordsWorldMapMode = api.Value<int>(api.Call(mapCoordsSource.get(), "get_property"));
+    next.coordsWorldMiniMapMode = api.Value<int>(api.Call(miniMapCoordsSource.get(), "get_property"));
     next.statsEnabled = api.Value<bool>(api.Call(statsSource.get(), "get_property"));
-    // What the statistics lines show: kept here for the session, never in
-    // Settings; another choice drops a pending question and shows at once.
-    const int scope = api.Value<int>(api.Call(statsScopeSource.get(), "get_property"));
-    if (scope != 0 && scope != 1) SetSource(statsScopeSource.get(), statsScope, true);
-    else if (scope != statsScope) {
-        statsScope = scope;
-        statsConfirm = false;
-        statsResult = 0;
-        nextStatsRefresh = 0;
-        RefreshStats(*this);
-    }
-    // Another corner, or the mouse placement turned off: back to the corner.
-    if (!next.perfOverlayDrag || next.perfOverlayCorner != module->settings.perfOverlayCorner) next.perfOverlayX = next.perfOverlayY = -1;
+    next.statsButton = api.Value<bool>(api.Call(statsButtonSource.get(), "get_property"));
+    // The overlay's corner, its mouse place and size and whether its top-bar
+    // button hid it are not rows: kept as they are (unticking « Déplacer et
+    // redimensionner l’affichage à la souris » locks it at its place and size).
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
-        !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidPerfOverlayCorner(next.perfOverlayCorner) ||
-        !Settings::ValidCoordsWorldChatMode(next.coordsWorldChatMode)) {
+        !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidCoordsWorldMode(next.coordsWorldChatMode) ||
+        !Settings::ValidCoordsWorldMode(next.coordsWorldMapMode) || !Settings::ValidCoordsWorldMode(next.coordsWorldMiniMapMode)) {
         Sync(); return;
     }
     if (!(next == module->settings)) {
@@ -1598,12 +1139,9 @@ void OptionsUi::Sync() {
     ApplySettings(*this, module->settings, true);
 }
 void OptionsUi::Restore() {
-    // Owned key controls first: no pooled view may keep one once the hooks
-    // stop; nor a hidden button of a statistics line.
+    // Owned key controls first: no pooled view may keep one once the hooks stop.
     DropKeyFields(*this);
-    DropStatsViews(*this);
     confirmForget = false; confirmDeadline = 0; keyStatus = metamob::KeyStatus::None;
-    statsConfirm = false; statsResult = 0;
     pendingPage.reset();
     stableList.reset();
     std::exception_ptr failure;
@@ -1644,8 +1182,8 @@ void OptionsUi::Restore() {
     soulAutoOption.reset();
     glowSource.reset();
     glowOption.reset();
-    glowNpcsSource.reset(); glowNpcsOption.reset();
-    glowInteractivesSource.reset(); glowInteractivesOption.reset();
+    for (auto& ref : glowCategorySources) ref.reset();
+    for (auto& ref : glowCategoryOptions) ref.reset();
     preloadSource.reset();
     preloadOption.reset();
     resourcesSource.reset();
@@ -1658,17 +1196,18 @@ void OptionsUi::Restore() {
     chatOcreSource.reset(); chatOcreOption.reset();
     chatMetamobSource.reset(); chatMetamobOption.reset();
     archiZonesSource.reset(); archiZonesOption.reset(); archiZonesMiniSource.reset(); archiZonesMiniOption.reset();
+    mapMenuSource.reset(); mapMenuOption.reset();
     calendarKraloveSource.reset(); calendarKraloveOption.reset();
     templeSource.reset(); templeOption.reset();
     for (auto& ref : extraSources) ref.reset();
     for (auto& ref : extraOptions) ref.reset();
-    perfCornerSource.reset(); perfCornerOption.reset();
     chatCoordsSource.reset(); chatCoordsOption.reset();
+    mapCoordsSource.reset(); mapCoordsOption.reset(); miniMapCoordsSource.reset(); miniMapCoordsOption.reset();
     creditsOption.reset(); creditsMarker.reset();
     metamobSyncSource.reset(); metamobSyncOption.reset();
     metamobKeyOption.reset(); metamobKeyMarker.reset();
-    statsSource.reset(); statsOption.reset(); statsScopeSource.reset(); statsScopeOption.reset();
-    statsRows.clear(); statsMarkers.clear(); statsTexts.clear();
+    statsSource.reset(); statsOption.reset(); statsOpenOption.reset(); statsOpenMarker.reset();
+    statsButtonSource.reset(); statsButtonOption.reset();
     spouseSource.reset();
     spouseOption.reset();
     transitionsSource.reset();
@@ -1677,9 +1216,7 @@ void OptionsUi::Restore() {
 }
 void OptionsUi::Abandon() {
     DropKeyFields(*this);
-    DropStatsViews(*this);
     confirmForget = false; confirmDeadline = 0; keyStatus = metamob::KeyStatus::None;
-    statsConfirm = false; statsResult = 0;
     pages.clear(); pendingPage.reset(); stableList.reset();
 }
 bool OptionsUi::KeepResidentHook(void*) const { return false; }

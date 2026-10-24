@@ -8,9 +8,8 @@
 // settings.statsEnabled is on and the module runs, a write every 15 seconds
 // at most and at once when counting stops (a logout, a reconnection, the
 // character selection, the box unticked; at a change of character, at Stop and
-// for a reset too), and the
-// game's data the options show (the played character, the spells', dungeons'
-// and worlds' names).
+// for a reset too), and the game's data the statistics window shows (the
+// played character, the spells', dungeons' and worlds' names).
 namespace stats {
 namespace {
 using namespace managed;
@@ -19,19 +18,28 @@ constexpr const char* WorldSpace = "Core.DataCenter.Metadata.World";
 // A write every 15 s at most from the pump: closing the game loses at most
 // that much. A failed one is tried again 10 s later.
 constexpr ULONGLONG WriteMs = 15000, RetryMs = 10000;
-// The character is read once a second while counting, or while the options
-// show the statistics (WantedMs after the last look). Meanwhile the file is
+// The character is read once a second while counting, or while the window
+// shows the statistics (WantedMs after the last look). Meanwhile the file is
 // read again every RefreshMs when another client wrote it: its latest counts
-// for the options, and its resets applied at once to the unwritten counts.
+// for the window, and its resets applied at once to the unwritten counts.
 constexpr ULONGLONG ReadMs = 1000, WantedMs = 3000, RefreshMs = 5000, LogMs = 60000;
 // How long the main thread waits for another client's lock: a pump, Stop, a reset.
 constexpr unsigned TickLockMs = 50, StopLockMs = 1000, ClearLockMs = 300;
 constexpr size_t MaxNames = 1024, MaxGameNameBytes = 128;
+// A dungeon's name comes from the list of every dungeon the game's own lobby
+// shows (MetadataRoot`1.GetObjects, see Native::Install), read in place with
+// this client's IL2CPP layouts as chat-route.cpp reads them: List`1._items and
+// _size, checked against the list's class at its first use; an array's length
+// at 0x18, its items from 0x20. The game has a few hundred dungeons: a count
+// above MaxDungeons is not its list.
+constexpr size_t ListItems = 0x10, ListSize = 0x18, ArrayLength = 0x18, ArrayItems = 0x20;
+constexpr int32_t MaxDungeons = 4096;
 
 bool Is(Obj object, Klass type) { return object && type && api.class_is_assignable_from(type, api.object_get_class(object)); }
-void RequireField(Klass type, const char* name, size_t offset) {
+size_t RequireField(Klass type, const char* name, size_t offset) {
     const auto field = api.class_get_field_from_name(type, name);
     if (!field || api.field_get_offset(field) != offset) throw std::runtime_error(std::string("Statistics field mismatch: ") + name);
+    return offset;
 }
 bool Printable(const std::string& text) {
     if (text.empty() || text.size() > MaxGameNameBytes) return false;
@@ -46,6 +54,7 @@ class Native final : public Game {
 public:
     void Install() {
         characterReady = spellsReady = dungeonsReady = worldsReady = false;
+        listClass = nullptr;
         names.clear();
         try {
             character = api.Class("Core.dll", "", "esg");
@@ -66,11 +75,21 @@ public:
             auto dataCenter = api.Class(DataCenter, "Core.DataCenter", "DataCenterModule");
             dungeonsRoot = api.FindVerified(dataCenter, "get_dungeonsDataRoot", 0, 0x7BC7C0);
             auto dungeonRoot = api.Class(DataCenter, WorldSpace, "DungeonsDataRoot");
-            // DungeonsDataRoot has no lookup by id of its own: MetadataRoot`1's, fully shared.
+            // DungeonsDataRoot has no lookup by id of its own, and its base's
+            // (MetadataRoot<DungeonData>.GetObjectById, which 1.15.0 used) can
+            // never be verified in this client: Unity 6000.3 shares generic code
+            // fully, and a method returning its type parameter T gets a
+            // signature adapter as its method pointer, the shared code only
+            // behind it (1.15.0 logged "Verified method unavailable:
+            // MetadataRoot`1.GetObjectById"). GetObjects returns a List<T>, a
+            // reference: its method pointer is the shared code itself. The
+            // game's lobby lists the dungeons with it (LobbyTab.get_m_dungeonsData);
+            // the dungeon of an id is found in that list.
             const auto base = api.class_get_parent(dungeonRoot);
             if (!base || std::string(api.class_get_name(base)) != "MetadataRoot`1") throw std::runtime_error("Dungeon data root base changed");
-            dungeonById = api.FindVerified(api.class_get_parent(dungeonRoot), "GetObjectById", 1, 0x3874B80);
+            dungeonList = api.FindVerified(base, "GetObjects", 0, 0x3874CB0);
             dungeonData = api.Class(DataCenter, WorldSpace, "DungeonData");
+            dungeonId = RequireField(dungeonData, "id", 0x10);
             dungeonName = api.FindVerified(dungeonData, "get_name", 0, 0x7C24C0);
             dungeonsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_DUNGEON_NAMES_DISABLED ") + error.what()); }
@@ -107,10 +126,10 @@ public:
             if (!Is(data.get(), spellData)) data.reset();
             getter = spellName;
         } else if (table == Table::Dungeons && dungeonsReady) {
-            Ref root(api.Invoke(dungeonsRoot, nullptr));
-            int64_t dungeon = key;
-            data.reset(root.get() ? api.Invoke(dungeonById, root.get(), {&dungeon}) : nullptr);
-            if (!Is(data.get(), dungeonData)) data.reset();
+            bool listed = false;
+            data = Dungeon(key, listed);
+            // The game's dungeons not there (yet): nothing kept, asked again later.
+            if (!listed) return name;
             getter = dungeonName;
         } else if (table == Table::Dimensions && worldsReady) {
             int world = key;
@@ -128,8 +147,47 @@ public:
         return name;
     }
 private:
-    Klass character{}, info{}, spellData{}, dungeonData{}, worldData{};
-    Method localId{}, spellById{}, spellName{}, dungeonsRoot{}, dungeonById{}, dungeonName{}, worldById{}, worldName{};
+    // The game's dungeon of this id (a DungeonData), found in a new list of
+    // every dungeon (GetObjects); empty when the list has none. listed is false
+    // while the game cannot list its dungeons (no data root, no list, an empty
+    // list). A list this module cannot read turns the dungeons' names off until
+    // the next start, logged once; spells and worlds keep theirs.
+    Ref Dungeon(int key, bool& listed) {
+        listed = false;
+        Ref root(api.Invoke(dungeonsRoot, nullptr));
+        if (!root.get()) return {};
+        Ref list(api.Invoke(dungeonList, root.get()));
+        if (!list.get()) return {};
+        Obj found = nullptr;  // the list keeps its items alive while they are read
+        try {
+            const auto type = api.object_get_class(list.get());
+            if (type != listClass) {
+                // List<DungeonData>: the two fields read here, checked once.
+                if (!type || std::string(api.class_get_name(type)) != "List`1") throw std::runtime_error("Dungeon list type changed");
+                RequireField(type, "_items", ListItems);
+                RequireField(type, "_size", ListSize);
+                listClass = type;
+            }
+            const auto count = Read<int32_t>(list.get(), ListSize);
+            if (count < 0 || count > MaxDungeons) throw std::runtime_error("Dungeon list count");
+            if (count == 0) return {};
+            const auto items = Read<Obj>(list.get(), ListItems);
+            if (!items || Read<uint64_t>(items, ArrayLength) < static_cast<uint64_t>(count)) throw std::runtime_error("Dungeon list items");
+            for (int32_t index = 0; index < count && !found; ++index) {
+                const auto dungeon = Read<Obj>(items, ArrayItems + static_cast<size_t>(index) * sizeof(Obj));
+                if (Is(dungeon, dungeonData) && Read<int32_t>(dungeon, dungeonId) == key) found = dungeon;
+            }
+        } catch (const std::exception& error) {
+            dungeonsReady = false;
+            Log(std::string("STATS_DUNGEON_NAMES_DISABLED ") + error.what());
+            return {};
+        }
+        listed = true;
+        return Ref(found);
+    }
+    Klass character{}, info{}, spellData{}, dungeonData{}, worldData{}, listClass{};
+    Method localId{}, spellById{}, spellName{}, dungeonsRoot{}, dungeonList{}, dungeonName{}, worldById{}, worldName{};
+    size_t dungeonId = 0;  // DungeonData.id
     bool characterReady = false, spellsReady = false, dungeonsReady = false, worldsReady = false;
     std::unordered_map<uint64_t, std::string> names;
 };

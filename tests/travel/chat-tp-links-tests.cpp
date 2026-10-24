@@ -1067,8 +1067,8 @@ int main(int argc,char** argv){
         const bool noDimension=argc==2&&std::string(argv[1])=="--missing-dimension-layout";
         fake::colorLayoutAvailable=!fallback;fake::expectExplicitColors=!fallback;fake::dimensionLayoutAvailable=!noDimension;
         // The TP and status scenarios read the game's position texts: the
-        // dimension (checked by default) has its own scenario below.
-        fake::Check(owner.settings.coordsWorldChatMode==2,"The chat dimension is shown by default");owner.settings.coordsWorldChatMode=0;
+        // dimension (shown by default, except in the Monde des Douze) has its own scenario below.
+        fake::Check(owner.settings.coordsWorldChatMode==1,"The chat dimension is shown by default, except in the Monde des Douze");owner.settings.coordsWorldChatMode=0;
         InstallChatTpLinks(fake::OnClick);
         if(fallback)fake::Check(!fake::logs.empty()&&fake::logs.back().starts_with("CHAT_TP_COLOR_FALLBACK "),
             "Unavailable cosmetic layout must preserve chat TP with a diagnostic instead of aborting module startup");

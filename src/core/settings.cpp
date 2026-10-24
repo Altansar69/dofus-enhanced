@@ -28,14 +28,25 @@ constexpr Flag AnimationFlags[] = {
     {"noAttackAnimations", &Settings::noAttackAnimations}, {"noDeathAnimations", &Settings::noDeathAnimations},
     {"instantMovements", &Settings::instantMovements}, {"noVisualWaits", &Settings::noVisualWaits}};
 static_assert(std::size(AnimationFlags) == std::size(AnimationToggles));
-// The checkboxes added in 1.13.0 and 1.14.0 (ExtraToggles), each its own 0/1 line.
+// The « Surbrillance » categories (GlowCategoryToggles), each its own 0/1 line.
+// A file without one keeps its default: the monsters, alone outlined before
+// these boxes (r116), stay ticked, the other categories stay unticked.
+constexpr Flag GlowFlags[] = {
+    {"glowMonsters", &Settings::glowMonsters}, {"glowNpcs", &Settings::glowNpcs},
+    {"glowInteractives", &Settings::glowInteractives}, {"glowSelf", &Settings::glowSelf},
+    {"glowParty", &Settings::glowParty}, {"glowPlayers", &Settings::glowPlayers}};
+static_assert(std::size(GlowFlags) == std::size(GlowCategoryToggles));
+// The checkboxes added in 1.13.0, 1.14.0 and 1.16.0 (ExtraToggles), each its own
+// 0/1 line. A file without the notebook's copy and travel buttons or the
+// performance overlay's top-bar button (before 1.16.0) keeps their default:
+// all shown.
 constexpr Flag ExtraFlags[] = {
     {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
-    {"coordsWorldMap", &Settings::coordsWorldMap}, {"coordsWorldMiniMap", &Settings::coordsWorldMiniMap},
-    {"notebookPingButton", &Settings::notebookPingButton}, {"mapAddPosition", &Settings::mapAddPosition},
+    {"notebookPingButton", &Settings::notebookPingButton}, {"notebookCopyButton", &Settings::notebookCopyButton},
+    {"notebookTravelButton", &Settings::notebookTravelButton}, {"mapAddPosition", &Settings::mapAddPosition},
     {"perfOverlay", &Settings::perfOverlay},
     {"perfOverlayGpu", &Settings::perfOverlayGpu}, {"perfOverlayDisk", &Settings::perfOverlayDisk},
-    {"perfOverlayDrag", &Settings::perfOverlayDrag}};
+    {"perfOverlayDrag", &Settings::perfOverlayDrag}, {"perfOverlayButton", &Settings::perfOverlayButton}};
 static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
 }
 
@@ -46,7 +57,12 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     std::string line;
     bool preferredRead = false, preferredRoleplayRead = false, animationModeRead = false, monsterGlowModeRead = false;
     bool resourceMiniMapRead = false, chatModeRead = false;
+    bool perfOverlayPartsRead = false; // written by 1.16.0 or later: the overlay's boxes are independent
     int legacyChatDimension = -1; // 1.13.0's checkbox, before the chat's three choices
+    // The maps' dimension choices (1.16.0), each read or not, and their
+    // checkboxes before (-1: absent); dimensionChoices=1 marks a file written since.
+    bool mapModeRead = false, miniMapModeRead = false, dimensionChoices = false;
+    int legacyMapDimension = -1, legacyMiniMapDimension = -1;
     int legacyAnimationMode = 1; // the default of every revision that had it
     unsigned animationFlagsRead = 0;
     while (std::getline(file, line)) {
@@ -67,6 +83,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             int value = 0;
             if (!ParseInt(line.substr(split + 1), value)) continue;
             bool flag = false;
+            for (const auto& [name, field] : GlowFlags)
+                if (key == name) { if (value == 0 || value == 1) settings.*field = value != 0; flag = true; }
             for (const auto& [name, field] : AppearanceFlags)
                 if (key == name) { if (value == 0 || value == 1) settings.*field = value != 0; flag = true; }
             for (const auto& [name, field] : ExtraFlags)
@@ -82,12 +100,11 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "animationMode" && ValidAnimationMode(value)) { legacyAnimationMode = value; animationModeRead = true; }
             else if (key == "soulAutoEquip" && (value == 0 || value == 1)) settings.soulAutoEquip = value != 0;
             else if (key == "soulReminder" && (value == 0 || value == 1)) settings.soulReminder = value != 0;
-            else if (key == "glowNpcs" && (value == 0 || value == 1)) settings.glowNpcs = value != 0;
-            else if (key == "glowInteractives" && (value == 0 || value == 1)) settings.glowInteractives = value != 0;
             else if (key == "miniMapCenterButton" && (value == 0 || value == 1)) settings.miniMapCenterButton = value != 0;
             else if (key == "smallHeaderSoul" && (value == 0 || value == 1)) settings.smallHeaderSoul = value != 0;
             else if (key == "smallHeaderTreasure" && (value == 0 || value == 1)) settings.smallHeaderTreasure = value != 0;
             else if (key == "smallHeaderNotebook" && (value == 0 || value == 1)) settings.smallHeaderNotebook = value != 0;
+            else if (key == "smallHeaderStats" && (value == 0 || value == 1)) settings.smallHeaderStats = value != 0;
             else if (key == "notebookCompact" && (value == 0 || value == 1)) settings.notebookCompact = value != 0;
             else if (key == "metamobSync" && (value == 0 || value == 1)) settings.metamobSync = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
@@ -104,12 +121,22 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "archiZonesMiniMap" && (value == 0 || value == 1)) settings.archiZonesMiniMap = value != 0;
             else if (key == "calendarKralamoure" && (value == 0 || value == 1)) settings.calendarKralamoure = value != 0;
             else if (key == "mapTravelPlanner" && (value == 0 || value == 1)) settings.mapTravelPlanner = value != 0;
+            else if (key == "mapMenuSettings" && (value == 0 || value == 1)) settings.mapMenuSettings = value != 0;
             else if (key == "perfOverlayCorner" && ValidPerfOverlayCorner(value)) settings.perfOverlayCorner = value;
-            else if (key == "coordsWorldChatMode" && ValidCoordsWorldChatMode(value)) { settings.coordsWorldChatMode = value; chatModeRead = true; }
+            else if (key == "coordsWorldChatMode" && ValidCoordsWorldMode(value)) { settings.coordsWorldChatMode = value; chatModeRead = true; }
             else if (key == "coordsWorldChat" && (value == 0 || value == 1)) legacyChatDimension = value;
+            else if (key == "coordsWorldMapMode" && ValidCoordsWorldMode(value)) { settings.coordsWorldMapMode = value; mapModeRead = true; }
+            else if (key == "coordsWorldMap" && (value == 0 || value == 1)) legacyMapDimension = value;
+            else if (key == "coordsWorldMiniMapMode" && ValidCoordsWorldMode(value)) { settings.coordsWorldMiniMapMode = value; miniMapModeRead = true; }
+            else if (key == "coordsWorldMiniMap" && (value == 0 || value == 1)) legacyMiniMapDimension = value;
+            else if (key == "dimensionChoices" && value == 1) dimensionChoices = true;
             else if (key == "statsEnabled" && (value == 0 || value == 1)) settings.statsEnabled = value != 0;
+            else if (key == "statsButton" && (value == 0 || value == 1)) settings.statsButton = value != 0;
             else if (key == "perfOverlayX" && ValidPerfOverlayPlace(value)) settings.perfOverlayX = value;
             else if (key == "perfOverlayY" && ValidPerfOverlayPlace(value)) settings.perfOverlayY = value;
+            else if (key == "perfOverlayScale" && ValidPerfOverlayScale(value)) settings.perfOverlayScale = value;
+            else if (key == "perfOverlayShown" && (value == 0 || value == 1)) settings.perfOverlayShown = value != 0;
+            else if (key == "perfOverlayParts" && value >= 1) perfOverlayPartsRead = true;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
             else if (key == "resourceMiniMapEnabled" && (value == 0 || value == 1)) { settings.resourceMiniMapEnabled = value != 0; resourceMiniMapRead = true; }
             else if (key == "resourceMapItem" && value > 0 && value <= 1000000) {
@@ -138,8 +165,21 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     if (!resourceMiniMapRead) settings.resourceMiniMapEnabled = settings.resourceMapEnabled;
     // A file of 1.13.x: its checkbox becomes « Oui » or « Non ».
     if (!chatModeRead && legacyChatDimension >= 0) settings.coordsWorldChatMode = legacyChatDimension ? 2 : 0;
+    // The maps' checkboxes before 1.16.0: checked becomes « Oui, sauf dans le
+    // Monde des Douze », the default since, unchecked « Non ».
+    if (!mapModeRead && legacyMapDimension >= 0) settings.coordsWorldMapMode = legacyMapDimension ? 1 : 0;
+    if (!miniMapModeRead && legacyMiniMapDimension >= 0) settings.coordsWorldMiniMapMode = legacyMiniMapDimension ? 1 : 0;
+    // A file written before 1.16.0: the chat's « Oui », the default then,
+    // becomes the default since, « Oui, sauf dans le Monde des Douze ». A file
+    // written since keeps every choice.
+    if (!dimensionChoices && settings.coordsWorldChatMode == 2) settings.coordsWorldChatMode = 1;
     // A place needs both coordinates; one alone means the chosen corner.
     if (!ValidPerfOverlayPlace(settings.perfOverlayX, settings.perfOverlayY)) settings.perfOverlayX = settings.perfOverlayY = -1;
+    // Before 1.16.0, « Charge du GPU » and « Activité du disque » only added to
+    // the overlay of « Afficher les FPS et la mémoire »: a file of those
+    // revisions keeps them only with that box ticked, so that no overlay
+    // appears by itself after the update (both were ticked by default).
+    if (!perfOverlayPartsRead && !settings.perfOverlay) settings.perfOverlayGpu = settings.perfOverlayDisk = false;
     return settings;
 }
 std::optional<bool> Settings::ReadMetamobSync(const std::filesystem::path& path) {
@@ -162,8 +202,11 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
     if (!ValidPanelPosition(soulPanelX) || !ValidPanelPosition(soulPanelY))
         throw std::runtime_error("Invalid soul panel position");
     if (!ValidPerfOverlayCorner(perfOverlayCorner)) throw std::runtime_error("Invalid performance overlay corner");
-    if (!ValidCoordsWorldChatMode(coordsWorldChatMode)) throw std::runtime_error("Invalid chat dimension choice");
+    if (!ValidCoordsWorldMode(coordsWorldChatMode)) throw std::runtime_error("Invalid chat dimension choice");
+    if (!ValidCoordsWorldMode(coordsWorldMapMode) || !ValidCoordsWorldMode(coordsWorldMiniMapMode))
+        throw std::runtime_error("Invalid map dimension choice");
     if (!ValidPerfOverlayPlace(perfOverlayX, perfOverlayY)) throw std::runtime_error("Invalid performance overlay place");
+    if (!ValidPerfOverlayScale(perfOverlayScale)) throw std::runtime_error("Invalid performance overlay scale");
     static std::atomic_uint64_t nextSave{0};
     auto temporary = path;
     temporary += L".tmp-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++nextSave);
@@ -187,8 +230,6 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\nsoulReminder=" << (soulReminder ? 1 : 0)
              << "\nmonsterUiGlow=" << (monsterGlowMode != 0 ? 1 : 0)
              << "\nmonsterGlowMode=" << monsterGlowMode
-             << "\nglowNpcs=" << (glowNpcs ? 1 : 0)
-             << "\nglowInteractives=" << (glowInteractives ? 1 : 0)
              << "\nfastMapTransitions=" << (fastMapTransitions ? 1 : 0)
              << "\npreloadNextMap=" << (preloadNextMap ? 1 : 0)
              << "\nspouseTeleport=" << (spouseTeleport ? 1 : 0)
@@ -196,6 +237,7 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\nresourceMiniMapEnabled=" << (resourceMiniMapEnabled ? 1 : 0)
              << "\nminiMapCenterButton=" << (miniMapCenterButton ? 1 : 0)
              << "\nsmallHeaderSoul=" << (smallHeaderSoul ? 1 : 0) << "\nsmallHeaderTreasure=" << (smallHeaderTreasure ? 1 : 0) << "\nsmallHeaderNotebook=" << (smallHeaderNotebook ? 1 : 0)
+             << "\nsmallHeaderStats=" << (smallHeaderStats ? 1 : 0)
              << "\nnotebookCompact=" << (notebookCompact ? 1 : 0)
              << "\nchatTravelLinks=" << (chatTravelLinks ? 1 : 0)
              << "\nchatSoulInventory=" << (chatSoulInventory ? 1 : 0)
@@ -206,13 +248,24 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\narchiZonesMiniMap=" << (archiZonesMiniMap ? 1 : 0)
              << "\ncalendarKralamoure=" << (calendarKralamoure ? 1 : 0)
              << "\nmapTravelPlanner=" << (mapTravelPlanner ? 1 : 0);
+        file << "\nmapMenuSettings=" << (mapMenuSettings ? 1 : 0); // 1.16.0: each map's settings in its right-click menu
+        for (const auto& [name, field] : GlowFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         for (const auto& [name, field] : AppearanceFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         for (const auto& [name, field] : AnimationFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         for (const auto& [name, field] : ExtraFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         file << "\nperfOverlayCorner=" << perfOverlayCorner << "\nperfOverlayX=" << perfOverlayX << "\nperfOverlayY=" << perfOverlayY;
-        // The 1.13.x checkbox too, for a client of that revision sharing this file.
-        file << "\ncoordsWorldChatMode=" << coordsWorldChatMode << "\ncoordsWorldChat=" << (coordsWorldChatMode != 0 ? 1 : 0);
-        file << "\nstatsEnabled=" << (statsEnabled ? 1 : 0);
+        file << "\nperfOverlayScale=" << perfOverlayScale << "\nperfOverlayShown=" << (perfOverlayShown ? 1 : 0);
+        // The overlay's boxes are independent (1.16.0): Read keeps them as they are.
+        file << "\nperfOverlayParts=1";
+        // Each dimension choice with the checkbox of the revisions before it (the
+        // chat's of 1.13.x, the maps' before 1.16.0), checked for any choice but
+        // « Non », for a client of those sharing this file; then the mark of a
+        // file written since 1.16.0, whose choices Read keeps as they are.
+        file << "\ncoordsWorldChatMode=" << coordsWorldChatMode << "\ncoordsWorldChat=" << (coordsWorldChatMode != 0 ? 1 : 0)
+             << "\ncoordsWorldMapMode=" << coordsWorldMapMode << "\ncoordsWorldMap=" << (coordsWorldMapMode != 0 ? 1 : 0)
+             << "\ncoordsWorldMiniMapMode=" << coordsWorldMiniMapMode << "\ncoordsWorldMiniMap=" << (coordsWorldMiniMapMode != 0 ? 1 : 0)
+             << "\ndimensionChoices=1";
+        file << "\nstatsEnabled=" << (statsEnabled ? 1 : 0) << "\nstatsButton=" << (statsButton ? 1 : 0);
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

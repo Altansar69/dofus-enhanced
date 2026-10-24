@@ -160,17 +160,68 @@ int main() {
             Require(!actual, "Explicit opt-outs survive new defaults and later malformed values");
             Require(autoLoadSpecified == (std::string(key)=="autoLoad"), "Only valid auto-load values count as explicit preferences");
         }
-        Require(!defaults.glowNpcs && !defaults.glowInteractives,"Extra glow categories default off");
-        for (bool npcs : {false,true}) for (bool interactives : {false,true}) {
-            auto categories=defaults; categories.glowNpcs=npcs; categories.glowInteractives=interactives;
-            categories.Save(path);
-            Require(Settings::Read(path)==categories,"Independent glow categories must persist");
-            { std::ofstream invalid(path,std::ios::app); invalid << "glowNpcs=2\nglowInteractives=-1\n"; }
-            Require(Settings::Read(path)==categories,"Malformed flags must preserve saved choices");
+        {
+            // « Surbrillance »: six independent categories, in the options order.
+            // Monstres alone starts ticked: the monsters were the only outlined
+            // actors before these boxes.
+            const char* keys[] = {"glowMonsters", "glowNpcs", "glowInteractives", "glowSelf", "glowParty", "glowPlayers"};
+            bool Settings::* const fields[] = {&Settings::glowMonsters, &Settings::glowNpcs, &Settings::glowInteractives,
+                &Settings::glowSelf, &Settings::glowParty, &Settings::glowPlayers};
+            Require(std::size(GlowCategoryToggles) == 6, "Six glow categories");
+            for (size_t i = 0; i < 6; ++i)
+                Require(GlowCategoryToggles[i] == fields[i] && defaults.*GlowCategoryToggles[i] == (i == 0),
+                    "Glow categories in the options order; Monstres alone ticked by default");
+            for (unsigned pattern = 0; pattern < 64; ++pattern) {
+                auto categories = defaults;
+                for (size_t i = 0; i < 6; ++i) categories.*GlowCategoryToggles[i] = ((pattern >> i) & 1) != 0;
+                categories.Save(path);
+                Require(Settings::Read(path) == categories, "Independent glow categories must persist");
+                const auto saved = FileText(path);
+                for (size_t i = 0; i < 6; ++i)
+                    Require(saved.find(std::string("\n") + keys[i] + "=" + (((pattern >> i) & 1) ? "1" : "0") + "\n") != std::string::npos,
+                        "Each glow category is saved on its own line");
+                { std::ofstream invalid(path, std::ios::app); invalid << "glowMonsters=2\nglowNpcs=2\nglowInteractives=-1\nglowSelf=3\nglowParty=x\nglowPlayers=\n"; }
+                Require(Settings::Read(path) == categories, "Malformed flags must preserve saved choices");
+            }
+            // A file of an earlier revision: the monsters stay outlined, the NPC and
+            // interactive choices are kept, the player categories start unticked.
+            { std::ofstream file(path); file << "monsterGlowMode=2\nglowNpcs=1\nglowInteractives=0\n"; }
+            const auto old = Settings::Read(path);
+            Require(old.monsterGlowMode == 2 && old.glowMonsters && old.glowNpcs && !old.glowInteractives && !old.glowSelf &&
+                !old.glowParty && !old.glowPlayers, "Older files keep the monsters and their NPC choice; the players start unticked");
+            // Every box unticked is kept (nothing outlined), and the last valid line wins.
+            { std::ofstream file(path); file << "glowMonsters=0\nglowPlayers=1\nglowPlayers=0\nglowSelf=1\nglowSelf=0\n"; }
+            const auto none = Settings::Read(path);
+            Require(!none.glowMonsters && !none.glowNpcs && !none.glowInteractives && !none.glowSelf && !none.glowParty && !none.glowPlayers,
+                "Every glow category unticked is kept; the last valid line wins");
         }
         Require(defaults.resourceMapEnabled && defaults.resourceMiniMapEnabled && defaults.resourceMapItems.empty(), "No resource annotations before a selection");
-        Require(!defaults.smallHeaderSoul && !defaults.smallHeaderTreasure && !defaults.smallHeaderNotebook, "Panel headers start at the native size");
+        Require(!defaults.smallHeaderSoul && !defaults.smallHeaderTreasure && !defaults.smallHeaderNotebook && !defaults.smallHeaderStats,
+            "Panel headers start at the native size");
         Require(!defaults.notebookCompact, "The notebook starts in its full layout");
+        {
+            // 1.16.0: the copy and travel buttons of the notebook's position lines
+            // (in place of « Copier » and « Voyager » under the form), shown by
+            // default, each its own 0/1 line; a file written before them shows both.
+            Require(defaults.notebookCopyButton && defaults.notebookTravelButton, "The notebook's copy and travel buttons start shown");
+            for (int copyValue : {0, 1}) for (int travelValue : {0, 1}) {
+                auto buttons = defaults; buttons.notebookCopyButton = copyValue != 0; buttons.notebookTravelButton = travelValue != 0;
+                buttons.Save(path);
+                const auto saved = FileText(path);
+                Require(saved.find("\nnotebookCopyButton=" + std::to_string(copyValue) + "\n") != std::string::npos &&
+                    saved.find("\nnotebookTravelButton=" + std::to_string(travelValue) + "\n") != std::string::npos && Settings::Read(path) == buttons,
+                    "The copy and travel buttons are saved on their own lines and read back");
+                { std::ofstream invalid(path, std::ios::app); invalid << "notebookCopyButton=2\nnotebookTravelButton=-1\nnotebookCopyButton=x\nnotebookTravelButton=\nnotebookCopyButton= 0\n"; }
+                Require(Settings::Read(path) == buttons, "Malformed copy and travel lines preserve the saved choices");
+            }
+            { std::ofstream older(path); older << "mode=2\nnotebookPingButton=0\n"; }
+            const auto beforeButtons = Settings::Read(path);
+            Require(!beforeButtons.notebookPingButton && beforeButtons.notebookCopyButton && beforeButtons.notebookTravelButton,
+                "A file written before them shows both buttons");
+            { std::ofstream twice(path); twice << "notebookCopyButton=0\nnotebookTravelButton=0\nnotebookCopyButton=1\n"; }
+            const auto lastLine = Settings::Read(path);
+            Require(lastLine.notebookCopyButton && !lastLine.notebookTravelButton, "The last valid copy or travel line wins");
+        }
         Require(!defaults.metamobSync, "Metamob capture sync starts disabled");
         Require(defaults.chatTravelLinks && defaults.chatSoulInventory && defaults.chatOcreStatus && defaults.chatMetamobStatus && defaults.mapTravelPlanner,
             "Chat additions and the mod's map travel start enabled, as they were before they had options");
@@ -232,20 +283,24 @@ int main() {
             Require(Settings::Read(path).LegacyAnimationMode() == legacyBool, "Oldest noAnimations migrates to Normal or Raccourcies");
         }
         // The 1.13.0 and 1.14.0 checkboxes: map, notebook, chat and overlay
-        // additions on by default, the overlay off and in its corner; each one
-        // persists alone and together, with the overlay's corner and place.
-        Require(defaults.resourceMiniMapBar && defaults.miniMapZoneName && defaults.coordsWorldMap && defaults.coordsWorldMiniMap &&
-            defaults.notebookPingButton && defaults.mapAddPosition && defaults.coordsWorldChatMode == 2 && !defaults.perfOverlay &&
-            defaults.perfOverlayCorner == 0 && defaults.perfOverlayGpu && defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
-            defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1,
-            "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden in the top left corner");
-        static_assert(std::size(ExtraToggles) == 10);
+        // additions on by default, the overlay's three parts off (each one shows
+        // it since 1.16.0) and its corner the top left; each one persists alone
+        // and together, with the overlay's corner and place.
+        Require(defaults.resourceMiniMapBar && defaults.miniMapZoneName && defaults.coordsWorldMapMode == 1 && defaults.coordsWorldMiniMapMode == 1 &&
+            defaults.notebookPingButton && defaults.mapAddPosition && defaults.coordsWorldChatMode == 1 && !defaults.perfOverlay &&
+            defaults.perfOverlayCorner == 0 && !defaults.perfOverlayGpu && !defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
+            defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1 && Settings{} == defaults,
+            "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden (no part ticked) in the top left corner");
+        static_assert(std::size(ExtraToggles) == 11); // with 1.16.0's: the notebook's copy and travel buttons, the overlay's top-bar button
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
-            // Every combination of the first seven, twice; the 1.14.0 ones follow inverted bits.
-            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = (((mask >> (i % 7)) & 1) != 0) != (i >= 7);
+            // Every combination of the first five, many times; the others follow inverted bits.
+            for (size_t i = 0; i < std::size(ExtraToggles); ++i) extra.*ExtraToggles[i] = (((mask >> (i % 5)) & 1) != 0) != (i >= 5);
             extra.perfOverlayCorner = static_cast<int>(mask % 4);
+            // The three dimension choices: each of their 27 combinations.
             extra.coordsWorldChatMode = static_cast<int>(mask % 3);
+            extra.coordsWorldMapMode = static_cast<int>(mask / 3 % 3);
+            extra.coordsWorldMiniMapMode = static_cast<int>(mask / 9 % 3);
             if (mask % 3) {
                 extra.perfOverlayX = static_cast<int>(mask * 39 % 10001);
                 extra.perfOverlayY = static_cast<int>(10000 - mask * 23 % 10001);
@@ -253,7 +308,8 @@ int main() {
             extra.Save(path);
             Require(Settings::Read(path) == extra, "Each checkbox, the overlay corner and its place persist independently");
             { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayCorner=4\nperfOverlayCorner=-1\nminiMapZoneName=2\nperfOverlay=x\n"
-                "perfOverlayX=10001\nperfOverlayY=-2\nperfOverlayGpu=2\nperfOverlayDrag=-1\ncoordsWorldChatMode=3\ncoordsWorldChat=2\n"; }
+                "perfOverlayX=10001\nperfOverlayY=-2\nperfOverlayGpu=2\nperfOverlayDrag=-1\ncoordsWorldChatMode=3\ncoordsWorldChat=2\n"
+                "coordsWorldMapMode=3\ncoordsWorldMiniMapMode=-1\ncoordsWorldMap=2\ncoordsWorldMiniMap=x\ndimensionChoices=0\n"; }
             Require(Settings::Read(path) == extra, "Malformed values preserve the saved choices");
         }
         {
@@ -266,24 +322,167 @@ int main() {
             Require(rejected, "A lone overlay coordinate is never saved");
         }
         {
-            // 1.13.x had a checkbox for the chat dimension: checked is « Oui », unchecked « Non »;
-            // the three-way choice wins once written, and the checkbox stays written for 1.13.x.
-            for (int legacy : {0, 1}) {
-                { std::ofstream old(path); old << "coordsWorldChat=" << legacy << "\n"; }
-                Require(Settings::Read(path).coordsWorldChatMode == (legacy ? 2 : 0), "The 1.13.x chat checkbox becomes Oui or Non");
-                { std::ofstream both(path); both << "coordsWorldChatMode=1\ncoordsWorldChat=" << legacy << "\n"; }
-                Require(Settings::Read(path).coordsWorldChatMode == 1, "The three-way choice wins over the old checkbox");
+            // 1.16.0: the overlay's three boxes are independent, and every file it
+            // writes says so (perfOverlayParts=1): « Charge du GPU » or « Activité
+            // du disque » alone stays ticked.
+            auto parts = defaults; parts.perfOverlayGpu = parts.perfOverlayDisk = true; parts.perfOverlayX = 2500; parts.perfOverlayY = 7500;
+            parts.perfOverlayDrag = false; parts.perfOverlayCorner = 3;
+            parts.Save(path);
+            Require(FileText(path).find("\nperfOverlayParts=1\n") != std::string::npos && Settings::Read(path) == parts,
+                "perfOverlayParts=1 written: the GPU and the disk alone, the corner of an earlier revision and a locked place kept");
+            // A file written before 1.16.0 (no perfOverlayParts) keeps the GPU and
+            // the disk only with « Afficher les FPS et la mémoire » ticked: without
+            // it they showed nothing, and must not show an overlay now.
+            for (int fps : {0, 1}) for (int gpu : {0, 1}) for (int disk : {0, 1}) {
+                { std::ofstream older(path); older << "mode=2\nperfOverlay=" << fps << "\nperfOverlayGpu=" << gpu << "\nperfOverlayDisk=" << disk
+                    << "\nperfOverlayDrag=0\nperfOverlayCorner=1\nperfOverlayX=1200\nperfOverlayY=300\n"; }
+                const auto older = Settings::Read(path);
+                Require(older.perfOverlay == (fps != 0) && older.perfOverlayGpu == (fps != 0 && gpu != 0) &&
+                    older.perfOverlayDisk == (fps != 0 && disk != 0) && !older.perfOverlayDrag && older.perfOverlayCorner == 1 &&
+                    older.perfOverlayX == 1200 && older.perfOverlayY == 300,
+                    "Before 1.16.0: the GPU and the disk kept only with the FPS box, the rest as saved");
+                { std::ofstream marked(path, std::ios::app); marked << "perfOverlayParts=1\n"; }
+                const auto marked = Settings::Read(path);
+                Require(marked.perfOverlay == (fps != 0) && marked.perfOverlayGpu == (gpu != 0) && marked.perfOverlayDisk == (disk != 0),
+                    "Written by 1.16.0: each box as saved, whatever the others");
             }
-            auto chat = defaults; chat.coordsWorldChatMode = 1; chat.Save(path);
-            std::stringstream lines;
-            { std::ifstream saved(path); lines << saved.rdbuf(); } // closed: an open file would make any Save fail
-            Require(lines.str().find("coordsWorldChatMode=1\n") != std::string::npos && lines.str().find("coordsWorldChat=1\n") != std::string::npos,
-                "The choice and the 1.13.x checkbox are both written");
-            auto invalid = defaults; invalid.coordsWorldChatMode = 3;
-            std::string refusal;
-            try { invalid.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
-            Require(refusal == "Invalid chat dimension choice" && Settings::Read(path).coordsWorldChatMode == 1,
-                "An unknown chat dimension choice is never saved");
+            // 1.13.x had no GPU or disk line: their default, off.
+            { std::ofstream older(path); older << "perfOverlay=1\n"; }
+            const auto first = Settings::Read(path);
+            Require(first.perfOverlay && !first.perfOverlayGpu && !first.perfOverlayDisk, "A 1.13.x file: the FPS part alone");
+            // Only a positive perfOverlayParts marks a file of 1.16.0 or later.
+            { std::ofstream bad(path); bad << "perfOverlayGpu=1\nperfOverlayDisk=1\nperfOverlayParts=0\nperfOverlayParts=x\nperfOverlayParts=-1\n"; }
+            Require(!Settings::Read(path).perfOverlayGpu && !Settings::Read(path).perfOverlayDisk, "A zero or malformed marker is no marker");
+            { std::ofstream later(path); later << "perfOverlayDisk=1\nperfOverlayParts=2\n"; }
+            Require(Settings::Read(path).perfOverlayDisk, "A later marker keeps the boxes as saved");
+            // The update's first save writes the migrated choice with the marker:
+            // a box ticked afterwards stays ticked.
+            { std::ofstream older(path); older << "perfOverlay=0\nperfOverlayGpu=1\nperfOverlayDisk=1\n"; }
+            auto migrated = Settings::Read(path);
+            migrated.Save(path);
+            const auto saved = FileText(path);
+            Require(saved.find("\nperfOverlayGpu=0\n") != std::string::npos && saved.find("\nperfOverlayDisk=0\n") != std::string::npos &&
+                saved.find("\nperfOverlayParts=1\n") != std::string::npos && Settings::Read(path) == migrated, "Saved migrated, with the marker");
+            migrated.perfOverlayGpu = true;
+            migrated.Save(path);
+            const auto ticked = Settings::Read(path);
+            Require(ticked.perfOverlayGpu && !ticked.perfOverlay && !ticked.perfOverlayDisk, "Ticked after the update: kept");
+        }
+        {
+            // 1.16.0: the overlay's top-bar button (a checkbox, on by default),
+            // whether that button hid it (perfOverlayShown, not hidden by default)
+            // and its size in percent of its natural size (perfOverlayScale, 100 by
+            // default, 50 to 300). Each persists alone and together; anything else
+            // is never read, and a size outside 50..300 is never saved.
+            Require(defaults.perfOverlayButton && defaults.perfOverlayShown && defaults.perfOverlayScale == 100 &&
+                Settings::ValidPerfOverlayScale(50) && Settings::ValidPerfOverlayScale(300) && !Settings::ValidPerfOverlayScale(49) &&
+                !Settings::ValidPerfOverlayScale(301), "The top-bar button shown, the overlay not hidden by it, at its natural size");
+            for (int scale : {50, 77, 100, 150, 300})
+                for (int mask = 0; mask < 4; ++mask) {
+                    auto overlay = defaults;
+                    overlay.perfOverlayScale = scale;
+                    overlay.perfOverlayShown = (mask & 1) != 0;
+                    overlay.perfOverlayButton = (mask & 2) != 0;
+                    overlay.Save(path);
+                    const auto saved = FileText(path);
+                    Require(Settings::Read(path) == overlay && saved.find("\nperfOverlayScale=" + std::to_string(scale) + "\n") != std::string::npos &&
+                        saved.find(std::string("\nperfOverlayShown=") + ((mask & 1) ? "1" : "0") + "\n") != std::string::npos &&
+                        saved.find(std::string("\nperfOverlayButton=") + ((mask & 2) ? "1" : "0") + "\n") != std::string::npos,
+                        "The overlay's size, its hiding by the button and the button itself persist");
+                    { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayScale=49\nperfOverlayScale=301\nperfOverlayScale=0\n"
+                        "perfOverlayScale=-100\nperfOverlayScale=x\nperfOverlayShown=2\nperfOverlayShown=-1\nperfOverlayButton=2\nperfOverlayButton=x\n"; }
+                    Require(Settings::Read(path) == overlay, "Malformed overlay values keep the saved ones");
+                }
+            // A file without them (before 1.16.0): shown, with its button, at its natural size.
+            { std::ofstream older(path); older << "perfOverlay=1\nperfOverlayX=1200\nperfOverlayY=300\n"; }
+            const auto older = Settings::Read(path);
+            Require(older.perfOverlay && older.perfOverlayShown && older.perfOverlayButton && older.perfOverlayScale == 100,
+                "Before 1.16.0: shown, with its button, at its natural size");
+            for (const char* scale : {"49", "301", "0", "-1", "1000", "150x", ""}) {
+                { std::ofstream odd(path); odd << "perfOverlayScale=" << scale << "\n"; }
+                Require(Settings::Read(path).perfOverlayScale == 100, "An overlay size outside 50..300, or not a number, reads as 100");
+            }
+            // Hidden with the button: still hidden at the next start, its parts still ticked.
+            auto hidden = defaults;
+            hidden.perfOverlay = hidden.perfOverlayGpu = true;
+            hidden.perfOverlayShown = false;
+            hidden.Save(path);
+            const auto restarted = Settings::Read(path);
+            Require(!restarted.perfOverlayShown && restarted.perfOverlay && restarted.perfOverlayGpu && restarted == hidden,
+                "Hidden with its button: hidden at the next start, its parts still ticked");
+            for (int invalid : {49, 301, 0, -100}) {
+                auto refused = defaults;
+                refused.perfOverlayScale = invalid;
+                std::string refusal;
+                try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+                Require(refusal == "Invalid performance overlay scale" && Settings::Read(path) == hidden, "An overlay size outside 50..300 is never saved");
+            }
+        }
+        {
+            // The dimension with the coordinates, three choices each (0 « Non », 1 « Oui,
+            // sauf dans le Monde des Douze », 2 « Oui »), « Oui, sauf » by default since
+            // 1.16.0. 1.13.x had a checkbox for the chat: checked is « Oui », unchecked
+            // « Non »; the maps had theirs until 1.16.0: checked is « Oui, sauf ». A file
+            // written before 1.16.0 (no dimensionChoices=1) also turns the chat's « Oui »,
+            // its default then, into the new default; a file written since keeps every
+            // choice. The choices win over the checkboxes, still written for older revisions.
+            const auto read = [&](const std::string& text) {
+                { std::ofstream file(path); file << text; }
+                const auto settings = Settings::Read(path);
+                return std::vector<int>{settings.coordsWorldChatMode, settings.coordsWorldMapMode, settings.coordsWorldMiniMapMode};
+            };
+            Require(read("mode=2\n") == std::vector<int>{1, 1, 1}, "Without any of their lines: the three defaults, « Oui, sauf »");
+            for (int legacy : {0, 1}) {
+                const auto box = std::to_string(legacy), other = std::to_string(1 - legacy);
+                Require(read("coordsWorldChat=" + box + "\n")[0] == legacy,
+                    "The 1.13.x chat checkbox: « Oui », then the « Oui, sauf » of 1.16.0, or « Non »");
+                Require(read("dimensionChoices=1\ncoordsWorldChat=" + box + "\n")[0] == 2 * legacy,
+                    "Marked since 1.16.0, a chat checkbox alone still reads « Oui » or « Non »");
+                Require(read("coordsWorldMap=" + box + "\ncoordsWorldMiniMap=" + other + "\n") == std::vector<int>{1, legacy, 1 - legacy},
+                    "The maps' checkboxes before 1.16.0: « Oui, sauf » or « Non », each its own");
+                const std::string modes = "coordsWorldChatMode=0\ncoordsWorldMapMode=2\ncoordsWorldMiniMapMode=0\n";
+                const std::string boxes = "coordsWorldChat=" + box + "\ncoordsWorldMap=" + box + "\ncoordsWorldMiniMap=" + box + "\n";
+                for (const char* marker : {"", "dimensionChoices=1\n"})
+                    for (bool modesFirst : {false, true})
+                        Require(read(marker + (modesFirst ? modes + boxes : boxes + modes)) == std::vector<int>{0, 2, 0},
+                            "The choices win over the checkboxes, whatever the order");
+            }
+            // The chat's choice in a file of 1.14.0 to 1.15.x: « Oui », its default then, becomes « Oui, sauf ».
+            for (int mode = 0; mode <= 2; ++mode) {
+                const auto chat = "coordsWorldChatMode=" + std::to_string(mode) + "\ncoordsWorldChat=" + (mode ? "1" : "0") + "\n";
+                Require(read(chat)[0] == (mode == 2 ? 1 : mode), "Before 1.16.0, the chat's « Oui » becomes « Oui, sauf », the others stay");
+                Require(read("dimensionChoices=1\n" + chat)[0] == mode && read(chat + "dimensionChoices=1\n")[0] == mode,
+                    "Marked since 1.16.0, every chat choice stays as it is");
+                Require(read("dimensionChoices=0\n" + chat + "dimensionChoices=x\n")[0] == (mode == 2 ? 1 : mode),
+                    "Only dimensionChoices=1 marks a file written since 1.16.0");
+            }
+            // What a 1.15.0 client writes with its defaults gives the defaults of 1.16.0.
+            Require(read("coordsWorldMap=1\ncoordsWorldMiniMap=1\ncoordsWorldChatMode=2\ncoordsWorldChat=1\n") == std::vector<int>{1, 1, 1},
+                "The defaults of 1.15.0 become the defaults of 1.16.0");
+            // Every combination saved and read back as it is, with the checkboxes and the mark.
+            auto last = defaults;
+            for (int mask = 0; mask < 27; ++mask) {
+                last = defaults;
+                last.coordsWorldChatMode = mask % 3; last.coordsWorldMapMode = mask / 3 % 3; last.coordsWorldMiniMapMode = mask / 9;
+                last.Save(path);
+                Require(Settings::Read(path) == last, "Every dimension choice persists as it is");
+                const auto saved = FileText(path);
+                const std::pair<const char*, int> written[] = {{"coordsWorldChat", last.coordsWorldChatMode},
+                    {"coordsWorldMap", last.coordsWorldMapMode}, {"coordsWorldMiniMap", last.coordsWorldMiniMapMode}};
+                for (const auto& [key, mode] : written)
+                    Require(saved.find("\n" + std::string(key) + "Mode=" + std::to_string(mode) + "\n") != std::string::npos &&
+                        saved.find("\n" + std::string(key) + "=" + (mode ? "1" : "0") + "\n") != std::string::npos,
+                        "Each choice is written with the checkbox of the revisions before it, ticked for any choice but « Non »");
+                Require(saved.find("\ndimensionChoices=1\n") != std::string::npos, "A saved file is marked as written since 1.16.0");
+            }
+            for (int invalid : {-1, 3})
+                for (auto field : {&Settings::coordsWorldChatMode, &Settings::coordsWorldMapMode, &Settings::coordsWorldMiniMapMode}) {
+                    auto refused = defaults; refused.*field = invalid;
+                    std::string refusal;
+                    try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+                    Require(refusal == (field == &Settings::coordsWorldChatMode ? "Invalid chat dimension choice" : "Invalid map dimension choice") &&
+                        Settings::Read(path) == last, "An unknown dimension choice is never saved");
+                }
         }
         {
             Require(defaults.statsEnabled, "Statistics are counted by default");
@@ -291,6 +490,31 @@ int main() {
             Require(!Settings::Read(path).statsEnabled, "Turning the statistics off persists");
             { std::ofstream bad(path, std::ios::app); bad << "statsEnabled=2\n"; }
             Require(!Settings::Read(path).statsEnabled, "A malformed statistics value keeps the saved choice");
+        }
+        {
+            // The statistics window's top-bar button (1.16.0): shown by default, on
+            // its own line, independent of the counting.
+            Require(defaults.statsButton, "The statistics window's top-bar button is shown by default");
+            for (bool counting : {false, true})
+                for (bool button : {false, true}) {
+                    auto both = defaults; both.statsEnabled = counting; both.statsButton = button; both.Save(path);
+                    Require(Settings::Read(path) == both && FileText(path).find(std::string("\nstatsButton=") + (button ? "1" : "0") + "\n") != std::string::npos,
+                        "The statistics button persists on its own line, independently of the counting");
+                }
+            auto hidden = defaults; hidden.statsButton = false; hidden.Save(path);
+            { std::ofstream bad(path, std::ios::app); bad << "statsButton=2\nstatsButton=-1\nstatsButton=oui\n"; }
+            Require(!Settings::Read(path).statsButton, "A malformed statistics button value keeps the saved choice");
+            { std::ofstream older(path, std::ios::trunc); older << "statsEnabled=0\n"; }
+            const auto older = Settings::Read(path);
+            Require(older.statsButton && !older.statsEnabled, "A file written before 1.16.0 shows the button");
+            // « Réduire les titres des modules » for the statistics window: its own line too.
+            for (bool small : {false, true}) {
+                auto header = defaults; header.smallHeaderStats = small; header.Save(path);
+                Require(Settings::Read(path) == header && FileText(path).find(std::string("\nsmallHeaderStats=") + (small ? "1" : "0") + "\n") != std::string::npos,
+                    "The statistics window's reduced header persists on its own line");
+            }
+            { std::ofstream bad(path, std::ios::app); bad << "smallHeaderStats=2\nsmallHeaderStats=-1\n"; }
+            Require(Settings::Read(path).smallHeaderStats, "A malformed header value keeps the saved choice");
         }
         {
             auto corner = defaults; corner.perfOverlayCorner = 4;
@@ -307,6 +531,26 @@ int main() {
             flags.travelRoublardTemple = (mask & 256) != 0;
             flags.Save(path);
             Require(Settings::Read(path) == flags, "Chat and map travel choices persist independently");
+        }
+        {
+            // « Réglages des cartes au clic droit » (1.16.0): on by default, its own
+            // 0/1 line, independent of « Ajouter aux positions »; a file written
+            // before it shows each map's settings in its right-click menu.
+            Require(defaults.mapMenuSettings, "Each map's settings are in its right-click menu by default");
+            for (bool rows : {false, true})
+                for (bool position : {false, true}) {
+                    auto menus = defaults; menus.mapMenuSettings = rows; menus.mapAddPosition = position; menus.Save(path);
+                    Require(Settings::Read(path) == menus && FileText(path).find(std::string("\nmapMenuSettings=") + (rows ? "1" : "0") + "\n") != std::string::npos,
+                        "The right-click map settings persist on their own line, independently of « Ajouter aux positions »");
+                }
+            auto off = defaults; off.mapMenuSettings = false; off.Save(path);
+            { std::ofstream bad(path, std::ios::app); bad << "mapMenuSettings=2\nmapMenuSettings=-1\nmapMenuSettings=oui\nmapMenuSettings=\n"; }
+            Require(Settings::Read(path) == off, "A malformed right-click map settings value keeps the saved choice");
+            { std::ofstream on(path, std::ios::app); on << "mapMenuSettings=1\n"; }
+            Require(Settings::Read(path).mapMenuSettings, "The last valid right-click map settings line wins");
+            { std::ofstream older(path, std::ios::trunc); older << "mapAddPosition=0\n"; }
+            const auto older = Settings::Read(path);
+            Require(older.mapMenuSettings && !older.mapAddPosition, "A file written before 1.16.0 shows each map's settings in its right-click menu");
         }
         // metamobSync is shared state between the game clients: read straight from the file.
         Require(!Settings::ReadMetamobSync(folder / "absent.ini"), "No shared sync value without a settings file");

@@ -52,6 +52,8 @@ void Check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 constexpr size_t AnimationCount = AnimationToggleLabels.size();
+// « Surbrillance »: the six category checkboxes after the four levels and a separator.
+constexpr size_t GlowCount = GlowCategoryLabels.size();
 bool AnimationsEqual(const Settings& a, const Settings& b) {
     for (auto field : AnimationToggles) if (a.*field != b.*field) return false;
     return true;
@@ -136,7 +138,7 @@ struct Fixture {
     std::array<Obj, 3> views{};
     std::array<Obj, AnimationCount> animationViews{};
     std::array<Obj, 4> glowViews{};
-    std::array<Obj, 2> glowCategoryViews{};
+    std::array<Obj, GlowCount> glowCategoryViews{};
     std::array<Obj, 6> categoryViews{};
     explicit Fixture(bool inCombat = false) {
         RestoreContextDisplayMenu();
@@ -258,7 +260,7 @@ struct Fixture {
             Get(glowViews[i]).refs["panel"] = panel;
             Get(glowViews[i]).refs["parent"] = glowRoot;
         }
-        for (int i = 0; i < 2; ++i) {
+        for (int i = 0; i < static_cast<int>(GlowCount); ++i) {
             glowCategoryViews[i] = Make("ContextMenuItemView");
             Get(glowCategoryViews[i]).refs["itemData"] = GlowCategory(i);
             Get(glowCategoryViews[i]).refs["panel"] = panel;
@@ -645,26 +647,54 @@ void GlowRepeatedChoicesKeepMenuOpen() {
         Check(expected.monsterGlowMode == initial, "Round trips must restore the initial glow mode");
     }
 }
+// « Surbrillance »: after the four levels and a separator, the six categories
+// as native checkboxes titled as the options rows (Monstres, PNJ, Éléments
+// interactifs, Moi, Membres du groupe, Autres joueurs); each click flips
+// exactly its own category through Module.Change and keeps the menu open.
 void GlowCategoriesIndependentAndPersistent() {
-    for(bool inCombat:{false,true})for(int initial=0;initial<4;++initial){
-        Fixture f(inCombat);f.state.settings.glowNpcs=(initial&1)!=0;f.state.settings.glowInteractives=(initial&2)!=0;
-        auto expected=f.state.settings;f.Create();f.Open();
-        Check(Items(f.Submenu("Surbrillance")).size()==7&&Get(f.GlowCategory(0)).text=="Inclure les PNJ"&&
-            Get(f.GlowCategory(1)).text=="Inclure les éléments interactifs","Two native checkboxes follow four glow modes and separator");
-        Check(Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Initial checkbox state follows saved options");
-        for(int i=0;i<4;++i){
-            const int category=i%2;f.ClickGlowCategory(category,i%2==0);
-            if(category==0)expected.glowNpcs=!expected.glowNpcs;else expected.glowInteractives=!expected.glowInteractives;
-            TickContextDisplayMenu();
-            Check(f.state.settings==expected&&changes==unsigned(i+1)&&nativeCloses==0&&scheduledCloses==0,"Checkbox changes exactly one preference and keeps menu open for mouse/keyboard");
-            Check(Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Categories remain independent");
+    const std::array<std::string, 6> titles{"Monstres", "PNJ", "Éléments interactifs", "Moi", "Membres du groupe", "Autres joueurs"};
+    for (size_t i = 0; i < GlowCount; ++i) Check(GlowCategoryLabels.at(i) == titles.at(i), "The six glow categories and their order");
+    for (bool inCombat : {false, true}) for (unsigned initial : {0u, 0x01u, 0x15u, 0x2Au, 0x3Fu}) {
+        Fixture f(inCombat);
+        for (size_t i = 0; i < GlowCount; ++i) f.state.settings.*GlowCategoryToggles[i] = ((initial >> i) & 1) != 0;
+        auto expected = f.state.settings;
+        f.Create(); f.Open();
+        const auto submenu = f.Submenu("Surbrillance");
+        Check(Items(submenu).size() == 5 + GlowCount && Get(Items(submenu).at(4)).klass->name == "ContextMenuSeparator",
+            "Surbrillance: four levels, a separator, then the six category checkboxes");
+        for (size_t i = 0; i < GlowCount; ++i) {
+            const auto& choice = Get(f.GlowCategory(static_cast<int>(i)));
+            Check(choice.text == titles[i] && choice.numbers.at("state") == 1 && choice.flags.at("isOn") == expected.*GlowCategoryToggles[i] &&
+                !choice.flags.at("closeOnSelect") && !choice.flags.at("disabled"),
+                "Glow checkboxes show the options titles and the saved choices, keep the menu open and stay enabled");
         }
-        f.ClickGlow(0);expected.monsterGlowMode=0;
-        Check(f.state.settings==expected&&Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Mode radio does not uncheck inclusion checkboxes");
-        f.ClickGlowCategory(0);expected.glowNpcs=!expected.glowNpcs;
-        Check(f.state.settings==expected,"Category selection can be saved while glow is disabled without enabling it");
-        const auto retained=handles.size();f.NewMenu();f.Create();f.Open();
-        Check(handles.size()==retained&&Get(f.GlowCategory(0)).flags["isOn"]==expected.glowNpcs&&Get(f.GlowCategory(1)).flags["isOn"]==expected.glowInteractives,"Reopening restores persisted selections without retaining old callbacks");
+        // A step coprime with six: each category is clicked twice.
+        for (size_t click = 0; click < 2 * GlowCount; ++click) {
+            const size_t selected = (click * 5 + initial) % GlowCount;
+            f.ClickGlowCategory(static_cast<int>(selected), click % 2 == 0);
+            expected.*GlowCategoryToggles[selected] = !(expected.*GlowCategoryToggles[selected]);
+            TickContextDisplayMenu();
+            Check(f.state.settings == expected && changes == click + 1 && nativeCloses == 0 && scheduledCloses == 0,
+                "A glow checkbox changes exactly its own category and keeps the menu open for mouse and keyboard");
+            for (size_t i = 0; i < GlowCount; ++i)
+                Check(Get(f.GlowCategory(static_cast<int>(i))).flags["isOn"] == expected.*GlowCategoryToggles[i] &&
+                    Get(f.glowCategoryViews[i]).flags["visualIsOn"] == expected.*GlowCategoryToggles[i], "Categories remain independent");
+        }
+        f.ClickGlow(0); expected.monsterGlowMode = 0;
+        Check(f.state.settings == expected, "The level radio leaves the category checkboxes alone");
+        for (size_t i = 0; i < GlowCount; ++i)
+            Check(Get(f.GlowCategory(static_cast<int>(i))).flags["isOn"] == expected.*GlowCategoryToggles[i], "Mode radio does not uncheck a category");
+        f.ClickGlowCategory(3); expected.glowSelf = !expected.glowSelf;
+        Check(f.state.settings == expected && f.state.settings.monsterGlowMode == 0,
+            "A category can be saved while the glow is off, without turning it on");
+        const auto retained = handles.size();
+        f.NewMenu(); f.Create(); f.Open();
+        Check(handles.size() == retained, "Reopening does not retain old callbacks");
+        for (size_t i = 0; i < GlowCount; ++i)
+            Check(Get(f.GlowCategory(static_cast<int>(i))).flags["isOn"] == expected.*GlowCategoryToggles[i], "Reopening shows the saved categories");
+        RestoreContextDisplayMenu();
+        f.CheckUnchanged();
+        Check(handles.size() == 3, "Glow category ownership survived restoration");
     }
 }
 void GlowCategoryCallbackGuards(){
@@ -798,6 +828,8 @@ void StaleContextAndSessionCannotCommit() {
             callbackHook(Get(f.GlowChoice(mode)).refs.at("m_callback"), f.glowViews[mode], nullptr);
         for (size_t i = 0; i < categories; ++i)
             callbackHook(Get(f.Category(i)).refs.at("m_callback"), f.categoryViews[i], nullptr);
+        for (size_t i = 0; i < GlowCount; ++i)
+            callbackHook(Get(f.GlowCategory(static_cast<int>(i))).refs.at("m_callback"), f.glowCategoryViews[i], nullptr);
         Check(changes == 0, "Stale context/session/stop callback committed preferences");
         TickContextDisplayMenu();
         f.CheckUnchanged();
@@ -816,7 +848,7 @@ void NativeAndOtherMenuIsolation() {
     Check(changes == 0 && handles.size() == 3, "Menus without exact native creature argument should remain untouched");
 }
 void ExternalChoiceClosesStaleMenu() {
-    for (int setting = 0; setting < 7; ++setting) {
+    for (int setting = 0; setting < 11; ++setting) {
         Fixture f;
         f.Create();
         f.Open();
@@ -826,7 +858,11 @@ void ExternalChoiceClosesStaleMenu() {
         else if (setting == 3) f.state.settings.glowNpcs = true;
         else if (setting == 4) f.state.settings.glowInteractives = true;
         else if (setting == 5) f.state.settings.roleplayMiniatureNpcs = true;
-        else f.state.settings.roleplayMiniatureMonsters = false;
+        else if (setting == 6) f.state.settings.roleplayMiniatureMonsters = false;
+        else if (setting == 7) f.state.settings.glowMonsters = false;
+        else if (setting == 8) f.state.settings.glowSelf = true;
+        else if (setting == 9) f.state.settings.glowParty = true;
+        else f.state.settings.glowPlayers = true;
         TickContextDisplayMenu();
         f.CheckUnchanged();
         Check(changes == 0 && Get(f.root).flags["scheduledClose"] && Get(f.subroot).flags["scheduledClose"] &&
@@ -859,7 +895,7 @@ void FailureRollback() {
     struct Failure { const char* method; int occurrence; bool after; };
     // Build order out of combat: display radios 1-3 and submenu 1, separator 1
     // and category checkboxes 1-5, animation checkboxes 6-11 and submenu 2, glow
-    // radios 4-7 and submenu 3, separator 2, glow checkboxes 12-13. In combat
+    // radios 4-7 and submenu 3, separator 2, glow checkboxes 12-17. In combat
     // the categories are checkboxes 1-6, and every following checkbox moves by one.
     const Failure failures[] = {
         {"AppendRadioButtonItem", 3, false}, {"AppendSubMenu", 1, true}, {"AppendSubMenu", 2, false}, {"AppendSubMenu", 2, true},
@@ -872,6 +908,8 @@ void FailureRollback() {
         {"AppendRadioButtonItem", 7, true},
         {"AppendCheckboxItem", 12, false}, {"AppendCheckboxItem", 12, true},
         {"AppendCheckboxItem", 13, false}, {"AppendCheckboxItem", 13, true}, {"AppendSeparator", 2, true},
+        {"AppendCheckboxItem", 14, false}, {"AppendCheckboxItem", 15, true}, {"AppendCheckboxItem", 16, false},
+        {"AppendCheckboxItem", 17, false}, {"AppendCheckboxItem", 17, true},
         {"AppendSubMenu", 3, false}, {"AppendSubMenu", 3, true},
         {"InsertItem", 1, false}, {"InsertItem", 1, true}, {"InsertItem", 2, false}, {"InsertItem", 2, true},
         {"InsertItem", 3, false}, {"InsertItem", 3, true}
@@ -899,6 +937,8 @@ void StopRestoresOnlyOwnedRowAndInertsStaleHandler() {
     const auto animationHandler = Get(f.AnimationChoice(0)).refs.at("m_callback");
     const auto glowHandler = Get(f.GlowChoice(0)).refs.at("m_callback");
     const auto categoryHandler = Get(f.Category(0)).refs.at("m_callback");
+    std::array<Obj, GlowCount> glowCategoryHandlers{};
+    for (size_t i = 0; i < GlowCount; ++i) glowCategoryHandlers[i] = Get(f.GlowCategory(static_cast<int>(i))).refs.at("m_callback");
     auto extra = NativeItem(nullptr, "Late native action");
     Items(f.menu).insert(Items(f.menu).begin() + 2, extra);
     RestoreContextDisplayMenu();
@@ -908,6 +948,7 @@ void StopRestoresOnlyOwnedRowAndInertsStaleHandler() {
     callbackHook(animationHandler, f.animationViews[0], nullptr);
     callbackHook(glowHandler, f.glowViews[0], nullptr);
     callbackHook(categoryHandler, f.categoryViews[0], nullptr);
+    for (size_t i = 0; i < GlowCount; ++i) callbackHook(glowCategoryHandlers[i], f.glowCategoryViews[i], nullptr);
     Check(changes == 0 && handles.size() == 3 && Get(f.root).flags["scheduledClose"],
         "Stopped module retained ownership or applied a queued native callback");
 }
@@ -929,10 +970,9 @@ void SelectionFailureKeepsNativeDispatchParents() {
         "Selection exception must be reported");
 }
 void GlowCheckboxViewsFollowIndependentPreferences() {
-    for (bool inCombat : {false, true}) for (int initial = 0; initial < 4; ++initial) {
+    for (bool inCombat : {false, true}) for (unsigned initial : {0u, 0x2Du, 0x12u, 0x3Fu}) {
         Fixture f(inCombat);
-        f.state.settings.glowNpcs = (initial & 1) != 0;
-        f.state.settings.glowInteractives = (initial & 2) != 0;
+        for (size_t i = 0; i < GlowCount; ++i) f.state.settings.*GlowCategoryToggles[i] = ((initial >> i) & 1) != 0;
         f.Create(); f.Open();
         const auto unrelated = Make("ContextMenuItemView");
         Get(unrelated).refs["itemData"] = NativeItem(nullptr, "Unowned checkbox");
@@ -940,33 +980,35 @@ void GlowCheckboxViewsFollowIndependentPreferences() {
         Get(unrelated).flags["isOn"] = true;
         Get(unrelated).flags["visualIsOn"] = true;
         Get(f.glowRoot).items.push_back(unrelated);
-        for (int clicked : {0, 1, 0, 1}) {
+        for (int clicked : {0, 5, 1, 3, 0, 4, 2}) {
             f.ClickGlowCategory(clicked);
-            const bool expected[] = {f.state.settings.glowNpcs, f.state.settings.glowInteractives};
-            for (int i = 0; i < 2; ++i)
+            std::array<bool, GlowCount> expected{};
+            for (size_t i = 0; i < GlowCount; ++i) expected[i] = f.state.settings.*GlowCategoryToggles[i];
+            for (size_t i = 0; i < GlowCount; ++i)
                 Check(Get(f.glowCategoryViews[i]).flags["visualIsOn"] == expected[i],
                     "Selection must synchronize rendered checkboxes, not only model values");
             // Views and their nested Figma checkbox are separate native objects.
             // Model updates alone cannot repair post-dispatch visual changes.
-            Get(f.glowCategoryViews[0]).flags["isOn"] = !expected[0];
-            Get(f.glowCategoryViews[0]).flags["visualIsOn"] = !expected[0];
-            Get(f.glowCategoryViews[1]).flags["visualIsOn"] = !expected[1];
+            for (size_t i = 0; i < GlowCount; ++i) {
+                if (i % 2 == 0) Get(f.glowCategoryViews[i]).flags["isOn"] = !expected[i];
+                Get(f.glowCategoryViews[i]).flags["visualIsOn"] = !expected[i];
+            }
             const auto beforeChanges = changes;
             const auto preferences = f.state.settings;
             TickContextDisplayMenu();
-            for (int i = 0; i < 2; ++i)
+            for (size_t i = 0; i < GlowCount; ++i)
                 Check(Get(f.glowCategoryViews[i]).flags["isOn"] == expected[i] &&
                     Get(f.glowCategoryViews[i]).flags["visualIsOn"] == expected[i],
-                    "Both independent checkbox views must recover after native dispatch");
+                    "Every independent checkbox view must recover after native dispatch");
             Check(changes == beforeChanges && f.state.settings == preferences,
                 "Visual reconciliation must not toggle or save preferences");
             Check(Get(unrelated).flags["isOn"] && Get(unrelated).flags["visualIsOn"],
                 "Do not change an unowned native row");
         }
         Get(f.glowRoot).refs["panel"] = nullptr;
-        Get(f.glowCategoryViews[0]).flags["visualIsOn"] = false;
+        Get(f.glowCategoryViews[5]).flags["visualIsOn"] = !f.state.settings.glowPlayers;
         TickContextDisplayMenu();
-        Check(!Get(f.glowCategoryViews[0]).flags["visualIsOn"], "Detached submenus must be left alone");
+        Check(Get(f.glowCategoryViews[5]).flags["visualIsOn"] == !f.state.settings.glowPlayers, "Detached submenus must be left alone");
     }
 }
 // « Affichage »: after the three modes and a separator, the « Apparence »
@@ -1133,7 +1175,7 @@ int main() {
         run(fake::StopRestoresOnlyOwnedRowAndInertsStaleHandler);
         run(fake::SelectionFailureKeepsNativeDispatchParents);
         run(fake::RestoreFailureStillClosesOtherRootAndReleasesReferences);
-        std::cout << "PASS: real context menu integration, display3 + the context's miniature categories (six in combat, five with PNJ out of combat) + six animation checkboxes + glow4 in both contexts, persistence dispatch, native close/keyboard, view reconciliation, rollback, stale sessions and four-root GC cleanup\n";
+        std::cout << "PASS: real context menu integration, display3 + the context's miniature categories (six in combat, five with PNJ out of combat) + six animation checkboxes + glow4 and its six category checkboxes in both contexts, persistence dispatch, native close/keyboard, view reconciliation, rollback, stale sessions and four-root GC cleanup\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

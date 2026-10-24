@@ -2,6 +2,7 @@
 #include "core/module.hpp"
 #include "appearance/features.hpp"
 #include "ui/options-ui.hpp"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -22,7 +23,7 @@ struct Object {
     alignas(16) std::array<unsigned char, 0x400> bytes{};
     Class* klass{};
     int64_t value=0;
-    int flags=9, countOverride=-1, cursor=0, npcId=0;
+    int flags=9, countOverride=-1, cursor=0, npcId=0, flagTests=0;
     int8_t visibility=2;
     bool visibilityKnown=true, alive=true, aliveKnown=true, exists=true, enabled=true, active=true;
     bool throwCurrent=false, missingIterator=false;
@@ -40,6 +41,10 @@ std::function<void()> onItem;
 std::vector<std::string> logs;
 int enumerators=0, disposed=0;
 bool failList=false;
+// The local character and its party as Features::ReadRoleplayIdentity returns them.
+Features::RoleplayIdentity identity;
+bool identityThrows=false;
+int identityReads=0;
 Class* Type(const std::string& name) {
     auto& value=classes[name]; if (!value) value=std::make_unique<Class>(Class{name}); return value.get();
 }
@@ -102,7 +107,7 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args) const 
     auto& object=fake::Get(self);
     if(m.name=="baml") { if(fake::failList) throw std::runtime_error("Roster failed"); return self; }
     if(m.name=="bajh") return fake::Box(object.value);
-    if(m.name=="bajs") { int flag=*static_cast<int*>(p[0]); return fake::Box((object.flags&flag)==flag); }
+    if(m.name=="bajs") { int flag=*static_cast<int*>(p[0]); ++object.flagTests; return fake::Box((object.flags&flag)==flag); }
     if(m.name=="bakd") {
         fake::Check(*static_cast<int*>(p[0])==3,"Unexpected alive key");
         *static_cast<bool*>(p[1])=object.alive; return fake::Box(object.aliveKnown);
@@ -132,6 +137,12 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args) const 
 }
 Module* module=nullptr;
 Module::Module(std::filesystem::path path):folder(std::move(path)) {}
+// The glow reuses the « Apparence » reading of the local character and its party.
+Features::RoleplayIdentity Features::ReadRoleplayIdentity() const {
+    ++fake::identityReads;
+    if (fake::identityThrows) throw std::runtime_error("Unexpected party member count");
+    return fake::identity;
+}
 bool Module::InCombat() const { return servicesReady && fight.get() && managed::Read<bool>(fight.get(),0xB0); }
 managed::Obj Module::FindService(const char* name) const {
     return std::string(name)=="fso"?fake::currentInfo:fake::currentWorld;
@@ -145,6 +156,7 @@ struct Fixture {
     Obj info{}, world{}, services{}, context{}, rendered{};
     explicit Fixture(bool combat=true) {
         module=&state; state.servicesReady=true; onItem={}; failList=false; logs.clear(); enumerators=disposed=0;
+        state.features=std::make_unique<Features>(); identity={}; identityThrows=false; identityReads=0;
         state.compositor.reset(Make("Compositor")); state.creatures.reset(Make("exf")); state.fight.reset(Make("fxc"));
         services=Make("fsm"); context=Make("fyb"); rendered=Make("fxw"); info=Make("evv"); world=Make(combat?"ebm":"eun");
         Put(state.creatures.get(),0x10,services); Put(state.fight.get(),0xB0,combat); Put(state.fight.get(),0x18,context);
@@ -168,7 +180,28 @@ struct Fixture {
         auto entity=Part(); Put(entity,0x1C8,id); Get(world).byId[id]=entity; return entity;
     }
     Object& Data(int64_t id) { return Get(Get(info).byId.at(id)); }
+    // A roleplay player character: 2 | 4 (gwr.bmni), 0x40 (gwr.bmot) and the player flag 0x80 (gwo.bmni).
+    Obj AddPlayer(int64_t id, int flags=0xC6) { auto entity=Add(id); Data(id).flags=flags; return entity; }
 };
+using monsterGlow::GlowCategory;
+using Outline=std::pair<int64_t,GlowCategory>;
+std::vector<Outline> Outlines(const monsterGlow::Snapshot& result) {
+    std::vector<Outline> outlines;
+    for (const auto& target : result.targets) outlines.emplace_back(target.id,target.category);
+    return outlines;
+}
+void Only(Settings& settings, bool monsters, bool npcs, bool self, bool party, bool players) {
+    settings.glowMonsters=monsters; settings.glowNpcs=npcs; settings.glowSelf=self; settings.glowParty=party; settings.glowPlayers=players;
+}
+// The roster entries whose flags were tested since the last call, in roster order.
+std::vector<int64_t> FlagTested(Fixture& f) {
+    std::vector<int64_t> tested;
+    for (auto data : Get(f.info).items) {
+        if (Get(data).flagTests) tested.push_back(Get(data).value);
+        Get(data).flagTests=0;
+    }
+    return tested;
+}
 void CombatAndRoleplay() {
     for(bool combat:{true,false}) {
         Fixture f(combat); auto entity=f.Add(-1234567890123LL);
@@ -214,6 +247,105 @@ void NpcSelection() {
     {auto r=monsterGlow::ReadEntities(); Check(r.targets.size()==2 && r.targets[1].id==2 && r.npcCount==2,"Only visible identified NPCs join monsters");}
     f.state.settings.glowNpcs=false;
     {auto r=monsterGlow::ReadEntities(); Check(r.targets.size()==1,"NPC toggle must immediately remove NPCs");}
+}
+// Each category alone, then all of them: the reader outlines exactly the ticked
+// categories, tells the players apart by the local character and its accepted
+// party, never takes an NPC or a monster for a player, and returns the targets
+// in budget order whatever the roster order.
+void PlayerCategories() {
+    Fixture f(false);
+    identity.self=100; identity.party={100,200,300};
+    f.AddPlayer(500); f.AddPlayer(300); f.Add(1); f.AddPlayer(100);
+    f.Add(2); f.Data(2).flags=2; f.Data(2).npcId=77;
+    f.AddPlayer(200); f.AddPlayer(400);
+    f.AddPlayer(600,0x8A); // the player flag on a monster group: neither a player nor a monster
+    f.AddPlayer(601,0xC7); // a fighter
+    f.AddPlayer(602,0xD6); // a companion
+    f.AddPlayer(603,0xE6); // a tax collector
+    f.AddPlayer(604,0x80); // no roleplay flag
+    f.AddPlayer(605,0x46); // a roleplay humanoid without the player flag
+    {auto r=monsterGlow::ReadEntities(); Check(r.valid && Outlines(r)==std::vector<Outline>{{1,GlowCategory::Monster}} &&
+        !r.playerCount && !identityReads,"Default: the monsters only, and no identity read");}
+    Only(f.state.settings,false,false,true,false,false);
+    FlagTested(f);
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{100,GlowCategory::Self}} && r.playerCount==1 && !r.monsterCount,
+        "Moi: the local character only");}
+    // The ID first: the player flags of an actor are tested only when its
+    // category is ticked, so the other players of a crowded map cost one call.
+    Check(FlagTested(f)==std::vector<int64_t>{100},"Moi: only the local character's flags are tested");
+    Only(f.state.settings,false,false,false,true,false);
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{300,GlowCategory::Party},{200,GlowCategory::Party}},
+        "Membres du groupe: the accepted members, without the local character, in roster order");}
+    Check(FlagTested(f)==std::vector<int64_t>{300,200},"Membres du groupe: only the party members' flags are tested");
+    // The ID gives the category, the player flags still decide: the local or a
+    // party ID on a monster group, an NPC or a non-player humanoid is never outlined.
+    identity.party={1,2,100,200,300,605};
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{300,GlowCategory::Party},{200,GlowCategory::Party}},
+        "A party ID never makes a non-player a party member");}
+    identity.self=605; Only(f.state.settings,false,false,true,false,false);
+    {auto r=monsterGlow::ReadEntities(); Check(r.valid && r.targets.empty() && !r.playerCount,"A local ID never makes a non-player the local character");}
+    identity.self=100; identity.party={100,200,300};
+    Only(f.state.settings,false,false,false,false,true);
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{500,GlowCategory::Player},{400,GlowCategory::Player}},
+        "Autres joueurs: player characters outside the party only");}
+    Only(f.state.settings,false,true,false,false,false);
+    const auto readsBefore=identityReads;
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{2,GlowCategory::Npc}} && identityReads==readsBefore,
+        "PNJ alone: never a player, and no identity read");}
+    Only(f.state.settings,false,false,false,false,false);
+    {auto r=monsterGlow::ReadEntities(); Check(r.valid && r.targets.empty(),"No actor category: nothing outlined");}
+    Only(f.state.settings,true,true,true,true,true);
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{100,GlowCategory::Self},{300,GlowCategory::Party},
+        {200,GlowCategory::Party},{1,GlowCategory::Monster},{2,GlowCategory::Npc},{500,GlowCategory::Player},{400,GlowCategory::Player}} &&
+        r.playerCount==5 && r.monsterCount==1 && r.npcCount==1,"Every category, in budget order: self, party, monsters, NPCs, other players");}
+    // A party change shows at the next read: 300 left, 400 joined.
+    identity.party={100,200,400};
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{100,GlowCategory::Self},{200,GlowCategory::Party},
+        {400,GlowCategory::Party},{1,GlowCategory::Monster},{2,GlowCategory::Npc},{500,GlowCategory::Player},{300,GlowCategory::Player}},
+        "Party changes reclassify the players at once");}
+    // Hidden or removed players stay out like any other actor.
+    Put(Get(f.world).byId.at(400),0x382,false); Get(f.world).byId.erase(500);
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{100,GlowCategory::Self},{200,GlowCategory::Party},
+        {1,GlowCategory::Monster},{2,GlowCategory::Npc},{300,GlowCategory::Player}},"Hidden or removed players are not outlined");}
+}
+// Without a known local character no player is outlined, since it could not
+// be told apart from the others; the other categories are unaffected.
+void UnknownIdentity() {
+    Fixture f(false); f.Add(1); f.AddPlayer(100); f.AddPlayer(200);
+    Only(f.state.settings,true,false,true,true,true);
+    {auto r=monsterGlow::ReadEntities(); Check(r.valid && Outlines(r)==std::vector<Outline>{{1,GlowCategory::Monster}} && identityReads==1,
+        "Unknown local character: monsters only");}
+    identity.self=100; identityThrows=true;
+    {auto r=monsterGlow::ReadEntities(); r=monsterGlow::ReadEntities();
+        Check(r.valid && Outlines(r)==std::vector<Outline>{{1,GlowCategory::Monster}},"A failed identity read keeps the other categories");}
+    Check(std::count_if(logs.begin(),logs.end(),[](const std::string& line){return line.starts_with("MONSTER_GLOW_IDENTITY_ERROR ");})==1,
+        "An identity failure is logged once");
+    identityThrows=false;
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{100,GlowCategory::Self},{1,GlowCategory::Monster},
+        {200,GlowCategory::Player}},"The players come back with the identity");}
+    f.state.features.reset();
+    {auto r=monsterGlow::ReadEntities(); Check(Outlines(r)==std::vector<Outline>{{1,GlowCategory::Monster}},"No appearance features: no players");}
+}
+// The reader keeps 128 targets: on a crowded map the first categories keep
+// theirs, whatever the roster order.
+void CrowdedMapBudget() {
+    Fixture f(false); identity.self=7; identity.party={7,8};
+    for (int64_t id=1000; id<1130; ++id) f.AddPlayer(id);
+    f.Add(3); f.Add(4); f.Data(4).flags=2; f.Data(4).npcId=5; f.AddPlayer(8); f.AddPlayer(7);
+    Only(f.state.settings,true,true,true,true,true);
+    auto r=monsterGlow::ReadEntities();
+    Check(r.valid && r.targets.size()==128 && r.playerCount==132 && r.targets[0].id==7 && r.targets[1].id==8 && r.targets[2].id==3 &&
+        r.targets[3].id==4 && r.targets[4].id==1000 && r.targets.back().id==1123 && r.targets.back().category==GlowCategory::Player,
+        "Self, party, monsters and NPCs come first on a crowded map; other players fill what remains");
+}
+// The glow is off in fights: the reader never outlines a player there.
+void NoPlayersInCombat() {
+    Fixture f(true); identity.self=100; f.Add(1); f.AddPlayer(100,0x81); f.AddPlayer(200,0x89);
+    Only(f.state.settings,true,true,true,true,true);
+    auto r=monsterGlow::ReadEntities();
+    Check(r.valid && Outlines(r)==std::vector<Outline>{{1,GlowCategory::Monster}} && !identityReads,"Fights: monsters only, no identity read");
+    f.state.settings.glowMonsters=false;
+    Check(monsterGlow::ReadEntities().targets.empty(),"Monsters unticked: no fighter outlined");
 }
 void ActualRendering() {
     Fixture f; f.Add(1);
@@ -337,7 +469,8 @@ void ChangesAndBounds() {
 int main() {
     try {
         fake::Initialize(); monsterGlow::InstallEntities(); CombatAndRoleplay(); PrivacyAndLife(); MonsterFlags(); NpcSelection();
+        PlayerCategories(); UnknownIdentity(); CrowdedMapBudget(); NoPlayersInCombat();
         VisibleTransparency(); InvalidOrInvisibleOpacity(); ActualRendering(); MountedParts(); MalformedChildren(); ChangesAndBounds();
-        std::cout<<"Monster glow entity offline fixtures passed\n"; return 0;
+        std::cout<<"Glow entity offline fixtures passed: monsters, NPCs, the local character, its party, other players, budget order\n"; return 0;
     } catch(const std::exception& error) { std::cerr<<error.what()<<'\n'; return 1; }
 }

@@ -7,7 +7,7 @@
 #include "animations/animation-mode-labels.hpp"
 #include "appearance/miniature-category-labels.hpp"
 #include "treasure/treasure-launch.hpp"
-#include "stats/stats.hpp"
+#include "stats/stats-window.hpp"
 #include <algorithm>
 #include <iostream>
 #include <map>
@@ -26,61 +26,21 @@ constexpr int ModId = 0x4D4F44;
 // id ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
 enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, NotebookSection, TravelSection, SoulSection, ChatSection,
     CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
-// « Statistiques »: the checkbox, the scope choice, then 51 text rows (the
-// last one the reset); the store behind them is the fake below.
-constexpr size_t StatsLines = 51, StatsResetLine = StatsLines - 1;
-struct StatsFake {
-    stats::Totals mine, all;
-    int64_t current = 0;
-    bool clearWorks = true;
-    unsigned shown = 0;
-    std::vector<bool> clears;
-    std::map<int, std::string> spells, dungeons, worlds;
-};
-StatsFake statsFake;
-constexpr int64_t Oct23 = 1792756800, Oct1 = 1790856000; // 2026-10-23 and 2026-10-01 at noon UTC: the same day in any time zone
-void Set(stats::Totals& totals, stats::Counter counter, int64_t value) { totals.counters[static_cast<size_t>(counter)] = value; }
-// This character (Altansar, 101) and every character's sums, as the store shows them.
-StatsFake DefaultStats() {
-    using stats::Counter;
-    StatsFake data;
-    data.current = 101;
-    auto& mine = data.mine;
-    mine.character = 101; mine.name = "Altansar"; mine.characters = 1; mine.first = Oct23; mine.last = Oct23 + 3600;
-    const std::pair<Counter, int64_t> counts[] = {
-        {Counter::PlayMs, 43500000}, {Counter::CellsRoleplay, 12345}, {Counter::CellsFight, 2345}, {Counter::Maps, 1234},
-        {Counter::Dimensions, 12}, {Counter::Xp, 12345678}, {Counter::Levels, 3}, {Counter::KamasEarned, 1234567},
-        {Counter::KamasSpent, 234567}, {Counter::Harvests, 1234}, {Counter::Crafts, 567}, {Counter::Quests, 12},
-        {Counter::Achievements, 34}, {Counter::Captures, 3}, {Counter::FightsPve, 123}, {Counter::FightsPvp, 4},
-        {Counter::WinsPve, 98}, {Counter::WinsPvp, 1}, {Counter::FightMs, 18720000}, {Counter::FightTurns, 1234},
-        {Counter::DamageDealt, 1234567}, {Counter::DamageTaken, 234567}, {Counter::Heals, 123456}, {Counter::Kills, 2345},
-        {Counter::Deaths, 12}, {Counter::Dungeons, 12}, {Counter::SpellCasts, 12345}, {Counter::TeleportZaap, 123},
-        {Counter::TeleportZaapi, 45}, {Counter::TeleportPrism, 6}, {Counter::TeleportOther, 3}, {Counter::RecallPotions, 7},
-        {Counter::HavenBag, 89}, {Counter::ModTrips, 12}};
-    for (const auto& [counter, value] : counts) Set(mine, counter, value);
-    mine.records = {3456, 10800000};
-    mine.tables[static_cast<size_t>(stats::Table::Spells)] = {{413, 1234}, {4567, 987}, {12, 455}};
-    mine.tables[static_cast<size_t>(stats::Table::Elements)] = {{1, 450}, {2, 300}, {4, 200}, {0, 42}, {3, 8}};
-    mine.tables[static_cast<size_t>(stats::Table::Dungeons)] = {{5, 5}, {7, 2}};
-    mine.tables[static_cast<size_t>(stats::Table::Dimensions)] = {{14, 8}, {1, 6}};
-    auto& all = data.all;
-    all.characters = 4; all.first = Oct1; all.last = Oct23 + 3600;
-    Set(all, Counter::PlayMs, 4442400000); // 1 234 h
-    Set(all, Counter::KamasEarned, 1000); Set(all, Counter::KamasSpent, 2000);
-    data.spells = {{413, "Pression"}, {12, "Mot curatif"}};
-    data.dungeons = {{5, "Donjon des Bouftous"}};
-    data.worlds = {{14, "Srambad"}, {1, "Monde des Douze"}};
-    return data;
-}
+// « Statistiques »: the counting checkbox, « Voir mes statistiques » (an owned
+// text button opening the window: OpenStatsWindow below counts the opens) and
+// the checkbox of the window's top-bar button.
+unsigned statsOpens = 0;
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
-enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra, NotebookPingExtra, MapAddPositionExtra,
-    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra };
+enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
+    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
 // « Apparence » checkbox titles, in Settings' category order.
 constexpr const char* CombatCategoryTitles[] = {"Moi", "Joueurs alliés", "Invocations alliées", "Mes invocations", "Ennemis", "Invocations ennemies"};
 constexpr const char* RoleplayCategoryTitles[] = {"Moi", "Membres du groupe", "Autres joueurs", "Monstres", "PNJ"};
+// « Surbrillance » checkbox titles, in the order of Settings' GlowCategoryToggles.
+constexpr const char* GlowCategoryTitles[] = {"Monstres", "PNJ", "Éléments interactifs", "Moi", "Membres du groupe", "Autres joueurs"};
 struct Class { std::string name; };
 struct MethodInfo { Class* klass; std::string name; int argc; };
 struct Choice { int id = 0; Obj label = nullptr; };
@@ -123,7 +83,7 @@ TextButtonFn textInitHook = nullptr; // TextButtonOptionElement.Init(TextButtonO
 constexpr const char* FakeKey = "TEST-KEY-0123456789-NOT-REAL";
 // The fake capture sync's key status: fakeStatus for a key file there
 // (fakeKeyStored), None without one or while a forget runs (fakeForgetting).
-bool fakeKeyStored = false, fakeForgetting = false, failKeyInsert = false, failKeyRemove = false, failTextRead = false, failUpdateText = false;
+bool fakeKeyStored = false, fakeForgetting = false, failKeyInsert = false, failKeyRemove = false, failTextRead = false;
 metamob::KeyStatus fakeStatus = metamob::KeyStatus::Verified;
 std::vector<bool> keyChecks; // checkKey calls: false the silent check of a key shown, true « Clé non vérifiée » clicked
 // keyCopies: characters of a field copied out (api.String on a get_text result); lengthReads: lengths only.
@@ -288,16 +248,6 @@ void InitializeApi() {
         return found->second;
     };
     api.gchandle_free = [](GCHandle handle) { Check(handles.erase(handle) == 1, "GC handle freed twice"); };
-    // The statistics lines' labels: OptionElement`1.displayedText, on the
-    // generic base of TextButtonOptionElement, at the pinned offset.
-    api.class_get_parent = [](Klass type) -> Klass {
-        return static_cast<Class*>(type)->name == "TextButtonOptionElement" ? Type("OptionElement`1") : nullptr;
-    };
-    api.class_get_field_from_name = [](Klass type, const char* name) -> void* {
-        static size_t displayedText = 0x2F0;
-        return static_cast<Class*>(type)->name == "OptionElement`1" && std::string(name) == "<displayedText>k__BackingField" ? &displayedText : nullptr;
-    };
-    api.field_get_offset = [](void* field) -> size_t { return *static_cast<size_t*>(field); };
 }
 
 struct Fixture {
@@ -311,11 +261,11 @@ struct Fixture {
         treasureOpens = notebookOpens = foreignButtonClicks = 0; openedUrls.clear();
         changes = 0;
         sourceModels = optionModels = uiHooks = 0;
-        fakeKeyStored = fakeForgetting = failKeyInsert = failKeyRemove = failTextRead = failUpdateText = false;
+        fakeKeyStored = fakeForgetting = failKeyInsert = failKeyRemove = failTextRead = false;
         fakeStatus = metamob::KeyStatus::Verified;
         keyForgets = keyCopies = lengthReads = nativeTextInits = inputsCreated = 0;
         submittedKeys.clear(); notices.clear(); verifiedRvas.clear(); keyChecks.clear();
-        statsFake = DefaultStats();
+        statsOpens = 0;
         state.servicesReady = true;
         state.ready.store(true);
         state.settings = Config(2, 1);
@@ -391,8 +341,7 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
         {0x55D26B0, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_whiteSpace", 0}, {0x55D6370, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_whiteSpace", 1},
         {0x170D6F0, "DofusButtonCustom", ".ctor", 0}, {0x170E330, "DofusButtonCustom", "set_size", 1}, {0x170E210, "DofusButtonCustom", "set_mainStyle", 1},
         {0x170E400, "DofusButtonCustom", "set_status", 1}, {0x170DFE0, "DofusButtonCustom", "set_icon", 1}, {0x170E5F0, "DofusButtonCustom", "set_text", 1},
-        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1},
-        {0x2D88830, "TextButtonOptionElement", "UpdateText", 0}};
+        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1}};
     const auto& owner = static_cast<fake::Class*>(klass)->name;
     fake::Check(std::any_of(std::begin(contracts), std::end(contracts), [&](const Contract& contract) {
         return contract.rva == rva && owner == contract.owner && std::string(name) == contract.method && argc == contract.argc;
@@ -472,14 +421,6 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
     if (name == "blrl") return value.refs.at("tooltip");
     if (name == "blqu") return value.refs.at("root");
     if (name == "get_panel") { const auto found = value.refs.find("panel"); return found != value.refs.end() ? found->second : nullptr; }
-    // TextButtonOptionElement.UpdateText: its label shows displayedText.
-    if (name == "UpdateText") {
-        Check(value.klass->name == "TextButtonOptionElement", "UpdateText on a text-button row view only");
-        if (failUpdateText) throw std::runtime_error("Synthetic label failure");
-        ++value.integers["updateText"];
-        value.refs["label"] = value.refs["<displayedText>k__BackingField"];
-        return nullptr;
-    }
     if (name == "get_gd_category") return value.refs.at("grid");
     if (name == "get_itemsSource") return value.refs.at("itemsSource");
     if (name == "Init") {
@@ -632,25 +573,8 @@ void OpenTreasureOverlay(const std::filesystem::path& folder) {
     ++fake::treasureOpens;
 }
 void OpenNotebookPanel() { ++fake::notebookOpens; }
-// The statistics store as the options read it (stats.cpp is not linked here).
-namespace stats {
-int64_t Current() { return fake::statsFake.current; }
-Totals Shown(bool everyCharacter) {
-    ++fake::statsFake.shown;
-    return everyCharacter ? fake::statsFake.all : fake::statsFake.mine;
-}
-bool Clear(bool everyCharacter) {
-    fake::statsFake.clears.push_back(everyCharacter);
-    return fake::statsFake.clearWorks;
-}
-std::string KeyName(Table table, int key) {
-    static const char* const elements[] = {"neutre", "terre", "feu", "eau", "air"};
-    if (table == Table::Elements) return key >= 0 && key < 5 ? elements[key] : "";
-    const auto& names = table == Table::Spells ? fake::statsFake.spells : table == Table::Dungeons ? fake::statsFake.dungeons : fake::statsFake.worlds;
-    const auto found = names.find(key);
-    return found != names.end() ? found->second : "";
-}
-}
+// « Voir mes statistiques » opens the statistics window (stats-window.cpp is not linked here).
+void OpenStatsWindow() { ++fake::statsOpens; }
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
     ++fake::uiHooks;
     if (rva == 0x2D80470) {
@@ -676,18 +600,20 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
     appearance.push_back(ui.roleplayModeSource.get());
     for (const auto& source : ui.roleplayMiniatureSources) appearance.push_back(source.get());
     for (const auto& source : ui.animationSources) appearance.push_back(source.get());
+    appearance.push_back(ui.glowSource.get());
+    for (const auto& source : ui.glowCategorySources) appearance.push_back(source.get());
     std::vector<Obj> rest{
-        ui.glowSource.get(), ui.glowNpcsSource.get(), ui.glowInteractivesSource.get(),
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.extraSources[MiniMapBarExtra].get(), ui.miniCenterSource.get(),
-        ui.extraSources[MiniMapZoneNameExtra].get(), ui.extraSources[MapCoordsExtra].get(), ui.extraSources[MiniMapCoordsExtra].get(),
-        ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(),
-        ui.extraSources[NotebookPingExtra].get(), ui.extraSources[MapAddPositionExtra].get(),
+        ui.extraSources[MiniMapZoneNameExtra].get(), ui.mapCoordsSource.get(), ui.miniMapCoordsSource.get(),
+        ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(), ui.mapMenuSource.get(),
+        ui.extraSources[NotebookPingExtra].get(), ui.extraSources[NotebookCopyExtra].get(), ui.extraSources[NotebookTravelExtra].get(),
+        ui.extraSources[MapAddPositionExtra].get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
         ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.chatCoordsSource.get(),
         ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
-        ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.perfCornerSource.get(),
-        ui.statsSource.get(), ui.statsScopeSource.get(),
+        ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.extraSources[PerfButtonExtra].get(),
+        ui.statsSource.get(), ui.statsButtonSource.get(),
         ui.autoLoadSource.get(), ui.githubSource.get()};
     appearance.insert(appearance.end(), rest.begin(), rest.end());
     return appearance;
@@ -717,28 +643,30 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             defaults.*RoleplayMiniatureToggles[i]));
     for (size_t i = 0; i < ui.animationOptions.size(); ++i)
         animations.rows.push_back(CheckRow(ui.animationOptions[i], ui.animationSources[i], AnimationToggleLabels[i], defaults.*AnimationToggles[i]));
-    // « Statistiques »: the checkbox (ticked by default), what is shown (this
-    // character by default), then its lines, owned text buttons without a
-    // source whose labels follow the store (see StatsLinesAndFormats).
+    // « Statistiques »: the counting checkbox, « Voir mes statistiques » (an
+    // owned text button opening the window, see StatsSectionRows), then the
+    // checkbox of the window's top-bar button; both checkboxes ticked by default.
     ExpectedSection statistics{"Statistiques", {CheckRow(ui.statsOption, ui.statsSource, "Compter mes statistiques", true),
-        ChoiceRow(ui.statsScopeOption, ui.statsScopeSource, "Statistiques affichées", 0)}};
-    for (const auto& row : ui.statsRows)
-        statistics.rows.push_back({row.get(), nullptr, Get(Get(row.get()).refs.at("text")).text, "TextButtonOption", 0});
+        ButtonRow(ui.statsOpenOption, "Voir mes statistiques"), CheckRow(ui.statsButtonOption, ui.statsButtonSource, "Bouton dans la barre du haut", true)}};
+    // « Surbrillance »: the level, then the six categories (Monstres alone ticked by default).
+    ExpectedSection glow{"Surbrillance", {ChoiceRow(ui.glowOption, ui.glowSource, "Surbrillance", 1)}};
+    for (size_t i = 0; i < ui.glowCategoryOptions.size(); ++i)
+        glow.rows.push_back(CheckRow(ui.glowCategoryOptions[i], ui.glowCategorySources[i], GlowCategoryTitles[i], defaults.*GlowCategoryToggles[i]));
     return {
-        appearance, animations,
-        {"Surbrillance", {ChoiceRow(ui.glowOption, ui.glowSource, "Surbrillance", 1),
-            CheckRow(ui.glowNpcsOption, ui.glowNpcsSource, "Inclure les PNJ", false),
-            CheckRow(ui.glowInteractivesOption, ui.glowInteractivesSource, "Inclure les éléments interactifs", false)}},
+        appearance, animations, glow,
         {"Cartes", {CheckRow(ui.resourcesOption, ui.resourcesSource, "Ressources sur la grande carte", true),
             CheckRow(ui.resourcesMiniOption, ui.resourcesMiniSource, "Ressources sur la mini-carte", true),
             CheckRow(ui.extraOptions[MiniMapBarExtra], ui.extraSources[MiniMapBarExtra], "Barre des ressources sur la mini-carte", true),
             CheckRow(ui.miniCenterOption, ui.miniCenterSource, "Bouton de recentrage sur la mini-carte", true),
             CheckRow(ui.extraOptions[MiniMapZoneNameExtra], ui.extraSources[MiniMapZoneNameExtra], "Nom de la zone au survol de la mini-carte", true),
-            CheckRow(ui.extraOptions[MapCoordsExtra], ui.extraSources[MapCoordsExtra], "Dimension avec les coordonnées sur la grande carte", true),
-            CheckRow(ui.extraOptions[MiniMapCoordsExtra], ui.extraSources[MiniMapCoordsExtra], "Dimension avec les coordonnées sur la mini-carte", true),
+            ChoiceRow(ui.mapCoordsOption, ui.mapCoordsSource, "Dimension avec les coordonnées sur la grande carte", 1),
+            ChoiceRow(ui.miniMapCoordsOption, ui.miniMapCoordsSource, "Dimension avec les coordonnées sur la mini-carte", 1),
             CheckRow(ui.archiZonesOption, ui.archiZonesSource, "Archimonstres manquants sur la grande carte", true),
-            CheckRow(ui.archiZonesMiniOption, ui.archiZonesMiniSource, "Archimonstres manquants sur la mini-carte", false)}},
+            CheckRow(ui.archiZonesMiniOption, ui.archiZonesMiniSource, "Archimonstres manquants sur la mini-carte", false),
+            CheckRow(ui.mapMenuOption, ui.mapMenuSource, "Réglages des cartes au clic droit", true)}},
         {"Carnet", {CheckRow(ui.extraOptions[NotebookPingExtra], ui.extraSources[NotebookPingExtra], "Bouton de repère à côté des positions", true),
+            CheckRow(ui.extraOptions[NotebookCopyExtra], ui.extraSources[NotebookCopyExtra], "Bouton de copie à côté des positions", true),
+            CheckRow(ui.extraOptions[NotebookTravelExtra], ui.extraSources[NotebookTravelExtra], "Bouton de voyage à côté des positions", true),
             CheckRow(ui.extraOptions[MapAddPositionExtra], ui.extraSources[MapAddPositionExtra], "« Ajouter aux positions » au clic droit sur les cartes", true)}},
         {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
@@ -753,17 +681,20 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.chatSoulOption, ui.chatSoulSource, "Âme en sac dans le chat", true),
             CheckRow(ui.chatOcreOption, ui.chatOcreSource, "Avancement Ocre dans le chat", true),
             CheckRow(ui.chatMetamobOption, ui.chatMetamobSource, "Metamob dans le chat", true),
-            ChoiceRow(ui.chatCoordsOption, ui.chatCoordsSource, "Dimension avec les coordonnées dans le chat", 2)}},
+            ChoiceRow(ui.chatCoordsOption, ui.chatCoordsSource, "Dimension avec les coordonnées dans le chat", 1)}},
         {"Calendrier", {CheckRow(ui.calendarKraloveOption, ui.calendarKraloveSource, "Ouvertures Kralamoure dans le calendrier", true)}},
+        // « Performances » (1.16.0): each part its own box, all off by default;
+        // no corner choice any more (the overlay is placed and sized with the
+        // mouse); its top-bar button on by default.
         {"Performances", {CheckRow(ui.extraOptions[PerfOverlayExtra], ui.extraSources[PerfOverlayExtra], "Afficher les FPS et la mémoire", false),
-            CheckRow(ui.extraOptions[PerfGpuExtra], ui.extraSources[PerfGpuExtra], "Charge du GPU", true),
-            CheckRow(ui.extraOptions[PerfDiskExtra], ui.extraSources[PerfDiskExtra], "Activité du disque", true),
-            CheckRow(ui.extraOptions[PerfDragExtra], ui.extraSources[PerfDragExtra], "Déplacer l’affichage à la souris", true),
-            ChoiceRow(ui.perfCornerOption, ui.perfCornerSource, "Position de l’affichage des performances", 0)}},
+            CheckRow(ui.extraOptions[PerfGpuExtra], ui.extraSources[PerfGpuExtra], "Charge du GPU", false),
+            CheckRow(ui.extraOptions[PerfDiskExtra], ui.extraSources[PerfDiskExtra], "Activité du disque", false),
+            CheckRow(ui.extraOptions[PerfDragExtra], ui.extraSources[PerfDragExtra], "Déplacer et redimensionner l’affichage à la souris", true),
+            CheckRow(ui.extraOptions[PerfButtonExtra], ui.extraSources[PerfButtonExtra], "Bouton dans la barre du haut", true)}},
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.15.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.16.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -870,7 +801,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.15.0" && std::string(ModVersion) == "r115",
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.16.0" && std::string(ModVersion) == "r116" &&
+        ModRevision == 116,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -915,17 +847,17 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.15.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.16.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r115") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r116") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 56 && optionModels == 56 + 2 + StatsLines,
-        "The UI must create fifty-six private sources and a hundred and nine rows");
+    Check(sourceModels == 63 && optionModels == 63 + 3,
+        "The UI must create sixty-three private sources and sixty-six rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
-        uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}, uintptr_t{0x2D88830}})
+        uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
         Check(std::find(verifiedRvas.begin(), verifiedRvas.end(), rva) != verifiedRvas.end(), "The view Init and the key row's calls must be exact verified contracts");
     Check(clickHandler != nullptr, "The key row's buttons are handled through the game's click");
     const auto& displayed = Get(Get(f.page).refs.at("m_optionsDisplayed")).items;
@@ -1036,14 +968,15 @@ void RegistrationAndValues() {
     Check(!f.Ui().Attach(f.page) && f.Categories().size() == 3, "Repeated attachment must be idempotent");
     CheckModeChoices(f.Ui().modeOption.get());
     CheckModeChoices(f.Ui().roleplayModeOption.get());
-    {
-        // « Dimension avec les coordonnées dans le chat »: each id is the saved mode.
-        const auto& choices = Get(Get(f.Ui().chatCoordsOption.get()).refs.at("choices")).items;
+    // « Dimension avec les coordonnées » on the big map, the mini-map and in the
+    // chat: each id is the saved mode.
+    for (const auto option : {f.Ui().mapCoordsOption.get(), f.Ui().miniMapCoordsOption.get(), f.Ui().chatCoordsOption.get()}) {
+        const auto& choices = Get(Get(option).refs.at("choices")).items;
         const char* labels[] = {"Non", "Oui, sauf dans le Monde des Douze", "Oui"};
-        Check(choices.size() == 3, "The chat dimension needs its three choices");
+        Check(choices.size() == 3, "Each dimension row needs its three choices");
         for (size_t i = 0; i != 3; ++i)
             Check(Get(choices[i]).choice.id == static_cast<int>(i) && Get(Get(choices[i]).choice.label).text == labels[i],
-                "Chat dimension choice IDs or labels changed");
+                "Dimension choice IDs or labels changed");
     }
     for (const auto& section : Layout(f.Ui()))
         for (const auto& row : section.rows) {
@@ -1240,18 +1173,49 @@ void GlowModeValuesAndDefaults() {
     f.StopAndRestore();
 }
 
+// « Surbrillance »: six independent checkboxes after the level, Monstres alone
+// ticked by default; each one commits only its own category and never the
+// level, a change made in the context menu updates its checkbox, and the
+// level explains the budget order.
 void GlowCategories() {
-    Fixture f; f.state.settings.glowNpcs=true;
+    Fixture f; f.state.settings.glowNpcs = true; f.state.settings.glowPlayers = true;
     initHook(f.page, false, true, ModId, nullptr);
-    auto& npc=Get(f.Ui().glowNpcsSource.get()); auto& interactive=Get(f.Ui().glowInteractivesSource.get());
-    Check(npc.boolean && !npc.defaultBoolean && !interactive.boolean && !interactive.defaultBoolean,"Independent category preferences and opt-in defaults");
-    auto expected=f.state.settings; interactive.boolean=true; f.Ui().Tick(); expected.glowInteractives=true;
-    Check(f.state.settings==expected,"Interactive option must preserve mode and NPC preference");
-    npc.boolean=false; f.Ui().Tick(); expected.glowNpcs=false;
-    Check(f.state.settings==expected,"NPC option must preserve interactive preference");
-    f.state.settings.glowNpcs=true; f.state.settings.glowInteractives=false; f.Ui().Sync();
-    Check(npc.boolean && !interactive.boolean,"External preferences update both category checkboxes");
+    CheckLayout(f);
+    constexpr size_t count = std::size(GlowCategoryToggles);
+    Check(f.Ui().glowCategorySources.size() == count && f.Ui().glowCategoryOptions.size() == count, "Six glow category rows");
+    for (size_t i = 0; i < count; ++i) {
+        const auto& source = Get(f.Ui().glowCategorySources[i].get());
+        Check(source.klass->name == "BoolSource" && source.boolean == f.state.settings.*GlowCategoryToggles[i] && source.defaultBoolean == (i == 0),
+            "Each category shows its saved value and resets to its default: Monstres alone ticked");
+        const auto option = f.Ui().glowCategoryOptions[i].get();
+        const auto text = Description(option);
+        Check(Label(option) == GlowCategoryTitles[i] && text.starts_with("Hors combat : ") &&
+            text.find("au niveau de surbrillance choisi ci-dessus") != std::string::npos &&
+            text.ends_with(i == 0 ? " Activé par défaut." : " Désactivé par défaut."),
+            "Each category row says what it outlines, with the level above, and its default");
+    }
+    Check(Description(f.Ui().glowCategoryOptions[5].get()).find("hors de ton groupe") != std::string::npos &&
+        Description(f.Ui().glowCategoryOptions[2].get()).find("zaaps") != std::string::npos, "Other players exclude the party; interactive objects give examples");
+    const auto level = Description(f.Ui().glowOption.get());
+    Check(level.find("catégories cochées ci-dessous (les monstres par défaut)") != std::string::npos &&
+        level.find("Sans case cochée, rien n’est entouré.") != std::string::npos &&
+        level.find("Au plus 32 contours à la fois : s’il y en a plus, passent d’abord ton personnage, puis ton groupe, les monstres, les PNJ, les éléments interactifs et enfin les autres joueurs.") != std::string::npos,
+        "The level describes the categories, the empty choice and the budget order");
+    auto expected = f.state.settings;
+    for (size_t i = 0; i < count; ++i) {
+        auto& source = Get(f.Ui().glowCategorySources[i].get());
+        source.boolean = !source.boolean;
+        f.Ui().Tick();
+        expected.*GlowCategoryToggles[i] = !(expected.*GlowCategoryToggles[i]);
+        Check(f.state.settings == expected && changes == i + 1, "Each glow checkbox commits only its own category, never the level");
+    }
+    for (size_t i = 0; i < count; ++i) f.state.settings.*GlowCategoryToggles[i] = i % 2 == 0;
+    f.Ui().Sync();
+    for (size_t i = 0; i < count; ++i)
+        Check(Get(f.Ui().glowCategorySources[i].get()).boolean == (i % 2 == 0), "External preferences (the context menu) update every category checkbox");
     f.StopAndRestore();
+    for (size_t i = 0; i < count; ++i)
+        Check(!f.Ui().glowCategorySources[i].get() && !f.Ui().glowCategoryOptions[i].get(), "Restore releases every glow category row");
 }
 void ReducedMiniaturesDescription() {
     Fixture f;
@@ -1328,9 +1292,10 @@ Settings AwayFromDefaults() {
     for (auto field : RoleplayMiniatureToggles) settings.*field = !(Settings{}.*field);
     settings.roleplayMode = 1;
     settings.monsterGlowMode = 3;
-    settings.glowNpcs = settings.glowInteractives = true;
+    for (auto field : GlowCategoryToggles) settings.*field = !(Settings{}.*field);
     settings.resourceMapEnabled = settings.resourceMiniMapEnabled = settings.miniMapCenterButton = false;
     settings.archiZonesMap = false; settings.archiZonesMiniMap = true; settings.calendarKralamoure = false;
+    settings.mapMenuSettings = false;
     settings.fastMapTransitions = settings.preloadNextMap = settings.spouseTeleport = false;
     settings.soulReminder = settings.soulAutoEquip = false;
     settings.autoLoad = settings.githubUpdates = false;
@@ -1339,9 +1304,15 @@ Settings AwayFromDefaults() {
     settings.travelRoublardTemple = false;
     settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = settings.chatMetamobStatus = false;
     for (auto field : ExtraToggles) settings.*field = !(Settings{}.*field);
+    // Not rows (no row resets them, the pump never changes them): the corner an
+    // earlier revision chose and the overlay's mouse place and size, kept with
+    // the mouse placement unticked, and the overlay hidden with its top-bar button.
     settings.perfOverlayCorner = 2;
-    settings.coordsWorldChatMode = 1;
-    settings.statsEnabled = false;
+    settings.perfOverlayX = 3300; settings.perfOverlayY = 4400;
+    settings.perfOverlayScale = 175;
+    settings.perfOverlayShown = false;
+    settings.coordsWorldChatMode = 2; settings.coordsWorldMapMode = 0; settings.coordsWorldMiniMapMode = 2; // away from « Oui, sauf »
+    settings.statsEnabled = settings.statsButton = false;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -1354,15 +1325,17 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == AnimationSection) {
         for (auto field : AnimationToggles) settings.*field = defaults.*field;
     } else if (index == GlowSection) {
-        settings.monsterGlowMode = defaults.monsterGlowMode; settings.glowNpcs = defaults.glowNpcs; settings.glowInteractives = defaults.glowInteractives;
+        settings.monsterGlowMode = defaults.monsterGlowMode;
+        for (auto field : GlowCategoryToggles) settings.*field = defaults.*field;
     } else if (index == MapsSection) {
         settings.resourceMapEnabled = defaults.resourceMapEnabled; settings.resourceMiniMapEnabled = defaults.resourceMiniMapEnabled;
         settings.miniMapCenterButton = defaults.miniMapCenterButton;
         settings.archiZonesMap = defaults.archiZonesMap; settings.archiZonesMiniMap = defaults.archiZonesMiniMap;
-        for (auto extra : {MiniMapBarExtra, MiniMapZoneNameExtra, MapCoordsExtra, MiniMapCoordsExtra})
-            settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
+        settings.mapMenuSettings = defaults.mapMenuSettings;
+        for (auto extra : {MiniMapBarExtra, MiniMapZoneNameExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
+        settings.coordsWorldMapMode = defaults.coordsWorldMapMode; settings.coordsWorldMiniMapMode = defaults.coordsWorldMiniMapMode;
     } else if (index == NotebookSection) {
-        for (auto extra : {NotebookPingExtra, MapAddPositionExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
+        for (auto extra : {NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
     } else if (index == TravelSection) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
         settings.mapTravelPlanner = defaults.mapTravelPlanner; settings.travelRoublardTemple = defaults.travelRoublardTemple;
@@ -1376,10 +1349,9 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == CalendarSection) {
         settings.calendarKralamoure = defaults.calendarKralamoure;
     } else if (index == PerformanceSection) {
-        for (auto extra : {PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
-        settings.perfOverlayCorner = defaults.perfOverlayCorner;
+        for (auto extra : {PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
     } else if (index == StatsSection) {
-        settings.statsEnabled = defaults.statsEnabled; // the scope choice is not a setting
+        settings.statsEnabled = defaults.statsEnabled; settings.statsButton = defaults.statsButton;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
     }
@@ -1392,7 +1364,6 @@ void SectionResetOwnsItsRows() {
         Fixture f;
         f.state.settings = AwayFromDefaults();
         initHook(f.page, false, true, SectionId(index), nullptr);
-        Get(f.Ui().statsScopeSource.get()).integer = 1; // « Tous mes personnages » shown
         const auto before = f.state.settings;
         for (const auto source : AllSources(f.Ui())) Check(!AtDefault(source), "Every row starts away from its reset default");
         const auto layout = Layout(f.Ui());
@@ -1417,6 +1388,74 @@ void SectionResetOwnsItsRows() {
         f.NativePreferencesUnchanged();
         f.StopAndRestore();
     }
+}
+
+// « Carnet » (1.16.0): the copy and travel buttons of the position lines,
+// after the pin button and before « Ajouter aux positions », both ticked by
+// default. Each row says what its button does and what is left once
+// unticked (the right-click menu still offers « Voyager », but nothing else
+// copies a position: its menu has no « Copier » and the form's is for notes
+// and messages), commits only its own setting, follows an outside change and
+// is ticked again by the section's reset.
+void NotebookSectionRows() {
+    Fixture f;
+    f.state.settings.notebookCopyButton = false; f.state.settings.notebookTravelButton = false;
+    initHook(f.page, false, true, SectionId(NotebookSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    const auto parent = f.Categories().back();
+    Check(Rows(Section(parent, NotebookSection)) == std::vector<Obj>({ui.extraOptions[NotebookPingExtra].get(), ui.extraOptions[NotebookCopyExtra].get(),
+        ui.extraOptions[NotebookTravelExtra].get(), ui.extraOptions[MapAddPositionExtra].get()}),
+        "Carnet: the pin, copy and travel buttons, then « Ajouter aux positions »");
+    struct Row { ExtraIndex extra; bool Settings::* field; const char* title; const char* unticked; };
+    const Row rows[] = {
+        {NotebookCopyExtra, &Settings::notebookCopyButton, "Bouton de copie à côté des positions",
+            "Décochée, le bouton disparaît et le carnet ne propose plus de copier les coordonnées d’une position. Activé par défaut."},
+        {NotebookTravelExtra, &Settings::notebookTravelButton, "Bouton de voyage à côté des positions",
+            "Décochée, le bouton disparaît ; le clic droit sur une position propose toujours « Voyager », qui lance le même trajet. Activé par défaut."}};
+    for (const auto& row : rows) {
+        const auto option = ui.extraOptions[row.extra].get();
+        const auto& source = Get(ui.extraSources[row.extra].get());
+        Check(Get(option).klass->name == "BoolOption" && Label(option) == row.title && Get(option).refs.at("source") == ui.extraSources[row.extra].get() &&
+            !source.boolean && source.defaultBoolean, std::string(row.title) + ": a native checkbox showing the saved choice, ticked as its reset default");
+        const auto description = Description(option);
+        for (const char* term : {"Dans les positions du carnet, un petit bouton", "à droite de chaque nom",
+                "L’entrée sélectionnée et tes modifications en cours ne changent pas.", row.unticked})
+            Check(description.find(term) != std::string::npos, std::string(row.title) + " says: " + term);
+        Check(description.ends_with(" Activé par défaut.") && description.find('\'') == std::string::npos,
+            std::string(row.title) + ": its default last, typographic apostrophes");
+    }
+    Check(Description(ui.extraOptions[NotebookCopyExtra].get()).find("copie les coordonnées de cette position dans le presse-papiers, par exemple [-25,36].") !=
+        std::string::npos, "The copy row says what is copied");
+    Check(Description(ui.extraOptions[NotebookCopyExtra].get()).find("clic droit") == std::string::npos,
+        "The copy row promises no right-click copy: a position's menu has no « Copier »");
+    Check(Description(ui.extraOptions[NotebookTravelExtra].get()).find(
+        "un petit bouton zaap à droite de chaque nom lance le trajet du mod vers cette position : zaaps, bateaux puis /travel (indisponible en combat).") !=
+        std::string::npos, "The travel row says where it goes, how, and when it cannot");
+    // Each box commits only its own setting, once.
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (const auto& row : rows)
+        for (bool value : {true, false, true}) {
+            Get(ui.extraSources[row.extra].get()).boolean = value;
+            ui.Tick();
+            expected.*row.field = value;
+            ++commits;
+            Check(f.state.settings == expected && changes == commits, std::string(row.title) + ": a click changes only its own setting, once");
+        }
+    // An outside change shows in each box.
+    f.state.settings.notebookCopyButton = false; f.state.settings.notebookTravelButton = false;
+    ui.Sync();
+    Check(!Get(ui.extraSources[NotebookCopyExtra].get()).boolean && !Get(ui.extraSources[NotebookTravelExtra].get()).boolean, "Outside changes show in the boxes");
+    // The section's reset ticks them again.
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    expected = f.state.settings;
+    api.Call(Section(displayedParent, NotebookSection), "Reset");
+    ui.Tick();
+    expected.notebookCopyButton = expected.notebookTravelButton = true;
+    Check(f.state.settings == expected, "The Carnet reset ticks both boxes again");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
 }
 
 void ResourceMapMasterPreservesSelection() {
@@ -1469,24 +1508,147 @@ void ValidationAndLoadingGate() {
         f.Ui().Tick();
         Check(changes == 0 && Get(f.Ui().glowSource.get()).integer == 1, "Invalid glow mode must revert without persistence");
     }
-    for (int invalid : {-1, 3, 99}) {
-        Get(f.Ui().chatCoordsSource.get()).integer = invalid;
-        f.Ui().Tick();
-        Check(changes == 0 && Get(f.Ui().chatCoordsSource.get()).integer == 2, "Invalid chat dimension choice must revert without persistence");
-    }
-    for (int invalid : {-1, 4, 99}) {
-        Get(f.Ui().perfCornerSource.get()).integer = invalid;
-        f.Ui().Tick();
-        Check(changes == 0 && Get(f.Ui().perfCornerSource.get()).integer == 0, "Invalid overlay corner must revert without persistence");
-    }
-    for (int invalid : {-1, 2, 99}) {
-        Get(f.Ui().statsScopeSource.get()).integer = invalid;
-        f.Ui().Tick();
-        Check(changes == 0 && Get(f.Ui().statsScopeSource.get()).integer == 0 && f.Ui().statsScope == 0,
-            "An invalid statistics choice goes back to the one shown, without persistence");
-    }
+    for (const auto source : {f.Ui().mapCoordsSource.get(), f.Ui().miniMapCoordsSource.get(), f.Ui().chatCoordsSource.get()})
+        for (int invalid : {-1, 3, 99}) {
+            Get(source).integer = invalid;
+            f.Ui().Tick();
+            Check(changes == 0 && Get(source).integer == 1, "An invalid dimension choice must revert without persistence");
+        }
     CheckLayout(f);
     f.StopAndRestore();
+}
+
+// « Dimension avec les coordonnées » (1.16.0): the big map and the mini-map in
+// « Cartes », the chat in « Chat », the same three choices (ids the saved
+// modes), « Oui, sauf dans le Monde des Douze » by default. Each row shows its
+// saved choice, commits only its own, follows an outside change and goes back
+// to « Oui, sauf » with its section's reset.
+void DimensionChoiceRows() {
+    Fixture f;
+    f.state.settings.coordsWorldMapMode = 0; f.state.settings.coordsWorldMiniMapMode = 2; f.state.settings.coordsWorldChatMode = 0;
+    initHook(f.page, false, true, SectionId(MapsSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    struct Row { Obj option, source; int Settings::* field; const char* title; };
+    const Row rows[] = {
+        {ui.mapCoordsOption.get(), ui.mapCoordsSource.get(), &Settings::coordsWorldMapMode, "Dimension avec les coordonnées sur la grande carte"},
+        {ui.miniMapCoordsOption.get(), ui.miniMapCoordsSource.get(), &Settings::coordsWorldMiniMapMode, "Dimension avec les coordonnées sur la mini-carte"},
+        {ui.chatCoordsOption.get(), ui.chatCoordsSource.get(), &Settings::coordsWorldChatMode, "Dimension avec les coordonnées dans le chat"}};
+    // « Cartes »: the big map's then the mini-map's choice after the zone name,
+    // before the archimonsters; « Chat »: the chat's choice last.
+    const auto parent = f.Categories().back();
+    const auto& maps = Rows(Section(parent, MapsSection));
+    const auto zone = std::find(maps.begin(), maps.end(), ui.extraOptions[MiniMapZoneNameExtra].get());
+    Check(maps.end() - zone >= 4 && zone[1] == rows[0].option && zone[2] == rows[1].option && zone[3] == ui.archiZonesOption.get(),
+        "Cartes: the big map's and the mini-map's dimension after the zone name, before the archimonsters");
+    Check(Rows(Section(parent, ChatSection)).back() == rows[2].option, "Chat: the dimension last");
+    const char* labels[] = {"Non", "Oui, sauf dans le Monde des Douze", "Oui"};
+    for (const auto& row : rows) {
+        const auto& option = Get(row.option);
+        const auto& source = Get(row.source);
+        Check(option.klass->name == "MultipleChoiceOption" && Label(row.option) == row.title && option.refs.at("source") == row.source &&
+            source.klass->name == "IntSource" && source.integer == f.state.settings.*row.field && source.defaultInteger == 1,
+            std::string(row.title) + ": a native choice showing the saved mode, « Oui, sauf » as its reset default");
+        const auto& choices = Get(option.refs.at("choices")).items;
+        Check(choices.size() == 3, std::string(row.title) + ": three choices");
+        for (size_t i = 0; i != 3; ++i)
+            Check(Get(choices[i]).choice.id == static_cast<int>(i) && Get(Get(choices[i]).choice.label).text == labels[i],
+                std::string(row.title) + ": Non, Oui sauf dans le Monde des Douze, Oui, each id its saved mode");
+        const auto description = Description(row.option);
+        for (const char* term : {"[x,y, dimension]", "« Oui, sauf dans le Monde des Douze » ", "(Incarnam, Srambad…)"})
+            Check(description.find(term) != std::string::npos, std::string(row.title) + " says: " + term);
+        Check(description.ends_with(". « Oui, sauf dans le Monde des Douze » par défaut.") && description.find('\'') == std::string::npos &&
+            description.find("Activé par défaut") == std::string::npos && description.find("« Oui » par défaut") == std::string::npos,
+            std::string(row.title) + ": its default last, typographic apostrophes");
+    }
+    for (size_t i = 0; i != 2; ++i)
+        for (const char* term : {"l’infobulle de la case survolée", "« Oui » l’ajoute partout",
+                "« Oui, sauf dans le Monde des Douze » seulement dans les autres dimensions",
+                "« Non » jamais : l’infobulle garde les coordonnées du jeu, [x,y]."})
+            Check(Description(rows[i].option).find(term) != std::string::npos, std::string(rows[i].title) + " explains: " + term);
+    Check(Description(rows[0].option).rfind("Sur la grande carte", 0) == 0 && Description(rows[1].option).rfind("Sur la mini-carte", 0) == 0,
+        "Each map's description names its map");
+    // Each choice commits only its own setting, once.
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (const auto& row : rows)
+        for (int mode : {1, 2, 0}) {
+            auto& source = Get(row.source);
+            if (source.integer == mode) continue;
+            source.integer = mode;
+            ui.Tick();
+            expected.*row.field = mode;
+            ++commits;
+            Check(f.state.settings == expected && changes == commits, std::string(row.title) + ": a choice changes only its own setting, once");
+        }
+    // An outside change shows in each row.
+    f.state.settings.coordsWorldMapMode = 2; f.state.settings.coordsWorldMiniMapMode = 1; f.state.settings.coordsWorldChatMode = 2;
+    ui.Sync();
+    Check(Get(rows[0].source).integer == 2 && Get(rows[1].source).integer == 1 && Get(rows[2].source).integer == 2, "Outside changes show in the rows");
+    // Each section's reset: its own rows back to « Oui, sauf », the other one's kept.
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    expected = f.state.settings;
+    api.Call(Section(displayedParent, MapsSection), "Reset");
+    ui.Tick();
+    expected.coordsWorldMapMode = expected.coordsWorldMiniMapMode = 1;
+    Check(f.state.settings == expected, "The Cartes reset: both maps back to « Oui, sauf », the chat kept");
+    api.Call(Section(displayedParent, ChatSection), "Reset");
+    ui.Tick();
+    expected.coordsWorldChatMode = 1;
+    Check(f.state.settings == expected, "The Chat reset: the chat back to « Oui, sauf »");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
+    Check(!ui.mapCoordsSource.get() && !ui.mapCoordsOption.get() && !ui.miniMapCoordsSource.get() && !ui.miniMapCoordsOption.get() &&
+        !ui.chatCoordsSource.get() && !ui.chatCoordsOption.get(), "Restore releases the three dimension rows");
+}
+
+// « Réglages des cartes au clic droit » (1.16.0): the last row of « Cartes »,
+// ticked by default. It says what each map's right-click menu gets, commits
+// only its own setting, follows an outside change and is ticked again by the
+// section's reset.
+void MapMenuSettingsRow() {
+    Fixture f;
+    f.state.settings.mapMenuSettings = false;
+    initHook(f.page, false, true, SectionId(MapsSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    const auto parent = f.Categories().back();
+    Check(Rows(Section(parent, MapsSection)).back() == ui.mapMenuOption.get(), "Cartes: the right-click settings last, after the archimonsters");
+    const auto option = ui.mapMenuOption.get();
+    const auto& source = Get(ui.mapMenuSource.get());
+    Check(Get(option).klass->name == "BoolOption" && Label(option) == "Réglages des cartes au clic droit" && Get(option).refs.at("source") == ui.mapMenuSource.get() &&
+        !source.boolean && source.defaultBoolean, "Réglages des cartes au clic droit: a native checkbox showing the saved choice, ticked as its reset default");
+    const auto description = Description(option);
+    for (const char* term : {"Au clic droit sur la grande carte ou la mini-carte, ajoute sous les entrées du jeu les réglages du mod pour cette carte",
+            "sur la mini-carte, les ressources, leur barre, le bouton de recentrage, le nom de la zone au survol, les archimonstres manquants et la dimension avec les coordonnées",
+            "sur la grande carte, les ressources, les archimonstres manquants et la dimension avec les coordonnées",
+            "Un clic s’applique aussitôt"})
+        Check(description.find(term) != std::string::npos, std::string("Réglages des cartes au clic droit says: ") + term);
+    Check(description.ends_with(" Activé par défaut.") && description.find('\'') == std::string::npos,
+        "Réglages des cartes au clic droit: its default last, typographic apostrophes");
+    // The box commits only its own setting, once per change.
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (bool value : {true, false, true}) {
+        Get(ui.mapMenuSource.get()).boolean = value;
+        ui.Tick();
+        expected.mapMenuSettings = value;
+        ++commits;
+        Check(f.state.settings == expected && changes == commits, "Réglages des cartes au clic droit: a click changes only its own setting, once");
+    }
+    // An outside change shows in the box.
+    f.state.settings.mapMenuSettings = false;
+    ui.Sync();
+    Check(!Get(ui.mapMenuSource.get()).boolean, "An outside change shows in the box");
+    // The section's reset ticks it again.
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    expected = WithSectionDefaults(f.state.settings, MapsSection);
+    api.Call(Section(displayedParent, MapsSection), "Reset");
+    ui.Tick();
+    Check(f.state.settings == expected && f.state.settings.mapMenuSettings, "The Cartes reset ticks it again");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
+    Check(!ui.mapMenuSource.get() && !ui.mapMenuOption.get(), "Restore releases the row");
 }
 
 void AutoLoadFailureIsRecoverable() {
@@ -2133,336 +2295,85 @@ void MetamobFieldsLeaveOnAbandon() {
     f.Ui().Restore();
 }
 
-// « Statistiques »: one pooled view per line, as the game fills the open section.
-std::vector<RowView> OpenStats(Fixture& f) {
-    std::vector<RowView> views;
-    for (const auto& row : f.Ui().statsRows) {
-        views.push_back(MakeRowView());
-        textInitHook(views.back().element, row.get(), nullptr);
-    }
-    return views;
-}
-std::string Shown(const RowView& view) { return Text(Get(view.element).refs["label"]); }
-// The labels follow the store at the next refresh (once a second).
-void RefreshNow(Fixture& f) { f.Ui().nextStatsRefresh = 0; f.Ui().Tick(); }
-std::string Thin(const std::string& digits) { // « 1 234 567 » with thin no-break spaces
-    std::string text;
-    for (size_t i = 0; i < digits.size(); ++i) { if (i && (digits.size() - i) % 3 == 0) text += "\u202F"; text += digits[i]; }
-    return text;
-}
-const std::string Nb = "\u00A0";
-// What each line shows for DefaultStats(): this character.
-std::vector<std::string> MineLabels() {
-    return {
-        "Ce personnage : Altansar, compté depuis le 23 octobre 2026",
-        "— Temps et déplacements —",
-        "Temps de jeu : 12" + Nb + "h" + Nb + "05" + Nb + "min",
-        "Plus longue session : 3" + Nb + "h" + Nb + "00" + Nb + "min",
-        "Cases parcourues : " + Thin("12345") + " hors combat, " + Thin("2345") + " en combat",
-        "Cartes parcourues : " + Thin("1234"),
-        "Changements de dimension : 12",
-        "Dimension la plus visitée : Srambad (8 arrivées)",
-        "— Progression —",
-        "Expérience gagnée : " + Thin("12345678"),
-        "Niveaux gagnés : 3",
-        "— Kamas —",
-        "Kamas gagnés : " + Thin("1234567") + Nb + "kamas",
-        "Kamas dépensés : " + Thin("234567") + Nb + "kamas",
-        "Solde : +" + Thin("1000000") + Nb + "kamas",
-        "— Récolte et artisanat —",
-        "Ressources récoltées : " + Thin("1234"),
-        "Objets fabriqués : 567",
-        "Quêtes terminées : 12",
-        "Succès obtenus : 34",
-        "— Combats —",
-        "Combats JcM : 123 (98 victoires, 25 défaites)",
-        "Combats JcJ : 4 (1 victoire, 3 défaites)",
-        "Combats Kolizéum : 0 (0 victoire, 0 défaite)",
-        "Temps en combat : 5" + Nb + "h" + Nb + "12" + Nb + "min (2" + Nb + "min" + Nb + "27" + Nb + "s en moyenne)",
-        "Tours joués : " + Thin("1234"),
-        "Dégâts : " + Thin("1234567") + " infligés, " + Thin("234567") + " subis",
-        "Soins prodigués : " + Thin("123456"),
-        "Plus gros coup : " + Thin("3456"),
-        "Monstres vaincus : " + Thin("2345"),
-        "Morts : 12",
-        "Âmes capturées : 3",
-        "Donjons terminés : 12",
-        "Donjon le plus fait : Donjon des Bouftous (5 fois)",
-        "— Sorts et éléments —",
-        "Sorts lancés : " + Thin("12345"),
-        "Sort n° 1 : Pression, lancé " + Thin("1234") + " fois",
-        "Sort n° 2 : sort 4567, lancé 987 fois",
-        "Sort n° 3 : Mot curatif, lancé 455 fois",
-        "Sort n° 4 : aucun",
-        "Sort n° 5 : aucun",
-        "Dégâts par élément : neutre 4,2" + Nb + "%, terre 45" + Nb + "%, feu 30" + Nb + "%, eau 0,8" + Nb + "%, air 20" + Nb + "%",
-        "— Téléportations —",
-        "Zaaps : 123",
-        "Zaapis : 45",
-        "Prismes : 6",
-        "Potions de rappel : 7",
-        "Entrées dans un Havre-Sac : 89",
-        "Trajets du mod : 12",
-        "Autres téléportations : 3",
-        "Réinitialiser les statistiques de ce personnage"};
-}
-
-// The section's rows: the checkbox and the scope choice (native rows with
-// their own sources), then 51 owned text-button lines, each with its own
-// description reference, no source and no native action; every label in
-// French formats from the store's totals and the game's names.
-void StatsLinesAndFormats() {
+// « Statistiques » (1.16.0): the counting checkbox, « Voir mes statistiques »
+// (an owned text button known by its own description reference: no source, no
+// native action) and the checkbox of the window's top-bar button. The lines,
+// the choice of what is shown and the reset of 1.15.0 are in the window now.
+void StatsSectionRows() {
     Fixture f;
     initHook(f.page, false, true, SectionId(StatsSection), nullptr);
     CheckLayout(f);
     const auto parent = f.Categories().back();
-    const auto& rows = Rows(Section(parent, StatsSection));
-    Check(rows.size() == 2 + StatsLines && rows[0] == f.Ui().statsOption.get() && rows[1] == f.Ui().statsScopeOption.get(),
-        "Statistiques: the checkbox, the scope choice, then its 51 lines");
+    auto& ui = f.Ui();
+    Check(Rows(Section(parent, StatsSection)) == std::vector<Obj>({ui.statsOption.get(), ui.statsOpenOption.get(), ui.statsButtonOption.get()}),
+        "Statistiques: the counting checkbox, « Voir mes statistiques », then the top-bar button's checkbox");
     Check(Name(Section(parent, StatsSection)) == "Statistiques" && Name(Section(parent, StatsSection - 1)) == "Performances" &&
         Name(Section(parent, StatsSection + 1)) == "Chargement et mises à jour", "« Statistiques » after « Performances », before « Chargement et mises à jour »");
-    const auto description = Description(f.Ui().statsOption.get());
+    for (const auto option : AllOptions(ui))
+        Check(Label(option) != "Statistiques affichées" && Label(option).rfind("— ", 0) != 0 && Label(option).rfind("Temps de jeu", 0) != 0 &&
+            Label(option).rfind("Réinitialiser les statistiques", 0) != 0, "No scope choice, title line, figure or reset left in the options");
+    const auto counting = Description(ui.statsOption.get());
     for (const char* term : {"Compte pour chacun de tes personnages", "temps de jeu", "kamas", "combats", "téléportations", "version 1.15.0",
             "pendant que le mod est chargé", "Tout reste sur ce PC", "rien n’est envoyé", "Décoché, rien n’est compté", "Activé par défaut."})
-        Check(description.find(term) != std::string::npos, std::string("The checkbox says what is counted, where it stays, since when and unticked: ") + term);
-    const auto& scopes = Get(Get(f.Ui().statsScopeOption.get()).refs.at("choices")).items;
-    Check(scopes.size() == 2 && Get(scopes[0]).choice.id == 0 && Text(Get(scopes[0]).choice.label) == "Ce personnage" &&
-        Get(scopes[1]).choice.id == 1 && Text(Get(scopes[1]).choice.label) == "Tous mes personnages", "« Ce personnage » or « Tous mes personnages »");
-    Check(Description(f.Ui().statsScopeOption.get()).find("additionnées") != std::string::npos, "The choice says the sums");
-    std::vector<Obj> markers;
-    for (size_t line = 0; line < StatsLines; ++line) {
-        const auto row = f.Ui().statsRows.at(line).get();
-        const auto& option = Get(row);
-        Check(option.klass->name == "TextButtonOption" && !option.refs.at("source") && f.Ui().statsMarkers.at(line).get() == option.refs.at("description"),
-            "Each line is an owned text button known by its description reference");
-        Check(std::find(markers.begin(), markers.end(), option.refs.at("description")) == markers.end() && option.refs.at("description") != f.Ui().creditsMarker.get() &&
-            option.refs.at("description") != f.Ui().metamobKeyMarker.get(), "Every line has its own description reference");
-        markers.push_back(option.refs.at("description"));
-        Check(!Description(row).empty(), "Every line has its hover text");
-        if (line == StatsResetLine) Check(ButtonText(row) == "Réinitialiser" && option.integers.at("icon") == 249, "The reset line: Réinitialiser, the game's reset icon");
-        else Check(ButtonText(row).empty() && !option.integers.count("icon"), "The other lines: no caption, no icon (their button stays hidden)");
-    }
-    const auto mine = MineLabels();
-    for (size_t line = 0; line < StatsLines; ++line)
-        Check(Label(f.Ui().statsRows[line].get()) == mine[line], "Line " + std::to_string(line) + ": " + Label(f.Ui().statsRows[line].get()));
-    Check(Description(f.Ui().statsRows[StatsResetLine].get()).find("Confirmer dans les 10 secondes") != std::string::npos, "The reset line says it asks first");
-    // Every character's sums once chosen (the open section's views follow).
-    auto views = OpenStats(f);
-    Get(f.Ui().statsScopeSource.get()).integer = 1;
-    f.Ui().Tick();
-    Check(f.Ui().statsScope == 1 && changes == 0, "The choice is not a setting");
-    const std::map<size_t, std::string> every = {
-        {0, "Tous mes personnages : 4 personnages, comptés depuis le 1er octobre 2026"},
-        {2, "Temps de jeu : " + Thin("1234") + Nb + "h" + Nb + "00" + Nb + "min"},
-        {5, "Cartes parcourues : 0"}, {7, "Dimension la plus visitée : aucune"}, {14, "Solde : -" + Thin("1000") + Nb + "kamas"},
-        {24, "Temps en combat : 0" + Nb + "min"}, {33, "Donjon le plus fait : aucun"}, {36, "Sort n° 1 : aucun"},
-        {41, "Dégâts par élément : aucun dégât compté"}, {50, "Réinitialiser les statistiques de tous mes personnages"}};
-    for (const auto& [line, label] : every)
-        Check(Label(f.Ui().statsRows[line].get()) == label && Shown(views[line]) == label, "Every character, line " + std::to_string(line) + ": " + Shown(views[line]));
-    // Edge formats: under a minute, no character, a character without a name or counts, shares rounded.
-    Get(f.Ui().statsScopeSource.get()).integer = 0;
-    f.Ui().Tick();
-    auto& mineTotals = statsFake.mine;
-    const auto check = [&](size_t line, const std::string& label) {
-        RefreshNow(f);
-        Check(Label(f.Ui().statsRows[line].get()) == label && Shown(views[line]) == label, "Line " + std::to_string(line) + ": " + Shown(views[line]));
-    };
-    Set(mineTotals, stats::Counter::PlayMs, 45000); check(2, "Temps de jeu : 45" + Nb + "s");
-    Set(mineTotals, stats::Counter::PlayMs, 0); check(2, "Temps de jeu : 0" + Nb + "min");
-    Set(mineTotals, stats::Counter::PlayMs, 60000); check(2, "Temps de jeu : 1" + Nb + "min");
-    mineTotals.tables[static_cast<size_t>(stats::Table::Elements)] = {{1, 996}, {0, 3}, {7, 1}};
-    check(41, "Dégâts par élément : neutre 0,3" + Nb + "%, terre 100" + Nb + "%, feu 0" + Nb + "%, eau 0" + Nb + "%, air 0" + Nb + "%, autres 0,1" + Nb + "%");
-    mineTotals.tables[static_cast<size_t>(stats::Table::Elements)] = {{2, 900}, {3, 100}};
-    check(41, "Dégâts par élément : neutre 0" + Nb + "%, terre 0" + Nb + "%, feu 90" + Nb + "%, eau 10" + Nb + "%, air 0" + Nb + "%");
-    mineTotals.name.clear(); mineTotals.character = 77; mineTotals.first = 0;
-    check(0, "Ce personnage : n° 77, rien de compté pour l’instant");
-    mineTotals = stats::Totals{};
-    check(0, "Ce personnage : aucun personnage connecté pour l’instant");
-    statsFake.all = stats::Totals{};
-    Get(f.Ui().statsScopeSource.get()).integer = 1;
-    f.Ui().Tick();
-    Check(Shown(views[0]) == "Tous mes personnages : rien de compté pour l’instant", "Nothing counted for any character");
-    f.StopAndRestore();
-}
-
-// Views of the lines: the label follows the store once a second while the page
-// is open, the native button stays hidden (the reset's shown), and a view
-// recycled for another row (the key row too) gets its button back as it was.
-void StatsViewsFollowTheStore() {
-    Fixture f;
-    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
-    auto views = OpenStats(f);
-    const auto mine = MineLabels();
-    Check(f.Ui().statsViews.size() == StatsLines, "Each view of a line is followed");
-    for (size_t line = 0; line < StatsLines; ++line) {
-        Check(Shown(views[line]) == mine[line], "Each view shows its line");
-        Check(line == StatsResetLine ? SaveShown(views[line]) : SaveHidden(views[line]), "Only the reset line keeps its native button");
-    }
-    Check(Caption(views[StatsResetLine].button) == "Réinitialiser" && Get(views[StatsResetLine].button).integers.at("icon") == 249,
-        "The reset button: Réinitialiser with the game's reset icon");
-    // Once a second: a new count shows at the next refresh, only on its line.
-    const auto reads = statsFake.shown;
-    const auto updates = Get(views[3].element).integers["updateText"];
-    Set(statsFake.mine, stats::Counter::PlayMs, 43560000);
-    f.Ui().Tick();
-    Check(statsFake.shown == reads && Shown(views[2]) == mine[2], "Not before the second is over");
-    RefreshNow(f);
-    const auto playTime = "Temps de jeu : 12" + Nb + "h" + Nb + "06" + Nb + "min";
-    Check(statsFake.shown == reads + 1 && Shown(views[2]) == playTime && Label(f.Ui().statsRows[2].get()) == playTime &&
-        Get(views[3].element).integers["updateText"] == updates, "The changed line follows (view and model), the others are left as they are");
-    // A closed page reads nothing.
-    for (auto& view : views) Get(view.element).refs["panel"] = nullptr;
-    Set(statsFake.mine, stats::Counter::PlayMs, 50000000);
-    RefreshNow(f);
-    Check(statsFake.shown == reads + 1 && Shown(views[2]) == playTime, "A closed page: nothing read, nothing written");
-    for (auto& view : views) Get(view.element).refs["panel"] = Make("Panel");
-    RefreshNow(f);
-    Check(Shown(views[2]) == "Temps de jeu : 13" + Nb + "h" + Nb + "53" + Nb + "min", "Open again: the line follows at the next refresh");
-    // A search clone of a line, in another view: recognized by its description.
+        Check(counting.find(term) != std::string::npos, std::string("The counting checkbox is unchanged: ") + term);
+    // « Voir mes statistiques »: « Ouvrir », with the window's chart icon.
+    const auto open = ui.statsOpenOption.get();
+    const auto& model = Get(open);
+    Check(model.klass->name == "TextButtonOption" && !model.refs.at("source") && ui.statsOpenMarker.get() == model.refs.at("description") &&
+        ui.statsOpenMarker.get() != ui.creditsMarker.get() && ui.statsOpenMarker.get() != ui.metamobKeyMarker.get(),
+        "« Voir mes statistiques » is an owned text button known by its own description reference");
+    Check(Label(open) == "Voir mes statistiques" && ButtonText(open) == "Ouvrir" && model.integers.at("icon") == 77,
+        "Its button: « Ouvrir », with FigmaIcons.chart, the window's icon");
+    const auto opening = Description(open), button = Description(ui.statsButtonOption.get());
+    for (const char* term : {"Ouvre la fenêtre « Statistiques »", "pour ce personnage ou pour tous tes personnages", "temps et déplacements",
+            "téléportations", "sur deux ou trois colonnes", "chaque seconde tant qu’elle est ouverte", "Le bouton « Réinitialiser »",
+            "en haut à droite de l’écran, à côté de Capture d’âme"})
+        Check(opening.find(term) != std::string::npos, std::string("« Voir mes statistiques » says: ") + term);
+    for (const char* term : {"en haut à droite de l’écran, à côté de Capture d’âme", "ouvre ou ferme la fenêtre « Statistiques »",
+            "Décoché, le bouton disparaît", "« Voir mes statistiques »", "Activé par défaut."})
+        Check(button.find(term) != std::string::npos, std::string("« Bouton dans la barre du haut » says: ") + term);
+    for (const auto& text : {opening, button}) Check(text.find('\'') == std::string::npos, "Typographic apostrophes");
+    // Ouvrir opens the window, from any view of the row, never the native action.
+    auto view = MakeRowView();
+    textInitHook(view.element, open, nullptr);
+    Click(view);
+    Check(statsOpens == 1 && foreignButtonClicks == 0 && changes == 0, "Ouvrir opens the statistics window, nothing else");
+    Check(SaveShown(view) && !Slot(view), "Its view keeps the native button as it is");
     const auto clone = Make("TextButtonOption");
-    Get(clone).refs["description"] = Get(f.Ui().statsRows[9].get()).refs.at("description");
-    Get(clone).refs["text"] = String("old text");
+    Get(clone).refs["description"] = Get(open).refs.at("description");
     auto cloneView = MakeRowView();
     textInitHook(cloneView.element, clone, nullptr);
-    Check(Shown(cloneView) == mine[9] && SaveHidden(cloneView) && f.Ui().statsViews.size() == StatsLines + 1, "A search clone shows the current line");
-    // Clicking a line does nothing: no native action, no reset.
-    Click(views[9]);
     Click(cloneView);
-    Check(foreignButtonClicks == 0 && statsFake.clears.empty() && !f.Ui().statsConfirm, "A line's click does nothing");
-    // Recycled for the credits row: its button as it was, the view no longer followed.
-    textInitHook(views[5].element, f.Ui().creditsOption.get(), nullptr);
-    Check(SaveShown(views[5]) && f.Ui().statsViews.size() == StatsLines, "Recycled: the native button back as it was");
-    // Recycled for the key row, then back to a line: each takes the button as the other left it.
-    textInitHook(views[6].element, f.Ui().metamobKeyOption.get(), nullptr);
-    Check(Slot(views[6]) && SaveHidden(views[6]) && f.Ui().keyFields.size() == 1, "The key row takes the view (Enregistrer hidden until typed)");
-    textInitHook(views[6].element, f.Ui().statsRows[6].get(), nullptr);
-    Check(!Slot(views[6]) && f.Ui().keyFields.empty() && SaveHidden(views[6]) && Shown(views[6]) == mine[6], "Back to a line");
-    textInitHook(views[6].element, f.Ui().metamobKeyOption.get(), nullptr);
-    Check(Slot(views[6]) && f.Ui().keyFields.size() == 1, "And to the key row again");
-    textInitHook(views[6].element, f.Ui().creditsOption.get(), nullptr);
-    Check(!Slot(views[6]) && SaveShown(views[6]), "Its button as it was at the end");
-    // A view whose label cannot be written is let go, logged, never a stop.
-    Check(f.Ui().statsViews.size() == StatsLines - 1, "Fifty lines and the clone followed");
-    failUpdateText = true;
-    Set(statsFake.mine, stats::Counter::Xp, 99);
-    f.Ui().nextStatsLog = 0;
-    RefreshNow(f);
-    failUpdateText = false;
-    Check(std::any_of(logs.begin(), logs.end(), [](const std::string& line) { return line.rfind("STATS_UI_ERROR step=refresh", 0) == 0; }) &&
-        !f.state.stopRequested.load() && !f.state.stopped.load(), "A failing view is logged; the mod goes on");
-    Check(SaveShown(views[9]) && SaveShown(cloneView) && f.Ui().statsViews.size() == StatsLines - 3, "The views let go get their button back");
-    textInitHook(views[9].element, f.Ui().statsRows[9].get(), nullptr);
-    Check(Shown(views[9]) == "Expérience gagnée : 99" && SaveHidden(views[9]), "Its next Init follows the line again");
-    // Restore gives every button back and releases the section.
-    f.StopAndRestore();
-    for (const auto& view : views) Check(SaveShown(view), "Restore gives every native button back");
-    Check(SaveShown(cloneView) && f.Ui().statsViews.empty() && !f.Ui().statsSource.get() && !f.Ui().statsScopeOption.get() &&
-        f.Ui().statsRows.empty() && f.Ui().statsMarkers.empty(), "Restore releases the section");
-    textInitHook(views[2].element, clone, nullptr);
-    Check(f.Ui().statsViews.empty(), "After restore no view is followed");
-}
-
-// Abandon (logout): the followed views give their buttons back too.
-void StatsViewsLeaveOnAbandon() {
-    Fixture f;
-    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
-    auto views = OpenStats(f);
-    Check(SaveHidden(views[1]), "Fixture");
-    f.state.stopped.store(true);
-    f.Ui().Abandon();
-    for (const auto& view : views) Check(SaveShown(view), "Abandon gives every native button back");
-    Check(f.Ui().statsViews.empty(), "And follows no view");
-    f.Ui().Restore();
-}
-
-// « Réinitialiser » asks first: the line names what would be erased and the
-// button becomes Confirmer; Confirmer within 10 s erases what was shown (this
-// character, or every character), for the same character; otherwise nothing.
-// Confirmer is the same button: a click in the first second after the question
-// (a double click, Enter twice) never erases.
-void StatsResetAsksFirst() {
-    Fixture f;
-    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
-    auto views = OpenStats(f);
-    const auto& reset = views[StatsResetLine];
-    const auto label = [&] { return Shown(reset); };
-    // Confirmer once the second after the question is over (the clock is the real one).
-    const auto confirm = [&] { f.Ui().statsConfirmFrom = GetTickCount64(); Click(reset); };
-    const auto before = GetTickCount64();
-    Click(reset);
-    const auto after = GetTickCount64();
-    const auto question = "Effacer les statistiques d’Altansar ? Clique sur Confirmer dans les 10 secondes.";
-    Check(f.Ui().statsConfirm && statsFake.clears.empty() && label() == question &&
-        Caption(reset.button) == "Confirmer" && Get(reset.button).integers.at("icon") == 316 && Label(f.Ui().statsRows[StatsResetLine].get()) == label(),
-        "The first click asks, naming the character");
-    Check(f.Ui().statsConfirmFrom >= before + 1000 && f.Ui().statsConfirmFrom <= after + 1000, "Confirmer counts a second after the question");
-    // A double click on Réinitialiser (or Enter twice): the second click is the same gesture.
-    Click(reset);
-    Click(reset);
-    Check(f.Ui().statsConfirm && statsFake.clears.empty() && label() == question && Caption(reset.button) == "Confirmer",
-        "Clicks within the second keep the question and erase nothing");
-    confirm();
-    Check(statsFake.clears == std::vector<bool>{false} && label() == "Statistiques d’Altansar effacées." && Caption(reset.button) == "Réinitialiser" &&
-        Get(reset.button).integers.at("icon") == 249, "Confirmer erases this character's statistics, and says so");
-    f.Ui().statsResultUntil = 1;
-    f.Ui().Tick();
-    Check(label() == "Réinitialiser les statistiques de ce personnage", "The outcome goes after a while");
-    // Unanswered: nothing erased; the next click asks again.
-    Click(reset);
-    f.Ui().statsConfirmDeadline = 1;
-    f.Ui().Tick();
-    Check(!f.Ui().statsConfirm && label() == "Réinitialiser les statistiques de ce personnage" && Caption(reset.button) == "Réinitialiser", "An unanswered question goes");
-    Click(reset);
-    Check(f.Ui().statsConfirm && statsFake.clears.size() == 1, "After it, a click asks again");
-    // Another choice drops the question.
-    Get(f.Ui().statsScopeSource.get()).integer = 1;
-    f.Ui().Tick();
-    Check(!f.Ui().statsConfirm && label() == "Réinitialiser les statistiques de tous mes personnages", "Another choice drops the question");
-    Click(reset);
-    Check(label() == "Effacer les statistiques de tous tes personnages ? Clique sur Confirmer dans les 10 secondes.", "Every character: asked");
-    Click(reset);
-    Check(statsFake.clears.size() == 1 && f.Ui().statsConfirm, "Every character: a double click erases nothing either");
-    confirm();
-    Check(statsFake.clears == std::vector<bool>({false, true}) && label() == "Statistiques de tous tes personnages effacées.", "Every character erased");
-    // Impossible now (another client holds the file, or no character): said, nothing else.
-    statsFake.clearWorks = false;
-    Click(reset);
-    confirm();
-    Check(statsFake.clears.size() == 3 && label() == "Effacement impossible pour l’instant : réessaie dans un moment.", "A failed reset says so");
-    statsFake.clearWorks = true;
-    // Another character played meanwhile: not erased.
-    Get(f.Ui().statsScopeSource.get()).integer = 0;
-    f.Ui().Tick();
-    Click(reset);
-    statsFake.current = 202;
-    confirm();
-    Check(statsFake.clears.size() == 3 && label() == "Effacement impossible pour l’instant : réessaie dans un moment.", "Never another character than the one named");
-    statsFake.current = 101;
-    // Names starting with a vowel, or none.
-    statsFake.mine.name = "Bob";
-    RefreshNow(f);
-    Click(reset);
-    Check(label() == "Effacer les statistiques de Bob ? Clique sur Confirmer dans les 10 secondes.", "« de Bob »");
-    f.Ui().statsConfirmDeadline = 1;
-    statsFake.mine.name = "Élodie";
-    f.Ui().Tick();
-    Click(reset);
-    Check(label() == "Effacer les statistiques d’Élodie ? Clique sur Confirmer dans les 10 secondes.", "« d’Élodie »");
-    f.Ui().statsConfirmDeadline = 1;
-    statsFake.mine.name.clear();
-    f.Ui().Tick();
-    Click(reset);
-    Check(label() == "Effacer les statistiques de ce personnage ? Clique sur Confirmer dans les 10 secondes.", "Without a name");
-    // A stopping module ignores the button; no native action ever.
-    f.Ui().statsConfirmDeadline = 1;
-    f.Ui().Tick();
+    Check(statsOpens == 2 && foreignButtonClicks == 0, "A native search clone of the row opens it too");
+    // A stopping module ignores the button, still without the native action.
     f.state.stopRequested.store(true);
-    Click(reset);
-    Click(reset);
+    Click(view);
     f.state.stopRequested.store(false);
-    Check(!f.Ui().statsConfirm && statsFake.clears.size() == 3 && foreignButtonClicks == 0, "A stopping module ignores it; never the native action");
+    Check(statsOpens == 2 && foreignButtonClicks == 0, "A stopping module ignores it");
     f.StopAndRestore();
-    Check(!f.Ui().statsConfirm && SaveShown(reset), "Restore drops the question");
+    Check(!ui.statsOpenOption.get() && !ui.statsOpenMarker.get() && !ui.statsButtonSource.get() && !ui.statsButtonOption.get(), "Restore releases the rows");
+}
+
+// « Bouton dans la barre du haut »: its own source (ticked by default),
+// committing statsButton once per change and following outside changes.
+void StatsButtonCommits() {
+    Fixture f;
+    f.state.settings.statsButton = false;
+    initHook(f.page, false, true, SectionId(StatsSection), nullptr);
+    auto& source = Get(f.Ui().statsButtonSource.get());
+    Check(source.klass->name == "BoolSource" && !source.boolean && source.defaultBoolean, "The saved choice shown, ticked by default");
+    source.boolean = true;
+    f.Ui().Tick();
+    Check(f.state.settings.statsButton && changes == 1, "Ticked: the top-bar button comes back");
+    auto expected = f.state.settings;
+    source.boolean = false;
+    f.Ui().Tick();
+    expected.statsButton = false;
+    Check(f.state.settings == expected && changes == 2 && f.state.settings.statsEnabled, "Unticking changes only statsButton");
+    f.state.settings.statsButton = true;
+    f.Ui().Sync();
+    Check(source.boolean, "An outside change shows in the checkbox");
+    f.StopAndRestore();
 }
 
 // « Compter mes statistiques »: its own source (ticked by default), committing
@@ -2484,6 +2395,135 @@ void StatsCheckboxCommits() {
     f.state.settings.statsEnabled = true;
     f.Ui().Sync();
     Check(source.boolean, "An external change shows in the checkbox");
+    f.StopAndRestore();
+}
+
+// « Performances » (1.16.0): five checkboxes and no corner choice. Each part
+// is its own box and shows the overlay alone; the mouse gestures unticked
+// lock the overlay at its place and size; its top-bar button hides it and
+// shows it again. Neither that place, that size, that hiding nor the corner
+// an earlier revision chose is a row: the pump and the section reset keep
+// them, except that a part ticked here, or the button removed, shows again
+// an overlay the button hid.
+void PerformanceSectionRows() {
+    Fixture f;
+    f.state.settings.perfOverlayCorner = 3;
+    f.state.settings.perfOverlayX = 6400; f.state.settings.perfOverlayY = 1200;
+    f.state.settings.perfOverlayScale = 150;
+    initHook(f.page, false, true, SectionId(PerformanceSection), nullptr);
+    CheckLayout(f);
+    const auto parent = f.Categories().back();
+    const auto& rows = Rows(Section(parent, PerformanceSection));
+    auto& ui = f.Ui();
+    Check(rows == std::vector<Obj>({ui.extraOptions[PerfOverlayExtra].get(), ui.extraOptions[PerfGpuExtra].get(),
+        ui.extraOptions[PerfDiskExtra].get(), ui.extraOptions[PerfDragExtra].get(), ui.extraOptions[PerfButtonExtra].get()}),
+        "Performances: the FPS, GPU, disk, mouse gestures and top-bar button boxes only, in that order");
+    Check(Label(ui.extraOptions[PerfDragExtra].get()) == "Déplacer et redimensionner l’affichage à la souris" &&
+        Label(ui.extraOptions[PerfButtonExtra].get()) == "Bouton dans la barre du haut", "The mouse gestures' row, the top-bar button's row");
+    for (const auto option : AllOptions(ui)) Check(Label(option) != "Position de l’affichage des performances", "The corner choice is gone");
+    // Each description: the part the box adds, one box enough, the mouse
+    // place and size kept, the lock, the top-bar button; tutoiement and
+    // typographic apostrophes.
+    const auto fps = Description(ui.extraOptions[PerfOverlayExtra].get()), gpu = Description(ui.extraOptions[PerfGpuExtra].get()),
+        disk = Description(ui.extraOptions[PerfDiskExtra].get()), drag = Description(ui.extraOptions[PerfDragExtra].get()),
+        button = Description(ui.extraOptions[PerfButtonExtra].get());
+    for (const char* term : {"Ajoute à l’affichage des performances les images par seconde (FPS)", "mémoire utilisée par le jeu",
+            "L’affichage apparaît dès que cette case, « Charge du GPU » ou « Activité du disque » est cochée",
+            "avec seulement les mesures cochées", "en haut à gauche par défaut", "jusqu’à ce que tu le déplaces ou le redimensionnes à la souris",
+            "sa place et sa taille sont ensuite gardées", "Son bouton dans la barre du haut le masque ou le réaffiche sans décocher ces cases.",
+            "Désactivé par défaut."})
+        Check(fps.find(term) != std::string::npos, std::string("« Afficher les FPS et la mémoire » says: ") + term);
+    for (const auto& text : {gpu, disk})
+        for (const char* term : {"Ajoute à l’affichage des performances", "une fois par seconde",
+                "Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire.", "Désactivé par défaut."})
+            Check(text.find(term) != std::string::npos, std::string("The GPU and disk boxes say: ") + term);
+    for (const char* term : {"Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux",
+            "ou par son coin en bas à droite, le seul sans arrondi, pour l’agrandir ou le réduire", "de la moitié au triple de sa taille normale",
+            "son coin en haut à gauche reste alors en place", "Il reste entièrement à l’écran", "sa place et sa taille sont gardées",
+            "Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu.", "Activé par défaut."})
+        Check(drag.find(term) != std::string::npos, std::string("« Déplacer et redimensionner l’affichage à la souris » says: ") + term);
+    for (const char* term : {"Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances",
+            "sans décocher ses mesures", "si aucune n’est cochée, il coche « Afficher les FPS et la mémoire »",
+            "Masqué avec ce bouton, l’affichage le reste après un redémarrage", "Décochée, le bouton disparaît",
+            "qui réapparaît s’il était masqué", "Activé par défaut."})
+        Check(button.find(term) != std::string::npos, std::string("« Bouton dans la barre du haut » says: ") + term);
+    for (const auto& text : {fps, gpu, disk, drag, button})
+        Check(text.find('\'') == std::string::npos && text.find("reprend son coin") == std::string::npos && text.find("Position") == std::string::npos &&
+            (text.ends_with(" Activé par défaut.") || text.ends_with(" Désactivé par défaut.")),
+            "Typographic apostrophes, no corner left in the descriptions, each ending with its default");
+    // The GPU alone: committed as it is, without the FPS box.
+    Get(ui.extraSources[PerfGpuExtra].get()).boolean = true;
+    ui.Tick();
+    Check(changes == 1 && f.state.settings.perfOverlayGpu && !f.state.settings.perfOverlay && !f.state.settings.perfOverlayDisk,
+        "« Charge du GPU » alone");
+    // The mouse gestures unticked: the place, the size and the corner kept (locked there).
+    Get(ui.extraSources[PerfDragExtra].get()).boolean = false;
+    ui.Tick();
+    Check(changes == 2 && !f.state.settings.perfOverlayDrag && f.state.settings.perfOverlayX == 6400 && f.state.settings.perfOverlayY == 1200 &&
+        f.state.settings.perfOverlayScale == 150 && f.state.settings.perfOverlayCorner == 3, "Unticked: the place and the size kept, locked");
+    // Ticked again with the disk: still the same place, size and corner.
+    Get(ui.extraSources[PerfDragExtra].get()).boolean = true;
+    Get(ui.extraSources[PerfDiskExtra].get()).boolean = true;
+    ui.Tick();
+    Check(changes == 3 && f.state.settings.perfOverlayDrag && f.state.settings.perfOverlayDisk && f.state.settings.perfOverlayX == 6400 &&
+        f.state.settings.perfOverlayY == 1200 && f.state.settings.perfOverlayScale == 150 && f.state.settings.perfOverlayCorner == 3,
+        "Ticked again: the same place and size");
+    // A place and a size saved meanwhile (a drop, a resize) show nowhere in the options and stay.
+    f.state.settings.perfOverlayX = 100; f.state.settings.perfOverlayY = 9900;
+    f.state.settings.perfOverlayScale = 80;
+    ui.Sync();
+    ui.Tick();
+    Check(changes == 3 && f.state.settings.perfOverlayX == 100 && f.state.settings.perfOverlayY == 9900 && f.state.settings.perfOverlayScale == 80,
+        "A new place and size left as they are");
+    // Hidden with its top-bar button meanwhile: left as it is by the pump, and
+    // by a part unticked; a part ticked here shows it again.
+    f.state.settings.perfOverlayShown = false;
+    ui.Sync();
+    ui.Tick();
+    Check(changes == 3 && !f.state.settings.perfOverlayShown, "Hidden with its button: left as it is");
+    Get(ui.extraSources[PerfGpuExtra].get()).boolean = false;
+    ui.Tick();
+    Check(changes == 4 && !f.state.settings.perfOverlayGpu && f.state.settings.perfOverlayDisk && !f.state.settings.perfOverlayShown,
+        "A part unticked: still hidden");
+    Get(ui.extraSources[PerfOverlayExtra].get()).boolean = true;
+    ui.Tick();
+    Check(changes == 5 && f.state.settings.perfOverlay && f.state.settings.perfOverlayShown, "« Afficher les FPS et la mémoire » ticked: shown again");
+    // Its button removed while it had hidden the overlay: shown again (no
+    // button left to show it); put back: nothing else changes.
+    f.state.settings.perfOverlayShown = false;
+    ui.Sync();
+    Get(ui.extraSources[PerfButtonExtra].get()).boolean = false;
+    ui.Tick();
+    Check(changes == 6 && !f.state.settings.perfOverlayButton && f.state.settings.perfOverlayShown, "Its button removed: shown again");
+    f.state.settings.perfOverlayShown = false;
+    ui.Sync();
+    Get(ui.extraSources[PerfButtonExtra].get()).boolean = true;
+    ui.Tick();
+    Check(changes == 7 && f.state.settings.perfOverlayButton && !f.state.settings.perfOverlayShown, "Its button put back: nothing else");
+    // The section reset: the five boxes back to their defaults (no part, the
+    // mouse gestures and the button on); the place, the size, the hiding and
+    // the corner kept.
+    Get(ui.extraSources[PerfButtonExtra].get()).boolean = false;
+    f.state.settings.perfOverlayButton = false; // as if unticked before it hid the overlay
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    api.Call(Section(displayedParent, PerformanceSection), "Reset");
+    ui.Tick();
+    Check(changes == 8 && !f.state.settings.perfOverlay && !f.state.settings.perfOverlayGpu && !f.state.settings.perfOverlayDisk &&
+        f.state.settings.perfOverlayDrag && f.state.settings.perfOverlayButton && f.state.settings.perfOverlayX == 100 &&
+        f.state.settings.perfOverlayY == 9900 && f.state.settings.perfOverlayScale == 80 && !f.state.settings.perfOverlayShown &&
+        f.state.settings.perfOverlayCorner == 3, "Reset: no part ticked, the button on; the place, the size, the hiding and the corner kept");
+    // Any part ticked here shows it again, not only the FPS: « Charge du GPU »
+    // alone, then, hidden again, « Activité du disque ».
+    Get(ui.extraSources[PerfGpuExtra].get()).boolean = true;
+    ui.Tick();
+    Check(changes == 9 && f.state.settings.perfOverlayGpu && !f.state.settings.perfOverlay && f.state.settings.perfOverlayShown,
+        "« Charge du GPU » ticked: shown again");
+    f.state.settings.perfOverlayShown = false;
+    ui.Sync();
+    Get(ui.extraSources[PerfDiskExtra].get()).boolean = true;
+    ui.Tick();
+    Check(changes == 10 && f.state.settings.perfOverlayDisk && f.state.settings.perfOverlayShown, "« Activité du disque » ticked: shown again");
+    f.NativePreferencesUnchanged();
     f.StopAndRestore();
 }
 
@@ -2509,7 +2549,10 @@ int main() {
         run(fake::NativeResetAndFilteredSearchOwnership);
         run(fake::SectionResetOwnsItsRows);
         run(fake::ValidationAndLoadingGate);
+        run(fake::DimensionChoiceRows);
+        run(fake::MapMenuSettingsRow);
         run(fake::ResourceMapMasterPreservesSelection);
+        run(fake::NotebookSectionRows);
         run(fake::AutoLoadFailureIsRecoverable);
         run(fake::DeferredAndAccountGate);
         run(fake::CollisionAndSessionMismatch);
@@ -2523,14 +2566,13 @@ int main() {
         run(fake::MetamobNativeResetStopsSyncKeepsKey);
         run(fake::MetamobKeyFieldErrorsStayLocal);
         run(fake::MetamobFieldsLeaveOnAbandon);
-        run(fake::StatsLinesAndFormats);
-        run(fake::StatsViewsFollowTheStore);
-        run(fake::StatsViewsLeaveOnAbandon);
-        run(fake::StatsResetAsksFirst);
+        run(fake::StatsSectionRows);
         run(fake::StatsCheckboxCommits);
+        run(fake::StatsButtonCommits);
+        run(fake::PerformanceSectionRows);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: thirteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows; layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, this character or every character, 51 lines in French formats following the store once a second in the open page, native buttons hidden and given back, Réinitialiser asking first, a double click never erasing, then Confirmer erasing what is shown)\n";
+        std::cout << "PASS: thirteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

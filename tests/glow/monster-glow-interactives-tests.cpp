@@ -154,7 +154,7 @@ void Selection() {
     Fixture f; auto a=f.Add(1), b=f.Add(2,true); auto child=f.Animated();
     Get(f.Root(b)).items={child,f.Root(b)};
     Get(registry).items.push_back(a);
-    {auto r=ReadGlowInteractives(); Check(r.valid && r.targets.size()==2 && r.interactiveCount==2,"Static and animated objects"); Check(r.targets[0].interactive && r.targets[1].renderers.size()==2,"Composite object renderer identity");}
+    {auto r=ReadGlowInteractives(); Check(r.valid && r.targets.size()==2 && r.interactiveCount==2,"Static and animated objects"); Check(r.targets[0].category==monsterGlow::GlowCategory::Interactive && r.targets[1].category==monsterGlow::GlowCategory::Interactive && r.targets[1].renderers.size()==2,"Composite object renderer identity, in the interactive category");}
     Check(enumerators==disposed,"Composite traversal must dispose iterators");
     f.state.settings.glowInteractives=false; int before=listReads;
     Check(ReadGlowInteractives().targets.empty() && listReads==before,"Disabled option does no native registry scan");

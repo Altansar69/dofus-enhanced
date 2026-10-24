@@ -33,7 +33,9 @@ struct OptionsUi {
     managed::Ref soulSource, soulOption;
     managed::Ref soulAutoSource, soulAutoOption;
     managed::Ref glowSource, glowOption;
-    managed::Ref glowNpcsSource, glowNpcsOption, glowInteractivesSource, glowInteractivesOption;
+    // « Surbrillance »: after the level, a checkbox per category (Settings'
+    // GlowCategoryToggles): monsters, NPCs, interactive objects, me, party, other players.
+    std::array<managed::Ref, 6> glowCategorySources, glowCategoryOptions;
     managed::Ref transitionsSource, transitionsOption;
     managed::Ref preloadSource, preloadOption;
     managed::Ref spouseSource, spouseOption;
@@ -47,44 +49,25 @@ struct OptionsUi {
     managed::Ref chatMetamobSource, chatMetamobOption;
     // « Cartes »: zones of the missing archimonsters on each map.
     managed::Ref archiZonesSource, archiZonesOption, archiZonesMiniSource, archiZonesMiniOption;
+    // « Réglages des cartes au clic droit » (1.16.0): each map's settings in its own right-click menu.
+    managed::Ref mapMenuSource, mapMenuOption;
     // « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
     managed::Ref calendarKraloveSource, calendarKraloveOption;
-    // The checkboxes added in 1.13.0 and 1.14.0 (Settings' ExtraToggles), spread
-    // over « Cartes », « Carnet » and « Performances »; then the corner
-    // choice of the performance overlay.
-    std::array<managed::Ref, 10> extraSources, extraOptions;
-    managed::Ref perfCornerSource, perfCornerOption;
-    // « Chat »: the dimension of shared positions, a choice of three.
+    // The checkboxes added in 1.13.0, 1.14.0 and 1.16.0 (Settings' ExtraToggles),
+    // spread over « Cartes », « Carnet » and « Performances » (no corner choice
+    // since 1.16.0: the overlay is placed with the mouse).
+    std::array<managed::Ref, 11> extraSources, extraOptions;
+    // « Dimension avec les coordonnées », a choice of three each: of shared
+    // positions in « Chat », of the cell under the mouse on each map in « Cartes ».
     managed::Ref chatCoordsSource, chatCoordsOption;
+    managed::Ref mapCoordsSource, mapCoordsOption, miniMapCoordsSource, miniMapCoordsOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
-    // « Statistiques » (1.15.0): the counting checkbox, the choice of what is
-    // shown (0 this character, 1 every character; kept for the session), then
-    // one text-button row per line of statistics, known by its unique
-    // description reference (statsMarkers); the last line resets what is shown.
-    managed::Ref statsSource, statsOption, statsScopeSource, statsScopeOption;
-    std::vector<managed::Ref> statsRows, statsMarkers;
-    // Each pooled row view showing a statistics line: its label follows the
-    // line while the page is open, its native button is hidden (except the
-    // reset's, whose caption follows the reset) and given back as it was when
-    // the view leaves (Restore, Abandon, or another row in that view).
-    struct StatsView {
-        managed::Ref element, button, buttonDisplay;
-        size_t line = 0;
-        std::string shown, caption;  // label and reset caption shown, empty before the first
-        bool hidden = false;         // its native button hidden
-    };
-    std::vector<StatsView> statsViews;
-    std::vector<std::string> statsTexts;  // each line's current label
-    int statsScope = 0;                   // what the labels show
-    // The reset: asked until statsConfirmDeadline (for the scope and the
-    // character shown then), Confirmer taken only from statsConfirmFrom (the
-    // same button: a double click never erases), its outcome (1 erased, 2
-    // impossible) shown until statsResultUntil.
-    bool statsConfirm = false, statsConfirmAll = false;
-    int64_t statsConfirmCharacter = 0;
-    int statsResult = 0;
-    ULONGLONG statsConfirmDeadline = 0, statsConfirmFrom = 0, statsResultUntil = 0, nextStatsRefresh = 0, nextStatsLog = 0;
+    // « Statistiques »: the counting checkbox (1.15.0), then the statistics
+    // window's rows (1.16.0): « Voir mes statistiques », a text-button row
+    // known by its unique description reference (statsOpenMarker) that opens
+    // the window, and the checkbox of its top-bar button.
+    managed::Ref statsSource, statsOption, statsOpenOption, statsOpenMarker, statsButtonSource, statsButtonOption;
     // Metamob rows, after the two soul rows of the « Pierre d’âme » section:
     // capture sync toggle, then the API key row, a text-button row known by its
     // unique description reference.

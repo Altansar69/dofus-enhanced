@@ -1,6 +1,8 @@
 #include "glow/monster-glow-entities.hpp"
 #include "glow/monster-glow-opacity.hpp"
+#include "appearance/features.hpp"
 #include "core/module.hpp"
+#include <algorithm>
 #include <cmath>
 #include <unordered_set>
 
@@ -17,7 +19,7 @@ struct Methods {
     Method exists{}, enabled{}, gameObject{}, active{};
     bool installed = false;
 } methods;
-bool reported = false;
+bool reported = false, identityReported = false;
 bool Is(Obj obj, Klass klass) { return obj && api.object_get_class(obj) == klass; }
 Method Verify(Klass klass, const char* name, int argc, uintptr_t rva) {
     return api.FindVerified(klass, name, argc, rva);
@@ -39,13 +41,43 @@ bool Monster(Obj info, bool combat) {
         api.Value<bool>(api.Invoke(methods.boolTry, info, {&aliveKey, &alive})) && alive;
 }
 bool Npc(Obj info, bool combat) {
-    if (combat || !module->settings.glowNpcs || !Is(info, methods.information) || !Flag(info, 2)) return false;
+    if (combat || !Is(info, methods.information) || !Flag(info, 2)) return false;
     for (int excluded : {1, 8, 0x80, 0x10, 0x20}) if (Flag(info, excluded)) return false;
     // Native NpcMenuMaker reads integer property 15, populated by gwu.bmpa.
     // The combat humanoid flag 0x40 is NOT the roleplay NPC discriminator.
     int npcKey = 15, npcId = 0;
     return api.Value<bool>(api.Invoke(methods.intTry, info, {&npcKey, &npcId})) && npcId > 0;
 }
+// A player character of the roleplay scene: roleplay 2 and player 0x80, as
+// « Apparence » tells a player (Features::Convert). The roleplay character
+// mapper gwo.bmni sets 0x80 (bts 7) over gwr.bmni's roleplay humanoid flags
+// (2 | 4, and 0x40 in gwr.bmot); NPCs (gwu, gww, gwx, gwz: 2), monster groups
+// (gwp: 0xA) and tax collectors (gwy: 0x22) never have it. A fighter (1), a
+// monster (8), a companion (0x10) or a tax collector (0x20) is never a player.
+bool Player(Obj info, bool combat) {
+    if (combat || !Is(info, methods.information) || !Flag(info, 0x82)) return false;
+    for (int excluded : {1, 8, 0x10, 0x20}) if (Flag(info, excluded)) return false;
+    return true;
+}
+// The local character and the accepted members of its party, read as
+// « Apparence » reads them (Features::ReadRoleplayIdentity), each time: a
+// party change shows at the next glow frame. Unknown local character (none
+// yet, or a read error): no player is outlined, since the local character
+// could not be told apart from the others.
+Features::RoleplayIdentity ReadIdentity() {
+    if (!module->features) return {};
+    try {
+        auto identity = module->features->ReadRoleplayIdentity();
+        identityReported = false;
+        return identity;
+    } catch (const std::exception& error) {
+        if (!identityReported) Log(std::string("MONSTER_GLOW_IDENTITY_ERROR ") + error.what());
+        identityReported = true;
+        return {};
+    }
+}
+// A roster entry of a ticked category, before its rendered root is resolved.
+struct Candidate { Ref info; GlowCategory category; };
 struct Owners {
     Ref compositor, creature, services, registry, fight, context, rendered, world;
     bool combat = false;
@@ -209,23 +241,50 @@ Snapshot ReadEntities() {
         int count = api.Value<int>(api.Call(list.get(), "get_Count"));
         result.rosterCount = count; result.reason = "roster-limit";
         if (count < 0 || count > MaxRoster) return result;
-        std::unordered_set<Obj> roots;
-        for (int i = 0; i < count && result.targets.size() < MaxTargets; ++i) {
+        // The category of every roster entry first (flags and IDs only), then
+        // the rendered roots in budget order: the accepted targets go to the
+        // first categories, whatever the roster order of a crowded map.
+        const auto& settings = module->settings;
+        const bool players = !owners.combat && (settings.glowSelf || settings.glowParty || settings.glowPlayers);
+        const auto identity = players ? ReadIdentity() : Features::RoleplayIdentity{};
+        std::vector<Candidate> candidates;
+        for (int i = 0; i < count; ++i) {
             if (!owners.Current()) return {};
             Ref info(api.Call(list.get(), "get_Item", {&i}));
-            const bool monster = Monster(info.get(), owners.combat);
-            if (!monster && !Npc(info.get(), owners.combat)) continue;
-            if (monster) ++result.monsterCount; else ++result.npcCount;
-            int64_t id = api.Value<int64_t>(api.Invoke(methods.id, info.get()));
+            GlowCategory category = GlowCategory::Monster;
+            if (settings.glowMonsters && Monster(info.get(), owners.combat)) ++result.monsterCount;
+            else if (settings.glowNpcs && Npc(info.get(), owners.combat)) { category = GlowCategory::Npc; ++result.npcCount; }
+            else if (identity.self && Is(info.get(), methods.information)) {
+                // The ID first, then the player flags only for a ticked
+                // category: with « Moi » alone, each other player of a crowded
+                // map costs one call (its ID) instead of six.
+                const auto id = api.Value<int64_t>(api.Invoke(methods.id, info.get()));
+                category = id == identity.self ? GlowCategory::Self :
+                    std::binary_search(identity.party.begin(), identity.party.end(), id) ? GlowCategory::Party : GlowCategory::Player;
+                if (!(category == GlowCategory::Self ? settings.glowSelf :
+                      category == GlowCategory::Party ? settings.glowParty : settings.glowPlayers) ||
+                    !Player(info.get(), owners.combat)) continue;
+                ++result.playerCount;
+            } else continue;
+            candidates.push_back({std::move(info), category});
+        }
+        std::stable_sort(candidates.begin(), candidates.end(),
+            [](const Candidate& a, const Candidate& b) { return a.category < b.category; });
+        std::unordered_set<Obj> roots;
+        for (const auto& candidate : candidates) {
+            if (result.targets.size() >= MaxTargets) break;
+            if (!owners.Current()) return {};
+            const auto info = candidate.info.get();
+            int64_t id = api.Value<int64_t>(api.Invoke(methods.id, info));
             if (!id) continue;
             Obj current = nullptr;
             if (!api.Value<bool>(api.Invoke(methods.findInfo, owners.registry.get(), {&id, &current})) ||
-                current != info.get()) continue;
+                current != info) continue;
             Ref entity(owners.Find(id));
             if (!Is(entity.get(), methods.entity) || Read<int64_t>(entity.get(), 0x1C8) != id ||
                 !roots.insert(entity.get()).second) continue;
             ++result.matchedRoots;
-            Target target; target.id = id; target.entity = std::move(entity);
+            Target target; target.id = id; target.category = candidate.category; target.entity = std::move(entity);
             if (!Collect(target.entity.get(), owners.services.get(), target, result.lastRejectedPart, result.lastRejectedAlpha)) continue;
             if (!owners.Current()) return {};
             if (owners.Find(id) != target.entity.get()) continue;

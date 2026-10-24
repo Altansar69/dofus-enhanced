@@ -45,9 +45,10 @@ struct Natives {
     Method coordsLabel{}, priceLabel{}, setText{}, getText{}, getSingleLine{}, setSingleLine{}, measure{}, subAreaName{}, worldName{};
     Method parent{}, name{}, panel{}, style{}, getMinWidth{}, setMinWidth{}, setLength{}, getShrink{}, setShrink{}, setFloat{};
 } n;
-// A tooltip the game is building: its infos, its map and that map's dimension,
-// remembered when the map asks for the tooltip (fhw.berz).
-struct Record { Ref infos; View view = View::None; std::string world; };
+// A tooltip the game is building: its infos, its map and that map's dimension
+// (its name and WorldMapData id), remembered when the map asks for the tooltip
+// (fhw.berz).
+struct Record { Ref infos; View view = View::None; std::string world; int worldId = 0; };
 // Template elements this module changed, with their own values: the
 // coordinates box (#ctr_coords, flex-shrink), its root (#cartographyTooltip,
 // min-width) and its label (#lbl_coords, single-line), given back when the
@@ -66,9 +67,11 @@ struct State {
 bool Active() {
     return s.installed && module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested;
 }
+// The zone name, or a dimension choice other than « Non » on either map (even
+// « Oui, sauf » over the Monde des Douze: another world can be shown next).
 bool Wanted() {
     const auto& o = module->settings;
-    return o.miniMapZoneName || o.coordsWorldMap || o.coordsWorldMiniMap;
+    return o.miniMapZoneName || o.coordsWorldMapMode != 0 || o.coordsWorldMiniMapMode != 0;
 }
 void Report(const char* area, const std::exception& error) {
     const auto now = GetTickCount64();
@@ -95,12 +98,16 @@ void Remember(Obj view, Obj infos) {
     const auto kind = Classify(view);
     if (kind == View::None || !infos) return;
     std::string world;
+    int worldId = 0;
     Ref data(api.Field(view, "<dugi>k__BackingField"));
-    if (data.get()) world = api.String(api.Invoke(n.worldName, data.get()));
+    if (data.get()) {
+        world = api.String(api.Invoke(n.worldName, data.get()));
+        worldId = At<int>(data.get(), "id");
+    }
     for (auto it = s.records.begin(); it != s.records.end(); ++it)
         if (it->infos.get() == infos) { s.records.erase(it); break; }
     if (s.records.size() >= RecordBudget) s.records.erase(s.records.begin());
-    s.records.push_back(Record{Ref(infos), kind, std::move(world)});
+    s.records.push_back(Record{Ref(infos), kind, std::move(world), worldId});
 }
 const Record* Lookup(Obj infos) {
     for (auto it = s.records.rbegin(); it != s.records.rend(); ++it)
@@ -116,12 +123,13 @@ std::string NoBreak(const std::string& text) {
     return joined;
 }
 // The coordinates text of a tooltip, or empty for the game's own: on the
-// mini-map the zone name above the coordinates, and the dimension with them.
-std::string TooltipText(View view, const std::string& world, Obj infos) {
+// mini-map the zone name above the coordinates, and the dimension with them
+// when that map's choice shows it for this world.
+std::string TooltipText(View view, const std::string& world, int worldId, Obj infos) {
     if (!At<bool>(infos, "showMapCoords")) return {}; // the game hides its coordinates here
     const auto& o = module->settings;
     const bool mini = view == View::Mini;
-    const bool dimension = (mini ? o.coordsWorldMiniMap : o.coordsWorldMap) && !world.empty();
+    const bool dimension = DimensionShown(mini ? o.coordsWorldMiniMapMode : o.coordsWorldMapMode, worldId) && !world.empty();
     std::string zone;
     if (mini && o.miniMapZoneName) {
         Ref subArea(api.Field(infos, "subArea"));
@@ -245,11 +253,12 @@ void Decorate(Obj builder, Obj infos) {
     // Copies: the calls into the game below could run this hook again.
     const auto view = found ? found->view : View::None;
     const auto world = found ? found->world : std::string{};
+    const int worldId = found ? found->worldId : 0;
     Ref label(api.Invoke(n.coordsLabel, api.FieldAddress(builder, "m_binding")));
     if (!label.get() || !api.class_is_assignable_from(n.label, api.object_get_class(label.get()))) return;
     Ref coords(api.Invoke(n.parent, label.get()));
     if (!coords.get() || api.String(api.Invoke(n.name, coords.get())) != "ctr_coords") return; // not the game's template
-    const auto text = view == View::None ? std::string{} : TooltipText(view, world, infos);
+    const auto text = view == View::None ? std::string{} : TooltipText(view, world, worldId, infos);
     if (text.empty()) { Release(coords.get()); return; }
     const int x = At<int>(infos, "mapX"), y = At<int>(infos, "mapY"), price = At<int>(infos, "zaapPrice");
     Ref root(TemplateRoot(coords.get()));
@@ -334,7 +343,10 @@ void Install() {
     n.setSingleLine = api.FindVerified(n.label, "set_isSingleLine", 1, 0x1593FB0);
     n.measure = api.FindVerified(api.Class(UiImage, UiSpace, "TextElement"), "MeasureTextSize", 5, 0x5645AF0);
     n.subAreaName = api.FindVerified(api.Class(DataImage, WorldSpace, "SubAreaData"), "get_name", 0, 0x7D0F60);
-    n.worldName = api.FindVerified(api.Class(DataImage, WorldSpace, "WorldMapData"), "get_name", 0, 0x7D3DE0);
+    // The shown world map: its name, and its id for « Oui, sauf dans le Monde des Douze ».
+    const auto worldMap = api.Class(DataImage, WorldSpace, "WorldMapData");
+    RequireField(worldMap, "id", 0x10);
+    n.worldName = api.FindVerified(worldMap, "get_name", 0, 0x7D3DE0);
     const auto element = api.Class(UiImage, UiSpace, "VisualElement");
     n.parent = api.FindVerified(element, "get_parent", 0, 0x55F7180);
     n.name = api.FindVerified(element, "get_name", 0, 0x3158710);

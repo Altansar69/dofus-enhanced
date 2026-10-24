@@ -41,6 +41,7 @@ using AllFn=void(*)(Obj,bool,Method);
 SubMenuFn subMenuHook=nullptr;AllFn allHeadersHook=nullptr;
 int installs=0,menuRegistrations=0,closed=0,closeFailures=0,removeFailures=0,nativeSubMenus=0,nativeAllHeaders=0,changes=0;
 bool notebook=false,treasure=false,refuseNotebook=false;
+bool perf=false,perfButton=false; // a tool whose top-bar button follows an option
 int notebookToggles=0,treasureToggles=0;
 Obj soulWindow=nullptr,currentPanel=nullptr;
 
@@ -65,6 +66,9 @@ bool NotebookVisible(){return notebook;}
 bool TreasureVisible(){return treasure;}
 bool ToggleNotebook(){if(refuseNotebook)return false;++notebookToggles;notebook=!notebook;return true;}
 bool ToggleTreasure(){++treasureToggles;treasure=!treasure;return true;}
+bool PerfVisible(){return perf;}
+bool TogglePerf(){perf=!perf;return true;}
+bool PerfButton(){return perfButton;}
 int compactToggles=0;bool compact=false;
 bool failCompact=false;
 int CompactLayout(){return compact?1:0;}
@@ -223,6 +227,15 @@ struct Fixture {
     }
     Obj SubMenu(){auto menu=subMenuHook(owner,nullptr);Check(menu!=nullptr,"The game's sub-menu is returned");return menu;}
 };
+void ToolButtonFollowsItsOption(){
+    Fixture f;perfButton=false;perf=false;
+    auto shortcuts=toolsUi::Shortcuts();
+    Check(shortcuts.size()==2&&shortcuts[0].key=="notebook"&&shortcuts[1].key=="treasure","A tool whose button is off has no top-bar button");
+    Check(toolsUi::Toggle("perf")&&toolsUi::Visible("perf")&&perf,"Without its button, the tool still opens");
+    perfButton=true;shortcuts=toolsUi::Shortcuts();
+    Check(shortcuts.size()==3&&shortcuts[2].key=="perf"&&shortcuts[2].title=="Performances"&&shortcuts[2].icon==77,"Its button on: listed after the others");
+    perf=false;perfButton=false;
+}
 void ToolbarUsesRegisteredActions(){
     Fixture f;auto shortcuts=toolsUi::Shortcuts();
     Check(shortcuts.size()==2&&shortcuts[0].key=="notebook"&&shortcuts[0].title=="Carnet"&&shortcuts[0].icon==225,
@@ -313,9 +326,9 @@ void StopClosesHeaderMenus(){
 // "Réduire les titres des modules" sub-menu of the native widget manager.
 void HeaderSubMenuListsPanels(){
     Fixture f;auto menu=f.SubMenu();auto rows=f.Rows(menu);
-    Check(nativeSubMenus==1&&rows.size()==4&&Get(rows[0]).type->name=="Separator","The game's rows come first, then a separator and the mod panels");
-    const char* titles[]={"Pierre d\xE2\x80\x99\xC3\xA2me","Chasse au tr\xC3\xA9sor","Carnet personnel"};const int icons[]={128,317,225};
-    for(int i=0;i<3;++i){
+    Check(nativeSubMenus==1&&rows.size()==5&&Get(rows[0]).type->name=="Separator","The game's rows come first, then a separator and the mod panels");
+    const char* titles[]={"Pierre d\xE2\x80\x99\xC3\xA2me","Chasse au tr\xC3\xA9sor","Carnet personnel","Statistiques"};const int icons[]={128,317,225,77};
+    for(int i=0;i<4;++i){
         const auto& row=Get(rows[i+1]);
         Check(row.type->name=="CheckboxItem"&&row.text==titles[i]&&row.icon==icons[i]&&!row.on&&!row.close&&!row.disabled,"Each mod panel has an unchecked native checkbox row that keeps the menu open");
     }
@@ -347,13 +360,13 @@ void SavedSizeAppliesOnAttach(){
 void AllHeadersCoverPanels(){
     Fixture f;notebook=true;f.Header();soulWindow=Make("SoulWindow");toolsUi::Tick();
     auto menu=f.SubMenu();auto rows=f.Rows(menu);
-    auto views=Get(f.MenuRoot(menu)).fields["views"];for(int i=1;i<4;++i)Get(views).items.push_back(f.View(rows[i]));
+    auto views=Get(f.MenuRoot(menu)).fields["views"];for(int i=1;i<5;++i)Get(views).items.push_back(f.View(rows[i]));
     allHeadersHook(f.owner,true,nullptr);
-    Check(nativeAllHeaders==1&&f.state.settings.smallHeaderSoul&&f.state.settings.smallHeaderTreasure&&f.state.settings.smallHeaderNotebook&&changes==1,"Reducing all native headers also reduces the mod panels and saves once");
+    Check(nativeAllHeaders==1&&f.state.settings.smallHeaderSoul&&f.state.settings.smallHeaderTreasure&&f.state.settings.smallHeaderNotebook&&f.state.settings.smallHeaderStats&&changes==1,"Reducing all native headers also reduces the mod panels and saves once");
     Check(Get(f.window).small&&Get(soulWindow).small,"Open mod windows shrink with the native ones");
-    for(int i=1;i<4;++i)Check(Get(rows[i]).on&&Get(Get(views).items[i-1]).on,"Owned rows and their rendered views refresh");
+    for(int i=1;i<5;++i)Check(Get(rows[i]).on&&Get(Get(views).items[i-1]).on,"Owned rows and their rendered views refresh");
     allHeadersHook(f.owner,true,nullptr);Check(changes==1&&nativeAllHeaders==2,"An unchanged state saves nothing");
-    allHeadersHook(f.owner,false,nullptr);Check(!f.state.settings.smallHeaderNotebook&&!Get(f.window).small&&!Get(rows[3]).on&&changes==2,"Restoring all headers restores the mod panels");
+    allHeadersHook(f.owner,false,nullptr);Check(!f.state.settings.smallHeaderNotebook&&!f.state.settings.smallHeaderStats&&!Get(f.window).small&&!Get(rows[3]).on&&changes==2,"Restoring all headers restores the mod panels");
     allHeadersHook(Make("OtherManager"),true,nullptr);Check(!f.state.settings.smallHeaderNotebook&&nativeAllHeaders==4,"A foreign manager only runs the game's own code");
 }
 void StaleHeaderChoices(){
@@ -372,7 +385,7 @@ void RestoreClosesSubMenu(){
     Check(toolsUi::CleanupPending(),"Sub-menu rows keep cleanup pending");
     toolsUi::Restore();Check(!Get(f.MenuRoot(menu)).fields["panel"]&&closed==1&&!toolsUi::CleanupPending(),"Restore closes the owned sub-menu and releases its rows");
     auto next=f.SubMenu();Get(f.MenuRoot(next)).fields["panel"]=nullptr;
-    auto third=f.SubMenu();Check(closed==1&&f.Rows(third).size()==4&&f.Rows(next).size()==4,"Rebuilding for a newer menu drops rows of a menu the game already closed");
+    auto third=f.SubMenu();Check(closed==1&&f.Rows(third).size()==5&&f.Rows(next).size()==5,"Rebuilding for a newer menu drops rows of a menu the game already closed");
     f.state.stopRequested=true;toolsUi::Tick();Check(closed==2&&!toolsUi::CleanupPending(),"Stop closes the open sub-menu");
 }
 }
@@ -383,13 +396,16 @@ int main(){
             {{{"Version complète","Grande fenêtre."},{"Version compacte","Fenêtre étroite."}},fake::CompactLayout,fake::ChooseCompact});
         toolsUi::Register("treasure","Chasse au trésor",317,fake::TreasureVisible,fake::ToggleTreasure);
         toolsUi::Register("notebook","Ignored duplicate",999,fake::NotebookVisible,fake::ToggleNotebook);
+        // A tool whose top-bar button follows an option: no button while it is off,
+        // the panel itself still opens (options, menus).
+        toolsUi::Register("perf","Performances",77,fake::PerfVisible,fake::TogglePerf,{},fake::PerfButton);
         bool refused=false;
         try{toolsUi::Register("broken","Sans choix",1,fake::NotebookVisible,fake::ToggleNotebook,{{{"Seule","Une disposition."}}});}catch(const std::runtime_error&){refused=true;}
         fake::Check(refused,"Layouts need their current and choose callbacks");
         toolsUi::Install();toolsUi::Install();
         fake::Check(fake::installs==2&&fake::menuRegistrations==1&&fake::subMenuHook&&fake::allHeadersHook,"Install registers header menus once and hooks the native header sub-menu");
         fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16D72F0,"Native header entry points are pinned");
-        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,
+        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ToolButtonFollowsItsOption,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
                 fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus,fake::HeaderSubMenuListsPanels,fake::HeaderToggleAppliesAndPersists,
                 fake::SavedSizeAppliesOnAttach,fake::AllHeadersCoverPanels,fake::StaleHeaderChoices,fake::RestoreClosesSubMenu})test();

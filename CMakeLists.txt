@@ -48,7 +48,8 @@ add_library(DofusMiniatures SHARED
   src/maps/resource-map-render.cpp src/maps/resource-map-icons.cpp
   src/maps/map-info.cpp src/ui/perf-overlay.cpp src/travel/route-graph.cpp src/travel/roublard-passage.cpp
   src/stats/stats.cpp src/stats/stats-travel.cpp src/stats/stats-economy.cpp src/stats/stats-fights.cpp
-  src/stats/stats-store.cpp)
+  src/stats/stats-store.cpp
+  src/stats/stats-format.cpp src/stats/stats-window.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -193,6 +194,10 @@ dofus_test(StatsStoreTests tests/stats/stats-store-tests.cpp src/stats/stats-sto
 dofus_test(StatsTravelTests tests/stats/stats-travel-tests.cpp)
 dofus_test(StatsEconomyTests tests/stats/stats-economy-tests.cpp src/stats/stats-economy.cpp)
 dofus_test(StatsFightsTests tests/stats/stats-fights-tests.cpp src/stats/stats-fights.cpp)
+# 1.16.0: the statistics in their own window, its French texts tested apart.
+dofus_test(StatsFormatTests tests/stats/stats-format-tests.cpp src/stats/stats-format.cpp)
+dofus_test(StatsWindowTests tests/stats/stats-window-tests.cpp src/stats/stats-window.cpp src/stats/stats-format.cpp
+  src/ui/tools-ui.cpp src/ui/native-click.cpp)
 dofus_test(ChatTpLinksTests tests/travel/chat-tp-links-tests.cpp src/travel/chat-tp-links.cpp)
 add_test(NAME ChatTpColorFallbackTests COMMAND ChatTpLinksTests --missing-color-layout)
 add_test(NAME ChatDimensionFallbackTests COMMAND ChatTpLinksTests --missing-dimension-layout)

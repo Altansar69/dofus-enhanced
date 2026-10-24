@@ -4,11 +4,13 @@
 // and disk worker runs on a real thread against a fake PDH. Every native call
 // the module makes must have been verified at install (FindVerified at its
 // pinned RVA, every RVA guarded in signatures.hpp), except the style value
-// setters every module uses.
+// setters every module uses. The top-bar button's registration (tools-ui) is
+// recorded as made.
 #include "core/module.hpp"
 #include "core/signatures.hpp"
 #include "appearance/features.hpp"
 #include "ui/options-ui.hpp"
+#include "ui/tools-ui.hpp"
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -131,8 +133,14 @@ void Fail(Obj o, const std::string& method) {
     if (failCount > 0) --failCount;
     throw std::runtime_error("Injected failure: " + method);
 }
-// The fake text layout: 6 px a character of the longest line, plus the
-// padding; never narrower than the label's minimum width.
+// The fake text layout scales with the label's font size (12 px: 1).
+float FontFactor(Obj o) {
+    if (!Get(o).styles.contains("fontSize")) return 1;
+    float size = 0; std::memcpy(&size, Get(o).styles.at("fontSize").data(), 4);
+    return size / 12.f;
+}
+// 6 px a character of the longest line, plus the padding (all at 12 px);
+// never narrower than the label's minimum width.
 float LaidOutWidth(Obj o) {
     if (!(collapsedWidth < 0)) return collapsedWidth;
     size_t longest = 0, line = 0;
@@ -140,17 +148,19 @@ float LaidOutWidth(Obj o) {
         if (c == '\n') { line = 0; continue; }
         if ((c & 0xC0) != 0x80) longest = std::max(longest, ++line);
     }
-    float width = 6.f * static_cast<float>(longest) + 16.f;
+    const float factor = FontFactor(o);
+    float width = 6.f * factor * static_cast<float>(longest) + 16.f * factor;
     if (Get(o).styles.contains("minWidth")) {
         float minimum = 0; std::memcpy(&minimum, Get(o).styles.at("minWidth").data(), 4);
         width = std::max(width, minimum);
     }
     return width;
 }
-// 16 px a line plus the padding: 52 for three lines, 68 for four.
+// 16 px a line plus the padding (at 12 px): 52 for three lines, 68 for four.
 float LaidOutHeight(Obj o) {
     if (!(collapsedWidth < 0)) return collapsedWidth;
-    return 16.f * static_cast<float>(1 + std::count(Get(o).text.begin(), Get(o).text.end(), '\n')) + 4.f;
+    const float factor = FontFactor(o);
+    return 16.f * factor * static_cast<float>(1 + std::count(Get(o).text.begin(), Get(o).text.end(), '\n')) + 4.f * factor;
 }
 // The label's layout in its layer: x, y, width, height, from its anchored sides.
 std::array<float, 4> LabelBox(Obj o) {
@@ -174,14 +184,17 @@ unsigned fakeProcessors = 8;
 bool memoryReadable = true, lookupMatches = true;
 uint64_t workingSet = 1632087573ULL, privateBytes = 1406601790ULL, cpuTime = 0;
 int64_t heapUsed = 312LL << 20, heapSize = 420LL << 20;
-int64_t FakeCounter() { return counter; }
+// Every read of the frame counter, the memory, the CPU time and the managed
+// heap: none without the frame rate shown.
+int measureReads = 0;
+int64_t FakeCounter() { ++measureReads; return counter; }
 int64_t FakeFrequency() { return fakeFrequency; }
 uint64_t FakeMilliseconds() { return nowMs; }
 unsigned FakeProcessors() { return fakeProcessors; }
-bool FakeMemory(uint64_t& w, uint64_t& p) { if (!memoryReadable) return false; w = workingSet; p = privateBytes; return true; }
-bool FakeCpu(uint64_t& t) { t = cpuTime; return true; }
-int64_t FakeGcUsed() { return heapUsed; }
-int64_t FakeGcHeap() { return heapSize; }
+bool FakeMemory(uint64_t& w, uint64_t& p) { ++measureReads; if (!memoryReadable) return false; w = workingSet; p = privateBytes; return true; }
+bool FakeCpu(uint64_t& t) { ++measureReads; t = cpuTime; return true; }
+int64_t FakeGcUsed() { ++measureReads; return heapUsed; }
+int64_t FakeGcHeap() { ++measureReads; return heapSize; }
 FARPROC FakeLookup(const char* name) {
     const std::string exported = name;
     const uintptr_t rva = exported == "il2cpp_gc_get_used_size" ? 0x5B9230 : exported == "il2cpp_gc_get_heap_size" ? 0x5B9210 : 0;
@@ -386,6 +399,16 @@ void Module::SaveSettings(bool) {
 }
 void OptionsUi::Sync() { ++fixture::syncs; }
 void Log(const std::string& message) { fixture::logs.push_back(message); }
+// The mod's top-bar buttons (tools-ui.cpp): each registration recorded.
+namespace toolsFake {
+struct Registration { std::string key, title; int icon = 0; bool (*visible)() = nullptr, (*toggle)() = nullptr; size_t layouts = 0; bool (*button)() = nullptr; };
+std::vector<Registration> registrations;
+}
+namespace toolsUi {
+void Register(const char* key, const char* title, int icon, bool (*visible)(), bool (*toggle)(), Layouts layouts, bool (*button)()) {
+    toolsFake::registrations.push_back({key, title, icon, visible, toggle, layouts.choices.size(), button});
+}
+}
 #include "ui/perf-overlay.cpp"
 
 // The mouse: the game's window in the foreground or not, the cursor in its
@@ -567,7 +590,23 @@ perfOverlay::DeviceFigures Figures() {
     const std::lock_guard<std::mutex> guard(worker->lock);
     return worker->figures;
 }
+// Holds the device workers in their PDH collections until ReleaseCollections:
+// a worker started but without any figure yet, as a real one for about a
+// second (its first collection gives no rate).
+HANDLE HoldCollections() {
+    const HANDLE gate = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    pdhFake::Configure([&] { pdhFake::gate = gate; });
+    return gate;
+}
+void ReleaseCollections(HANDLE gate) {
+    pdhFake::Configure([] { pdhFake::gate = nullptr; });
+    SetEvent(gate);
+    Check(WaitFor([] { return pdhFake::waiting.load() == 0; }), "The worker out of its collection");
+    CloseHandle(gate);
+}
 const std::string Measuring = "FPS : mesure en cours…";
+// Without the frame rate: nothing to show yet, or nothing to give.
+const std::string WaitingLine = "Mesure en cours…", UnavailableLine = "Mesure indisponible";
 const std::string Memory = "Mémoire 1,52 Go · privée 1,31 Go";
 const std::string Heap = "Tas géré 312 Mo / 420 Mo";
 const std::string Steady = "60 FPS · 16,7 ms (max 16,7 ms)\n" + Memory + "\n" + Heap + " · CPU 12 %";
@@ -649,6 +688,7 @@ void Formatting() {
         Throughput(9.94 * MiB) == "9,9 Mo/s" && Throughput(9.96 * MiB) == "10 Mo/s" && Throughput(512.3 * MiB) == "512 Mo/s" &&
         Throughput(2.5 * 1024 * MiB) == "2,5 Go/s" && Throughput(12.3 * 1024 * MiB) == "12 Go/s", "Transfer rates: Ko/s, then Mo/s and Go/s");
     Sample sample;
+    sample.fps = true;
     sample.frames = {true, 60, 16.6667, 33.4};
     sample.memory = true; sample.workingSet = 1632087573ULL; sample.privateBytes = 1406601790ULL;
     sample.heap = true; sample.heapUsed = 312 * MiB; sample.heapSize = 420 * MiB;
@@ -679,6 +719,26 @@ void Formatting() {
     Check(Text(sample) == "60 FPS · 16,7 ms (max 33,4 ms)\n" + Memory, "Two lines");
     sample.memory = false; sample.frames.valid = false; sample.cpu = 3;
     Check(Text(sample) == Measuring + "\nCPU 3 %", "No frame yet, memory unreadable");
+    sample.waiting = true;
+    Check(Text(sample) == Measuring + "\nCPU 3 %", "With the frame rate, never the neutral text");
+    // Without the frame rate (1.16.0): its figures left out whatever they are,
+    // the GPU and disk line alone, or a neutral text without any figure.
+    auto alone = full;
+    alone.fps = false;
+    alone.gpu = 23; alone.drive = L'C'; alone.diskBusy = 4; alone.diskRate = 1.2 * MiB;
+    Check(Text(alone) == "GPU 23 % · Disque C: 4 % · 1,2 Mo/s", "The GPU and the disk alone: " + Text(alone));
+    alone.waiting = true;
+    Check(Text(alone) == "GPU 23 % · Disque C: 4 % · 1,2 Mo/s", "A part still waiting: the other's figures");
+    alone.drive = 0;
+    Check(Text(alone) == "GPU 23 %", "The GPU alone");
+    alone.gpu = -1; alone.drive = L'D'; alone.diskBusy = -1; alone.diskRate = 0;
+    Check(Text(alone) == "Disque D: 0 Ko/s", "The disk alone");
+    alone.drive = 0;
+    Check(Text(alone) == WaitingLine, "Nothing to show yet: the neutral text, never the FPS one");
+    alone.waiting = false;
+    Check(Text(alone) == UnavailableLine, "Nothing to give (Windows refusing the parts shown)");
+    Check(Placeholder(WaitingLine) && Placeholder(UnavailableLine) && !Placeholder(Measuring) && !Placeholder("GPU 23 %"),
+        "The neutral texts never set the width");
     const auto left = Place(0), right = Place(1), bottomLeft = Place(2), bottomRight = Place(3), other = Place(7);
     Check(!left.right && !left.bottom && left.horizontal == 8 && left.vertical == 8, "Top left");
     Check(right.right && !right.bottom && right.horizontal == 8 && right.vertical == 48, "Top right: under the game's menu buttons");
@@ -842,6 +902,80 @@ void PlacementModel() {
     const float none = std::nanf("");
     Check(Advance(state, false, true, false, false, 0, 0, Rect{none, none, none, none}, none, none) == DragStep::End && state.left == 308 &&
         state.width == 226 && state.height == 52 && state.spaceWidth == 1920 && state.spaceHeight == 1080, "Hidden while moving: the last move's sizes");
+    // 1.16.0, the size: within 50..300 %, as the settings keep it.
+    Check(Settings::ValidPerfOverlayScale(MinScale) && !Settings::ValidPerfOverlayScale(MinScale - 1) && Settings::ValidPerfOverlayScale(MaxScale) &&
+        !Settings::ValidPerfOverlayScale(MaxScale + 1) && Settings{}.perfOverlayScale == BaseScale && BaseScale == 100, "The sizes the settings keep");
+    Check(Scaled(226, 100, 150) == 339 && Scaled(339, 150, 50) == 113 && Scaled(52, 100, 200) == 104, "Sizes scaled from one scale to another");
+    // The grip: the last 12 px of the overlay towards its bottom-right corner,
+    // never more than half of it (the rest still moves it).
+    const Rect overlay{8, 8, 226, 52};
+    Check(InGrip(overlay, 233, 59) && InGrip(overlay, 222, 48) && !InGrip(overlay, 221.5f, 59) && !InGrip(overlay, 233, 47.5f) &&
+        !InGrip(overlay, 20, 59) && !InGrip(overlay, 233, 20), "The grip: the last 12 px of both sides towards the bottom-right corner");
+    Check(InGrip({0, 0, 16, 10}, 11, 5) && !InGrip({0, 0, 16, 10}, 10.5f, 9) && !InGrip({0, 0, 16, 10}, 15, 4.5f),
+        "A small overlay: never more than half of it");
+    // The scale follows the corner along the diagonal, from the size at the
+    // press; the top-left stays put; whole percents within 50..300, never
+    // past the margins.
+    Drag sizing;
+    sizing.resize = true;
+    sizing.left = sizing.top = 8;
+    sizing.startWidth = 226;
+    sizing.startHeight = 52;
+    sizing.grabX = sizing.grabY = 5;
+    Check(ResizedScale(sizing, 229, 55, 1920, 1080) == 100, "Where it was pressed: the same size");
+    Check(ResizedScale(sizing, 342, 81, 1920, 1080) == 150 && ResizedScale(sizing, 455, 107, 1920, 1080) == 200,
+        "Its corner under the cursor: 150 %, then 200 %");
+    Check(ResizedScale(sizing, 342, 55, 1920, 1080) == 147 && ResizedScale(sizing, 229, 81, 1920, 1080) == 103,
+        "Along one side only: the closest size on its diagonal (a wide overlay follows its width)");
+    Check(ResizedScale(sizing, -300, -300, 1920, 1080) == 50 && ResizedScale(sizing, 5000, 5000, 1920, 1080) == 300, "Within 50..300 %");
+    sizing.left = 1500;
+    sizing.top = 900;
+    Check(ResizedScale(sizing, 5000, 5000, 1920, 1080) == 182 && 1500 + Scaled(226, 100, 182) <= 1920 - 8,
+        "Never past the panel's margins: entirely on screen, as a move keeps it");
+    Check(ResizedScale(sizing, 5000, 5000, 1580, 1080) == 50, "No room even for the smallest size: the smallest size");
+    sizing.left = 8;
+    sizing.top = 1000;
+    Check(ResizedScale(sizing, 5000, 5000, 1920, 1080) == 138 && 1000 + Scaled(52, 100, 138) <= 1080 - 8,
+        "Never past the bottom margin either: low on the screen, its height is the limit");
+    sizing.left = sizing.top = 8;
+    sizing.startWidth = 339;
+    sizing.startHeight = 78;
+    sizing.startScale = sizing.scale = 150;
+    Check(ResizedScale(sizing, 342, 81, 1920, 1080) == 150 && ResizedScale(sizing, 229, 55, 1920, 1080) == 100, "From another size: the same sizes");
+    sizing.startWidth = 0;
+    Check(ResizedScale(sizing, 342, 81, 1920, 1080) == 150, "No size known: unchanged");
+    // A resize's steps: a press in the grip, a click changes nothing, the scale
+    // follows (drawn at once here), released: saved; the point held covered:
+    // back at the last scale where the panel picked it.
+    box = {8, 8, 226, 52};
+    Drag resize;
+    const auto resizeStep = [&](bool press, bool down, bool located, bool reached, float x, float y) {
+        const auto result = Advance(resize, press, down, located, reached, x, y, box, 1920, 1080, resize.scale);
+        if (result == DragStep::Scale || result == DragStep::Back) { box.width = Scaled(226, 100, resize.scale); box.height = Scaled(52, 100, resize.scale); }
+        return result;
+    };
+    Check(resizeStep(true, true, true, true, 229, 55) == DragStep::None && resize.phase == Drag::Pressed && resize.resize &&
+        resize.grabX == 5 && resize.grabY == 5 && resize.left == 8 && resize.top == 8 && resize.startWidth == 226 && resize.startScale == 100,
+        "Pressed in the grip: a resize, its offset from the corner");
+    Check(resizeStep(false, true, true, true, 231, 57) == DragStep::None && resizeStep(false, false, true, true, 231, 57) == DragStep::None &&
+        resize.phase == Drag::Idle && box.width == 226, "A click: nothing");
+    Check(resizeStep(true, true, true, true, 20, 20) == DragStep::None && !resize.resize, "Pressed elsewhere: a move");
+    resizeStep(false, false, true, true, 20, 20);
+    resizeStep(true, true, true, true, 229, 55);
+    Check(resizeStep(false, true, true, true, 342, 81) == DragStep::Scale && resize.phase == Drag::Moving && resize.scale == 150 &&
+        resize.seenScale == 100 && resize.left == 8 && resize.top == 8, "Resized: 150 %, its top-left kept");
+    Check(resizeStep(false, true, true, true, 455, 107) == DragStep::Scale && resize.scale == 200 && resize.seenScale == 150, "200 %");
+    Check(resizeStep(false, true, true, false, 455, 107) == DragStep::Back && resize.phase == Drag::Idle && resize.scale == 150 && box.width == 339,
+        "The point held covered: back at the last scale where the panel picked it");
+    resizeStep(true, true, true, true, 342, 81);
+    resizeStep(false, true, true, true, 455, 107);
+    Check(resizeStep(false, false, true, true, 455, 107) == DragStep::End && resize.phase == Drag::Idle && resize.scale == 200 &&
+        resize.spaceWidth == 1920 && resize.spaceHeight == 1080, "Released: ended at the last scale");
+    resizeStep(true, true, true, true, 455, 107);
+    resizeStep(false, true, true, true, 229, 55);
+    Check(resizeStep(false, true, false, false, 0, 0) == DragStep::End && resize.scale == 100, "The window left while resized: ended there");
+    const Point corner = HeldPoint(resize, {8, 8, 339, 78}), held = HeldPoint(state, {100, 100, 226, 52});
+    Check(corner.x == 342 && corner.y == 81 && held.x == 100 + std::clamp(state.grabX, 0.f, 225.f), "The point held: from the corner when resized");
 }
 
 // ------------------------------------------------------------ installation
@@ -868,6 +1002,7 @@ void Install() {
     offsets["dzrv"] = 0x78;
     InstallPerfOverlay();
     Check(!installed && Logged("PERF_OVERLAY_DISABLED") == 2, "The layer host's offset is checked");
+    Check(toolsFake::registrations.empty(), "Disabled: no top-bar button");
     offsets["dzrv"] = 0x70;
     module->settings.perfOverlay = true;
     for (int i = 0; i < 3; ++i) { Frame(); Tick(); }
@@ -895,6 +1030,13 @@ void Install() {
         processors == 8 && frequency == Frequency, "Installed with the managed heap");
     Check(natives == std::set<uintptr_t>{0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0},
         "The two export thunks and the four functions behind them are checked");
+    // Its top-bar button (1.16.0), registered with the overlay, as the treasure
+    // hunt's and the notebook's: no layouts, no window.
+    const auto& registration = toolsFake::registrations.back();
+    Check(registration.key == "perf" && registration.title == "Performances" && registration.icon == 1 && registration.layouts == 0 &&
+        registration.visible == &ButtonPressed && registration.toggle == &ButtonClick && registration.button,
+        "Its top-bar button: « Performances », FigmaIcons.activity (1, not the statistics window's chart), no layouts");
+    const auto registered = toolsFake::registrations.size();
     // Every contract at its pinned RVA (an independent copy of the snapshot's).
     std::set<std::tuple<std::string, std::string, int, uintptr_t>> expected{
         {"VisualElement", "get_parent", 0, 0x55F7180}, {"VisualElement", "get_panel", 0, 0x55F7170}, {"VisualElement", "get_name", 0, 0x3158710},
@@ -919,7 +1061,7 @@ void Install() {
     for (const uintptr_t rva : {0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0, 0x57A4050})
         Check(Guarded(rva), "The GC exports, the code behind them and the panel's pick are guarded");
     InstallPerfOverlay();
-    Check(contracts == expected && Logged("PERF_OVERLAY_DISABLED") == 2, "Installed once");
+    Check(contracts == expected && Logged("PERF_OVERLAY_DISABLED") == 2 && toolsFake::registrations.size() == registered, "Installed once");
 }
 
 // --------------------------------------------------------------- lifecycle
@@ -928,6 +1070,13 @@ void OptionOff() {
     module->settings.perfOverlay = false;
     for (int i = 0; i < 5; ++i) Pump();
     Check(Owned(high).empty() && ring.count == 0 && !sampling && !PerfOverlayCleanupPending(), "Off: nothing created, nothing measured");
+    // The mouse placement is no part: ticked alone, still nothing, nothing read.
+    module->settings.perfOverlayDrag = true;
+    const auto buttons = mouse::buttonReads, measured = measureReads;
+    for (int i = 0; i < 5; ++i) Pump();
+    Check(Owned(high).empty() && !sampling && !timing && mouse::buttonReads == buttons && measureReads == measured && !devices.worker,
+        "« Déplacer et redimensionner l’affichage à la souris » alone: nothing created, nothing read");
+    module->settings.perfOverlayDrag = false;
 }
 void Waiting() {
     using namespace perfOverlay;
@@ -1449,23 +1598,43 @@ void Dragging() {
     Pump(4);
     Check(module->settings.perfOverlayX == failedPlace &&
         std::fabs(LabelBox(label)[0] - EdgeOfPlace(failedPlace, LabelBox(label)[2], 1920)) < .01f, "Kept at that place for this session");
-    // Unchecked (the options page puts it back in its corner): clicks let through, the button no longer read.
+    // Unchecked (1.16.0): locked at its place, never sent back to its corner;
+    // the drag in progress stops unsaved (back at the place saved), clicks
+    // let through, the button no longer read.
     Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), true);
     Mouse(static_cast<long>(held[0] + 255), static_cast<long>(held[1] + 5), true);
     Check(drag.phase == Drag::Moving, "Dragging when unchecked");
     module->settings.perfOverlayDrag = false;
-    module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
     Tick();
-    Check(Overlay() == label && Get(label).picking == 1 && ui.picking == 1 && drag.phase == Drag::Idle &&
-        Pixels(label, "right") == 8 && Pixels(label, "bottom") == 8, "Unchecked: clicks let through, back in its corner, the drag stopped");
+    Check(Overlay() == label && Get(label).picking == 1 && ui.picking == 1 && drag.phase == Drag::Idle && saves == 6 &&
+        module->settings.perfOverlayX == failedPlace, "Unchecked: clicks let through, the drag stopped without saving, the place kept");
+    Pump(2);
+    const auto locked = LabelBox(label);
+    Check(std::fabs(locked[0] - EdgeOfPlace(failedPlace, locked[2], 1920)) < .01f &&
+        std::fabs(locked[1] - EdgeOfPlace(module->settings.perfOverlayY, locked[3], 1080)) < .01f && Styled(label, "right") &&
+        Pixels(label, "right") > 8, "Locked at its place, not in its corner");
     reads = buttonReads;
     cursors = cursorReads;
     picked = picks;
-    Mouse(static_cast<long>(held[0] + 5), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(locked[0] + 5), static_cast<long>(locked[1] + 5), true);
     Mouse(600, 600, true);
     Mouse(600, 600, false);
-    Check(buttonReads == reads && cursorReads == cursors && picks == picked && Pixels(label, "right") == 8 && saves == 6,
-        "Unchecked: the mouse is not read");
+    Check(buttonReads == reads && cursorReads == cursors && picks == picked && LabelBox(label)[0] == locked[0] && saves == 6,
+        "Unchecked: the mouse is not read, the overlay stays");
+    Pump(4);
+    Check(LabelBox(label)[0] == locked[0] && LabelBox(label)[1] == locked[1], "Still there");
+    // Locked across a restart: recreated at its place, its clicks let through.
+    RestorePerfOverlay();
+    Tick();
+    label = Overlay();
+    Step();
+    Check(label && Get(label).picking == 1 && !ui.pending &&
+        std::fabs(LabelBox(label)[0] - EdgeOfPlace(module->settings.perfOverlayX, LabelBox(label)[2], 1920)) < .01f &&
+        std::fabs(LabelBox(label)[1] - EdgeOfPlace(module->settings.perfOverlayY, LabelBox(label)[3], 1080)) < .01f,
+        "Recreated locked at its place");
+    // No place saved (a settings file without one): its corner, the top left
+    // unless an earlier revision chose another.
+    module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
     module->settings.perfOverlayCorner = 0;
     Pump(2);
     Check(Pixels(Overlay(), "left") == 8 && Pixels(Overlay(), "top") == 8, "Top left again");
@@ -1547,12 +1716,22 @@ void DragEdges() {
     sharedMetamob.reset();
     module->settings.metamobSync = metamob;
     module->settings.perfOverlayDrag = false;
+    Pump(2);
+    Check(Overlay() == label && std::fabs(LabelBox(label)[0] - 786) < .5f && Get(label).picking == 1 && saves == saved + 6,
+        "Unchecked: locked where it was dropped");
     module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
     Pump(2);
-    Check(Overlay() == label && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && Get(label).picking == 1, "Top left again");
+    Check(Overlay() == label && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && Get(label).picking == 1,
+        "No place saved: top left again");
 }
 
 // ---------------------------------------------------------- GPU and disk
+// A worker that missed JoinMs (a busy machine) ends by itself after its PDH
+// call: wait until it has, its query closed, before expecting a new one.
+bool Retired() {
+    const HANDLE retiring = perfOverlay::devices.retiring;
+    return pdhFake::Alive() == 0 && (!retiring || WaitForSingleObject(retiring, 0) == WAIT_OBJECT_0);
+}
 void DeviceWorkers() {
     using namespace perfOverlay;
     Pump(2);
@@ -1584,7 +1763,7 @@ void DeviceWorkers() {
     // Both unchecked: stopped and joined, its query closed.
     module->settings.perfOverlayDisk = false;
     Tick();
-    Check(!devices.worker && !devices.thread && pdhFake::Alive() == 0, "Both off: the worker stopped");
+    Check(!devices.worker && !devices.thread && WaitFor(Retired), "Both off: the worker stopped");
     Pump(2);
     Check(Get(Overlay()).text == Steady, "Three lines again");
     // The GPU alone.
@@ -1599,7 +1778,7 @@ void DeviceWorkers() {
     auto spawned = pdhFake::spawns;
     Get(document).fields["panel"] = nullptr;
     Tick();
-    Check(!Overlay() && !devices.worker && !devices.thread && pdhFake::Alive() == 0, "Not shown: stopped");
+    Check(!Overlay() && !devices.worker && !devices.thread && WaitFor(Retired), "Not shown: stopped");
     Pump(3);
     Check(pdhFake::spawns == spawned && !devices.worker, "Not started while waiting");
     Get(document).fields["panel"] = panel;
@@ -1607,7 +1786,7 @@ void DeviceWorkers() {
     Check(Overlay() && devices.worker && pdhFake::spawns == spawned + 1, "Shown again: started again");
     // Restore (the mod stopping): stopped and joined.
     RestorePerfOverlay();
-    Check(!devices.worker && !devices.thread && pdhFake::Alive() == 0, "Restore: stopped");
+    Check(!devices.worker && !devices.thread && WaitFor(Retired), "Restore: stopped");
     Tick();
     Check(Overlay() && devices.worker && WaitFor([] { return Figures().gpu >= 0 && Figures().disk.busy >= 0; }), "Back after a restore");
     Pump(2);
@@ -1616,6 +1795,7 @@ void DeviceWorkers() {
     const auto restart = [] {
         module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
         Tick();
+        Check(WaitFor(Retired), "The previous worker ended");
         module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
         Tick();
     };
@@ -1680,6 +1860,7 @@ void DeviceWorkers() {
     // A thread that cannot start: logged once, tried again 5 s later; the overlay goes on.
     module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
     Tick();
+    Check(WaitFor(Retired), "The previous worker ended");
     pdhFake::spawnFails = true;
     module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = true;
     spawned = pdhFake::spawns;
@@ -1714,16 +1895,403 @@ void DeviceWorkers() {
     Check(!devices.worker && pdhFake::spawns == spawned && pdhFake::Alive() == 1, "No second worker while the first one reads");
     pdhFake::Configure([] { pdhFake::gate = nullptr; });
     SetEvent(gate);
-    Check(WaitFor([] { return pdhFake::waiting.load() == 0 && pdhFake::Alive() == 0; }), "The stuck worker ends and closes its query");
+    Check(WaitFor([] { return pdhFake::waiting.load() == 0 && Retired(); }), "The stuck worker ends and closes its query");
     CloseHandle(gate);
     Tick();
     Check(devices.worker && devices.thread && !devices.retiring && pdhFake::spawns == spawned + 1, "Then a new worker");
     Check(WaitFor([] { return Figures().gpu >= 0 && Figures().disk.busy >= 0; }), "With its figures");
     module->settings.perfOverlayGpu = module->settings.perfOverlayDisk = false;
 }
+
+// ------------------------------------------------------ independent parts
+// 1.16.0: each box its own part. The overlay shows as soon as one is ticked,
+// with those parts only, and reads only what it shows: without the frame rate,
+// never the frame counter, the memory, the managed heap or the CPU time.
+void IndependentParts() {
+    using namespace perfOverlay;
+    Pump(3); // the GPU and the disk unchecked: a new label, its CPU share at its first refresh
+    Check(Overlay() && Get(Overlay()).text == Steady && timing && !devices.worker && Logged("PERF_OVERLAY_REMOVED parts") >= 1,
+        "The frame rate alone");
+    // The GPU alone: a new label without the frame rate, a neutral text until
+    // its first figure, before its worker starts and while the worker has none
+    // yet (held in its first collection).
+    const auto measured = measureReads;
+    HANDLE gate = HoldCollections();
+    module->settings.perfOverlay = false;
+    module->settings.perfOverlayGpu = true;
+    Tick();
+    auto label = Overlay();
+    Check(label && Get(label).text == WaitingLine && !timing && ring.count == 0 && cpuMeter.count == 0 &&
+        Logged("PERF_OVERLAY_READY layer=RootHigh corner=0 heap=1 processors=8 drag=0 place=-1,-1 fps=0 gpu=1 disk=0") == 1,
+        "« Charge du GPU » alone: shown, waiting for its first figure: " + (label ? Get(label).text : std::string()));
+    Check(devices.worker && devices.worker->gpu && !devices.worker->disk, "The worker for the GPU only");
+    Check(WaitFor([] { return pdhFake::waiting.load() == 1; }), "Its worker in its first collection");
+    Pump(2);
+    Check(devices.worker && Figures().gpu < 0 && Figures().gpuProblem.empty() && Get(label).text == WaitingLine,
+        "Its worker started, no figure yet: still waiting, never « Mesure indisponible »: " + Get(label).text);
+    ReleaseCollections(gate);
+    Check(WaitFor([] { return Figures().gpu >= 0; }), "Its figure");
+    Pump(2);
+    Check(Get(label).text == "GPU 23 %" && !Styled(label, "minWidth"), "The GPU alone: " + Get(label).text);
+    Pump(2);
+    Check(Pixels(label, "minWidth") == 6 * 8 + 16, "Its width from its figures, never from the neutral text");
+    Check(measureReads == measured && ring.count == 0 && cpuMeter.count == 0, "Without the frame rate: no counter, memory, heap or CPU read");
+    // The disk alone, then both: the line of the parts ticked, nothing else.
+    module->settings.perfOverlayGpu = false;
+    module->settings.perfOverlayDisk = true;
+    Tick();
+    label = Overlay();
+    Check(label && Get(label).text == WaitingLine && devices.worker && !devices.worker->gpu && devices.worker->disk, "« Activité du disque » alone");
+    Check(WaitFor([] { return Figures().disk.busy >= 0; }), "Its figures");
+    Pump(2);
+    Check(Get(label).text == "Disque C: 4 % · 1,2 Mo/s", "The disk alone: " + Get(label).text);
+    module->settings.perfOverlayGpu = true;
+    Tick();
+    label = Overlay();
+    Check(WaitFor([] { return Figures().gpu >= 0 && Figures().disk.busy >= 0; }), "Both figures");
+    Pump(2);
+    Check(Get(label).text == DevicesLine && measureReads == measured && ring.count == 0, "Both, without the frame rate: " + Get(label).text);
+    // The mouse placement without the frame rate: the button read, never the frame counter.
+    module->settings.perfOverlayDrag = true;
+    Tick();
+    Step(); // the button seen up
+    const auto box = LabelBox(label);
+    const auto saved = saves;
+    Mouse(static_cast<long>(box[0] + 5), static_cast<long>(box[1] + 5), true);
+    Mouse(static_cast<long>(box[0] + 405), static_cast<long>(box[1] + 305), true);
+    Mouse(static_cast<long>(box[0] + 405), static_cast<long>(box[1] + 305), false);
+    Check(Overlay() == label && LabelBox(label)[0] == box[0] + 400 && LabelBox(label)[1] == box[1] + 300 && saves == saved + 1 &&
+        module->settings.perfOverlayX >= 0 && measureReads == measured && ring.count == 0, "Dragged and saved, no frame read");
+    // Unticked: locked there, its clicks let through.
+    module->settings.perfOverlayDrag = false;
+    Pump(2);
+    Check(Overlay() == label && Get(label).picking == 1 && std::fabs(LabelBox(label)[0] - (box[0] + 400)) < .5f &&
+        std::fabs(LabelBox(label)[1] - (box[1] + 300)) < .5f, "Locked where it was dropped");
+    // The frame rate ticked again: its lines first, from no frame, then the GPU and disk line.
+    module->settings.perfOverlay = true;
+    Tick();
+    label = Overlay();
+    Check(label && timing && Get(label).text == Measuring + "\n" + Memory + "\n" + Heap + "\n" + DevicesLine &&
+        std::fabs(LabelBox(label)[0] - EdgeOfPlace(module->settings.perfOverlayX, LabelBox(label)[2], 1920)) < .5f,
+        "The frame rate back, at the same place: " + (label ? Get(label).text : std::string()));
+    Pump(2);
+    Check(Get(label).text == Steady + "\n" + DevicesLine && measureReads > measured, "Four lines: " + Get(label).text);
+    // The GPU alone and refused by Windows: a neutral text, never an empty overlay.
+    module->settings.perfOverlay = module->settings.perfOverlayDisk = false;
+    pdhFake::Configure([] { pdhFake::gpuStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_OBJECT); });
+    Tick();
+    label = Overlay();
+    Check(WaitFor([] { return !Figures().gpuProblem.empty(); }), "The GPU refused");
+    Pump(2);
+    Check(Get(label).text == UnavailableLine && !timing, "Nothing to give: " + Get(label).text);
+    pdhFake::Configure([] { pdhFake::gpuStatus = ERROR_SUCCESS; });
+    // Nothing ticked: removed, nothing measured, the worker stopped.
+    module->settings.perfOverlayGpu = false;
+    Tick();
+    Check(!Overlay() && Owned(high).empty() && !sampling && !timing && !devices.worker && !devices.thread && WaitFor(Retired),
+        "No part ticked: removed, nothing measured");
+    // The disk alone, its worker started but without a figure yet: the
+    // neutral text too, then its figures.
+    gate = HoldCollections();
+    module->settings.perfOverlayDisk = true;
+    Tick();
+    label = Overlay();
+    Check(label && Get(label).text == WaitingLine && devices.worker && !devices.worker->gpu && devices.worker->disk,
+        "« Activité du disque » alone again");
+    Check(WaitFor([] { return pdhFake::waiting.load() == 1; }), "Its worker in its first collection");
+    Pump(2);
+    const auto none = Figures();
+    Check(devices.worker && none.disk.busy < 0 && none.disk.rate < 0 && none.diskProblem.empty() && Get(label).text == WaitingLine,
+        "Its worker started, no figure yet: still waiting, never « Mesure indisponible »: " + Get(label).text);
+    ReleaseCollections(gate);
+    Check(WaitFor([] { return Figures().disk.busy >= 0; }), "Its figures");
+    Pump(2);
+    Check(Get(label).text == "Disque C: 4 % · 1,2 Mo/s", "Then its figures: " + Get(label).text);
+    module->settings.perfOverlayDisk = false;
+    Tick();
+    Check(!Overlay() && !devices.worker && !devices.thread && WaitFor(Retired), "Unticked again: removed, its worker stopped");
+    module->settings.perfOverlayX = module->settings.perfOverlayY = -1;
+}
+
+// --------------------------------------------------------------- the resize
+// 1.16.0: with the mouse placement on, its bottom-right corner (its grip, the
+// only corner left square) resizes it: the whole overlay scales alike (text,
+// insets, corners, minimum width), its top-left kept, entirely on screen,
+// within 50..300 %; saved once at the end with the place of its top-left
+// for that size; a click changes nothing; never while locked.
+void Resizing() {
+    using namespace perfOverlay;
+    using namespace mouse;
+    using Box = std::array<float, 4>;
+    auto& settings = module->settings;
+    settings.perfOverlay = settings.perfOverlayDrag = settings.perfOverlayShown = true;
+    settings.perfOverlayGpu = settings.perfOverlayDisk = false;
+    settings.perfOverlayCorner = 0;
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    Check(settings.perfOverlayScale == 100, "Its natural size until resized");
+    RestorePerfOverlay();
+    Tick();
+    Pump(4); // its figures, then its widest text
+    auto label = Overlay();
+    Step(); // the button seen up
+    Check(label && ui.scale == 100 && LabelBox(label) == Box{8, 8, 226, 52} && Pixels(label, "fontSize") == 12 &&
+        Pixels(label, "minWidth") == CpuLineWidth && Logged("PERF_OVERLAY_READY layer=RootHigh corner=0 heap=1 processors=8 drag=1 place=-1,-1 fps=1 gpu=0 disk=0 scale=100") >= 1,
+        "At its natural size, top left");
+    for (const char* radius : {"borderTopLeftRadius", "borderTopRightRadius", "borderBottomLeftRadius"})
+        Check(Pixels(label, radius) == 6, std::string("Rounded: ") + radius);
+    Check(Pixels(label, "borderBottomRightRadius") == 0, "Its bottom-right corner square: its grip's only mark");
+    // A click on the grip: nothing.
+    const auto saved = saves;
+    Mouse(229, 55, true);
+    Mouse(231, 57, true);
+    Mouse(231, 57, false);
+    Check(drag.phase == Drag::Idle && ui.scale == 100 && LabelBox(label) == Box{8, 8, 226, 52} && saves == saved, "A click on the grip changes nothing");
+    // Its corner dragged: 150 %, everything alike, its top-left kept.
+    Mouse(229, 55, true);
+    Mouse(342, 81, true);
+    Check(drag.phase == Drag::Moving && drag.resize && ui.scale == 150 && Pixels(label, "fontSize") == 18 && Pixels(label, "paddingLeft") == 12 &&
+        Pixels(label, "paddingRight") == 12 && Pixels(label, "paddingTop") == 6 && Pixels(label, "paddingBottom") == 6 &&
+        Pixels(label, "borderTopLeftRadius") == 9 && Pixels(label, "borderBottomLeftRadius") == 9 && Pixels(label, "borderBottomRightRadius") == 0 &&
+        Pixels(label, "minWidth") == 339, "150 %: its text, insets, corners and minimum width alike");
+    Check(LabelBox(label) == Box{8, 8, 339, 78} && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == saved,
+        "Its top-left kept, its corner under the cursor (at the grab offset); nothing saved yet");
+    // A layout of another size meanwhile (the game lays it out after the
+    // frame): the pumps neither widen nor place it during a resize.
+    collapsedWidth = 1000;
+    Tick();
+    Tick();
+    collapsedWidth = -1;
+    Check(ui.minWidth == CpuLineWidth && Pixels(label, "minWidth") == 339 && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 &&
+        drag.phase == Drag::Moving, "Never widened nor placed during a resize");
+    Mouse(455, 107, true);
+    Check(ui.scale == 200 && Pixels(label, "fontSize") == 24 && LabelBox(label) == Box{8, 8, 452, 104}, "200 %");
+    Mouse(455, 107, false);
+    Check(drag.phase == Drag::Idle && saves == saved + 1 && settings.perfOverlayScale == 200 && settings.perfOverlayX == PlaceOfEdge(8, 452, 1920) &&
+        settings.perfOverlayY == PlaceOfEdge(8, 104, 1080) && LoggedLine("PERF_OVERLAY_RESIZED scale=200 x=54 y=82") == 1,
+        "Saved once at the release: its size, and the place of its top-left for that size");
+    Pump(4);
+    Check(LabelBox(label) == Box{8, 8, 452, 104} && Pixels(label, "minWidth") == 452 && saves == saved + 1, "Stays at that size and place");
+    // Down to the smallest size, then back up: the point held covered on the
+    // way, back at the last size where the panel picked it, saved there.
+    Mouse(455, 107, true);
+    Mouse(-300, -300, true);
+    Check(ui.scale == 50 && Pixels(label, "fontSize") == 6 && LabelBox(label) == Box{8, 8, 113, 26} && Pixels(label, "minWidth") == 113,
+        "Never below 50 %");
+    Mouse(229, 55, true);
+    Check(ui.scale == 100 && LabelBox(label) == Box{8, 8, 226, 52}, "Back up to 100 %");
+    blockers.push_back({Element("VisualElement", "Popup"), 200, 40, 200, 100});
+    Mouse(229, 55, true);
+    Check(drag.phase == Drag::Idle && ui.scale == 50 && LabelBox(label) == Box{8, 8, 113, 26} && saves == saved + 2 &&
+        settings.perfOverlayScale == 50 && settings.perfOverlayX == 44 && settings.perfOverlayY == 76 &&
+        LoggedLine("PERF_OVERLAY_RESIZED scale=50 x=44 y=76") == 1, "The point held covered: back at the last size where it was picked, saved");
+    // The pumps of that frame come before the game lays it out at that size
+    // (its panels' update follows the compositor's): its layout still that of
+    // 100 % neither widens it nor places it, placed at the next frame.
+    collapsedWidth = 226;
+    Tick();
+    Tick();
+    collapsedWidth = -1;
+    Check(ui.rescaled && ui.pending && ui.minWidth == CpuLineWidth && Pixels(label, "minWidth") == 113,
+        "Laid out at the size before: neither widened nor placed");
+    Step();
+    Check(!ui.rescaled && !ui.pending && LabelBox(label) == Box{8, 8, 113, 26}, "Placed at the next frame, at its size");
+    Mouse(229, 55, false);
+    blockers.clear();
+    // Locked: its clicks let through, never resized, all its corners rounded.
+    settings.perfOverlayDrag = false;
+    Tick();
+    Check(Get(label).picking == 1 && Pixels(label, "borderBottomRightRadius") == 3 && Pixels(label, "borderTopLeftRadius") == 3,
+        "Locked: all its corners rounded (3 px at 50 %)");
+    const auto buttons = buttonReads, cursors = cursorReads;
+    Mouse(116, 29, true);
+    Mouse(400, 400, true);
+    Mouse(400, 400, false);
+    Check(ui.scale == 50 && LabelBox(label) == Box{8, 8, 113, 26} && buttonReads == buttons && cursorReads == cursors && saves == saved + 2,
+        "Locked: never resized, the mouse not read");
+    settings.perfOverlayDrag = true;
+    Tick();
+    Step();
+    Check(Get(label).picking == 0 && Pixels(label, "borderBottomRightRadius") == 0, "Unlocked: its grip's mark back");
+    // The next start: at its size and its place.
+    RestorePerfOverlay();
+    Tick();
+    label = Overlay();
+    Step();
+    Check(label && ui.scale == 50 && Pixels(label, "fontSize") == 6 && Pixels(label, "paddingLeft") == 4 && Pixels(label, "paddingTop") == 2 &&
+        Pixels(label, "borderBottomRightRadius") == 0 && !ui.pending && std::fabs(LabelBox(label)[0] - 8) < .5f && std::fabs(LabelBox(label)[1] - 8) < .5f &&
+        LoggedLine("PERF_OVERLAY_READY layer=RootHigh corner=0 heap=1 processors=8 drag=1 place=44,76 fps=1 gpu=0 disk=0 scale=50") == 1,
+        "Recreated at its size and its place");
+    Pump(4);
+    Check(LabelBox(label)[2] == 113 && Pixels(label, "minWidth") == 113 && ui.minWidth == CpuLineWidth, "Its widest text kept at 100 %, drawn at 50 %");
+    // A size outside 50..300 % (never saved): the natural size; the size saved again: back to it.
+    settings.perfOverlayScale = 999;
+    Tick();
+    Check(ui.scale == 100 && Pixels(label, "fontSize") == 12 && Pixels(label, "minWidth") == 226 && LabelBox(label)[2] == 226, "Anything else: its natural size");
+    settings.perfOverlayScale = 50;
+    Tick();
+    Check(ui.scale == 50 && Pixels(label, "fontSize") == 6 && LabelBox(label)[2] == 113, "Back at its size");
+    // Unticked mid-resize: back at the size saved, nothing saved.
+    Step();
+    Mouse(116, 29, true);
+    Mouse(229, 55, true);
+    Check(drag.phase == Drag::Moving && ui.scale == 100, "Resizing again");
+    settings.perfOverlayDrag = false;
+    collapsedWidth = 226; // still laid out at 100 % until the next frame
+    Tick();
+    Tick();
+    collapsedWidth = -1;
+    Check(drag.phase == Drag::Idle && ui.scale == 50 && Pixels(label, "fontSize") == 6 && LabelBox(label)[2] == 113 && saves == saved + 2 &&
+        settings.perfOverlayScale == 50 && ui.minWidth == CpuLineWidth && Pixels(label, "minWidth") == 113,
+        "Unticked mid-resize: back at the size saved, nothing saved, never widened by the layout of the size before");
+    Mouse(229, 55, false);
+    settings.perfOverlayDrag = true;
+    Tick();
+    Step();
+    // Restore mid-resize: nothing saved; recreated at the size saved.
+    Mouse(116, 29, true);
+    Mouse(229, 55, true);
+    Check(drag.phase == Drag::Moving && ui.scale == 100, "Resizing once more");
+    RestorePerfOverlay();
+    Check(!Overlay() && drag.phase == Drag::Idle && saves == saved + 2, "Restore mid-resize: nothing saved");
+    Mouse(229, 55, false);
+    Tick();
+    label = Overlay();
+    Step();
+    Check(label && ui.scale == 50 && Pixels(label, "fontSize") == 6, "Recreated at the size saved");
+    // A label anchored by its right and bottom sides (the corner an earlier
+    // revision chose), without a place: resized, its top-left kept all the
+    // same, never past the margins; saved with the place of its top-left.
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    settings.perfOverlayScale = 100;
+    settings.perfOverlayCorner = 3;
+    Tick();
+    label = Overlay();
+    Pump(4);
+    Step();
+    Check(label && ui.corner == 3 && ui.scale == 100 && LabelBox(label) == Box{1686, 1020, 226, 52} && Pixels(label, "right") == 8 &&
+        Pixels(label, "bottom") == 8, "Bottom right, at its natural size");
+    Mouse(1907, 1067, true);
+    Mouse(2500, 1500, true);
+    Check(drag.phase == Drag::Moving && ui.scale == 100 && LabelBox(label) == Box{1686, 1020, 226, 52}, "No room to grow: kept entirely on screen");
+    Mouse(1794, 1041, true);
+    Check(ui.scale == 50 && LabelBox(label) == Box{1686, 1020, 113, 26} && Pixels(label, "right") == 121 && Pixels(label, "bottom") == 34 &&
+        !Styled(label, "left") && !Styled(label, "top"), "Its right and bottom sides moved: its top-left kept");
+    Mouse(1794, 1041, false);
+    Check(saves == saved + 3 && settings.perfOverlayScale == 50 && settings.perfOverlayX == PlaceOfEdge(1686, 113, 1920) &&
+        settings.perfOverlayY == PlaceOfEdge(1020, 26, 1080) && settings.perfOverlayCorner == 3, "Saved: its size and the place of its top-left, its corner kept");
+    Pump(4);
+    Check(std::fabs(LabelBox(label)[0] - 1686) < .5f && std::fabs(LabelBox(label)[1] - 1020) < .5f && LabelBox(label)[2] == 113, "Stays there");
+    // Grown back from there: up to the panel's margins only.
+    Mouse(1794, 1041, true);
+    Mouse(3000, 3000, true);
+    const auto grown = LabelBox(label);
+    Check(ui.scale == 100 && std::fabs(grown[0] - 1686) < .5f && std::fabs(grown[1] - 1020) < .5f && grown[0] + grown[2] <= 1920 - 8 + .5f &&
+        grown[1] + grown[3] <= 1080 - 8 + .5f, "Grown up to the panel's margins only: entirely on screen");
+    Mouse(3000, 3000, false);
+    Check(saves == saved + 4 && settings.perfOverlayScale == 100, "Saved at that size");
+    Check(changes == 0 && syncs == saves, "Every size saved without Module::Change (its appearance refresh), the options page synchronised");
+    settings.perfOverlayCorner = 0;
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    settings.perfOverlayDrag = false;
+    RestorePerfOverlay();
+}
+
+// ------------------------------------------------------ the top-bar button
+// 1.16.0: its button among the mod's in the top bar (registered at its
+// installation), pressed while the overlay is shown: a part ticked, not
+// hidden by it. A click hides it, its parts kept ticked and nothing measured
+// any more, or shows it again, « Afficher les FPS et la mémoire » ticked
+// when no part is; saved as a drop is, never with Module::Change. Its option
+// removes the button.
+void TopBarButton() {
+    using namespace perfOverlay;
+    const auto registration = toolsFake::registrations.back();
+    auto& settings = module->settings;
+    settings.perfOverlay = true;
+    settings.perfOverlayGpu = settings.perfOverlayDisk = settings.perfOverlayDrag = false;
+    Check(settings.perfOverlayShown && settings.perfOverlayButton, "Not hidden, its button on");
+    Tick();
+    Pump(2);
+    Check(Overlay() && registration.visible() && registration.button(), "Shown: its button there and pressed");
+    settings.perfOverlayButton = false;
+    Check(!registration.button() && registration.visible() && Overlay(), "« Bouton dans la barre du haut » unticked: no button, the overlay still shown");
+    settings.perfOverlayButton = true;
+    // Hidden: its part still ticked, saved once, the options page in step.
+    const auto saved = saves, synced = syncs, changed = changes;
+    Check(registration.toggle() && !settings.perfOverlayShown && settings.perfOverlay && !registration.visible() && saves == saved + 1 &&
+        syncs == synced + 1 && changes == changed && LoggedLine("PERF_OVERLAY_BUTTON hidden") == 1,
+        "Clicked: hidden, « Afficher les FPS et la mémoire » still ticked, saved");
+    Tick();
+    Check(!Overlay() && Owned(high).empty() && !sampling && !timing && LoggedLine("PERF_OVERLAY_REMOVED hidden") == 1, "Removed at once, nothing measured");
+    const auto measured = measureReads;
+    Pump(3);
+    Check(!Overlay() && measureReads == measured, "Hidden: nothing created, nothing read");
+    // Shown again: the same part, nothing else ticked.
+    Check(registration.toggle() && settings.perfOverlayShown && settings.perfOverlay && !settings.perfOverlayGpu && !settings.perfOverlayDisk &&
+        registration.visible() && saves == saved + 2 && LoggedLine("PERF_OVERLAY_BUTTON shown") == 1, "Clicked again: shown, the same part");
+    Tick();
+    Check(Overlay() && Owned(high).size() == 1, "Back");
+    // The GPU alone: hidden, its worker stops and the GPU stays ticked; shown
+    // again, the GPU alone, never the FPS added.
+    settings.perfOverlay = false;
+    settings.perfOverlayGpu = true;
+    Tick();
+    Check(Overlay() && devices.worker && devices.worker->gpu, "The GPU alone, its worker running");
+    registration.toggle();
+    Tick();
+    Check(!Overlay() && !devices.worker && !devices.thread && settings.perfOverlayGpu && !settings.perfOverlay && !settings.perfOverlayShown &&
+        WaitFor([] { return pdhFake::Alive() == 0; }), "Hidden: its worker stopped, the GPU still ticked");
+    registration.toggle();
+    Tick();
+    Check(Overlay() && devices.worker && settings.perfOverlayGpu && !settings.perfOverlay && settings.perfOverlayShown, "Shown again: the GPU alone");
+    settings.perfOverlayGpu = false;
+    Tick();
+    Check(!Overlay() && !devices.worker && !registration.visible() && settings.perfOverlayShown, "No part ticked: not shown, its button up");
+    // Its click without a part ticked: « Afficher les FPS et la mémoire »
+    // ticked, so that it shows something.
+    Check(registration.toggle() && settings.perfOverlay && settings.perfOverlayShown && registration.visible() &&
+        LoggedLine("PERF_OVERLAY_BUTTON shown fps") == 1, "Clicked without a part: the FPS ticked");
+    Tick();
+    Check(Overlay() && timing, "Shown with the FPS");
+    // Hidden, then its part unticked meanwhile: the click shows it with the FPS ticked.
+    registration.toggle();
+    settings.perfOverlay = false;
+    Check(!settings.perfOverlayShown && !registration.visible(), "Hidden, then its part unticked");
+    Check(registration.toggle() && settings.perfOverlayShown && settings.perfOverlay && registration.visible(), "Clicked: shown, the FPS ticked");
+    Tick();
+    Check(Overlay(), "Shown");
+    // Its errors given up: hidden and shown again with the button, tried again.
+    broken = true;
+    Tick();
+    Check(!Overlay() && Logged("PERF_OVERLAY_REMOVED errors") >= 1, "Given up");
+    registration.toggle();
+    Tick();
+    Check(!broken && !Overlay(), "Hidden: its errors forgotten");
+    registration.toggle();
+    Tick();
+    Check(Overlay() && !broken, "Shown again: tried again");
+    // A save that fails: logged, hidden for this session all the same.
+    saveFails = true;
+    registration.toggle();
+    saveFails = false;
+    Tick();
+    Check(!settings.perfOverlayShown && !Overlay() && Logged("PERF_OVERLAY_BUTTON_ERROR Injected save failure") == 1, "Save failure logged, hidden all the same");
+    registration.toggle();
+    Tick();
+    Check(Overlay() && changes == changed && syncs - synced == saves - saved, "Every click saved without Module::Change, the options page in step");
+    settings.perfOverlay = false;
+    Tick();
+    Check(!Overlay(), "Unticked: removed");
+}
 }
 
 int main() {
+    // The device worker runs below normal priority, as in the game. On a machine
+    // busy with other programs (parallel builds), Windows can leave it about 4 s
+    // without a processor: it then misses JoinMs (the restart that follows is
+    // deferred until it ends) and the 5 s WaitFor bound. One priority class
+    // above normal keeps it ahead of those programs.
+    SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
     try {
         Setup();
         Module mod({});
@@ -1754,8 +2322,11 @@ int main() {
         Dragging();
         DragEdges();
         DeviceWorkers();
+        IndependentParts();
+        Resizing();
+        TopBarButton();
         RestorePerfOverlay();
-        Check(!perfOverlay::devices.worker && !perfOverlay::devices.thread && pdhFake::Alive() == 0, "No worker left after Restore");
+        Check(!perfOverlay::devices.worker && !perfOverlay::devices.thread && WaitFor(Retired), "No worker left after Restore");
         mod.compositor.reset();
         module = nullptr;
         Check(handles.empty(), "No managed reference kept after Restore");
@@ -1777,7 +2348,25 @@ int main() {
             "this process's busiest engine (never a sum), the game's physical disk (active time, transfer rate), the first "
             "sample without a figure, PDH arrays sized then read (fresh items only), a worker thread only while shown with one "
             "of them on, restarted with the counters asked for, stopped and "
-            "joined (250 ms at most, never two at once), every PDH refusal leaving its figure out and logged once\n";
+            "joined (250 ms at most, never two at once), every PDH refusal leaving its figure out and logged once; "
+            "independent parts (1.16.0): shown with any of the three boxes and only those parts (the GPU or the disk alone, "
+            "a neutral text until their first figure, before their worker starts and while it has none yet, and « Mesure "
+            "indisponible » when Windows refuses them, never sized by those texts), only what is shown measured (no frame "
+            "counter, memory, heap or CPU read without the frame rate, the "
+            "mouse placement alone showing nothing), recreated for another choice of parts, and the mouse place kept and the "
+            "overlay locked there when the mouse placement is unchecked, across restarts; resize (1.16.0): its bottom-right "
+            "corner (the last 12 px, never more than half of it, the only corner left square) scales the whole overlay alike "
+            "(text, insets, corners, minimum width, the widest text kept at 100 %), its top-left kept even when anchored by "
+            "its right and bottom sides, its corner following the cursor along its diagonal in whole percents within 50..300 "
+            "and the panel's margins, a click changing nothing, never widened or placed meanwhile nor by the layout of the "
+            "size before (the game lays it out after the frame), back at the last size "
+            "seen when the point held is covered, saved once with the place of its top-left, back at the size saved when "
+            "interrupted, recreated at that size, any other size read as 100 %, never while locked (corners all rounded); "
+            "top-bar button (1.16.0): registered at installation (« Performances », FigmaIcons.activity, no layouts, its "
+            "option removing it), pressed while a part is ticked and not hidden by it, a click hiding the overlay with its "
+            "parts kept ticked and nothing measured, or showing it again (« Afficher les FPS et la mémoire » ticked when no "
+            "part is), saved without Module::Change (a failed save logged, the choice kept for the session), its errors "
+            "forgotten once hidden\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

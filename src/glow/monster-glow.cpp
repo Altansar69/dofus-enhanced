@@ -4,6 +4,7 @@
 #include "glow/monster-glow-render.hpp"
 #include "glow/monster-glow-ui.hpp"
 #include "glow/monster-glow-world.hpp"
+#include "glow/glow-mode-labels.hpp"
 #include "core/module.hpp"
 #include "maps/map-transitions.hpp"
 #include <algorithm>
@@ -20,7 +21,7 @@ constexpr size_t MaxProjectedTargets = 128;
 constexpr ULONGLONG FrameInterval = 31;
 bool installed = false, enabled = false, failed = false;
 bool worldAvailable = false, interactivesAvailable = false;
-bool previousNpcs = false, previousInteractives = false;
+unsigned previousCategories = 0; // GlowCategoryMask of the enabled glow
 int previousMode = 0;
 bool hadResources = false, previousCombat = false, cleanupPending = false;
 Ref previousContext, previousCamera;
@@ -31,6 +32,12 @@ ULONGLONG nextCleanup = 0;
 ULONGLONG nextDiagnostic = 0;
 std::string lastDiagnostic;
 
+// One digit per « Surbrillance » box, in the order of GlowCategoryToggles.
+std::string CategoryDigits(unsigned categories) {
+    std::string text;
+    for (size_t index = 0; index < std::size(GlowCategoryToggles); ++index) text += (categories >> index) & 1 ? '1' : '0';
+    return text;
+}
 void Trace(ULONGLONG now, const char* stage, const Snapshot& entities, const UiFrame* frame = nullptr,
            size_t projected = 0, size_t captures = 0, size_t textures = 0, size_t shown = 0,
            const char* projectionReason = "none", const char* worldReason = "unused", size_t walls = 0) {
@@ -39,7 +46,7 @@ void Trace(ULONGLONG now, const char* stage, const Snapshot& entities, const UiF
     std::ostringstream text;
     text << "[DEBUG:glow] stage=" << stage << " combat=" << entities.combat
          << " entities=" << entities.reason << " roster=" << entities.rosterCount
-         << " npcs=" << entities.npcCount << " interactives=" << entities.interactiveCount
+         << " npcs=" << entities.npcCount << " players=" << entities.playerCount << " interactives=" << entities.interactiveCount
          << " monsters=" << entities.monsterCount << " roots=" << entities.matchedRoots
          << " visible=" << entities.targets.size() << " rejectedPart=" << entities.lastRejectedPart
          << " rejectedAlpha=" << entities.lastRejectedAlpha;
@@ -48,6 +55,7 @@ void Trace(ULONGLONG now, const char* stage, const Snapshot& entities, const UiF
     text << " projected=" << projected << " captures=" << captures << " textures=" << textures
          << " shown=" << shown << " projection=" << projectionReason
          << " mode=" << (module ? module->settings.monsterGlowMode : 0)
+         << " categories=" << CategoryDigits(module ? GlowCategoryMask(module->settings) : 0)
          << " world=" << worldReason << " walls=" << walls;
     if (shown) text << " " << DescribeGlowUi();
     const auto message = text.str();
@@ -98,21 +106,23 @@ void TickMonsterGlow() {
         if (now >= nextCleanup) Clear();
         if (cleanupPending) return;
     }
+    // With no « Surbrillance » box ticked nothing is outlined: as with the
+    // « Désactivée » level, no scene, HUD or GPU work at all.
+    const unsigned categories = module ? GlowCategoryMask(module->settings) : 0;
     if (!installed || !module || !module->ready.load() || !module->servicesReady ||
         module->stopped || module->stopRequested.load() || !Settings::ValidMonsterGlowMode(module->settings.monsterGlowMode) ||
-        module->settings.monsterGlowMode == 0) {
+        module->settings.monsterGlowMode == 0 || categories == 0) {
         if (enabled || hadResources) Clear();
         enabled = false; failed = false; nextFrame = 0;
         return;
     }
     const int mode = module->settings.monsterGlowMode;
-    if (!enabled || mode != previousMode || module->settings.glowNpcs != previousNpcs ||
-        module->settings.glowInteractives != previousInteractives) {
+    // A box ticked or unticked starts again at once, bypassing the throttle.
+    if (!enabled || mode != previousMode || categories != previousCategories) {
         if (enabled) { Clear(); if (cleanupPending) return; }
-        previousMode = mode;
-        previousNpcs = module->settings.glowNpcs; previousInteractives = module->settings.glowInteractives;
+        previousMode = mode; previousCategories = categories;
         enabled = true; failed = false; nextFrame = 0; nextDiagnostic = 0; lastDiagnostic.clear();
-        Log("GLOW_ENABLED mode=" + std::to_string(mode));
+        Log("GLOW_ENABLED mode=" + std::to_string(mode) + " categories=" + CategoryDigits(categories));
     }
     if (failed) return;
     if (MapTransitionLoading()) {
@@ -140,8 +150,13 @@ void TickMonsterGlow() {
     }
     nextFrame = now + FrameInterval;
     try {
-        auto entities = ReadEntities();
-        if (interactivesAvailable && module->settings.glowInteractives) {
+        const auto& settings = module->settings;
+        // Actors (monsters, NPCs, players) and interactive objects have their
+        // own readers, each one read only for a ticked category.
+        Snapshot entities;
+        if (settings.glowMonsters || settings.glowNpcs || settings.glowSelf || settings.glowParty || settings.glowPlayers)
+            entities = ReadEntities();
+        if (interactivesAvailable && settings.glowInteractives) {
             auto interactive = ReadGlowInteractives();
             if (interactive.valid) {
                 if (!entities.valid) entities = std::move(interactive);
@@ -151,6 +166,10 @@ void TickMonsterGlow() {
                 }
             }
         }
+        // The budget below (32 captures, 128 projections) goes to the
+        // categories in GlowCategory order: the local character, its party, the
+        // monsters, the NPCs, the interactive objects, then the other players.
+        PrioritizeTargets(entities.targets);
         if (!entities.valid || !entities.context.get() || entities.targets.empty()) {
             Trace(now,"entities",entities); Clear(); return;
         }
@@ -183,7 +202,8 @@ void TickMonsterGlow() {
         std::unordered_set<int64_t> seenActors, seenInteractives;
         for (const auto& target : entities.targets) {
             if (captures >= MaxGlows || projected >= MaxProjectedTargets) break;
-            if (!target.id || !target.entity.get() || target.renderers.empty() || !(target.interactive ? seenInteractives : seenActors).insert(target.id).second) continue;
+            const bool interactive = target.category == GlowCategory::Interactive;
+            if (!target.id || !target.entity.get() || target.renderers.empty() || !(interactive ? seenInteractives : seenActors).insert(target.id).second) continue;
             ++projected;
             std::vector<Obj> renderers;
             renderers.reserve(target.renderers.size());
@@ -226,7 +246,7 @@ void TickMonsterGlow() {
                 coverage.renderers.empty() ? nullptr : &coverage);
             if (!texture) continue;
             ++textures;
-            if (!ShowGlowUi(frame, target.id, projection, texture, target.interactive)) continue;
+            if (!ShowGlowUi(frame, target.id, projection, texture, interactive)) continue;
             ++slot;
         }
         EndGlowUi();

@@ -30,7 +30,7 @@ enum class Counter : int {
 };
 // Records: the largest value seen.
 enum class Record : int { BiggestHit, LongestSessionMs, Count };
-// Per-key tables; the options show their largest entries.
+// Per-key tables; the statistics window shows their largest entries.
 enum class Table : int {
     Spells,      // spell id -> casts
     Elements,    // element (0 neutral, 1 earth, 2 fire, 3 water, 4 air) -> damage dealt
@@ -50,8 +50,9 @@ void Name(int64_t character, const std::string& name);
 bool Counting();
 }
 
-// The store's side for the options (« Statistiques »), added by the store: the
-// statistics shown, their reset and the names of the table keys.
+// The store's side for the statistics window (« Statistiques », stats-window.hpp),
+// added by the store: the statistics shown, their reset and the names of the
+// table keys.
 namespace stats {
 constexpr size_t CounterCount = static_cast<size_t>(Counter::Count);
 constexpr size_t RecordCount = static_cast<size_t>(Record::Count);
@@ -72,10 +73,10 @@ struct Totals {
 };
 // The character played in this client; 0 while unknown.
 int64_t Current();
-// What the options show: this client's character, or every character's sums.
+// What the window shows: this client's character, or every character's sums.
 // Main thread; never throws.
 Totals Shown(bool everyCharacter);
-// Erases what the options show, in the file under its lock; false when that is
+// Erases what the window shows, in the file under its lock; false when that is
 // not possible now (no character, file in use or unwritable).
 bool Clear(bool everyCharacter);
 // A table key's name: the game's for spells, dungeons and worlds, the

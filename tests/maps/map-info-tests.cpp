@@ -95,7 +95,7 @@ using UpdateFn = void(*)(Obj, Obj, Method);
 BerzFn berzHook = nullptr;
 UpdateFn updateHook = nullptr;
 Obj panel{}, tooltipRoot{}, templateRoot{}, tooltip{}, row{}, ctrCoords{}, label{}, ctrZaap{}, priceLabel{};
-Obj mini{}, big{}, other{}, twelve{}, incarnam{}, nameless{}, amakna{}, longZone{};
+Obj mini{}, big{}, other{}, twelve{}, twelveEnglish{}, incarnam{}, nameless{}, amakna{}, longZone{};
 Obj lastBuilder{};
 // The tooltip template, as the game's UXML builds it: TooltipRoot > #cartographyTooltip
 // (154 px) > #CartographyTooltip > row > #ctr_coords > #lbl_coords, and beside
@@ -282,11 +282,13 @@ void Init() {
     offsets = {
         {{"fhw", "<dugi>k__BackingField"}, 0x38}, {{"CartographyTooltipInfos", "mapX"}, 0x10}, {{"CartographyTooltipInfos", "mapY"}, 0x14},
         {{"CartographyTooltipInfos", "subArea"}, 0x18}, {{"CartographyTooltipInfos", "showMapCoords"}, 0x29},
-        {{"CartographyTooltipInfos", "zaapPrice"}, 0x2C}, {{"BaseTooltipBuilder`1", "m_binding"}, 0x10},
+        {{"CartographyTooltipInfos", "zaapPrice"}, 0x2C}, {{"BaseTooltipBuilder`1", "m_binding"}, 0x10}, {{"WorldMapData", "id"}, 0x10},
     };
     panel = Make("Panel");
-    auto world = [](const char* name) { auto w = Make("WorldMapData"); Get(w).text = name; return w; };
-    twelve = world("Monde des Douze"); incarnam = world("Incarnam"); nameless = world("");
+    // The game's world maps: their name (get_name) and id (WorldMapData.id), the
+    // Monde des Douze being world 1 whatever its name in the game's language.
+    auto world = [](const char* name, int id) { auto w = Make("WorldMapData"); Get(w).text = name; Get(w).slots["id"] = id; return w; };
+    twelve = world("Monde des Douze", 1); twelveEnglish = world("World of Twelve", 1); incarnam = world("Incarnam", 2); nameless = world("", 3);
     amakna = Make("SubAreaData"); Get(amakna).text = Village;
     longZone = Make("SubAreaData"); Get(longZone).text = "Lisi\xC3\xA8re de la for\xC3\xAAt mal\xC3\xA9" "fique sombre";
     mini = Make("CartographyBannerView"); Get(mini).fields["<dugi>k__BackingField"] = twelve;
@@ -332,9 +334,11 @@ int ShownLines() {
 bool Encloses() { return (Get(label).singleLine ? 1 : ShownLines()) == ShownLines(); }
 // The label's own setting, as the game styled it: single-line, one line high.
 bool OwnLine() { return Get(label).singleLine && Get(label).height.keyword == 0 && Get(label).height.value == LineHeight; }
-void Options(bool zone, bool bigCoords, bool miniCoords) {
+// The zone name, then each map's dimension choice: 0 « Non », 1 « Oui, sauf
+// dans le Monde des Douze », 2 « Oui ».
+void Options(bool zone, int bigMode, int miniMode) {
     auto& o = module->settings;
-    o.miniMapZoneName = zone; o.coordsWorldMap = bigCoords; o.coordsWorldMiniMap = miniCoords;
+    o.miniMapZoneName = zone; o.coordsWorldMapMode = bigMode; o.coordsWorldMiniMapMode = miniMode;
 }
 void Reset() {
     RestoreMapInfo();
@@ -343,7 +347,7 @@ void Reset() {
     berzHook = nullptr; updateHook = nullptr; hookRvas.clear(); guards.clear();
     failMethod.clear(); failVerified.clear(); failHook = 0; measureWorks = true;
     module->stopRequested = false; module->ready = true; module->servicesReady = true;
-    Options(true, true, true);
+    Options(true, 2, 2);
     BuildTemplate();
 }
 
@@ -373,10 +377,30 @@ void Contracts() {
     MapInfoFrame(1);
 }
 void DefaultOptions() {
-    Check(module->settings.miniMapZoneName && module->settings.coordsWorldMap && module->settings.coordsWorldMiniMap,
-        "The three options are on by default");
+    Check(module->settings.miniMapZoneName && module->settings.coordsWorldMapMode == 1 && module->settings.coordsWorldMiniMapMode == 1,
+        "By default: the zone name, and on both maps the dimension except in the Monde des Douze");
+    // By default a cell of the Monde des Douze keeps the game's coordinates: the
+    // zone above them on the mini-map, the game's own tooltip on the big map.
     Hover(mini, 3, -20, amakna);
     Check(berzCalls == 1 && updateCalls == 1, "The game's own tooltip is created and updated once");
+    Check(Text() == Village + "\n[3,-20]" && OwnWidth() && NoShrink() && !Get(label).singleLine && ShownLines() == 2 && Encloses(),
+        "Mini-map in the Monde des Douze by default: the zone above the game's coordinates, both lines in the box");
+    Hover(big, 3, -20, amakna);
+    Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine(), "Big map in the Monde des Douze by default: the game's own tooltip and template");
+    // Any other dimension shows its name by default, on both maps.
+    Get(mini).fields["<dugi>k__BackingField"] = incarnam; Get(big).fields["<dugi>k__BackingField"] = incarnam;
+    Hover(big, 4, -2, amakna);
+    Check(Text() == "[4,-2, Incarnam]" && OwnWidth() && NoShrink() && OwnLine(), "Big map in Incarnam by default: [x,y, dimension] on one line");
+    Hover(mini, 4, -2, amakna);
+    Check(Text() == Village + "\n[4,-2, Incarnam]" && !Get(label).singleLine && ShownLines() == 2 && Encloses(),
+        "Mini-map in Incarnam by default: the zone above [x,y, dimension]");
+    Get(mini).fields["<dugi>k__BackingField"] = twelve; Get(big).fields["<dugi>k__BackingField"] = twelve;
+    Check(std::count(logs.begin(), logs.end(), "MAP_INFO_TOOLTIP view=mini width=134 lines=several") == 1 &&
+        std::count(logs.begin(), logs.end(), "MAP_INFO_TOOLTIP view=big width=134 lines=one") == 1,
+        "The first rewritten tooltip of each map is logged once");
+    // « Oui » on both maps: the Monde des Douze shows its name too.
+    Options(true, 2, 2);
+    Hover(mini, 3, -20, amakna);
     Check(Text() == Village + "\n" + TwelveCoords, "Mini-map: the zone above [x,y, dimension]");
     Check(Widened(7 * 24 + Row) && NoShrink(), "The coordinates box keeps its width and the root gets the measured row");
     Check(!Get(label).singleLine && Get(label).height.keyword == 1 && ShownLines() == 2 && Encloses(),
@@ -392,9 +416,8 @@ void DefaultOptions() {
     Hover(big, 4, -2);
     Check(Text() == "[4,-2, Incarnam]" && OwnWidth() && NoShrink(), "The shown world names the dimension; a short row keeps the template's width");
     Get(big).fields["<dugi>k__BackingField"] = twelve;
-    Check(std::count(logs.begin(), logs.end(), "MAP_INFO_TOOLTIP view=mini width=190 lines=several") == 1 &&
-        std::count_if(logs.begin(), logs.end(), [](const std::string& l) { return l.starts_with("MAP_INFO_TOOLTIP view=big") && l.ends_with(" lines=one"); }) == 1,
-        "The first rewritten tooltip of each map is logged once");
+    Check(std::count_if(logs.begin(), logs.end(), [](const std::string& l) { return l.starts_with("MAP_INFO_TOOLTIP "); }) == 2,
+        "Only the first rewritten tooltip of each map is logged");
 }
 // A zaap cell: the game shows its price box beside the coordinates; the row's
 // width counts both boxes, measured, and the coordinates box never shrinks.
@@ -430,19 +453,19 @@ void ZaapPrice() {
     Get(label).upperCase = false;
 }
 void EachOption() {
-    Options(false, true, true);
+    Options(false, 2, 2);
     Hover(mini, 3, -20, amakna);
     Check(Text() == TwelveCoords && Widened(7 * 24 + Row) && OwnLine(), "Zone name off: the mini-map keeps its dimension, on one line");
-    Options(true, true, false);
+    Options(true, 2, 0);
     Hover(mini, 3, -20, amakna);
     Check(Text() == Village + "\n[3,-20]" && OwnWidth() && NoShrink() && !Get(label).singleLine && Encloses(),
         "Mini-map dimension off: the zone above the game's coordinates, both in the box");
     Hover(big, 3, -20, amakna);
     Check(Text() == TwelveCoords, "The big map follows its own option");
-    Options(false, true, false);
+    Options(false, 2, 0);
     Hover(mini, 3, -20, amakna);
     Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine(), "Both mini-map options off: the game's own tooltip and template");
-    Options(true, false, true);
+    Options(true, 0, 2);
     Hover(big, 3, -20, amakna);
     Check(Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine(), "Big map option off: the game's own tooltip and template");
     Hover(mini, 3, -20, longZone);
@@ -453,13 +476,49 @@ void EachOption() {
     Check(Widened(480) && NoShrink() && ShownLines() == 3 && !Get(label).singleLine && Encloses(),
         "The root's width is bounded: the zone wraps, its box holds every line");
     const auto calls = berzCalls;
-    Options(false, false, false);
+    Options(false, 0, 0);
     auto quiet = Hover(mini, 3, -20, amakna);
     Check(berzCalls == calls + 1 && Text() == "[3,-20]" && OwnWidth() && OwnShrink() && OwnLine() && !mapInfo::Lookup(quiet) &&
         mapInfo::s.records.size() <= 8, "All off: the hooks pass the game's tooltip through, remember nothing and give the template back");
     TickMapInfo();
     Check(!MapInfoCleanupPending() && mapInfo::s.records.empty(), "All off: nothing of this module stays");
-    Options(true, true, true);
+    Options(true, 2, 2);
+}
+// « Dimension avec les coordonnées » of each map, three choices: « Non »
+// never, « Oui, sauf dans le Monde des Douze » everywhere but in the game's
+// world 1 (known by its id, whatever its name), « Oui » everywhere. Each map
+// follows its own choice, with or without the zone above, and keeps the
+// game's own tooltip and template where it shows neither.
+void EachMode() {
+    const std::pair<Obj, std::string> worlds[] = {{twelve, "Monde" + Nbsp + "des" + Nbsp + "Douze"},
+        {twelveEnglish, "World" + Nbsp + "of" + Nbsp + "Twelve"}, {incarnam, "Incarnam"}};
+    for (int bigMode = 0; bigMode <= 2; ++bigMode)
+        for (int miniMode = 0; miniMode <= 2; ++miniMode)
+            for (bool zone : {false, true})
+                for (const auto& entry : worlds) {
+                    const auto world = entry.first;
+                    const auto& name = entry.second;
+                    Options(zone, bigMode, miniMode);
+                    Get(mini).fields["<dugi>k__BackingField"] = world; Get(big).fields["<dugi>k__BackingField"] = world;
+                    const auto coords = [&](int mode) {
+                        const bool shown = mode == 2 || (mode == 1 && world == incarnam);
+                        return shown ? "[3,-20, " + name + "]" : std::string("[3,-20]");
+                    };
+                    const auto what = "Big map " + std::to_string(bigMode) + ", mini-map " + std::to_string(miniMode) +
+                        (zone ? ", zone" : "") + ", " + Get(world).text + ": ";
+                    const auto infos = Hover(big, 3, -20, amakna);
+                    Check(Text() == coords(bigMode), what + "the big map follows its own choice");
+                    Check(Text() != "[3,-20]" || (OwnWidth() && OwnShrink() && OwnLine()), what + "the big map's own tooltip and template");
+                    const auto record = mapInfo::Lookup(infos);
+                    Check((record != nullptr) == (zone || bigMode != 0 || miniMode != 0),
+                        what + "the hooks remember a tooltip while an option is on, even one showing nothing here");
+                    Check(!record || record->worldId == Get(world).slots.at("id"), what + "the shown world's id is remembered");
+                    Hover(mini, 3, -20, amakna);
+                    Check(Text() == (zone ? Village + "\n" : std::string()) + coords(miniMode), what + "the mini-map follows its own choice");
+                    Check((Text() != "[3,-20]" || (OwnWidth() && OwnShrink() && OwnLine())) && Encloses(), what + "the mini-map's box holds every line");
+                }
+    Options(true, 2, 2);
+    Get(mini).fields["<dugi>k__BackingField"] = twelve; Get(big).fields["<dugi>k__BackingField"] = twelve;
 }
 void EdgeCases() {
     Hover(mini, 3, -20, amakna, false);
@@ -539,28 +598,34 @@ void EveryLine() {
     // One line on the same template: the label's own height again (the game's look).
     Hover(big, 3, -20, amakna);
     Check(Text() == TwelveCoords && ShownLines() == 1 && OwnLine() && Encloses(), "The big map's line on the same template: its own height again");
-    Options(false, true, true);
+    Options(false, 2, 2);
     Hover(mini, 3, -20, amakna);
     Check(Text() == TwelveCoords && OwnLine() && Encloses(), "Zone name off: one line, the label's own height");
-    // Every combination of the three options on each map, with a zone, a long
-    // one or none, with or without a zaap price: the box holds every line the
-    // label shows, and the label leaves its own single line only for several.
+    // Every combination of the options (the zone name, each map's three
+    // choices) on each map, in the Monde des Douze and in Incarnam, with a
+    // zone, a long one or none, with or without a zaap price: the box holds
+    // every line the label shows, and the label leaves its own single line
+    // only for several.
     const auto writes = singleLineWrites;
-    for (int mask = 0; mask < 8; ++mask) {
-        Options((mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0);
-        for (auto view : {mini, big})
-            for (auto zone : {amakna, longZone, static_cast<Obj>(nullptr)})
-                for (int price : {-1, 1234}) {
-                    Hover(view, 3, -20, zone, true, price);
-                    const auto lines = ShownLines();
-                    Check(Encloses() && (lines == 1 ? OwnLine() : !Get(label).singleLine),
-                        "Options " + std::to_string(mask) + ": the box holds the label's " + std::to_string(lines) + " line(s)");
-                }
+    for (int mask = 0; mask < 18; ++mask) {
+        Options((mask & 1) != 0, mask / 2 % 3, mask / 6);
+        for (auto world : {twelve, incarnam}) {
+            Get(mini).fields["<dugi>k__BackingField"] = world; Get(big).fields["<dugi>k__BackingField"] = world;
+            for (auto view : {mini, big})
+                for (auto zone : {amakna, longZone, static_cast<Obj>(nullptr)})
+                    for (int price : {-1, 1234}) {
+                        Hover(view, 3, -20, zone, true, price);
+                        const auto lines = ShownLines();
+                        Check(Encloses() && (lines == 1 ? OwnLine() : !Get(label).singleLine),
+                            "Options " + std::to_string(mask) + ": the box holds the label's " + std::to_string(lines) + " line(s)");
+                    }
+        }
     }
+    Get(mini).fields["<dugi>k__BackingField"] = twelve; Get(big).fields["<dugi>k__BackingField"] = twelve;
     Check(singleLineWrites > writes, "The combinations switch the label both ways");
-    Options(true, true, true);
+    Options(true, 2, 2);
     // One line wider than the tooltip can grow (480 px), without a zone: it wraps, both lines in the box.
-    auto vast = Make("WorldMapData"); Get(vast).text = std::string(70, 'w');
+    auto vast = Make("WorldMapData"); Get(vast).text = std::string(70, 'w'); Get(vast).slots["id"] = 9;
     Get(big).fields["<dugi>k__BackingField"] = vast;
     Hover(big, 3, -20);
     Check(Widened(480) && ShownLines() == 2 && !Get(label).singleLine && Encloses(), "A wrapped line of coordinates: both lines in the box");
@@ -575,10 +640,10 @@ void EveryLine() {
     Hover(mini, 3, -20, amakna, false);
     Check(Text() == "[3,-20]" && OwnLine(), "Coordinates the game hides: the label's own line back");
     Hover(mini, 3, -20, amakna);
-    Options(false, true, false);
+    Options(false, 2, 0);
     Hover(mini, 3, -20, amakna);
     Check(Text() == "[3,-20]" && OwnLine() && Encloses(), "Mini-map options off: the label's own line back");
-    Options(true, true, true);
+    Options(true, 2, 2);
     // A label already multi-line keeps its own setting, for one line or after.
     Get(label).singleLine = false; Get(label).height = {0, 0, 1};
     Hover(big, 3, -20);
@@ -647,6 +712,12 @@ void InstallFailures() {
             std::string("A missing contract disables only this module, before any hook: ") + missing);
     }
     failVerified.clear();
+    // The world id behind « Oui, sauf dans le Monde des Douze »: moved, only this module is disabled, before any hook.
+    offsets[{"WorldMapData", "id"}] = 0x14;
+    InstallMapInfo();
+    Check(!mapInfo::s.installed && hookRvas.empty() && logs.back() == "MAP_INFO_DISABLED Map info field mismatch: id",
+        "A moved world id disables only this module, before any hook");
+    offsets[{"WorldMapData", "id"}] = 0x10;
     offsets[{"CartographyTooltipInfos", "zaapPrice"}] = 0x30;
     InstallMapInfo();
     Check(!mapInfo::s.installed && hookRvas.empty(), "A moved field disables only this module");
@@ -680,6 +751,7 @@ int main() {
         fake::DefaultOptions();
         fake::ZaapPrice();
         fake::EachOption();
+        fake::EachMode();
         fake::EveryLine();
         fake::EdgeCases();
         fake::Cleanup();
@@ -687,7 +759,7 @@ int main() {
         RestoreMapInfo();
         module = nullptr;
         std::cout << "PASS: map info on the game's cartography tooltip: zone name on the mini-map, [x,y, dimension] on each map "
-                     "per option, measured row with the zaap price, non-shrinking coordinates box, its black box around every "
+                     "per its choice (Non, Oui sauf dans le Monde des Douze by the world's id, Oui), measured row with the zaap price, non-shrinking coordinates box, its black box around every "
                      "line (label single-line only for one), template given back, bounded memory, failures and cleanup\n";
         return 0;
     } catch (const std::exception& e) {

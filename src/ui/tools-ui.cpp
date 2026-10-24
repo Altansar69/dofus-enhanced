@@ -10,6 +10,7 @@ using namespace managed;
 constexpr const char* Menus="Core.UILogic.Components.ContextMenu";
 struct Entry {
     std::string key,title; int icon=0; bool (*visible)()=nullptr; bool (*toggle)()=nullptr;
+    bool (*barButton)()=nullptr; // whether the top-bar button is shown (always without)
     Layouts layouts; // optional radio rows of the panel's layouts
     Ref window,header,button,manipulator,cached,compositor,service;
     Ref menu,item,callback;
@@ -24,7 +25,8 @@ struct HeaderPanel { const char* key; const char* title; int icon; bool Settings
 constexpr HeaderPanel HeaderPanels[]={
     {"soul","Pierre d\xE2\x80\x99\xC3\xA2me",128,&Settings::smallHeaderSoul},
     {"treasure","Chasse au tr\xC3\xA9sor",317,&Settings::smallHeaderTreasure},
-    {"notebook","Carnet personnel",225,&Settings::smallHeaderNotebook}};
+    {"notebook","Carnet personnel",225,&Settings::smallHeaderNotebook},
+    {"stats","Statistiques",77,&Settings::smallHeaderStats}};
 struct Choice { size_t panel=0; Ref menu,item,callback,cached,compositor,owner,service; };
 std::vector<Entry> entries;
 std::vector<Choice> choices;
@@ -47,7 +49,9 @@ bool Populate(Obj owner,Obj event){
     try{
         if(!Current(e)||!event)return true;Ref menu(api.Call(event,"get_menu"));if(!menu.get()||menu.get()==e.menu.get())return true;
         Close(e);e.menu.reset(menu.get());Ref title(api.string_new(e.title.c_str())),text(api.string_new("Masquer le module")),empty(api.string_new(""));
-        Ref help(api.string_new("Réactiver ce panneau avec son bouton à côté de Capture d’âme, en haut à droite."));
+        // A panel whose top-bar button its option removed comes back from the options.
+        const bool bar=!e.barButton||e.barButton();
+        Ref help(api.string_new(bar?"Réactiver ce panneau avec son bouton à côté de Capture d’âme, en haut à droite.":"Réactiver ce panneau depuis les options du mod."));
         api.Invoke(appendTitle,e.menu.get(),{title.get()});api.Invoke(appendSeparator,e.menu.get());
         Ref rows(api.Call(e.menu.get(),"get_menuItems"));int index=api.Value<int>(api.Call(rows.get(),"get_Count"));if(index<0||index>128)throw std::runtime_error("Tool menu bounds");
         Ref asset(api.object_new(api.class_from_type(api.method_get_param(appendItem,7)))),color(api.object_new(api.class_from_type(api.method_get_param(appendItem,10))));
@@ -161,16 +165,16 @@ bool Callback(Obj callback,Obj view){
     return false;
 }
 }
-void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)(),Layouts layouts){
+void Register(const char* key,const char* title,int icon,bool(*visible)(),bool(*toggle)(),Layouts layouts,bool(*button)()){
     if(!visible||!toggle)throw std::runtime_error("Missing tool panel callbacks");
     if(!layouts.choices.empty()&&(!layouts.current||!layouts.choose))throw std::runtime_error("Missing tool panel layout callbacks");
     if(std::any_of(entries.begin(),entries.end(),[&](const Entry& e){return e.key==key;}))return;
-    Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;e.layouts=std::move(layouts);entries.push_back(std::move(e));
+    Entry e;e.key=key;e.title=title;e.icon=icon;e.visible=visible;e.toggle=toggle;e.layouts=std::move(layouts);e.barButton=button;entries.push_back(std::move(e));
 }
 bool ChooseLayout(const char* key,int layout){auto& e=Find(key);return Ready()&&layout>=0&&layout<static_cast<int>(e.layouts.choices.size())&&e.layouts.choose(layout);}
 std::vector<Shortcut> Shortcuts(){
     std::vector<Shortcut> result;
-    for(const auto& e:entries)result.push_back({e.key,e.title,e.icon});
+    for(const auto& e:entries)if(!e.barButton||e.barButton())result.push_back({e.key,e.title,e.icon});
     return result;
 }
 bool Visible(const char* key){return Find(key).visible();}

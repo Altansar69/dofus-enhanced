@@ -10,7 +10,92 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.15.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.16.0
+
+VERSION 1.16.0 : PERFORMANCES, STATISTIQUES, CARTES, SURBRILLANCE, CARNET
+- Performances : « Afficher les FPS et la mémoire », « Charge du GPU » et
+  « Activité du disque » deviennent trois parties indépendantes : le cadre
+  apparaît dès qu’une case est cochée, avec seulement les mesures cochées,
+  et ne mesure que celles-là. « Charge du GPU » et « Activité du disque »
+  sont désormais décochées par défaut.
+- Performances : le choix « Position de l’affichage des performances »
+  disparaît. Le cadre se place à la souris et garde sa place ; tant que tu
+  ne l’as pas déplacé, il est en haut à gauche, ou dans le coin choisi
+  avant.
+- Performances : le cadre se redimensionne aussi à la souris. Pris par son
+  coin en bas à droite (le seul sans arrondi), il s’agrandit ou se réduit
+  d’un bloc, texte compris, de la moitié au triple de sa taille normale ;
+  son coin en haut à gauche reste en place, il ne sort jamais de l’écran
+  et sa taille est gardée. La case devient « Déplacer et redimensionner
+  l’affichage à la souris » ; décochée, elle verrouille le cadre à sa
+  place et à sa taille, au lieu de le renvoyer dans son coin, et il laisse
+  alors passer les clics vers le jeu.
+- Performances : un bouton « Performances » en haut à droite, à côté de
+  Capture d’âme, masque ou réaffiche le cadre sans décocher ses mesures
+  (s’il n’y en a aucune, il coche « Afficher les FPS et la mémoire »).
+  Masqué, le cadre ne mesure plus rien et le reste au redémarrage, jusqu’à
+  un nouveau clic ou une mesure cochée. « Bouton dans la barre du haut »
+  (coché par défaut) : décoché, le bouton disparaît et le cadre réapparaît
+  s’il était masqué.
+- À la mise à jour, si « Afficher les FPS et la mémoire » était décochée,
+  « Charge du GPU » et « Activité du disque » sont décochées aussi (elles
+  ne faisaient rien sans elle) : coche-les à nouveau pour les voir seules.
+- Statistiques : elles quittent les options pour leur propre fenêtre
+  « Statistiques », faite comme celles du jeu (elle se déplace, se
+  redimensionne, se ferme avec sa croix ou son menu ⋯ « Masquer le
+  module »). Elle s’ouvre avec son bouton en haut à droite, à côté de
+  Capture d’âme, ou par « Voir mes statistiques » → « Ouvrir » dans les
+  options. Onglets « Ce personnage » et « Tous mes personnages » ; sept
+  sections sur trois colonnes, ou deux si la fenêtre est étroite, une ligne
+  par chiffre et ce qu’elle compte au survol ; mise à jour chaque seconde,
+  seulement fenêtre ouverte. « Réinitialiser », en bas de la fenêtre,
+  n’efface que l’onglet affiché, après « Confirmer » dans les 10 secondes.
+- Statistiques : dans les options restent « Compter mes statistiques »,
+  « Voir mes statistiques » et « Bouton dans la barre du haut » (coché par
+  défaut ; décoché, la fenêtre s’ouvre seulement depuis les options). La
+  fenêtre rejoint aussi « Réduire les titres des modules ».
+- Statistiques : « Donjon le plus fait » affiche le nom du donjon dans le
+  jeu ; la 1.15.0 ne savait pas le lire et n’en montrait que le numéro.
+- Cartes : « Dimension avec les coordonnées » sur la grande carte et sur
+  la mini-carte devient une liste, comme dans le chat : Non, Oui sauf dans
+  le Monde des Douze, ou Oui. Les trois listes sont sur « Oui, sauf dans le
+  Monde des Douze » par défaut. Une ancienne case cochée donne ce choix,
+  décochée « Non » ; le « Oui » du chat, l’ancien choix par défaut, devient
+  aussi « Oui, sauf dans le Monde des Douze ».
+- Cartes : au clic droit sur la mini-carte, sous les entrées du jeu, ses
+  réglages : Ressources, Barre des ressources, Bouton de recentrage, Nom
+  de la zone au survol, Archimonstres manquants et Dimension avec les
+  coordonnées (Non, Oui sauf dans le Monde des Douze, Oui). Au clic droit
+  sur la grande carte, les siens : Ressources, Archimonstres manquants et
+  Dimension avec les coordonnées. Hors combat, un clic s’applique et
+  s’enregistre aussitôt, sans fermer le menu. « Réglages des cartes au
+  clic droit » (Cartes, coché par défaut) : décoché, ces réglages ne sont
+  plus ajoutés aux menus des cartes.
+- Surbrillance : six cases indépendantes, dans les options comme dans le
+  clic droit sur la carte → Surbrillance : Monstres (cochée par défaut),
+  PNJ, Éléments interactifs, Moi, Membres du groupe et Autres joueurs. PNJ
+  et Éléments interactifs remplacent « Inclure les PNJ » et « Inclure les
+  éléments interactifs », dont le choix est conservé. Au plus 32 contours
+  à la fois : d’abord ton personnage, puis ton groupe, les monstres, les
+  PNJ, les éléments interactifs et enfin les autres joueurs.
+- Carnet : dans les positions, les boutons « Voyager » et « Copier » du
+  formulaire laissent la place à deux petits boutons à droite de chaque
+  nom, après le drapeau : copier (les coordonnées, par exemple [-25,36],
+  dans le presse-papiers) et zaap (le trajet du mod : zaaps, bateaux puis
+  /travel). Ils agissent sur la position de leur ligne, dans les deux
+  versions du carnet, sans changer l’entrée sélectionnée ni tes
+  modifications en cours. La version complète s’élargit un peu pour
+  laisser la place aux noms.
+- Carnet : « Bouton de copie à côté des positions » et « Bouton de voyage
+  à côté des positions » (cochés par défaut) ; décoché, le bouton
+  correspondant disparaît. Sans celui de voyage, le clic droit sur une
+  position propose toujours « Voyager » ; sans celui de copie, le carnet
+  ne propose plus de copier les coordonnées d’une position. Les notes
+  gardent « Copier » ; les messages, « Envoyer », « Préparer dans le
+  chat » et « Copier ».
+- Les autres réglages, les statistiques, le carnet et la clé enregistrée
+  sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.15.0 : STATISTIQUES
 - Options → Dofus Enhanced → Statistiques : pour chacun de tes personnages,
@@ -1861,8 +1946,9 @@ s’applique pas aux joueurs. Même réglage en combat et hors combat.
 Les proportions sont conservées. Aucun choix de méthode ou pourcentage.
 L’ancien réglage Uniformiser est ignoré ; les autres préférences persistent.
 Réinitialiser Mod remet Miniatures en combat, Normal hors combat, Animations
-Raccourcies, la surbrillance derrière l’interface et les cases des catégories
-activées, sauf PNJ. Les positions des modules sont conservées.
+Raccourcies, la surbrillance derrière l’interface pour les seuls monstres et
+les cases des miniatures activées, sauf PNJ. Les positions des modules sont
+conservées.
 
 RACCOURCIS D'AFFICHAGE
 L'emplacement de l'ancien bouton créature propose les trois choix :

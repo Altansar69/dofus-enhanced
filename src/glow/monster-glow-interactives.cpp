@@ -188,7 +188,7 @@ Snapshot ReadGlowInteractives() {
             Ref skills(Read<Obj>(data.get(), 0x18));
             const int skillCount = Count(skills.get());
             if (skillCount <= 0 || skillCount > MaxSkills) continue;
-            Target target; target.id = id; target.interactive = true; target.entity.reset(focus.get());
+            Target target; target.id = id; target.category = GlowCategory::Interactive; target.entity.reset(focus.get());
             if (!Collect(focus.get(), static_cast<uint32_t>(id), target)) continue;
             if (!owners.Current()) return {};
             if (!owners.Contains(id, wrapper.get()) || Read<Obj>(wrapper.get(), 0x18) != focus.get() ||

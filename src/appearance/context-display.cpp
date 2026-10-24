@@ -32,9 +32,20 @@ AnimationValues AnimationToggleValues(const Settings& settings) {
     for (size_t index = 0; index < AnimationToggleCount; ++index) values[index] = settings.*AnimationToggles[index];
     return values;
 }
+// « Surbrillance »: after its four levels and a separator, a native checkbox
+// per category (monsters, NPCs, interactive objects, the local character, its
+// party, other players), in the options block's order.
+constexpr size_t GlowCategoryCount = GlowCategoryLabels.size();
+static_assert(std::size(GlowCategoryToggles) == GlowCategoryCount && GlowCategoryHelps.size() == GlowCategoryCount);
+using GlowValues = std::array<bool, GlowCategoryCount>;
+GlowValues GlowCategoryValues(const Settings& settings) {
+    GlowValues values{};
+    for (size_t index = 0; index < GlowCategoryCount; ++index) values[index] = settings.*GlowCategoryToggles[index];
+    return values;
+}
 // « Affichage »: after its three modes, a native checkbox per « Apparence »
 // category of the menu's context (six in combat, five out of combat), in the
-// options block's order, as « Surbrillance » shows its PNJ after its levels.
+// options block's order, as « Surbrillance » shows its categories after its levels.
 constexpr size_t MaxCategoryCount = CombatMiniatureLabels.size();
 static_assert(RoleplayMiniatureLabels.size() <= MaxCategoryCount);
 using CategoryValues = std::array<bool, MaxCategoryCount>;
@@ -59,8 +70,8 @@ struct OwnedMenu {
     std::array<Choice, AnimationToggleCount> animationToggles;
     AnimationValues animations{};
     std::array<Choice, 4> glowChoices;
-    std::array<Choice, 2> glowCategories;
-    std::array<bool, 2> glowIncludes{};
+    std::array<Choice, GlowCategoryCount> glowCategories;
+    GlowValues glowIncludes{};
     int originalIndex = 0, mode = 0, glowMode = 1;
     bool combat = false, armed = false, seenRoot = false;
     ULONGLONG created = 0;
@@ -219,7 +230,7 @@ void Sync(OwnedMenu& owned) {
         api.Call(owned.glowChoices[i].item.get(), "set_isOn", {&selected});
     }
     owned.glowMode = glowMode;
-    owned.glowIncludes = {module->settings.glowNpcs, module->settings.glowInteractives};
+    owned.glowIncludes = GlowCategoryValues(module->settings);
     for (size_t i = 0; i < owned.glowCategories.size(); ++i)
         api.Call(owned.glowCategories[i].item.get(), "set_isOn", {&owned.glowIncludes[i]});
     SyncCheckboxViews(owned);
@@ -281,8 +292,8 @@ void BuildSubmenu(Ref& submenu, Ref& replacement, Choice* choices, int count,
     SubmenuEntry(submenu.get(), replacement, caption, disabled, icon);
 }
 // The context's « Apparence » categories, below a separator in « Affichage ».
-// Like the PNJ of « Surbrillance », they can be ticked in any mode; they only
-// change the miniatures.
+// Like the categories of « Surbrillance », they can be ticked in any mode; they
+// only change the miniatures.
 void BuildMiniatureCategories(OwnedMenu& owned) {
     owned.categoryCount = owned.combat ? CombatMiniatureLabels.size() : RoleplayMiniatureLabels.size();
     owned.categoryValues = CategoryToggleValues(module->settings, owned.combat);
@@ -301,15 +312,13 @@ void BuildAnimationSubmenu(OwnedMenu& owned) {
         AnimationToggleHelps.data(), owned.animations.data(), AnimationToggleCount, "Unexpected animation checkbox callback handler");
     SubmenuEntry(owned.animationSubmenu.get(), owned.animationReplacement, "Animations", false, AnimationIcon);
 }
+// « Surbrillance »: the six categories below a separator, independent of the
+// level (a box can be ticked while the glow is off) and of each other.
 void BuildGlowCategories(OwnedMenu& owned) {
-    constexpr const char* labels[] = {"Inclure les PNJ", "Inclure les éléments interactifs"};
-    constexpr const char* helps[] = {
-        "Ajoute les PNJ visibles hors combat au niveau de surbrillance choisi.",
-        "Ajoute les objets visibles avec une action disponible hors combat : ressources, portes, zaaps…"};
-    owned.glowIncludes = {module->settings.glowNpcs, module->settings.glowInteractives};
+    owned.glowIncludes = GlowCategoryValues(module->settings);
     api.Call(owned.glowSubmenu.get(), "AppendSeparator");
-    AppendCheckboxes(owned.glowSubmenu.get(), owned.glowCategories.data(), labels, helps, owned.glowIncludes.data(),
-        owned.glowCategories.size(), "Unexpected glow checkbox callback handler");
+    AppendCheckboxes(owned.glowSubmenu.get(), owned.glowCategories.data(), GlowCategoryLabels.data(), GlowCategoryHelps.data(),
+        owned.glowIncludes.data(), owned.glowCategories.size(), "Unexpected glow checkbox callback handler");
 }
 void Augment(Obj maker, Obj menu) {
     if (!Available() || state.busy || !menu || !maker ||
@@ -387,7 +396,7 @@ void CallbackHook(Obj callback, Obj view, Method method) {
         if (owned->animationToggles[index].callback.get() == callback) { selected = index; animation = true; break; }
     if (owned && selected < 0) for (int index = 0; index < 4; ++index)
         if (owned->glowChoices[index].callback.get() == callback) { selected = index; glow = true; break; }
-    if (owned && selected < 0) for (int index = 0; index < 2; ++index)
+    if (owned && selected < 0) for (int index = 0; index < static_cast<int>(GlowCategoryCount); ++index)
         if (owned->glowCategories[index].callback.get() == callback) { selected = index; glowCategory = index; glow = true; break; }
     if (selected < 0) { originalCallback(callback, view, method); return; }
     // Known handlers have null managed actions. Never forward a mismatched/stale
@@ -405,8 +414,7 @@ void CallbackHook(Obj callback, Obj view, Method method) {
         BusyGuard busy;
         auto next = module->settings;
         if (category >= 0) { auto field = CategoryToggles(owned->combat)[category]; next.*field = !(next.*field); }
-        else if (glowCategory == 0) next.glowNpcs = !next.glowNpcs;
-        else if (glowCategory == 1) next.glowInteractives = !next.glowInteractives;
+        else if (glowCategory >= 0) { auto field = GlowCategoryToggles[glowCategory]; next.*field = !(next.*field); }
         else if (glow) next.monsterGlowMode = selected;
         else if (animation) { auto field = AnimationToggles[selected]; next.*field = !(next.*field); }
         else (owned->combat ? next.mode : next.roleplayMode) = selected;
@@ -471,8 +479,7 @@ void TickContextDisplayMenu() {
             CategoryToggleValues(module->settings, state.owned->combat) != state.owned->categoryValues ||
             AnimationToggleValues(module->settings) != state.owned->animations ||
             module->settings.monsterGlowMode != state.owned->glowMode ||
-            module->settings.glowNpcs != state.owned->glowIncludes[0] ||
-            module->settings.glowInteractives != state.owned->glowIncludes[1])
+            GlowCategoryValues(module->settings) != state.owned->glowIncludes)
             RestoreOwned(true);
         else SyncCheckboxViews(*state.owned);
     } catch (const std::exception& e) { Fail(e.what()); }

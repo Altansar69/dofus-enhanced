@@ -27,6 +27,8 @@ std::vector<monsterGlow::ScreenRect> lastCoverage;
 unsigned resetFailures = 0;
 uint64_t generation = 1;
 std::vector<int64_t> roster{10};
+// Each actor's category as the reader returns it (monsters when absent).
+std::unordered_map<int64_t, monsterGlow::GlowCategory> rosterCategories;
 std::unordered_set<int64_t> missingRenderers;
 bool occluded = true;
 unsigned reads = 0, projects = 0, renders = 0, ends = 0, uiResets = 0, gpuResets = 0, cameraMoves = 0, poseReads = 0;
@@ -51,7 +53,7 @@ Snapshot ReadGlowInteractives() {
     ++fake::interactiveReads; Snapshot result;
     if (fake::combat || !fake::interactiveValid) return result;
     result.valid=true; result.context.reset(fake::context); result.interactiveCount=1;
-    Target target; target.id=10; target.interactive=true;
+    Target target; target.id=10; target.category=GlowCategory::Interactive;
     target.entity.reset(fake::Ptr(500)); target.renderers.emplace_back(fake::Ptr(1500));
     result.targets.push_back(std::move(target)); return result;
 }
@@ -81,6 +83,7 @@ Snapshot ReadEntities() {
     for (auto id : roster) {
         Target target;
         target.id = id; target.entity.reset(Ptr(100 + static_cast<uintptr_t>(id)));
+        if (rosterCategories.contains(id)) target.category = rosterCategories.at(id);
         if (!missingRenderers.contains(id)) target.renderers.emplace_back(Ptr(1000 + static_cast<uintptr_t>(id)));
         result.targets.push_back(std::move(target));
     }
@@ -271,6 +274,40 @@ int main() {
         interactiveValid=false; Step(); Check(visible.empty(),"Invalid interactive snapshot clears old object contour");
         interactiveValid=true; fixture.settings.glowInteractives=false; fixture.settings.glowNpcs=false;
         roster.clear(); Step(); Check(visible.empty() && handles.empty(),"Empty scene clears all");
+        // Six independent categories, selected by the readers (see the entity
+        // tests). With none ticked nothing is outlined, read or rendered.
+        roster={10}; Step(); Check(visible==std::vector<int64_t>{10},"Monsters are outlined by default");
+        fixture.settings.glowMonsters=false;
+        const auto beforeNone=reads, rendersNone=renders, interactivesNone=interactiveReads;
+        TickMonsterGlow(); Step(); Step();
+        Check(visible.empty() && handles.empty() && reads==beforeNone && renders==rendersNone && interactiveReads==interactivesNone,
+            "With every category unticked nothing is outlined, read or rendered");
+        fixture.settings.glowInteractives=true; TickMonsterGlow();
+        Check(visible==std::vector<int64_t>{-10} && reads==beforeNone && interactiveReads==interactivesNone+1,
+            "Interactive objects alone never read the actors");
+        // The 32 outlines go to the local character, its party, the monsters,
+        // the NPCs, the interactive objects, then the other players, each in
+        // its readers' order, whatever the order they were read in.
+        roster.clear();
+        for (int64_t id=1; id<=30; ++id) { roster.push_back(id); rosterCategories[id]=monsterGlow::GlowCategory::Player; }
+        for (int64_t id=31; id<=34; ++id) { roster.push_back(id); rosterCategories[id]=monsterGlow::GlowCategory::Npc; }
+        for (int64_t id=35; id<=38; ++id) { roster.push_back(id); rosterCategories[id]=monsterGlow::GlowCategory::Monster; }
+        roster.push_back(39); rosterCategories[39]=monsterGlow::GlowCategory::Party;
+        roster.push_back(40); rosterCategories[40]=monsterGlow::GlowCategory::Self;
+        const auto beforeAll=gpuResets;
+        fixture.settings.glowMonsters=fixture.settings.glowNpcs=fixture.settings.glowSelf=fixture.settings.glowParty=fixture.settings.glowPlayers=true;
+        TickMonsterGlow();
+        Check(gpuResets>beforeAll && reads==beforeNone+1,"Ticking categories refreshes at once, bypassing the throttle");
+        std::vector<int64_t> budget{40,39,35,36,37,38,31,32,33,34,-10};
+        for (int64_t id=1; id<=21; ++id) budget.push_back(id);
+        Check(visible==budget,"Budget order: self, party, monsters, NPCs, interactive objects, then other players");
+        for (bool Settings::* field : {&Settings::glowSelf,&Settings::glowParty,&Settings::glowPlayers}) {
+            const auto before=gpuResets;
+            fixture.settings.*field=false; TickMonsterGlow();
+            Check(gpuResets>before,"Unticking a player category refreshes at once");
+        }
+        fixture.settings.glowNpcs=fixture.settings.glowInteractives=false; rosterCategories.clear(); roster.clear(); Step();
+        Check(visible.empty() && handles.empty(),"Back to the monsters alone");
         roster.reserve(256); for (int i=0;i<256;++i) roster.push_back(i+1);
         occluded=false; const auto beforeProjection=projects; Step();
         Check(projects-beforeProjection==128,"Projection work must be bounded when none overlap");
@@ -286,7 +323,7 @@ int main() {
         RestoreMonsterGlow(); RestoreMonsterGlow();
         Check(handles.empty(),"Restore must be idempotent");
         module=nullptr;
-        std::cout<<"PASS: production glow coordinator opt-out, clipping gate, budgets, throttle, context/disposal and error isolation\n";
+        std::cout<<"PASS: production glow coordinator opt-out (level and six categories), clipping gate, budgets in category priority order, throttle, context/disposal and error isolation\n";
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }
 }

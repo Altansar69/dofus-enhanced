@@ -29,14 +29,15 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 - Server delays do not change, so not every animation disappears. The same checkboxes are in the map’s right-click menu.
 
 ### Highlight
-- **Monster outlines** out of combat, to spot monsters hidden behind the interface, behind the interface and walls, or all the time.
-- Optionally, **NPCs** and **interactive elements** (harvestable resources, doors, zaaps…). Up to 32 outlines at once, all categories combined.
+- **Outlines out of combat** around what you tick, to spot it when it is hidden behind the interface, behind the interface and walls, or all the time.
+- **Six independent checkboxes**: **Monstres** (monsters, ticked by default), **PNJ** (NPCs), **Éléments interactifs** (interactive elements: harvestable resources, doors, zaaps…), **Moi** (yourself), **Membres du groupe** (party members) and **Autres joueurs** (other players). The same checkboxes are in the map’s right-click menu. Up to 32 outlines at once: your character and your party come first, other players last.
 
 ### Maps
 - **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). On the world map they are picked in the **Ressources** tab, a real map mode like **Anomalies**. These are known gathering spots, not their real-time availability.
-- **Map tooltips**: hovering a cell, the minimap shows its zone’s name, and both maps add the dimension to the coordinates: [x,y, Monde des Douze]. The minimap’s resource bar can be hidden while keeping the markers.
+- **Map tooltips**: hovering a cell, the minimap shows its zone’s name, and both maps add the dimension to the coordinates, only outside the Monde des Douze (the default) or everywhere, chosen for each map: [x,y, Incarnam]. The minimap’s resource bar can be hidden while keeping the markers.
 - **« Ocre » mode**: a square under « Conquête » (conquest) on the world map colours every zone of the archmonsters and dungeon bosses of the Ochre quest (L’éternelle moisson) by how many you are still missing (not validated in the quest, not in your bag, not on Metamob), and in blue « Complet » (complete) the zones where you have them all. Its panel works like the anomalies one: search, territories, levels and an All / Archmonsters / Dungeon bosses filter; clicking a zone centres the map and shows which ones you miss and which you have. The same colours can also be shown on the minimap.
 - **Recenter button** on the minimap, bringing it back to your character.
+- **Right-click settings**: right-clicking the minimap offers its own settings (resources, resource bar, recenter button, zone name on hover, missing archmonsters, dimension with the coordinates), and right-clicking the world map its own (resources, missing archmonsters, dimension with the coordinates); a click applies at once without closing the menu.
 
 ### Travel
 - **Smarter travel**: the chat **TP** button, double-clicking the world map or the minimap, or the right-click « Voyager jusqu’à cette position » (travel to this position) entry. Within milliseconds, the mod compares walking with your known zaaps (directly or from the Havenbag), then lets the game’s autopilot finish the trip. Zaap prices apply.
@@ -52,7 +53,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ### Chat
 - Next to positions and to archmonsters or bosses of the Ochre quest (L’éternelle moisson) shared in chat: a **TP** button, **Âme en sac** / Pas en sac (soul in your bag or not; the bank is not checked), **Ocre** progress (a click opens the quest) and your **Metamob** count (with a saved key).
-- Shared positions and monster groups can show their dimension, everywhere or only outside the Monde des Douze: [x,y, Srambad].
+- Shared positions and monster groups can show their dimension, only outside the Monde des Douze (the default) or everywhere: [x,y, Srambad].
 - Each addition can be turned on or off. With TP, typed `[x,y]` coordinates become clickable.
 
 ### Calendar
@@ -60,10 +61,10 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ### Built-in tools
 - **Treasure hunt**: a panel picks up your position and the current step, searches clues on DofusDB and starts the trip to the clue in one click (**Chemin**, path). Nothing is validated on your behalf.
-- **Personal notebook**: positions, notes and messages. Travel to a position, pin it on the map or send a message on the chosen channel in one click; add a cell from the map’s right-click menu. Full or compact layout.
+- **Personal notebook**: positions, notes and messages. Travel to a position or copy its coordinates from its line, pin it on the map or send a message on the chosen channel in one click; add a cell from the map’s right-click menu. Full or compact layout.
 - **Profession XP**: an **XP** tab in the professions (Métiers) window works out the crafts and ingredients needed to reach your target level, using DofusDB recipes.
-- **Performance**: optionally, the FPS, frame time, memory, CPU and GPU used by the game, and its disk's activity, in a small discreet frame you place anywhere with the mouse.
-- **Statistics** per character, counted since 1.15.0: play time, cells and maps traversed, dimensions, experience, kamas earned and spent, harvests, crafted items, quests, achievements, fights (PvM, PvP, Kolossium), damage, spells and elements, teleports. They are shown in the options and stay on your PC.
+- **Performance**: optionally, the FPS, frame time, memory, CPU and GPU used by the game, and its disk's activity, in a small discreet frame you place anywhere with the mouse and resize by its bottom-right corner. Three independent checkboxes (FPS and memory, GPU, disk): the frame shows only what is ticked. A button at the top right, next to Capture d’âme, shows or hides it.
+- **Statistics** per character, counted since 1.15.0: play time, cells and maps traversed, dimensions, experience, kamas earned and spent, harvests, crafted items, quests, achievements, fights (PvM, PvP, Kolossium), damage, spells and elements, teleports. They show in their own window, opened from its button at the top right of the screen or from **Voir mes statistiques** (view my statistics) in the options, and stay on your PC.
 
 ### Updates
 - **Automatic updates from GitHub** when the game starts: each archive is verified (SHA-256 and exact compatibility with your Dofus version) before it is installed. Offline, the compatible local version is used.

@@ -13,8 +13,13 @@ struct Settings {
     int preferredMode = 2;
     int preferredRoleplayMode = 1;
     bool soulReminder = true;
+    // Surbrillance : une case par catégorie entourée hors combat, dans l'ordre de
+    // GlowCategoryToggles (r116). Les monstres, seuls entourés avant ces cases,
+    // restent cochés par défaut ; sans case cochée, rien n'est entouré.
+    bool glowMonsters = true;
     bool glowNpcs = false;
     bool glowInteractives = false;
+    bool glowSelf = false, glowParty = false, glowPlayers = false; // moi, membres du groupe, autres joueurs
     int monsterGlowMode = 1; // 0: off; 1: UI; 2: UI and walls; 3: always.
     int soulPanelX = 24, soulPanelY = 180;
     bool fastMapTransitions = true;
@@ -25,6 +30,7 @@ struct Settings {
     bool resourceMiniMapEnabled = true;
     bool miniMapCenterButton = true;
     bool smallHeaderSoul = false, smallHeaderTreasure = false, smallHeaderNotebook = false; // "Réduire les titres des modules"
+    bool smallHeaderStats = false; // "Réduire les titres des modules" : la fenêtre des statistiques (1.16.0)
     bool notebookCompact = false; // Carnet : version compacte (liste et actions seulement), choisie dans le menu ⋯ du panneau
     bool metamobSync = false; // Metamob : +1 dans la quête Metamob après chaque capture d'archimonstre ou de boss (la clé n'est jamais ici)
     std::vector<int> resourceMapItems{};
@@ -38,28 +44,52 @@ struct Settings {
     bool calendarKralamoure = true; // Calendrier : ouvertures Kralamoure de Metamob dans le calendrier du jeu
     bool chatMetamobStatus = true; // Chat : quantité de ta quête Metamob à côté des monstres de L’éternelle moisson partagés
     bool mapTravelPlanner = true; // Trajet du mod au double-clic sur la carte ou la mini-carte et à « Voyager jusqu'à cette position »
+    bool mapMenuSettings = true; // Cartes : les réglages de chaque carte au clic droit de la grande carte et de la mini-carte (1.16.0)
     // 1.13.0: one checkbox each, in the order of ExtraToggles below.
     bool resourceMiniMapBar = true; // Cartes : la barre des six métiers sur la mini-carte
     bool miniMapZoneName = true; // Cartes : le nom de la zone de la case survolée sur la mini-carte
-    bool coordsWorldMap = true; // Cartes : [x, y, dimension] pour les coordonnées de la grande carte
-    bool coordsWorldMiniMap = true; // Cartes : [x, y, dimension] pour les coordonnées de la mini-carte
     bool notebookPingButton = true; // Carnet : bouton de repère sur la carte à droite de chaque position
+    bool notebookCopyButton = true; // Carnet : bouton de copie des coordonnées à droite de chaque position (1.16.0, à la place de « Copier »)
+    bool notebookTravelButton = true; // Carnet : bouton de voyage à droite de chaque position (1.16.0, à la place de « Voyager »)
     bool mapAddPosition = true; // Carnet : « Ajouter aux positions » au clic droit d'une case des cartes
-    // Chat : dimension des positions partagées, [x, y, dimension] (une liste, plus
-    // une case depuis la 1.14.0) : 0 non, 1 oui sauf dans le Monde des Douze, 2 oui.
-    int coordsWorldChatMode = 2;
+    // La dimension avec les coordonnées, [x, y, dimension], une liste chacune :
+    // 0 non, 1 oui sauf dans le Monde des Douze, 2 oui ; « oui sauf » par défaut
+    // depuis la 1.16.0. Chat : les positions partagées (une liste depuis la
+    // 1.14.0, une case avant) ; grande carte et mini-carte : la case survolée
+    // (des cases avant la 1.16.0).
+    int coordsWorldChatMode = 1;
+    int coordsWorldMapMode = 1, coordsWorldMiniMapMode = 1;
     bool statsEnabled = true; // Statistiques : compter les statistiques de mes personnages (1.15.0)
-    bool perfOverlay = false; // Performances : images par seconde et mémoire dans un coin de l'écran
-    int perfOverlayCorner = 0; // 0 en haut à gauche, 1 en haut à droite, 2 en bas à gauche, 3 en bas à droite
+    bool statsButton = true; // Statistiques : bouton de la fenêtre des statistiques dans la barre du haut (1.16.0)
+    // Performances : chaque case ajoute sa partie à l'affichage, qui apparaît dès
+    // qu'une des trois est cochée (1.16.0 ; avant, le GPU et le disque ne
+    // faisaient que compléter perfOverlay).
+    bool perfOverlay = false; // Performances : images par seconde, mémoire, tas géré et processeur dans l'affichage
+    // Coin de l'affichage sans place choisie à la souris : 0 en haut à gauche, 1 en
+    // haut à droite, 2 en bas à gauche, 3 en bas à droite. Plus proposé dans les
+    // options depuis la 1.16.0 : seul le coin choisi par une révision antérieure
+    // reste, toujours lu et écrit pour elles.
+    int perfOverlayCorner = 0;
     // 1.14.0: the overlay's extra figures and its mouse placement (ExtraToggles).
-    bool perfOverlayGpu = true; // Performances : charge du GPU (part du jeu) dans l'affichage
-    bool perfOverlayDisk = true; // Performances : le disque du jeu (temps d'activité, débit de tous les programmes)
-    bool perfOverlayDrag = true; // Performances : l'affichage se déplace en le faisant glisser au clic gauche
+    // The GPU and the disk are off by default since 1.16.0, where each shows the
+    // overlay by itself (Settings::Read migrates older files).
+    bool perfOverlayGpu = false; // Performances : charge du GPU (part du jeu) dans l'affichage
+    bool perfOverlayDisk = false; // Performances : le disque du jeu (temps d'activité, débit de tous les programmes)
+    bool perfOverlayDrag = true; // Performances : l'affichage se déplace en le faisant glisser au clic gauche et se redimensionne par son coin en bas à droite ; décochée, il reste verrouillé à sa place et à sa taille
+    // 1.16.0 : son bouton dans la barre du haut (une case d'ExtraToggles), qui le
+    // masque et le réaffiche sans décocher ses parties : perfOverlayShown, faux
+    // une fois masqué avec ce bouton, gardé d'un démarrage à l'autre (pas une case).
+    bool perfOverlayButton = true; // Performances : bouton de l'affichage en haut à droite, à côté de Capture d’âme
+    bool perfOverlayShown = true; // Performances : l'affichage apparaît tant qu'une de ses parties est cochée
     // Place choisie à la souris : le coin haut gauche du cadre, en dix-millièmes
     // de la place libre (largeur ou hauteur de l'écran moins celle du cadre),
-    // donc indépendante de la définition et de la taille du cadre. -1 et -1 :
-    // le coin perfOverlayCorner. Jamais une seule des deux.
+    // donc indépendante de la définition et de la taille du cadre, gardée que
+    // perfOverlayDrag soit cochée ou non. -1 et -1 : le coin perfOverlayCorner.
+    // Jamais une seule des deux.
     int perfOverlayX = -1, perfOverlayY = -1;
+    // Taille choisie à la souris par le coin en bas à droite (1.16.0) : en pour
+    // cent de la taille normale, texte, marges et coins compris, de 50 à 300.
+    int perfOverlayScale = 100;
     // Apparence : avec le mode Miniatures, chaque catégorie cochée est réduite et
     // les autres gardent leur taille normale (Créatures reste pour tous). Par
     // défaut cochées comme avant ces cases, sauf les PNJ, que le jeu ne laissait
@@ -105,11 +135,12 @@ struct Settings {
     }
     static bool ValidMonsterGlowMode(int value) { return value >= 0 && value <= 3; }
     static bool ValidPerfOverlayCorner(int value) { return value >= 0 && value <= 3; }
-    static bool ValidCoordsWorldChatMode(int value) { return value >= 0 && value <= 2; }
+    static bool ValidCoordsWorldMode(int value) { return value >= 0 && value <= 2; } // a dimension choice, chat or maps
     static bool ValidPerfOverlayPlace(int value) { return value >= -1 && value <= 10000; }
     static bool ValidPerfOverlayPlace(int x, int y) {
         return ValidPerfOverlayPlace(x) && ValidPerfOverlayPlace(y) && (x < 0) == (y < 0);
     }
+    static bool ValidPerfOverlayScale(int value) { return value >= 50 && value <= 300; }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
     // metamobSync as the shared file holds it now; nullopt when the file is
     // unreadable or was last written by a revision that does not know it.
@@ -133,8 +164,16 @@ inline constexpr bool Settings::* CombatMiniatureToggles[] = {
 inline constexpr bool Settings::* RoleplayMiniatureToggles[] = {
     &Settings::roleplayMiniatureSelf, &Settings::roleplayMiniatureParty,
     &Settings::roleplayMiniaturePlayers, &Settings::roleplayMiniatureMonsters, &Settings::roleplayMiniatureNpcs};
-// The checkboxes added in 1.13.0 and 1.14.0, in the order of OptionsUi's extra rows.
+// The « Surbrillance » categories, in the order of their options block and of
+// the map context menu (r116). The glow's budget has its own priority order
+// (monsterGlow::GlowCategory).
+inline constexpr bool Settings::* GlowCategoryToggles[] = {
+    &Settings::glowMonsters, &Settings::glowNpcs, &Settings::glowInteractives,
+    &Settings::glowSelf, &Settings::glowParty, &Settings::glowPlayers};
+// The checkboxes added in 1.13.0, 1.14.0 and 1.16.0 (the notebook's copy and
+// travel buttons, the performance overlay's top-bar button), in the order of
+// OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
-    &Settings::resourceMiniMapBar, &Settings::miniMapZoneName, &Settings::coordsWorldMap, &Settings::coordsWorldMiniMap,
-    &Settings::notebookPingButton, &Settings::mapAddPosition, &Settings::perfOverlay,
-    &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag};
+    &Settings::resourceMiniMapBar, &Settings::miniMapZoneName,
+    &Settings::notebookPingButton, &Settings::notebookCopyButton, &Settings::notebookTravelButton, &Settings::mapAddPosition, &Settings::perfOverlay,
+    &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton};
