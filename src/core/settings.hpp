@@ -38,6 +38,11 @@ struct Settings {
     // ouvert le reste.
     bool treasureButton = true; // Chasse au trésor : bouton du panneau de recherche DofusDB
     bool notebookButton = true; // Carnet : bouton du carnet personnel
+    // Curseur (1.17.0) : les curseurs du mod à la place de la souris de Windows,
+    // désactivés par défaut, leur couleur et leur taille.
+    bool customCursor = false; // Curseur : curseurs Dofus du mod à la place de la souris de Windows
+    int customCursorColor = 0; // 0 Or, 1 couleur du thème du jeu, 2 Émeraude, 3 Argent
+    int customCursorSize = 0; // 0 comme la souris de Windows, 1 grande (×1,5), 2 très grande (×2)
     bool metamobSync = false; // Metamob : +1 dans la quête Metamob après chaque capture d'archimonstre ou de boss (la clé n'est jamais ici)
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
@@ -147,6 +152,8 @@ struct Settings {
         return ValidPerfOverlayPlace(x) && ValidPerfOverlayPlace(y) && (x < 0) == (y < 0);
     }
     static bool ValidPerfOverlayScale(int value) { return value >= 50 && value <= 300; }
+    static bool ValidCustomCursorColor(int value) { return value >= 0 && value <= 3; }
+    static bool ValidCustomCursorSize(int value) { return value >= 0 && value <= 2; }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
     // metamobSync as the shared file holds it now; nullopt when the file is
     // unreadable or was last written by a revision that does not know it.

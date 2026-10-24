@@ -37,6 +37,7 @@
 #include "souls/capture-detect.hpp"
 #include "maps/map-info.hpp"
 #include "ui/perf-overlay.hpp"
+#include "ui/custom-cursor.hpp"
 #include <MinHook.h>
 #include <fstream>
 #include <mutex>
@@ -164,6 +165,8 @@ void Module::Change(Settings next, bool save) {
         throw std::runtime_error("Display mode outside valid range");
     if (!Settings::ValidMonsterGlowMode(next.monsterGlowMode)) throw std::runtime_error("Invalid monster glow mode");
     if (!Settings::ValidResourceSelection(next.resourceMapItems)) throw std::runtime_error("Invalid resource map selection");
+    if (!Settings::ValidCustomCursorColor(next.customCursorColor) || !Settings::ValidCustomCursorSize(next.customCursorSize))
+        throw std::runtime_error("Invalid cursor choice");
     const bool withMetamobSync = !save || KeepSharedMetamobSync(next);
     if (next.mode > 0) next.preferredMode = next.mode;
     if (next.roleplayMode > 0) next.preferredRoleplayMode = next.roleplayMode;
@@ -189,7 +192,8 @@ void Module::Change(Settings next, bool save) {
     Log("SETTINGS combat=" + std::to_string(settings.mode) + " roleplay=" + std::to_string(settings.roleplayMode) +
         " miniatures=" + digits(CombatMiniatureToggles) + "/" + digits(RoleplayMiniatureToggles) +
         " animations=" + digits(AnimationToggles) + " autoLoad=" + std::to_string(settings.autoLoad) +
-        " sizing=reduce percent=60 minimum=50");
+        " sizing=reduce percent=60 minimum=50 cursor=" + std::to_string(settings.customCursor) + "/" +
+        std::to_string(settings.customCursorColor) + "/" + std::to_string(settings.customCursorSize));
 }
 // metamobSync is shared by every game client of this installation (one per
 // character): a save keeps the file's value unless this client changed it
@@ -346,6 +350,8 @@ void Module::Pump(Obj source) {
 void Module::Stop() {
     if (stopped) return;
     stopped = true;
+    // First: the game's own cursor back (the detour only forwards once stopped).
+    RestoreCustomCursor();
     RestoreMapPreload();
     RestoreMapTravel();
     RestoreChatTravel();
@@ -391,7 +397,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -446,10 +452,14 @@ static void UpdateHook(Obj self, Method method) {
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending()) module->stopCompleted.store(true);
+            if (CustomCursorCleanupPending()) RestoreCustomCursor();
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
+    // « Curseur Dofus »: every compositor's frame, the login screens included
+    // (self-throttled), before the services gate.
+    CustomCursorFrame(now);
     if (!module->servicesReady) {
         if (now < nextDiscovery[self]) return;
         nextDiscovery[self] = now + 1000;
@@ -532,6 +542,7 @@ static DWORD WINAPI Worker(void*) {
         InstallStatsTravel();
         InstallStatsEconomy();
         InstallStatsFights();
+        InstallCustomCursor(); // never throws: CUSTOM_CURSOR_DISABLED leaves the Windows cursor
         for (auto target : hookTargets) {
             auto result = MH_QueueEnableHook(target);
             if (result != MH_OK) throw std::runtime_error(MH_StatusToString(result));

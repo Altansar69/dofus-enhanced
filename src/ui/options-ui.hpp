@@ -42,6 +42,10 @@ struct OptionsUi {
     // « Surbrillance »: after the level, a checkbox per category (Settings'
     // GlowCategoryToggles): monsters, NPCs, interactive objects, me, party, other players.
     std::array<managed::Ref, 6> glowCategorySources, glowCategoryOptions;
+    // « Curseur » (1.17.0): the mod's cursors (a checkbox), then their colour
+    // and their size (a choice each).
+    managed::Ref customCursorSource, customCursorOption, customCursorColorSource, customCursorColorOption;
+    managed::Ref customCursorSizeSource, customCursorSizeOption;
     managed::Ref transitionsSource, transitionsOption;
     managed::Ref preloadSource, preloadOption;
     managed::Ref spouseSource, spouseOption;

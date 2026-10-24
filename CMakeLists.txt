@@ -49,7 +49,8 @@ add_library(DofusMiniatures SHARED
   src/maps/map-info.cpp src/ui/perf-overlay.cpp src/travel/route-graph.cpp src/travel/roublard-passage.cpp
   src/stats/stats.cpp src/stats/stats-travel.cpp src/stats/stats-economy.cpp src/stats/stats-fights.cpp
   src/stats/stats-store.cpp
-  src/stats/stats-format.cpp src/stats/stats-window.cpp)
+  src/stats/stats-format.cpp src/stats/stats-window.cpp
+  src/ui/cursor-art.cpp src/ui/custom-cursor.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -112,6 +113,11 @@ dofus_test(ToolsUiTests tests/ui/tools-ui-tests.cpp src/ui/tools-ui.cpp)
 # The performance overlay's GPU and disk figures come from PDH (Windows'
 # performance counters); the tests replace every PDH call with a fake.
 dofus_test(PerfOverlayTests tests/ui/perf-overlay-tests.cpp LIBS pdh)
+# 1.17.0 « Curseur Dofus »: the cursors' art, compared with the design's reference renderer.
+dofus_test(CursorArtTests tests/ui/cursor-art-tests.cpp src/ui/cursor-art.cpp)
+# Its runtime (the SetCursor detour, the textures, the hover inputs) on a fake
+# IL2CPP runtime, with fake Windows clock, button, scale and pointer size.
+dofus_test(CustomCursorTests tests/ui/custom-cursor-tests.cpp src/ui/cursor-art.cpp LIBS user32 advapi32)
 
 # Appearance: miniatures, creatures, sizes and display shortcuts.
 dofus_test(FeaturesTests tests/appearance/features-tests.cpp src/appearance/features.cpp src/appearance/size-measurements.cpp)

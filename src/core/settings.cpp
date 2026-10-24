@@ -109,6 +109,9 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "notebookCompact" && (value == 0 || value == 1)) settings.notebookCompact = value != 0;
             else if (key == "treasureButton" && (value == 0 || value == 1)) settings.treasureButton = value != 0;
             else if (key == "notebookButton" && (value == 0 || value == 1)) settings.notebookButton = value != 0;
+            else if (key == "customCursor" && (value == 0 || value == 1)) settings.customCursor = value != 0;
+            else if (key == "customCursorColor" && ValidCustomCursorColor(value)) settings.customCursorColor = value;
+            else if (key == "customCursorSize" && ValidCustomCursorSize(value)) settings.customCursorSize = value;
             else if (key == "metamobSync" && (value == 0 || value == 1)) settings.metamobSync = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
@@ -210,6 +213,8 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         throw std::runtime_error("Invalid map dimension choice");
     if (!ValidPerfOverlayPlace(perfOverlayX, perfOverlayY)) throw std::runtime_error("Invalid performance overlay place");
     if (!ValidPerfOverlayScale(perfOverlayScale)) throw std::runtime_error("Invalid performance overlay scale");
+    if (!ValidCustomCursorColor(customCursorColor) || !ValidCustomCursorSize(customCursorSize))
+        throw std::runtime_error("Invalid cursor choice");
     static std::atomic_uint64_t nextSave{0};
     auto temporary = path;
     temporary += L".tmp-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++nextSave);
@@ -273,6 +278,10 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         // notebook. A file without them (before 1.16.1) shows all three.
         file << "\nsoulButton=" << (soulButton ? 1 : 0) << "\ntreasureButton=" << (treasureButton ? 1 : 0)
              << "\nnotebookButton=" << (notebookButton ? 1 : 0);
+        // 1.17.0 « Curseur »: the mod's cursors, their colour and their size. A
+        // file without them (before 1.17.0) keeps the Windows cursor.
+        file << "\ncustomCursor=" << (customCursor ? 1 : 0) << "\ncustomCursorColor=" << customCursorColor
+             << "\ncustomCursorSize=" << customCursorSize;
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

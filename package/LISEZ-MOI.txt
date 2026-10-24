@@ -10,7 +10,36 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.16.1
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.17.0
+
+VERSION 1.17.0 : CURSEUR DOFUS
+- Nouvelle section « Curseur » dans l’onglet Dofus Enhanced, après
+  « Surbrillance ». « Curseur Dofus » (décoché par défaut) remplace la
+  souris de Windows par des curseurs dessinés par le mod dans le style de
+  Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable
+  (boutons, onglets, liens, cases et bords de carte), le curseur de texte
+  dans les champs de saisie (chat et recherches compris), la main ouverte
+  sur les barres de titre, fermée quand tu déplaces une fenêtre ou fais
+  glisser un objet, et les doubles flèches sur les bords des fenêtres
+  redimensionnables.
+- Curseur : les curseurs sont dessinés par le mod, sans image, nets de 32
+  à 128 pixels : une flèche sertie d’une gemme, un gant qui pointe, s’ouvre
+  ou se ferme, un curseur de texte et des doubles flèches, chacun avec un
+  contour sombre, une ombre douce et un relief éclairé d’en haut à gauche.
+- Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de
+  combat…) ne changent pas et gardent leur croix et leur sablier. Décoché,
+  la souris de Windows et les curseurs habituels du jeu reviennent
+  aussitôt.
+- « Couleur du curseur » : Or (par défaut, doré avec une émeraude),
+  Couleur du thème du jeu (la couleur d’accent du thème choisi dans les
+  options du jeu, suivie quand tu en changes), Émeraude (vert avec un
+  ornement doré) ou Argent (gris clair).
+- « Taille du curseur » : Comme la souris de Windows (par défaut : la
+  taille du pointeur de Windows et la mise à l’échelle de l’écran du jeu,
+  32 pixels à 100 %, 48 à 150 %), Grande ou Très grande, jusqu’à 128
+  pixels.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.16.1 : STATISTIQUES, PERFORMANCES, BOUTONS DE LA BARRE DU HAUT
 - Statistiques : « Sorts lancés » et les cinq sorts les plus lancés ne

@@ -1,13 +1,14 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.16.1**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.17.0**.
 
-Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
-trajets rapides (passage secret des Roublards compris), ressources, archimonstres
-manquants et infobulles enrichies sur les cartes, ouvertures Kralamoure dans le
-calendrier et panneau natif de recherche manuelle DofusDB. Carnet personnel avec
-repères sur la carte, planification de l’XP des métiers, affichage des performances
-et statistiques par personnage.
+Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
+de Dofus, aide à la capture d’âmes, trajets rapides (passage secret des
+Roublards compris), ressources, archimonstres manquants et infobulles enrichies
+sur les cartes, ouvertures Kralamoure dans le calendrier et panneau natif de
+recherche manuelle DofusDB. Carnet personnel avec repères sur la carte,
+planification de l’XP des métiers, affichage des performances et statistiques
+par personnage.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](../package/LISEZ-MOI.txt).
 Les nouveautés depuis la 1.13.0 sont vérifiées hors jeu ; leur rendu en jeu reste à confirmer.
 
@@ -53,7 +54,7 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet :
-Apparence, Animations, Surbrillance, Cartes, Carnet, Chasse au trésor,
+Apparence, Animations, Surbrillance, Curseur, Cartes, Carnet, Chasse au trésor,
 Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier, Performances,
 Statistiques, Chargement et mises à jour et À propos. La version chargée (x.y.z)
 figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
@@ -253,6 +254,80 @@ Les grandes fenêtres restent devant les contours et les clics restent natifs.
 Jusqu’à 32 cibles sont entourées en même temps, toutes catégories confondues.
 Sur une carte bondée, passent d’abord ton personnage, puis ton groupe, les
 monstres, les PNJ, les éléments interactifs et enfin les autres joueurs.
+
+## Curseur
+
+**Options → Dofus Enhanced → Curseur → Curseur Dofus** (décoché par défaut)
+remplace la souris de Windows, dans le jeu, par des curseurs dessinés par le
+mod dans le style de Dofus. Le jeu décide quand le curseur change et le mod en
+change le dessin, à deux exceptions près (le curseur de texte dans les champs
+que le jeu ne signale pas, la main fermée pendant un glisser-déposer) :
+
+- la **flèche de sélection** à la place de la flèche de Windows ;
+- la **main** partout où le jeu affiche la sienne : boutons, onglets, liens du
+  chat, bords de carte et cases de la carte ;
+- le **curseur de texte** dans les champs de saisie, y compris ceux que le jeu
+  ne signale pas (le chat, les recherches) ; un champ désactivé garde la
+  flèche ;
+- la **main ouverte** sur les barres de titre des fenêtres, **fermée** tant que
+  le bouton de la souris reste enfoncé (fenêtre déplacée) et pendant le
+  glisser-déposer d’un objet ;
+- les **doubles flèches** sur les bords et les coins des fenêtres
+  redimensionnables.
+
+Les curseurs sont dessinés par le mod lui-même, sans fichier d’image, nets à
+toutes les tailles de 32 à 128 pixels : une flèche sertie d’une gemme, un gant
+qui pointe, s’ouvre ou se ferme, un curseur de texte en forme de I et des
+doubles flèches. Chacun a un contour sombre, une ombre douce et un relief
+éclairé d’en haut à gauche, pour rester lisible sur le parchemin et
+l’interface sombre comme sur l’herbe. Le clic part de la pointe de la flèche,
+du bout de l’index du gant qui pointe, et du centre des autres curseurs.
+
+Les curseurs propres au jeu ne changent pas : épée et bulle sur les
+personnages, outils de récolte et d’atelier, repères de combat, point
+d’interrogation ; ils gardent leur croix ou leur sablier quand une action est
+impossible ou pas encore disponible. Le mod a aussi une flèche et un gant avec
+une pastille rouge « interdit » ou un sablier, mais ils ne s’affichent que
+dans les rares cas où le jeu demande cette croix ou ce sablier sur la flèche
+ou sur le gant. Si le jeu n’a pas l’image d’un de ses curseurs, la flèche du
+mod la remplace plutôt que celle de Windows. En combat, l’icône du sort,
+l’interdiction et les PA/PM que le jeu affiche à côté de la souris restent
+les siens.
+
+**Couleur du curseur** : « Or » (par défaut) est doré, avec une émeraude sur
+la flèche et sur le gant ; « Émeraude » est vert, avec un ornement doré ;
+« Argent » est gris clair, avec une émeraude ; « Couleur du thème du jeu »
+reprend la couleur d’accent du thème choisi dans les options du jeu
+(jaune-vert avec le thème Standard), éclaircie si elle est trop sombre pour
+rester visible, avec un ornement doré si elle est verte et une émeraude sinon.
+Elle suit le thème en une demi-seconde quand tu en changes ; sans couleurs de
+thème lisibles, celles du thème Standard sont utilisées.
+
+**Taille du curseur** : « Comme la souris de Windows » (par défaut) reprend la
+taille du pointeur de Windows et la mise à l’échelle de l’écran où se trouve le
+jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as
+agrandi le pointeur dans les paramètres d’accessibilité de Windows (Pointeur de
+la souris). « Grande » l’agrandit de moitié et « Très grande » la double, sans
+dépasser 128 pixels. Un changement d’écran ou d’échelle est pris en compte en
+une seconde environ.
+
+Cocher la case, ou changer de couleur ou de taille, prend effet en une fraction
+de seconde : le mod dessine ses treize curseurs, un par image, pendant que le
+curseur précédent reste affiché. Décochée, la souris de Windows et les curseurs
+habituels du jeu reviennent aussitôt et les images du mod sont supprimées.
+
+En cas de souci, `module.log` contient des lignes `CUSTOM_CURSOR_…` :
+`CUSTOM_CURSOR_READY` (installation et parties disponibles),
+`CUSTOM_CURSOR_ON` (taille, échelle, taille du pointeur de Windows et couleur),
+`CUSTOM_CURSOR_THEME` (couleurs du thème lues), `CUSTOM_CURSOR_SEEN` (les
+premiers curseurs demandés par le jeu et celui affiché) et `CUSTOM_CURSOR_OFF`.
+`CUSTOM_CURSOR_DISABLED` : le curseur du mod n’a pas pu s’installer ; la souris
+de Windows et les curseurs habituels du jeu restent jusqu’au prochain lancement
+du jeu, même si tu coches la case. `CUSTOM_CURSOR_HOOK_ERROR` ou
+`CUSTOM_CURSOR_FAULTED` : après une erreur, le mod a rendu la main au curseur
+du jeu (`CUSTOM_CURSOR_OFF faulted` si ses curseurs étaient affichés) ; décocher
+puis recocher la case réessaie. Si le curseur paraît trop petit, choisis
+« Grande » ou « Très grande ».
 
 ## Ressources sur les cartes
 

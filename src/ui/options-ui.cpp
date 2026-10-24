@@ -15,7 +15,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 14;
+constexpr int ModSections = 15;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -87,6 +87,17 @@ constexpr const char* GlowCategoryDescriptions[] = {
 static_assert(std::size(GlowCategoryDescriptions) == std::size(GlowCategoryToggles) &&
     GlowCategoryLabels.size() == std::size(GlowCategoryToggles) &&
     std::tuple_size_v<decltype(OptionsUi::glowCategorySources)> == std::size(GlowCategoryToggles));
+// « Curseur » (1.17.0): the mod's cursors, then their colour and size, each
+// choice's id the saved value (Settings' customCursorColor and customCursorSize).
+constexpr const char* CustomCursorTitle = "Curseur Dofus";
+constexpr const char* CustomCursorDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
+constexpr const char* CustomCursorColorTitle = "Couleur du curseur";
+constexpr const char* CustomCursorColorDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Couleur du thème du jeu » : reprend la couleur d’accent du thème choisi dans les options du jeu (Thème) et la suit quand tu en changes, par exemple jaune-vert avec le thème Standard ; une couleur trop sombre est éclaircie. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. « Or » par défaut.";
+constexpr const char* CustomCursorColors[] = {"Or", "Couleur du thème du jeu", "Émeraude", "Argent"};
+constexpr const char* CustomCursorSizeTitle = "Taille du curseur";
+constexpr const char* CustomCursorSizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié et « Très grande » la double, sans dépasser 128 pixels. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
+constexpr const char* CustomCursorSizes[] = {"Comme la souris de Windows", "Grande", "Très grande"};
+static_assert(std::size(CustomCursorColors) == 4 && std::size(CustomCursorSizes) == 3);
 Klass generalClass = nullptr;
 using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
@@ -201,7 +212,8 @@ bool ModelsLoaded(const OptionsUi& ui) {
         allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && allLoaded(ui.glowCategorySources) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.mapMenuSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource) &&
         allLoaded(ui.extraSources) && loaded(ui.chatCoordsSource) && loaded(ui.mapCoordsSource) && loaded(ui.miniMapCoordsSource) &&
         loaded(ui.statsSource) && loaded(ui.statsButtonSource) &&
-        loaded(ui.soulButtonSource) && loaded(ui.treasureButtonSource) && loaded(ui.notebookButtonSource);
+        loaded(ui.soulButtonSource) && loaded(ui.treasureButtonSource) && loaded(ui.notebookButtonSource) &&
+        loaded(ui.customCursorSource) && loaded(ui.customCursorColorSource) && loaded(ui.customCursorSizeSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -226,6 +238,9 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.glowSource.get(), settings.monsterGlowMode, notify);
     for (size_t i = 0; i < ui.glowCategorySources.size(); ++i)
         SetSource(ui.glowCategorySources[i].get(), settings.*GlowCategoryToggles[i], notify);
+    SetSource(ui.customCursorSource.get(), settings.customCursor, notify);
+    SetSource(ui.customCursorColorSource.get(), settings.customCursorColor, notify);
+    SetSource(ui.customCursorSizeSource.get(), settings.customCursorSize, notify);
     SetSource(ui.transitionsSource.get(), settings.fastMapTransitions, notify);
     SetSource(ui.preloadSource.get(), settings.preloadNextMap, notify);
     SetSource(ui.spouseSource.get(), settings.spouseTeleport, notify);
@@ -330,6 +345,10 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.notebookButtonSource.reset(api.New(booleanType, {&defaults.notebookButton, &readOnly}));
     prepared.glowSource.reset(api.New(integerType, {&defaults.monsterGlowMode, &readOnly}));
     toggleSources(prepared.glowCategorySources, GlowCategoryToggles);
+    // « Curseur » (1.17.0): the mod's cursors, their colour and size.
+    prepared.customCursorSource.reset(api.New(booleanType, {&defaults.customCursor, &readOnly}));
+    prepared.customCursorColorSource.reset(api.New(integerType, {&defaults.customCursorColor, &readOnly}));
+    prepared.customCursorSizeSource.reset(api.New(integerType, {&defaults.customCursorSize, &readOnly}));
     prepared.transitionsSource.reset(api.New(booleanType, {&defaults.fastMapTransitions, &readOnly}));
     prepared.preloadSource.reset(api.New(booleanType, {&defaults.preloadNextMap, &readOnly}));
     prepared.spouseSource.reset(api.New(booleanType, {&defaults.spouseTeleport, &readOnly}));
@@ -395,6 +414,16 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     for (size_t i = 0; i < prepared.glowCategoryOptions.size(); ++i)
         prepared.glowCategoryOptions[i].reset(MakeBoolOption(prepared.glowCategorySources[i].get(), current.get(), tooltip.get(),
             GlowCategoryLabels[i], GlowCategoryDescriptions[i]));
+    // Section « Curseur »: the checkbox, then the colour and the size.
+    Choices cursorColors, cursorSizes;
+    for (int i = 0; i != static_cast<int>(std::size(CustomCursorColors)); ++i) cursorColors.emplace_back(i, CustomCursorColors[i]);
+    for (int i = 0; i != static_cast<int>(std::size(CustomCursorSizes)); ++i) cursorSizes.emplace_back(i, CustomCursorSizes[i]);
+    prepared.customCursorOption.reset(MakeBoolOption(prepared.customCursorSource.get(), current.get(), tooltip.get(), CustomCursorTitle,
+        CustomCursorDescription));
+    prepared.customCursorColorOption.reset(MakeChoiceOption(prepared.customCursorColorSource.get(), current.get(), CustomCursorColorTitle,
+        CustomCursorColorDescription, cursorColors));
+    prepared.customCursorSizeOption.reset(MakeChoiceOption(prepared.customCursorSizeSource.get(), current.get(), CustomCursorSizeTitle,
+        CustomCursorSizeDescription, cursorSizes));
     prepared.transitionsOption.reset(MakeBoolOption(prepared.transitionsSource.get(), current.get(), tooltip.get(), "Transitions rapides entre cartes",
         "Raccourcit les fondus de sortie et d’arrivée hors combat. Le chargement des ressources et l’attente du serveur restent nécessaires : cette option ne garantit pas des changements de carte sans chargement. Activé par défaut."));
     prepared.preloadOption.reset(MakeBoolOption(prepared.preloadSource.get(), current.get(), tooltip.get(), "Précharger la prochaine carte (expérimental)",
@@ -517,6 +546,12 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.glowOption = std::move(prepared.glowOption);
     ui.glowCategorySources = std::move(prepared.glowCategorySources);
     ui.glowCategoryOptions = std::move(prepared.glowCategoryOptions);
+    ui.customCursorSource = std::move(prepared.customCursorSource);
+    ui.customCursorOption = std::move(prepared.customCursorOption);
+    ui.customCursorColorSource = std::move(prepared.customCursorColorSource);
+    ui.customCursorColorOption = std::move(prepared.customCursorColorOption);
+    ui.customCursorSizeSource = std::move(prepared.customCursorSizeSource);
+    ui.customCursorSizeOption = std::move(prepared.customCursorSizeOption);
     ui.combatMiniatureSources = std::move(prepared.combatMiniatureSources);
     ui.combatMiniatureOptions = std::move(prepared.combatMiniatureOptions);
     ui.roleplayMiniatureSources = std::move(prepared.roleplayMiniatureSources);
@@ -1039,6 +1074,8 @@ bool OptionsUi::Attach(Obj page) {
         {"Apparence", appearance},
         {"Animations", animations},
         {"Surbrillance", glow},
+        // « Curseur » (1.17.0): the mod's cursors, their colour and size.
+        {"Curseur", {customCursorOption.get(), customCursorColorOption.get(), customCursorSizeOption.get()}},
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), extra(MiniMapBarRow), miniCenterOption.get(), extra(MiniMapZoneNameRow),
             mapCoordsOption.get(), miniMapCoordsOption.get(), archiZonesOption.get(), archiZonesMiniOption.get(), mapMenuOption.get()}},
         {"Carnet", {extra(NotebookPingRow), extra(NotebookCopyRow), extra(NotebookTravelRow), extra(MapAddPositionRow), notebookButtonOption.get()}},
@@ -1120,6 +1157,9 @@ void OptionsUi::Tick() {
     next.monsterGlowMode = api.Value<int>(api.Call(glowSource.get(), "get_property"));
     for (size_t i = 0; i < glowCategorySources.size(); ++i)
         next.*GlowCategoryToggles[i] = api.Value<bool>(api.Call(glowCategorySources[i].get(), "get_property"));
+    next.customCursor = api.Value<bool>(api.Call(customCursorSource.get(), "get_property"));
+    next.customCursorColor = api.Value<int>(api.Call(customCursorColorSource.get(), "get_property"));
+    next.customCursorSize = api.Value<int>(api.Call(customCursorSizeSource.get(), "get_property"));
     next.fastMapTransitions = api.Value<bool>(api.Call(transitionsSource.get(), "get_property"));
     next.preloadNextMap = api.Value<bool>(api.Call(preloadSource.get(), "get_property"));
     next.spouseTeleport = api.Value<bool>(api.Call(spouseSource.get(), "get_property"));
@@ -1154,7 +1194,8 @@ void OptionsUi::Tick() {
     // redimensionner l’affichage à la souris » locks it at its place and size).
     if (next.mode < 0 || next.mode > 2 || next.roleplayMode < 0 || next.roleplayMode > 2 ||
         !Settings::ValidMonsterGlowMode(next.monsterGlowMode) || !Settings::ValidCoordsWorldMode(next.coordsWorldChatMode) ||
-        !Settings::ValidCoordsWorldMode(next.coordsWorldMapMode) || !Settings::ValidCoordsWorldMode(next.coordsWorldMiniMapMode)) {
+        !Settings::ValidCoordsWorldMode(next.coordsWorldMapMode) || !Settings::ValidCoordsWorldMode(next.coordsWorldMiniMapMode) ||
+        !Settings::ValidCustomCursorColor(next.customCursorColor) || !Settings::ValidCustomCursorSize(next.customCursorSize)) {
         Sync(); return;
     }
     if (!(next == module->settings)) {
@@ -1223,6 +1264,9 @@ void OptionsUi::Restore() {
     glowOption.reset();
     for (auto& ref : glowCategorySources) ref.reset();
     for (auto& ref : glowCategoryOptions) ref.reset();
+    customCursorSource.reset(); customCursorOption.reset();
+    customCursorColorSource.reset(); customCursorColorOption.reset();
+    customCursorSizeSource.reset(); customCursorSizeOption.reset();
     preloadSource.reset();
     preloadOption.reset();
     resourcesSource.reset();

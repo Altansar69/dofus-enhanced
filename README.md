@@ -11,13 +11,13 @@ Français | [English](README_en.md)
 > - **Je ne sais pas si l’utilisation de ce mod est autorisée** par les conditions d’utilisation de Dofus et d’Ankama : **la possibilité d’un bannissement n’est pas à exclure totalement**.
 > - Tu l’utilises **à tes risques et périls**. Le logiciel est fourni **« tel quel », sans aucune garantie**.
 
-**Dofus Enhanced** ajoute à **Dofus Unity** une bonne dose de confort, directement dans l’interface du jeu : miniatures au choix, animations de combat à la carte, ressources sur les cartes, archimonstres manquants zone par zone, trajets en un clic (zaaps, Havre-Sac et passage secret des Roublards compris), aide à la capture d’âmes avec synchro Metamob, Kralamoures dans le calendrier, chasse au trésor, carnet, XP des métiers, FPS à l’écran et statistiques par personnage.
+**Dofus Enhanced** ajoute à **Dofus Unity** une bonne dose de confort, directement dans l’interface du jeu : miniatures au choix, animations de combat à la carte, ressources sur les cartes, archimonstres manquants zone par zone, trajets en un clic (zaaps, Havre-Sac et passage secret des Roublards compris), aide à la capture d’âmes avec synchro Metamob, Kralamoures dans le calendrier, chasse au trésor, carnet, XP des métiers, FPS à l’écran, statistiques par personnage et curseurs dans le style de Dofus.
 
 Tout se règle dans les options du jeu, les panneaux du mod sont construits avec les composants du jeu, et le mod se met à jour tout seul au lancement du jeu. Gratuit et open source.
 
 ## ✨ Fonctionnalités
 
-**Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence, Animations, Surbrillance, Cartes, Carnet, Chasse au trésor, Déplacements, Pierre d’âme, Chat, Calendrier, Performances, Statistiques, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
+**Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence, Animations, Surbrillance, Curseur, Cartes, Carnet, Chasse au trésor, Déplacements, Pierre d’âme, Chat, Calendrier, Performances, Statistiques, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
 
 ### Apparence
 - **Miniatures, Créatures ou Normal**, au choix en combat et hors combat, séparément. Miniatures réduit à 60 % de la taille d’origine, sans descendre sous 50 % de la hauteur d’un joueur pour les monstres et les invocations.
@@ -31,6 +31,11 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 ### Surbrillance
 - **Contour hors combat** de ce que tu coches, pour le repérer quand il est caché derrière l’interface, derrière l’interface et les murs, ou tout le temps.
 - **Six cases indépendantes** : **Monstres** (cochée par défaut), **PNJ**, **Éléments interactifs** (ressources récoltables, portes, zaaps…), **Moi**, **Membres du groupe** et **Autres joueurs**. Les mêmes cases sont dans le clic droit sur la carte. Jusqu’à 32 contours à la fois : ton personnage et ton groupe passent en premier, les autres joueurs en dernier.
+
+### Curseur
+- **Curseur Dofus** (désactivé par défaut) : des curseurs dessinés par le mod dans le style de Dofus remplacent la souris de Windows, avec la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat et recherches compris), la main ouverte sur les barres de titre, fermée quand tu déplaces une fenêtre ou fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas.
+- **Couleur du curseur** : Or (par défaut), Couleur du thème du jeu (suit le thème choisi dans les options du jeu), Émeraude ou Argent.
+- **Taille du curseur** : Comme la souris de Windows (par défaut, mise à l’échelle de l’écran comprise), Grande ou Très grande.
 
 ### Cartes
 - **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Sur la grande carte, elles se choisissent dans l’onglet **Ressources**, un vrai mode de la carte comme **Anomalies**. Ce sont les points de récolte connus, pas leur disponibilité en temps réel.

@@ -22,11 +22,12 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The fourteen native sections of the mod, in display order: section i has the
+// The fifteen native sections of the mod, in display order: section i has the
 // id ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
-// « Chasse au trésor » (1.16.1) holds its panel's top-bar button alone.
-enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, NotebookSection, TreasureSection, TravelSection, SoulSection,
-    ChatSection, CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
+// « Chasse au trésor » (1.16.1) holds its panel's top-bar button alone;
+// « Curseur » (1.17.0) follows « Surbrillance ».
+enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, CursorSection, MapsSection, NotebookSection, TreasureSection, TravelSection,
+    SoulSection, ChatSection, CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
 // « Statistiques »: the counting checkbox, « Voir mes statistiques » (an owned
 // text button opening the window: OpenStatsWindow below counts the opens) and
 // the checkbox of the window's top-bar button.
@@ -603,6 +604,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
     for (const auto& source : ui.animationSources) appearance.push_back(source.get());
     appearance.push_back(ui.glowSource.get());
     for (const auto& source : ui.glowCategorySources) appearance.push_back(source.get());
+    appearance.insert(appearance.end(), {ui.customCursorSource.get(), ui.customCursorColorSource.get(), ui.customCursorSizeSource.get()});
     std::vector<Obj> rest{
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.extraSources[MiniMapBarExtra].get(), ui.miniCenterSource.get(),
         ui.extraSources[MiniMapZoneNameExtra].get(), ui.mapCoordsSource.get(), ui.miniMapCoordsSource.get(),
@@ -655,6 +657,11 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         glow.rows.push_back(CheckRow(ui.glowCategoryOptions[i], ui.glowCategorySources[i], GlowCategoryTitles[i], defaults.*GlowCategoryToggles[i]));
     return {
         appearance, animations, glow,
+        // « Curseur » (1.17.0): the mod's cursors, off by default, then « Or »
+        // and the Windows pointer's size.
+        {"Curseur", {CheckRow(ui.customCursorOption, ui.customCursorSource, "Curseur Dofus", false),
+            ChoiceRow(ui.customCursorColorOption, ui.customCursorColorSource, "Couleur du curseur", 0),
+            ChoiceRow(ui.customCursorSizeOption, ui.customCursorSizeSource, "Taille du curseur", 0)}},
         {"Cartes", {CheckRow(ui.resourcesOption, ui.resourcesSource, "Ressources sur la grande carte", true),
             CheckRow(ui.resourcesMiniOption, ui.resourcesMiniSource, "Ressources sur la mini-carte", true),
             CheckRow(ui.extraOptions[MiniMapBarExtra], ui.extraSources[MiniMapBarExtra], "Barre des ressources sur la mini-carte", true),
@@ -699,7 +706,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.16.1 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.17.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -806,12 +813,12 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.16.1" && std::string(ModVersion) == "r117" &&
-        ModRevision == 117,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.17.0" && std::string(ModVersion) == "r118" &&
+        ModRevision == 118,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its fourteen native sections, from Apparence and Animations to À propos, and no row of its own");
+        "Mod must hold its fifteen native sections, from Apparence and Animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -852,14 +859,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.16.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.17.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r117") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r118") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 66 && optionModels == 66 + 3,
-        "The UI must create sixty-six private sources and sixty-nine rows");
+    Check(sourceModels == 69 && optionModels == 69 + 3,
+        "The UI must create sixty-nine private sources and seventy-two rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1298,6 +1305,7 @@ Settings AwayFromDefaults() {
     settings.roleplayMode = 1;
     settings.monsterGlowMode = 3;
     for (auto field : GlowCategoryToggles) settings.*field = !(Settings{}.*field);
+    settings.customCursor = true; settings.customCursorColor = 2; settings.customCursorSize = 1;
     settings.resourceMapEnabled = settings.resourceMiniMapEnabled = settings.miniMapCenterButton = false;
     settings.archiZonesMap = false; settings.archiZonesMiniMap = true; settings.calendarKralamoure = false;
     settings.mapMenuSettings = false;
@@ -1333,6 +1341,9 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == GlowSection) {
         settings.monsterGlowMode = defaults.monsterGlowMode;
         for (auto field : GlowCategoryToggles) settings.*field = defaults.*field;
+    } else if (index == CursorSection) {
+        settings.customCursor = defaults.customCursor;
+        settings.customCursorColor = defaults.customCursorColor; settings.customCursorSize = defaults.customCursorSize;
     } else if (index == MapsSection) {
         settings.resourceMapEnabled = defaults.resourceMapEnabled; settings.resourceMiniMapEnabled = defaults.resourceMiniMapEnabled;
         settings.miniMapCenterButton = defaults.miniMapCenterButton;
@@ -1398,6 +1409,86 @@ void SectionResetOwnsItsRows() {
         f.NativePreferencesUnchanged();
         f.StopAndRestore();
     }
+}
+
+// « Curseur » (1.17.0), right after « Surbrillance »: « Curseur Dofus » (off by
+// default), then the cursors' colour (« Or » by default) and size (« Comme la
+// souris de Windows » by default), each id the saved value. Each row shows the
+// saved choice, says what it does and its default, commits only its own
+// setting, follows an outside change and goes back to its default with the
+// section's reset.
+void CursorSectionRows() {
+    const std::string boxDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
+    const std::string colourDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Couleur du thème du jeu » : reprend la couleur d’accent du thème choisi dans les options du jeu (Thème) et la suit quand tu en changes, par exemple jaune-vert avec le thème Standard ; une couleur trop sombre est éclaircie. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. « Or » par défaut.";
+    const std::string sizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié et « Très grande » la double, sans dépasser 128 pixels. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
+    Fixture f;
+    f.state.settings.customCursor = true; f.state.settings.customCursorColor = 3; f.state.settings.customCursorSize = 2;
+    initHook(f.page, false, true, SectionId(CursorSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    const auto parent = f.Categories().back();
+    Check(Name(Section(parent, CursorSection)) == "Curseur" && Name(Section(parent, CursorSection - 1)) == "Surbrillance" &&
+        Name(Section(parent, CursorSection + 1)) == "Cartes" && Rows(Section(parent, CursorSection)) ==
+        std::vector<Obj>({ui.customCursorOption.get(), ui.customCursorColorOption.get(), ui.customCursorSizeOption.get()}),
+        "« Curseur », between « Surbrillance » and « Cartes »: the checkbox, the colour, the size");
+    auto& box = Get(ui.customCursorSource.get());
+    auto& colour = Get(ui.customCursorColorSource.get());
+    auto& size = Get(ui.customCursorSizeSource.get());
+    Check(Get(ui.customCursorOption.get()).klass->name == "BoolOption" && box.klass->name == "BoolSource" && box.boolean && !box.defaultBoolean,
+        "« Curseur Dofus »: a native checkbox showing the saved choice, unticked as its reset default");
+    Check(colour.klass->name == "IntSource" && colour.integer == 3 && colour.defaultInteger == 0 && size.klass->name == "IntSource" &&
+        size.integer == 2 && size.defaultInteger == 0, "The colour and the size show the saved choices, « Or » and the Windows size as reset defaults");
+    const auto choices = [](Obj option) {
+        std::vector<std::pair<int, std::string>> list;
+        for (const auto choice : Get(Get(option).refs.at("choices")).items) list.emplace_back(Get(choice).choice.id, Get(Get(choice).choice.label).text);
+        return list;
+    };
+    Check(choices(ui.customCursorColorOption.get()) ==
+        std::vector<std::pair<int, std::string>>{{0, "Or"}, {1, "Couleur du thème du jeu"}, {2, "Émeraude"}, {3, "Argent"}},
+        "The four colours, each id the saved value");
+    Check(choices(ui.customCursorSizeOption.get()) ==
+        std::vector<std::pair<int, std::string>>{{0, "Comme la souris de Windows"}, {1, "Grande"}, {2, "Très grande"}},
+        "The three sizes, each id the saved value");
+    Check(Description(ui.customCursorOption.get()) == boxDescription && Description(ui.customCursorColorOption.get()) == colourDescription &&
+        Description(ui.customCursorSizeOption.get()) == sizeDescription, "Each row says what it does and its default");
+    for (const auto option : {ui.customCursorOption.get(), ui.customCursorColorOption.get(), ui.customCursorSizeOption.get()})
+        Check(Description(option).find('\'') == std::string::npos && Description(option).ends_with(" par défaut."), "Typographic apostrophes, the default last");
+    // Each row commits only its own setting, once.
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (bool value : {false, true, false}) {
+        box.boolean = value;
+        ui.Tick();
+        expected.customCursor = value;
+        Check(f.state.settings == expected && changes == ++commits, "« Curseur Dofus » commits only itself, once");
+    }
+    for (int value : {0, 1, 2, 3}) {
+        colour.integer = value;
+        ui.Tick();
+        expected.customCursorColor = value;
+        Check(f.state.settings == expected && changes == ++commits, "A colour commits only itself, once");
+    }
+    for (int value : {0, 1, 2}) {
+        size.integer = value;
+        ui.Tick();
+        expected.customCursorSize = value;
+        Check(f.state.settings == expected && changes == ++commits, "A size commits only itself, once");
+    }
+    // An outside change shows in each row.
+    f.state.settings.customCursor = true; f.state.settings.customCursorColor = 1; f.state.settings.customCursorSize = 1;
+    ui.Sync();
+    Check(box.boolean && colour.integer == 1 && size.integer == 1, "Outside changes show in the rows");
+    // The section's reset: off, « Or », the Windows size; nothing else.
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    expected = WithSectionDefaults(f.state.settings, CursorSection);
+    api.Call(Section(displayedParent, CursorSection), "Reset");
+    ui.Tick();
+    Check(f.state.settings == expected && !f.state.settings.customCursor && f.state.settings.customCursorColor == 0 &&
+        f.state.settings.customCursorSize == 0, "The section's reset: off, « Or », the Windows size, nothing else");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
+    Check(!ui.customCursorSource.get() && !ui.customCursorOption.get() && !ui.customCursorColorSource.get() && !ui.customCursorColorOption.get() &&
+        !ui.customCursorSizeSource.get() && !ui.customCursorSizeOption.get(), "Restore releases the rows");
 }
 
 // « Carnet » (1.16.0): the copy and travel buttons of the position lines,
@@ -1604,6 +1695,14 @@ void ValidationAndLoadingGate() {
             Get(source).integer = invalid;
             f.Ui().Tick();
             Check(changes == 0 && Get(source).integer == 1, "An invalid dimension choice must revert without persistence");
+        }
+    // « Curseur »: four colours (0 to 3), three sizes (0 to 2).
+    for (const auto& [source, invalids] : {std::pair{f.Ui().customCursorColorSource.get(), std::vector<int>{-1, 4, 99}},
+             std::pair{f.Ui().customCursorSizeSource.get(), std::vector<int>{-1, 3, 99}}})
+        for (int invalid : invalids) {
+            Get(source).integer = invalid;
+            f.Ui().Tick();
+            Check(changes == 0 && Get(source).integer == 0, "An invalid cursor colour or size must revert without persistence");
         }
     CheckLayout(f);
     f.StopAndRestore();
@@ -2637,6 +2736,7 @@ int main() {
         run(fake::AppearanceCategoriesValuesAndDefaults);
         run(fake::GlowModeValuesAndDefaults);
         run(fake::GlowCategories);
+        run(fake::CursorSectionRows);
         run(fake::ReducedMiniaturesDescription);
         run(fake::NativeResetAndFilteredSearchOwnership);
         run(fake::SectionResetOwnsItsRows);
@@ -2665,7 +2765,7 @@ int main() {
         run(fake::PerformanceSectionRows);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: fourteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
+        std::cout << "PASS: fifteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, its four colours and three sizes, invalid choices reverted), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
