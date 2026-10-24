@@ -9,7 +9,9 @@
 // at most and at once when counting stops (a logout, a reconnection, the
 // character selection, the box unticked; at a change of character, at Stop and
 // for a reset too), and the game's data the statistics window shows (the
-// played character, the spells', dungeons' and worlds' names).
+// played character, the spells', dungeons' and worlds' names) or the spells
+// need (whose spell each is, KindOf: for the fights' tracker, and to convert
+// 1.15.0 to 1.16.0's spells, see stats-store.hpp).
 namespace stats {
 namespace {
 using namespace managed;
@@ -25,7 +27,11 @@ constexpr ULONGLONG WriteMs = 15000, RetryMs = 10000;
 constexpr ULONGLONG ReadMs = 1000, WantedMs = 3000, RefreshMs = 5000, LogMs = 60000;
 // How long the main thread waits for another client's lock: a pump, Stop, a reset.
 constexpr unsigned TickLockMs = 50, StopLockMs = 1000, ClearLockMs = 300;
-constexpr size_t MaxNames = 1024, MaxGameNameBytes = 128;
+constexpr size_t MaxNames = 1024, MaxGameNameBytes = 128, MaxKinds = 4096;
+// The old spells of the file (1.15.0 to 1.16.0's) whose kind the game is asked,
+// at most SortedPerTick once a second while counting or while the window is open.
+constexpr ULONGLONG SortMs = 1000;
+constexpr size_t SortedPerTick = 128;
 // A dungeon's name comes from the list of every dungeon the game's own lobby
 // shows (MetadataRoot`1.GetObjects, see Native::Install), read in place with
 // this client's IL2CPP layouts as chat-route.cpp reads them: List`1._items and
@@ -47,15 +53,16 @@ bool Printable(const std::string& text) {
     return true;
 }
 
-// The game's side: the played character (esg, the fng service) and the
-// names of the spells, dungeons and worlds in its data. Each part disables
-// only itself when its contract does not match this client.
+// The game's side: the played character (esg, the fng service), the names of
+// the spells, dungeons and worlds in its data, and whose spell a spell is.
+// Each part disables only itself when its contract does not match this client.
 class Native final : public Game {
 public:
     void Install() {
-        characterReady = spellsReady = dungeonsReady = worldsReady = false;
+        characterReady = spellsReady = kindsReady = dungeonsReady = worldsReady = false;
         listClass = nullptr;
         names.clear();
+        kinds.clear();
         try {
             character = api.Class("Core.dll", "", "esg");
             // esg.dpzj (z): the character's base information; zcx reads its id there.
@@ -71,6 +78,16 @@ public:
             spellName = api.FindVerified(spellData, "get_name", 0, 0x7CD300);
             spellsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_SPELL_NAMES_DISABLED ") + error.what()); }
+        try {
+            // Only a class's own spells have a SpellVariantData: the class's
+            // spell pairs (862 spells in 3.7.12.12's data). The spells an
+            // equipment casts in its bearer's name have none (the Dofus' own,
+            // spell type 732: « Pourpre Profond », « Vert Émeraude »…).
+            if (!spellsReady) throw std::runtime_error("No spell data");
+            spellVariant = api.FindVerified(spellData, "get_spellVariant", 0, 0x7CD6B0);
+            variantData = api.Class(DataCenter, "Core.DataCenter.Metadata.Spell", "SpellVariantData");
+            kindsReady = true;
+        } catch (const std::exception& error) { Log(std::string("STATS_SPELL_KINDS_DISABLED ") + error.what()); }
         try {
             auto dataCenter = api.Class(DataCenter, "Core.DataCenter", "DataCenterModule");
             dungeonsRoot = api.FindVerified(dataCenter, "get_dungeonsDataRoot", 0, 0x7BC7C0);
@@ -146,6 +163,24 @@ public:
         names.emplace(id, name);
         return name;
     }
+    // The spell's id as the fight's cast message gives it to SpellData.GetById
+    // (stats-fights.cpp): its SpellData has a SpellVariantData, or not.
+    SpellKind Kind(int spell) override {
+        if (!kindsReady) return SpellKind::Unknown;
+        if (const auto known = kinds.find(spell); known != kinds.end()) return known->second;
+        // GetById throws while the game's spells are not loaded (no data root):
+        // nothing kept, asked again. A spell the game does not know is no class's.
+        int64_t id = spell;
+        Ref data(api.Invoke(spellById, nullptr, {&id}));
+        auto kind = SpellKind::Other;
+        if (Is(data.get(), spellData)) {
+            Ref variant(api.Invoke(spellVariant, data.get()));
+            if (Is(variant.get(), variantData)) kind = SpellKind::Class;
+        }
+        if (kinds.size() >= MaxKinds) kinds.clear();
+        kinds.emplace(spell, kind);
+        return kind;
+    }
 private:
     // The game's dungeon of this id (a DungeonData), found in a new list of
     // every dungeon (GetObjects); empty when the list has none. listed is false
@@ -185,21 +220,22 @@ private:
         listed = true;
         return Ref(found);
     }
-    Klass character{}, info{}, spellData{}, dungeonData{}, worldData{}, listClass{};
-    Method localId{}, spellById{}, spellName{}, dungeonsRoot{}, dungeonList{}, dungeonName{}, worldById{}, worldName{};
+    Klass character{}, info{}, spellData{}, variantData{}, dungeonData{}, worldData{}, listClass{};
+    Method localId{}, spellById{}, spellName{}, spellVariant{}, dungeonsRoot{}, dungeonList{}, dungeonName{}, worldById{}, worldName{};
     size_t dungeonId = 0;  // DungeonData.id
-    bool characterReady = false, spellsReady = false, dungeonsReady = false, worldsReady = false;
+    bool characterReady = false, spellsReady = false, kindsReady = false, dungeonsReady = false, worldsReady = false;
     std::unordered_map<uint64_t, std::string> names;
+    std::unordered_map<int, SpellKind> kinds;
 };
 
 Native native;
 Game* game = &native;
 Store store;
 struct State {
-    bool installed = false, finished = false, changed = false;
+    bool installed = false, finished = false, changed = false;  // changed: write at once
     int64_t character = 0;  // the played character, the last time it was read
     std::string name;
-    ULONGLONG nextRead = 0, nextWrite = 0, nextTry = 0, wantedUntil = 0, nextRefresh = 0, nextLog = 0;
+    ULONGLONG nextRead = 0, nextWrite = 0, nextTry = 0, wantedUntil = 0, nextRefresh = 0, nextLog = 0, nextSort = 0;
 } state;
 
 int64_t Now() { return static_cast<int64_t>(_time64(nullptr)); }
@@ -248,6 +284,27 @@ void Write(ULONGLONG now, unsigned lockWaitMs) {
     }
     state.nextTry = now + RetryMs;
     Note(std::string("STATS_WRITE_DEFERRED ") + Describe(result), now);
+}
+// 1.15.0 to 1.16.0's spells in the file (stats-store.hpp), there at the start
+// or added since by an older client: the game tells whose each is, a few at a
+// time while counting or while the window is open (in game: its data is
+// loaded), then they are converted by a write at once, the box unticked too.
+// One it cannot tell yet is asked again a second later, the others wait for it.
+void Sort(ULONGLONG now) {
+    if (now < state.nextSort) return;
+    state.nextSort = now + SortMs;
+    size_t sorted = 0, own = 0;
+    for (const int spell : store.Unsorted(SortedPerTick)) {
+        const auto kind = KindOf(spell);
+        if (kind == SpellKind::Unknown) break;
+        store.Classify(spell, kind == SpellKind::Class);
+        ++sorted;
+        if (kind == SpellKind::Class) ++own;
+    }
+    if (sorted > 0) {
+        try { Log("STATS_OLD_SPELLS sorted=" + std::to_string(sorted) + " class=" + std::to_string(own)); } catch (...) {}
+    }
+    if (store.Unsorted(1).empty() && store.Converting()) state.changed = true;
 }
 }
 
@@ -304,6 +361,10 @@ std::string KeyName(Table table, int key) {
     }
     try { return game ? game->KeyName(table, key) : std::string{}; } catch (...) { return {}; }
 }
+SpellKind KindOf(int spell) {
+    try { return game ? game->Kind(spell) : SpellKind::Unknown; }
+    catch (...) { Note("STATS_SPELL_KIND_ERROR", GetTickCount64()); return SpellKind::Unknown; }
+}
 }
 
 void InstallStats() {
@@ -328,6 +389,9 @@ void TickStats() {
         if ((Counting() || now < state.wantedUntil) && now >= state.nextRead) ReadCharacter(now);
         // Another client's reset: only the counts made before it are dropped.
         if (Counting() && now >= state.nextRefresh) { state.nextRefresh = now + RefreshMs; store.Refresh(); }
+        // Unticked, the statistics already counted stay shown (« Compter mes
+        // statistiques »): the old spells too, converted while the window is open.
+        if (Counting() || now < state.wantedUntil) Sort(now);
         if (!store.Pending()) { state.changed = false; return; }
         // Counting stopped (logout, reconnection, character selection, box
         // unticked): what was counted is written at once.

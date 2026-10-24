@@ -35,26 +35,33 @@ void Pixels(Obj style,const char* property,float value) {
 using ToggleFn=void(*)(Obj,Method);
 ToggleFn originalToggle=nullptr;
 bool Available() { return installed&&module&&module->ready&&module->servicesReady&&!module->stopped&&!module->stopRequested; }
-// The buttons follow the tools whose top-bar button is on: an option that adds
-// or removes one rebuilds the group at the next refresh.
-bool SameShortcuts() {
+// The buttons follow their options: Capture d’âme's own (soulButton, 1.16.1),
+// then the tools whose top-bar button is on. An option that adds or removes one
+// rebuilds the group at the next refresh; with every button off, nothing is
+// created. Hiding a button never changes what it controls.
+bool SameButtons() {
+    if((button.get()!=nullptr)!=module->settings.soulButton)return false;
     const auto wanted=toolsUi::Shortcuts();
     return std::equal(wanted.begin(),wanted.end(),shortcuts.begin(),shortcuts.end(),
         [](const toolsUi::Shortcut& s,const ShortcutControl& c){return s.key==c.key;});
 }
+// An owned button still in the bar, in the panel of the game's Menu button.
+bool Attached(const Ref& control,const Ref& tip,Obj panel) {
+    return control.get()&&tip.get()&&api.Call(control.get(),"get_parent")==parent.get()&&api.Call(control.get(),"get_panel")==panel;
+}
 bool Current() {
-    return Available()&&!removing&&toolbarReady&&button.get()&&tooltip.get()&&module->compositor.get()==compositor.get()&&
+    Obj panel=nullptr;
+    return Available()&&!removing&&toolbarReady&&module->compositor.get()==compositor.get()&&
         module->FindService("frm")==service.get()&&api.Field(service.get(),"<dzqi>k__BackingField")==manager.get()&&
         module->FindService("fou")==tooltipService.get()&&
-        api.Call(menu.get(),"get_parent")==parent.get()&&
-        api.Call(button.get(),"get_parent")==parent.get()&&api.Call(button.get(),"get_panel")&&
-        std::all_of(shortcuts.begin(),shortcuts.end(),[](const ShortcutControl& c){
-            return c.button.get()&&c.tooltip.get()&&api.Call(c.button.get(),"get_parent")==parent.get()&&
-                api.Call(c.button.get(),"get_panel")==api.Call(button.get(),"get_panel");
-        })&&SameShortcuts();
+        api.Call(menu.get(),"get_parent")==parent.get()&&(panel=api.Call(menu.get(),"get_panel"))!=nullptr&&
+        (!button.get()||Attached(button,tooltip,panel))&&
+        std::all_of(shortcuts.begin(),shortcuts.end(),[&](const ShortcutControl& c){return Attached(c.button,c.tooltip,panel);})&&
+        SameButtons();
 }
 void Sync() {
-    bool on=module->settings.soulReminder;api.Call(button.get(),"SetValueWithoutNotify",{&on});
+    bool on=module->settings.soulReminder;
+    if(button.get())api.Call(button.get(),"SetValueWithoutNotify",{&on});
     for(const auto& c:shortcuts){on=toolsUi::Visible(c.key.c_str());api.Call(c.button.get(),"SetValueWithoutNotify",{&on});}
 }
 void SizeControl(Obj control) {
@@ -76,8 +83,9 @@ void SizeControl(Obj control) {
         for(auto property:{"height","minHeight","maxHeight"})Pixels(style.get(),property,height);
     }
 }
+// Leftwards from Menu: the tools in reverse order, then Capture d’âme when its
+// button is on, so the group keeps its order right before Menu.
 void SyncLayout() {
-    SizeControl(button.get());
     Obj anchor=menu.get();
     const auto place=[&](Obj control){
         const int index=api.Value<int>(api.Call(parent.get(),"IndexOf",{control}));
@@ -87,7 +95,7 @@ void SyncLayout() {
         anchor=control;
     };
     for(auto i=shortcuts.rbegin();i!=shortcuts.rend();++i){SizeControl(i->button.get());place(i->button.get());}
-    place(button.get());
+    if(button.get()){SizeControl(button.get());place(button.get());}
 }
 void CreateControl(Ref& control,Ref& tip,const char* name,const std::string& caption,int icon){
     control.reset(api.New(toggleClass));
@@ -120,7 +128,8 @@ void ToggleHook(Obj owner,Method method) {
         }catch(const std::exception& e){Log(std::string("TOOL_WIDGET_CLICK_ERROR ")+e.what());}
         return;
     }
-    if (owner!=button.get()) { originalToggle(owner,method);return; }
+    // Any toggle but Capture d’âme's (none while its button is hidden) is the game's own.
+    if (!owner||owner!=button.get()) { originalToggle(owner,method);return; }
     try {
         if (!Current()||!api.Value<bool>(api.Call(owner,"get_enabledInHierarchy"))) return;
         auto settings=module->settings;settings.soulReminder=!settings.soulReminder;
@@ -175,6 +184,10 @@ void TickSoulWidget() {
             RestoreSoulWidget();
             if(SoulWidgetCleanupPending())return;
         }
+        // Every button switched off in the options: nothing to create.
+        const bool soul=module->settings.soulButton;
+        const auto tools=toolsUi::Shortcuts();
+        if(!soul&&tools.empty()){Report("no-buttons");return;}
         if(GetTickCount64()<nextRefresh)return;
         nextRefresh=GetTickCount64()+600;
         Ref candidate(module->FindService("frm"));
@@ -191,14 +204,16 @@ void TickSoulWidget() {
         int index=api.Value<int>(api.Call(target.get(),"IndexOf",{anchor.get()}));if(index<0){Missing("menu-anchor-not-in-parent");return;}
         parent.reset(target.get());manager.reset(widget.get());service.reset(candidate.get());compositor.reset(module->compositor.get());
         menu.reset(anchor.get());tooltipService.reset(tips.get());
-        CreateControl(button,tooltip,"dofus_miniatures_soul_toggle","Capture d’âme\nAfficher ou masquer le panneau dans les combats capturables.",128);
-        for(const auto& entry:toolsUi::Shortcuts()){
+        if(soul)CreateControl(button,tooltip,"dofus_miniatures_soul_toggle","Capture d’âme\nAfficher ou masquer le panneau dans les combats capturables.",128);
+        for(const auto& entry:tools){
             shortcuts.push_back({entry.key,{},{}});auto& c=shortcuts.back();
             CreateControl(c.button,c.tooltip,("dofus_miniatures_"+entry.key+"_toggle").c_str(),
                 entry.title+"\nAfficher ou masquer ce panneau.",entry.icon);
         }
         SyncLayout();Sync();toolbarReady=true;reported=false;
-        Report("attached before=Menu size="+std::to_string(api.Value<int>(api.Invoke(getSize,button.get()))));
+        Obj first=button.get()?button.get():shortcuts.front().button.get();
+        Report("attached before=Menu size="+std::to_string(api.Value<int>(api.Invoke(getSize,first)))+
+            " buttons="+std::to_string(shortcuts.size()+(button.get()?1:0)));
     } catch(const std::exception& e) {
         if(!reported)Log(std::string("SOUL_WIDGET_ERROR ")+e.what());reported=true;
         try{RestoreSoulWidget();}catch(...){}

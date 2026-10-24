@@ -91,6 +91,10 @@ int main() {
         soul::Panel{}.Install(Equip,Save,HideModule);
         nativeClick::Install();toolsUi::Install();InstallTreasurePanel();TickTreasurePanel();
         Check(Get(middle).children.empty()&&fetches==0,"Opening settings must not start a panel or query");
+        // Its top-bar button, the panel's only shortcut, follows treasureButton (1.16.1), read on the fly.
+        Check(toolsUi::Shortcuts().size()==1&&toolsUi::Shortcuts()[0].key=="treasure"&&toolsUi::Shortcuts()[0].icon==317,"The panel's top-bar button, shown by default");
+        owner.settings.treasureButton=false;Check(toolsUi::Shortcuts().empty(),"Unticked, the button leaves the top bar");
+        owner.settings.treasureButton=true;Check(toolsUi::Shortcuts().size()==1,"Ticked again, it comes back");
         OpenTreasureOverlay({});TickTreasurePanel();
         auto window=latestWindow;Check(Get(window).fields["parent"]==middle,"Panel must use native normal-window layer");
         auto inputs=Inputs(window);Check(inputs.size()==3,"Manual X, Y and clue controls");
@@ -110,8 +114,11 @@ int main() {
         Click(result);Check(Get(inputs[0]).text=="-24"&&Get(inputs[1]).text=="-36","Selection prepares next start");
         Check(fetches==1,"Selecting result must not automate the next search");
         const auto before=nativeActions;Click(Element("ForeignAction"));Check(nativeActions==before+1,"Foreign native action forwarded");
+        owner.settings.treasureButton=false;TickTreasurePanel();
+        Check(Panel(window)&&latestWindow==window&&toolsUi::Visible("treasure")&&toolsUi::Shortcuts().empty(),"Its top-bar button removed, the open panel stays open");
         Click(CloseButton(window));TickTreasurePanel();
         Check(!Panel(window)&&!TreasurePanelCleanupPending(),"The native close button detaches the window");
+        owner.settings.treasureButton=true;
         for(const auto* key:{"ydf","ydh","ydj","ydl"})
             Check(Get(Get(Get(input).fields[key]).fields["m_input"]).children.size()==1,"Only foreign input delegate remains");
         // Running hunt: the panel starts from the player's map and the game's own step.

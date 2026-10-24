@@ -517,6 +517,33 @@ int main() {
             Require(Settings::Read(path).smallHeaderStats, "A malformed header value keeps the saved choice");
         }
         {
+            // 1.16.1: the top-bar buttons of Capture d’âme, the treasure hunt and the
+            // notebook, shown by default, each on its own 0/1 line, independent of one
+            // another and of what they open: the soul alert keeps its own value.
+            Require(defaults.soulButton && defaults.treasureButton && defaults.notebookButton, "Every top-bar button is shown by default");
+            for (int mask = 0; mask < 8; ++mask) {
+                auto buttons = defaults;
+                buttons.soulButton = (mask & 1) != 0; buttons.treasureButton = (mask & 2) != 0; buttons.notebookButton = (mask & 4) != 0;
+                buttons.soulReminder = (mask & 1) == 0; buttons.statsButton = (mask & 2) == 0;
+                buttons.Save(path);
+                const auto saved = FileText(path);
+                Require(Settings::Read(path) == buttons &&
+                    saved.find(std::string("\nsoulButton=") + ((mask & 1) ? "1" : "0") + "\n") != std::string::npos &&
+                    saved.find(std::string("\ntreasureButton=") + ((mask & 2) ? "1" : "0") + "\n") != std::string::npos &&
+                    saved.find(std::string("\nnotebookButton=") + ((mask & 4) ? "1" : "0") + "\n") != std::string::npos,
+                    "Each top-bar button persists on its own line, independently of the others and of the soul alert");
+                { std::ofstream bad(path, std::ios::app); bad << "soulButton=2\ntreasureButton=-1\nnotebookButton=x\nsoulButton=\ntreasureButton= 1\nnotebookButton=oui\n"; }
+                Require(Settings::Read(path) == buttons, "A malformed top-bar button value keeps the saved choice");
+            }
+            { std::ofstream older(path, std::ios::trunc); older << "soulReminder=0\nstatsButton=0\nnotebookCompact=1\n"; }
+            const auto older = Settings::Read(path);
+            Require(older.soulButton && older.treasureButton && older.notebookButton && !older.soulReminder && !older.statsButton && older.notebookCompact,
+                "A file written before 1.16.1 shows the three buttons and keeps the rest");
+            { std::ofstream twice(path, std::ios::trunc); twice << "notebookButton=0\nnotebookButton=1\ntreasureButton=1\ntreasureButton=0\nsoulButton=0\n"; }
+            const auto last = Settings::Read(path);
+            Require(last.notebookButton && !last.treasureButton && !last.soulButton, "The last valid top-bar button line wins");
+        }
+        {
             auto corner = defaults; corner.perfOverlayCorner = 4;
             bool rejected = false;
             try { corner.Save(path); } catch (const std::runtime_error&) { rejected = true; }

@@ -61,6 +61,13 @@ bool failHook = false;
 std::map<std::pair<int64_t, int>, int64_t> counters, records;
 std::map<std::tuple<int64_t, int, int>, int64_t> tables;
 bool counting = true, storeThrows = false, named = false;
+// The game's data as stats::KindOf tells it (stats.cpp): a class's own spells
+// (13107 Bond, 13110 Épée Divine: an Iop's), every other one an equipment's or unknown
+// (8395 « Pourpre Profond », the Dofus Pourpre's; 8393 « Vert Émeraude », the
+// Dofus Émeraude's), or nothing yet. Never asked from inside the hook.
+std::set<int> classSpells{3456, 201, 77, 13107, 13110};
+bool kindsUnknown = false, inHook = false;
+unsigned kindCalls = 0;
 // The hooked listener and the game's own handler behind it.
 using ActionFn = void(*)(Obj, Obj, Method);
 ActionFn actionHook = nullptr;
@@ -199,11 +206,13 @@ Obj Action(int64_t source, int32_t which, Obj body, const std::string& klass = "
     Set<int32_t>(message, 0x18, 22); Set<int64_t>(message, 0x20, source); Set<Obj>(message, 0x28, body); Set<int32_t>(message, 0x30, which);
     return message;
 }
-Obj Cast(int32_t spell, int32_t kind = 2) {
+// A cast (jrw) of a spell (case 2, jrq: its level's id eqvi at 0x18, the
+// spell's id eqvk at 0x1C) or of a weapon (case 9, its id boxed).
+Obj Cast(int32_t spell, int32_t kind = 2, int32_t level = 9100) {
     auto cast = Make("jrw"), data = Make("jrq");
     Set<int64_t>(cast, 0x28, -7); Set<int32_t>(cast, 0x38, 1);
     Set<Obj>(cast, 0x40, kind == 2 ? data : Box<int32_t>(spell)); Set<int32_t>(cast, 0x48, kind);
-    Set<int32_t>(data, 0x18, 9100); Set<int32_t>(data, 0x1C, spell);
+    Set<int32_t>(data, 0x18, level); Set<int32_t>(data, 0x1C, spell);
     return cast;
 }
 Obj Death(int64_t dead) { auto death = Make("jrz"); Set<int64_t>(death, 0x18, -3); Set<int64_t>(death, 0x20, dead); return death; }
@@ -314,6 +323,13 @@ void AddTo(int64_t character, Table table, int key, int64_t amount) {
 }
 void Name(int64_t, const std::string&) { fake::named = true; }
 bool Counting() { return fake::counting; }
+SpellKind KindOf(int spell) {
+    // The pump asks the game's data, never the hook (raw reads only there).
+    fake::Check(!fake::inHook, "A spell's kind is never asked from inside the hook");
+    ++fake::kindCalls;
+    if (fake::kindsUnknown) return SpellKind::Unknown;
+    return fake::classSpells.contains(spell) ? SpellKind::Class : SpellKind::Other;
+}
 }
 
 namespace {
@@ -333,8 +349,10 @@ void Fight(World& world, Obj report) {
 }
 void Send(Obj message) {
     Check(actionHook != nullptr, "The listener is hooked");
+    inHook = true;
     try { actionHook(handler, message, listener); }
-    catch (...) { throw std::runtime_error("An exception escaped the fight action hook"); }
+    catch (...) { inHook = false; throw std::runtime_error("An exception escaped the fight action hook"); }
+    inHook = false;
 }
 int64_t Counted(int64_t character, Counter counter) {
     const auto found = counters.find({character, static_cast<int>(counter)});
@@ -361,7 +379,7 @@ void Fresh() {
     RestoreStatsFights();
     earlier.insert(earlier.end(), logs.begin(), logs.end());
     logs.clear(); counters.clear(); records.clear(); tables.clear();
-    fail.clear(); storeThrows = false; counting = true;
+    fail.clear(); storeThrows = false; counting = true; kindsUnknown = false;
 }
 void InstallContract() {
     // A moved field, an unverified native or a refused hook disables that part
@@ -400,7 +418,7 @@ void BaselineAndOnce() {
     Fight(world, first);
     Check(Counted(1001, Counter::FightsPve) == 1 && Counted(1001, Counter::WinsPve) == 1 && Counted(1001, Counter::FightMs) == 95000 &&
           Counted(1001, Counter::FightTurns) == 7, "A finished fight: its kind, its victory, its time and turns");
-    Check(logs == std::vector<std::string>{"STATS_FIGHT type=4 kind=pve win=1 ms=95000 turns=7 monsters=2 souls=0 dungeon=0 casts=0 hits=0 deaths=0"},
+    Check(logs == std::vector<std::string>{"STATS_FIGHT type=4 kind=pve win=1 ms=95000 turns=7 monsters=2 souls=0 dungeon=0 casts=0 others=0 hits=0 deaths=0"},
           "One fixed line per fight");
     Tick(5);
     Fight(world, Report(4, {Fighter(1001, 1)}, 30000, 3));
@@ -432,8 +450,8 @@ void Kinds() {
     Check(Counted(1001, Counter::FightsPvp) == 30 && Counted(1001, Counter::FightsKolizeum) == 6 && Counted(1001, Counter::FightsPve) == 42 &&
           Counted(1001, Counter::WinsPvp) == 5 && Counted(1001, Counter::WinsKolizeum) == 1 && Counted(1001, Counter::WinsPve) == 7,
           "Challenges, aggressions, tax collectors, AvA and prisms are JcJ, the Kolizéum its own, the rest JcM");
-    Check(Logged("STATS_FIGHT type=7 kind=kolizeum win=1 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=0 hits=0 deaths=0") &&
-          Logged("STATS_FIGHT type=0 kind=pvp win=0 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=0 hits=0 deaths=0"), "The kind is logged");
+    Check(Logged("STATS_FIGHT type=7 kind=kolizeum win=1 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=0 others=0 hits=0 deaths=0") &&
+          Logged("STATS_FIGHT type=0 kind=pvp win=0 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=0 others=0 hits=0 deaths=0"), "The kind is logged");
 }
 void TimeAndTurns() {
     Fresh(); World world; Tick();
@@ -553,7 +571,7 @@ void MonstersDefeated() {
     Fight(world, Report(4, {Fighter(1001), Fighter(1002), Monster(31), Monster(32), Monster(33), Fighter(77, 3, 2), Fighter(2002, 1)},
         60000, 4, 2, Statistics(100, 0, 0, 9)));
     Check(Counted(1001, Counter::Kills) == 3 && Counted(1002, Counter::Kills) == 0 &&
-          Logged("STATS_FIGHT type=4 kind=pve win=1 ms=60000 turns=4 monsters=3 souls=0 dungeon=0 casts=0 hits=0 deaths=0"),
+          Logged("STATS_FIGHT type=4 kind=pve win=1 ms=60000 turns=4 monsters=3 souls=0 dungeon=0 casts=0 others=0 hits=0 deaths=0"),
           "Three monsters defeated: not the companion on the character's side, not a character, not the enemies finished");
     Fight(world, Report(4, {Fighter(1001, 1), Monster(31, 3), Monster(32, 1)}));   // a defeat
     Fight(world, Report(4, {Fighter(1001, 2), Monster(31, 2)}));                   // a draw
@@ -569,7 +587,7 @@ void Souls() {
     Fight(world, Report(4, {Fighter(1001, 3, 1, {Item(327, 1), Item(328, 2), Item(9, 5), Item(83, 1), Item(328, 0), Item(328, 101),
         Item(327, 1, "mg"), Make("Other"), nullptr}), Fighter(2002, 3, 1, {Item(328, 3)})}));
     Check(Counted(1001, Counter::Captures) == 4 && Counted(2002, Counter::Captures) == 0 &&
-          Logged("STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=0 souls=4 dungeon=0 casts=0 hits=0 deaths=0"),
+          Logged("STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=0 souls=4 dungeon=0 casts=0 others=0 hits=0 deaths=0"),
           "Boss (327) and archimonster (328) souls of this character's own loot, by quantity (1 to 100)");
     auto bare = Fighter(1001, 1); Set<Obj>(bare, 0x28, nullptr);
     Fight(world, Report(4, {bare}));
@@ -583,7 +601,7 @@ void Dungeons() {
     world.At(1000);
     Fight(world, Report(4, {Fighter(1001), Monster(1072), Monster(31)}));
     Check(Counted(1001, Counter::Dungeons) == 1 && Entry(1001, Table::Dungeons, 51) == 1 &&
-          Logged("STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=2 souls=0 dungeon=51 casts=0 hits=0 deaths=0"),
+          Logged("STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=2 souls=0 dungeon=51 casts=0 others=0 hits=0 deaths=0"),
           "A victory over one of its bosses on its map completes a dungeon");
     // The map where the fight started, even after the character moved.
     world.Fighting(true); Tick(); world.At(5555);
@@ -628,8 +646,10 @@ void Actions() {
     Send(Action(1001, 2, Cast(0)));               // no spell
     Send(Action(1001, 2, Death(1001)));           // another body for that case
     Send(Action(1001, 25, Cast(3456)));           // a triggered spell (case 25), not a cast
+    Check(tables.empty() && counters.empty(), "The hook only reads the casts: the pump counts them");
+    Tick();
     Check(Counted(1001, Counter::SpellCasts) == 3 && Entry(1001, Table::Spells, 3456) == 2 && Entry(1001, Table::Spells, 201) == 1 &&
-          Entry(1001, Table::Spells, 0) == 0, "The character's own spell casts, by spell id");
+          Entry(1001, Table::Spells, 0) == 0, "The character's own spell casts, by spell id, at the next tick");
     Send(Action(-12, 3, Death(1001)));
     Send(Action(1001, 3, Death(-12)));            // the character kills: not a death
     Send(Action(-12, 3, Loss(1001, 50, 1)));      // another body for that case
@@ -654,17 +674,18 @@ void Actions() {
     std::vector<Obj> sent{Action(1001, 37, nullptr), Make("Other"), nullptr, Action(1001, 37, Loss(-12, 100, 0), "Other"),
         Action(1001, 2, Cast(77))};
     for (const auto message : sent) Send(message);
+    Tick();
     Check(handled.size() == before + sent.size() && Entry(1001, Table::Spells, 77) == 1 && Entry(1001, Table::Elements, 0) == 70,
           "Anything unexpected is left alone");
     for (size_t i = 0; i < sent.size(); ++i)
         Check(handled[before + i] == std::tuple(handler, sent[i], listener), "The game's own handler runs once, with its arguments");
     // The next counted fight logs what the hook counted meanwhile.
     Fight(world, Report(4, {Fighter(1001)}));
-    Check(Logged("STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=4 hits=5 deaths=1"),
+    Check(Logged("STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=4 others=0 hits=5 deaths=1"),
           "The fight's line carries the hook's counts");
     Send(Action(1001, 3, Death(1001)));
     Fight(world, Report(4, {Fighter(1001, 1)}));
-    Check(Last("STATS_FIGHT type=") == "STATS_FIGHT type=4 kind=pve win=0 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=0 hits=0 deaths=1",
+    Check(Last("STATS_FIGHT type=") == "STATS_FIGHT type=4 kind=pve win=0 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=0 others=0 hits=0 deaths=1",
           "Each fight's line carries only its own counts");
     // Counting off, a stopping module, no character, another thread, a failing store, a restore: nothing.
     const int64_t spells = Counted(1001, Counter::SpellCasts);
@@ -675,13 +696,54 @@ void Actions() {
     Set<Obj>(world.character, 0x128, nullptr); Tick(); Send(Action(1001, 2, Cast(3456)));
     Set<Obj>(world.character, 0x128, world.info); Tick();
     for (int i = 0; i < 2; ++i) std::thread([] { Send(Action(1001, 2, Cast(3456))); }).join();
+    Tick();
     Check(Lines("STATS_FIGHTS_THREAD") == 1, "Another thread: never counted, one line");
-    storeThrows = true; Send(Action(1001, 2, Cast(3456))); storeThrows = false;
-    Check(Logged("STATS_FIGHTS_ERROR stage=action"), "A failing store never escapes the hook");
-    RestoreStatsFights(); Send(Action(1001, 2, Cast(3456)));
-    Check(Counted(1001, Counter::SpellCasts) == spells && handled.size() == calls + 8, "The game's handler always runs, the hook counts nothing");
-    Tick(); Send(Action(1001, 2, Cast(3456)));
+    storeThrows = true; Send(Action(-12, 3, Death(1001))); storeThrows = false;
+    Check(Logged("STATS_FIGHTS_ERROR stage=action") && Counted(1001, Counter::Deaths) == 2, "A failing store never escapes the hook");
+    storeThrows = true; Send(Action(1001, 2, Cast(3456))); Tick(); storeThrows = false;
+    Check(Logged("STATS_FIGHTS_ERROR stage=spell") && !Lines("STATS_FIGHTS_ERROR stage=read"), "Nor the pump's count of the spells");
+    RestoreStatsFights(); Send(Action(1001, 2, Cast(3456))); Tick();
+    Check(Counted(1001, Counter::SpellCasts) == spells && handled.size() == calls + 9, "The game's handler always runs, the hook counts nothing");
+    Send(Action(1001, 2, Cast(3456))); Tick();
     Check(Counted(1001, Counter::SpellCasts) == spells + 1, "Counting again once the pump has read the character");
+}
+// The spell of a cast: jrq.eqvk, the id gau.bixd gives SpellData.GetById,
+// SpellCastInFightManager and the fight log (never jrq.eqvi, its level's id),
+// counted at the next tick only when the game's data says it is a class's own
+// spell. The server casts in the character's name the Dofus Pourpre's
+// « Pourpre Profond » (8395) each time it is attacked and the Dofus Émeraude's
+// « Vert Émeraude » (8393) at the end of its turns: never counted any more.
+void Spells() {
+    Fresh(); World world; Tick();
+    kindCalls = 0;
+    Send(Action(1001, 2, Cast(13107, 2, 13110)));   // an Iop spell, its level's id another class spell's id
+    Send(Action(1001, 2, Cast(8395, 2, 13107)));    // « Pourpre Profond », its level's id a class spell's id
+    Send(Action(1001, 2, Cast(8393)));              // « Vert Émeraude »
+    Send(Action(1001, 2, Cast(8395)));
+    Check(counters.empty() && tables.empty() && kindCalls == 0, "The hook only reads the casts, never asks the game");
+    Tick();
+    Check(Counted(1001, Counter::SpellCasts) == 1 && Entry(1001, Table::Spells, 13107) == 1 && Entry(1001, Table::Spells, 13110) == 0 &&
+          Entry(1001, Table::Spells, 8395) == 0 && Entry(1001, Table::Spells, 8393) == 0 && kindCalls == 4,
+          "Only the class's own spell counts, by its id (eqvk), never by its level's (eqvi), never the Dofus' effects");
+    Fight(world, Report(4, {Fighter(1001)}));
+    Check(Last("STATS_FIGHT type=") == "STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=1 others=3 hits=0 deaths=0",
+          "The fight's line tells the casts that were not the class's");
+    // The game's data cannot tell (not loaded, or its contract off): not counted.
+    kindsUnknown = true;
+    Send(Action(1001, 2, Cast(13107)));
+    Tick();
+    kindsUnknown = false;
+    Check(Counted(1001, Counter::SpellCasts) == 1 && Entry(1001, Table::Spells, 13107) == 1, "A spell of unknown kind is not counted");
+    // A burst between two ticks: at most 256 wait for the pump.
+    for (int i = 0; i < 300; ++i) Send(Action(1001, 2, Cast(13110)));
+    Tick();
+    Check(Entry(1001, Table::Spells, 13110) == 256 && Counted(1001, Counter::SpellCasts) == 257, "At most 256 casts between two ticks");
+    // Counting stopped, or the tracker restored (Module::Stop), before the tick: dropped.
+    Send(Action(1001, 2, Cast(13107)));
+    counting = false; Tick(); counting = true; Tick(2);
+    Send(Action(1001, 2, Cast(13107)));
+    RestoreStatsFights(); Tick(2);
+    Check(Entry(1001, Table::Spells, 13107) == 1 && Counted(1001, Counter::SpellCasts) == 257, "Casts not counted yet are dropped with counting");
 }
 void Failures() {
     // A failing read: one fixed line, never thrown; the report counts once reads work.
@@ -751,9 +813,9 @@ void SessionAndRestore() {
 }
 void FixedCodeLogs() {
     earlier.insert(earlier.end(), logs.begin(), logs.end());
-    const std::regex format(R"(^(STATS_FIGHT type=-?\d+ kind=(pve|pvp|kolizeum) win=[01] ms=\d+ turns=\d+ monsters=\d+ souls=\d+ dungeon=\d+ casts=\d+ hits=\d+ deaths=\d+)"
+    const std::regex format(R"(^(STATS_FIGHT type=-?\d+ kind=(pve|pvp|kolizeum) win=[01] ms=\d+ turns=\d+ monsters=\d+ souls=\d+ dungeon=\d+ casts=\d+ others=\d+ hits=\d+ deaths=\d+)"
         R"(|STATS_FIGHT_SKIPPED reason=(spectator|absent|started) type=-?\d+|STATS_FIGHT_STATISTICS (dealt=\d+ taken=\d+ heals=\d+|missing))"
-        R"(|STATS_FIGHTS_ERROR stage=(read|report|statistics|dungeon|action)|STATS_FIGHTS_DISABLED stage=(character|report|dungeons|actions))"
+        R"(|STATS_FIGHTS_ERROR stage=(read|report|statistics|dungeon|action|spell)|STATS_FIGHTS_DISABLED stage=(character|report|dungeons|actions))"
         R"(|STATS_FIGHTS_THREAD)$)");
     Check(earlier.size() > 100, "The scenarios produced logs");
     for (const auto& line : earlier) {
@@ -786,6 +848,7 @@ int main() {
         Souls();
         Dungeons();
         Actions();
+        Spells();
         Failures();
         ModuleStates();
         SessionAndRestore();
@@ -797,6 +860,8 @@ int main() {
                      "kinds (JcM, JcJ with challenges, Kolizéum) and victories, time and turns, monsters defeated, server statistics once, souls, "
                      "dungeons by boss, "
                      "hooked fight actions (spells, deaths, elements, biggest hit, main thread only, game handler always called), "
+                     "spells by their id (jrq.eqvk, never its level's id) counted at the next tick, a class's own only (never the Dofus Pourpre's "
+                     "or Émeraude's effects, nor a spell of unknown kind), "
                      "contained failures, pinned contract, fixed-code logs\n";
         return 0;
     } catch (const std::exception& error) {

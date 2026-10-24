@@ -741,10 +741,13 @@ void InstallNotebookPanel(){
     // The panel's ⋯ menu lists its two layouts as the game's radio rows
     // (compact: entries and use actions only, like the game's own compact
     // spell bar); the choice is saved and applied to the open window in place.
+    // Its top-bar button, the notebook's only shortcut, follows notebookButton
+    // (1.16.1): read at each refresh of the bar; an open notebook stays open.
     toolsUi::Register("notebook","Carnet personnel",IconPin,[]{return wanted;},[]{if(wanted&&Current()&&!CanDiscard())return false;wanted=!wanted;return true;},
         {{{"Version complète","Grande fenêtre : la liste des entrées et le formulaire pour les créer et les modifier."},
           {"Version compacte","Fenêtre étroite : la liste des entrées et les boutons pour les utiliser, sans formulaire."}},
-         []{return module&&module->settings.notebookCompact?1:0;},SelectLayout});
+         []{return module&&module->settings.notebookCompact?1:0;},SelectLayout},
+        []{return module&&module->settings.notebookButton;});
     installed=true;
 }
 void OpenNotebookPanel(){if(!installed||!Session())return;wanted=true;if(Current())api.Call(state.window.get(),"BringToFront");}

@@ -100,12 +100,15 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "animationMode" && ValidAnimationMode(value)) { legacyAnimationMode = value; animationModeRead = true; }
             else if (key == "soulAutoEquip" && (value == 0 || value == 1)) settings.soulAutoEquip = value != 0;
             else if (key == "soulReminder" && (value == 0 || value == 1)) settings.soulReminder = value != 0;
+            else if (key == "soulButton" && (value == 0 || value == 1)) settings.soulButton = value != 0;
             else if (key == "miniMapCenterButton" && (value == 0 || value == 1)) settings.miniMapCenterButton = value != 0;
             else if (key == "smallHeaderSoul" && (value == 0 || value == 1)) settings.smallHeaderSoul = value != 0;
             else if (key == "smallHeaderTreasure" && (value == 0 || value == 1)) settings.smallHeaderTreasure = value != 0;
             else if (key == "smallHeaderNotebook" && (value == 0 || value == 1)) settings.smallHeaderNotebook = value != 0;
             else if (key == "smallHeaderStats" && (value == 0 || value == 1)) settings.smallHeaderStats = value != 0;
             else if (key == "notebookCompact" && (value == 0 || value == 1)) settings.notebookCompact = value != 0;
+            else if (key == "treasureButton" && (value == 0 || value == 1)) settings.treasureButton = value != 0;
+            else if (key == "notebookButton" && (value == 0 || value == 1)) settings.notebookButton = value != 0;
             else if (key == "metamobSync" && (value == 0 || value == 1)) settings.metamobSync = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
@@ -266,6 +269,10 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\ncoordsWorldMiniMapMode=" << coordsWorldMiniMapMode << "\ncoordsWorldMiniMap=" << (coordsWorldMiniMapMode != 0 ? 1 : 0)
              << "\ndimensionChoices=1";
         file << "\nstatsEnabled=" << (statsEnabled ? 1 : 0) << "\nstatsButton=" << (statsButton ? 1 : 0);
+        // 1.16.1: the top-bar buttons of Capture d’âme, the treasure hunt and the
+        // notebook. A file without them (before 1.16.1) shows all three.
+        file << "\nsoulButton=" << (soulButton ? 1 : 0) << "\ntreasureButton=" << (treasureButton ? 1 : 0)
+             << "\nnotebookButton=" << (notebookButton ? 1 : 0);
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

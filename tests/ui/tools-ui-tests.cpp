@@ -136,7 +136,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         Check(args.size()==13&&!args[1],"Native hide row uses owned callback identity");
         auto item=Row(self,"DefaultItem",Get(args[0]).text);auto& row=Get(item);
         row.disabled=*static_cast<bool*>(args[2]);row.close=*static_cast<bool*>(args[3]);
-        row.icon=*static_cast<int*>(args[9]);row.fields["callback"]=Make("Callback");return nullptr;
+        row.icon=*static_cast<int*>(args[9]);row.fields["callback"]=Make("Callback");row.fields["help"]=args[4];return nullptr;
     }
     if(m.name=="RemoveMenu"){
         Check(!*static_cast<bool*>(args[0]),"Owned menu closes immediately");
@@ -214,11 +214,11 @@ struct Fixture {
     std::vector<Obj>& Rows(Obj menu){return Get(Get(menu).fields["rows"]).items;}
     Obj View(Obj item){auto view=Make("ItemView");Get(view).fields["item"]=item;Get(view).fields["panel"]=panel;return view;}
     Obj Callback(Obj item){return Get(item).fields["callback"];}
-    void Header(){
+    void Header(const char* key="notebook"){
         window=Make("Window");auto header=Make("Header");button=Make("Button");
         Get(window).fields["panel"]=Get(button).fields["panel"]=panel;
         Get(window).fields["header"]=header;Get(header).fields["rightButton"]=button;
-        toolsUi::AttachHeader("notebook",window);Check(Get(button).items.size()==1,"Exactly one header manipulator");
+        toolsUi::AttachHeader(key,window);Check(Get(button).items.size()==1,"Exactly one header manipulator");
         manipulator=Get(button).items.front();
     }
     Obj HeaderMenu(){
@@ -280,6 +280,25 @@ void HeaderTitleAndHide(){
     notebook=false;menu=f.HeaderMenu();Check(f.Rows(menu).size()==3,"A hidden panel's menu has no layout rows");
     Check(!populate(Make("ForeignManipulator"),Make("Event")),"Foreign header menu preserved");
     Check(!callback(Make("ForeignCallback"),view),"Foreign callbacks remain native");
+}
+// The hide row's help names the way back: the panel's top-bar button, next to
+// Capture d’âme's unless soulButton hides that one (1.16.1), or the options
+// once the panel's own button is off.
+void HideHelpNamesTheWayBack(){
+    Fixture f;perfButton=true;f.Header("perf");
+    const auto help=[&f]{
+        auto rows=f.Rows(f.HeaderMenu());
+        Check(rows.size()==3&&Get(rows[2]).text=="Masquer le module","A panel without layouts: its title, a separator and the hide row");
+        return Get(Get(rows[2]).fields.at("help")).text;
+    };
+    Check(help()=="Réactiver ce panneau avec son bouton à côté de Capture d’âme, en haut à droite.","Its button next to Capture d’âme's");
+    f.state.settings.soulButton=false;
+    Check(help()=="Réactiver ce panneau avec son bouton en haut à droite de l’écran.","Capture d’âme hidden: no landmark missing from the screen");
+    perfButton=false;
+    Check(help()=="Réactiver ce panneau depuis les options du mod.","Its own button off: the options");
+    f.state.settings.soulButton=true;
+    Check(help()=="Réactiver ce panneau depuis les options du mod.","Its own button off, whatever Capture d’âme's");
+    Check(changes==0&&!perf,"Opening the menus changes no setting and no panel");
 }
 void StaleHeaderCallbacks(){
     for(int reason=0;reason<5;++reason){
@@ -405,7 +424,7 @@ int main(){
         toolsUi::Install();toolsUi::Install();
         fake::Check(fake::installs==2&&fake::menuRegistrations==1&&fake::subMenuHook&&fake::allHeadersHook,"Install registers header menus once and hooks the native header sub-menu");
         fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16D72F0,"Native header entry points are pinned");
-        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ToolButtonFollowsItsOption,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,
+        for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ToolButtonFollowsItsOption,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,fake::HideHelpNamesTheWayBack,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
                 fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus,fake::HeaderSubMenuListsPanels,fake::HeaderToggleAppliesAndPersists,
                 fake::SavedSizeAppliesOnAttach,fake::AllHeadersCoverPanels,fake::StaleHeaderChoices,fake::RestoreClosesSubMenu})test();

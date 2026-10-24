@@ -167,6 +167,41 @@ int main(){using namespace fake;try{Init();InstallSoulWidget();{
         Check(toolToggles==before,"A button switched off but not yet removed opens nothing");
         toolsUi::tools.push_back(notebookTool);TickSoulWidget();Check(Get(root).children.size()==6,"Bar rebuilt");
     }
+    {   // Capture d’âme's own button follows soulButton (1.16.1). Hidden, the tool
+        // buttons keep their order right before Menu and the alert stays as it is;
+        // with every button off, nothing is created; each change rebuilds the bar.
+        const bool reminder=owner.settings.soulReminder;const int settingChanges=changes,natives=foreign;
+        auto soul=Get(root).children[1];
+        Check(Get(Get(soul).fields["set_name"]).text=="dofus_miniatures_soul_toggle","Capture d’âme comes first");
+        owner.settings.soulButton=false;toggle(soul,nullptr);
+        Check(changes==settingChanges&&owner.settings.soulReminder==reminder&&foreign==natives,"Capture d’âme switched off but not yet removed toggles nothing");
+        int adds=tooltipAdds;TickSoulWidget();
+        Check(Get(root).children.size()==5&&Get(root).children[0]==nativeToggle&&Get(Get(root).children[1]).ints["set_iconValue"]==317&&
+            Get(Get(root).children[2]).ints["set_iconValue"]==225&&Get(root).children[3]==menuToggle&&Get(root).children[4]==nativeItem,
+            "Capture d’âme hidden: the tool buttons keep their order right before Menu");
+        Check(tooltipAdds==adds+2&&!Get(soul).fields["parent"]&&owner.settings.soulReminder==reminder&&changes==settingChanges,
+            "The bar is rebuilt without Capture d’âme; the alert stays as it is");
+        toggle(soul,nullptr);Check(changes==settingChanges&&owner.settings.soulReminder==reminder,"The removed Capture d’âme button is inert");
+        auto treasureTool=Get(root).children[1],notebookTool=Get(root).children[2];
+        Check(Get(treasureTool).dimensions["width"]==44&&Get(treasureTool).floatValue==0,"Without Capture d’âme, still sized like Menu");
+        const int clicks=toolToggles;toggle(treasureTool,nullptr);
+        Check(toolToggles==clicks+1&&treasure&&Get(treasureTool).ints["isOn"],"The tool buttons work without Capture d’âme");
+        treasure=false;TickSoulWidget();Check(!Get(treasureTool).ints["isOn"]&&tooltipAdds==adds+2,"Synchronized without a rebuild");
+        // Every button off: the bar is emptied, then nothing is created any more.
+        const auto tools=toolsUi::tools;toolsUi::tools.clear();TickSoulWidget();
+        Check(Get(root).children.size()==3&&!SoulWidgetCleanupPending()&&!Get(treasureTool).fields["parent"]&&!Get(notebookTool).fields["parent"],
+            "Every button off: the mod's buttons leave the bar");
+        adds=tooltipAdds;for(int i=0;i<3;++i)TickSoulWidget();
+        Check(tooltipAdds==adds&&Get(root).children.size()==3&&!SoulWidgetCleanupPending()&&
+            std::count(logs.begin(),logs.end(),std::string("SOUL_WIDGET_STATE no-buttons"))==1,"Nothing is created while every button is off; logged once");
+        toggle(treasureTool,nullptr);Check(toolToggles==clicks+1&&!treasure,"A removed tool button is inert");
+        // Capture d’âme alone, then every button back in its place.
+        owner.settings.soulButton=true;TickSoulWidget();
+        Check(Get(root).children.size()==4&&Get(Get(Get(root).children[1]).fields["set_name"]).text=="dofus_miniatures_soul_toggle"&&
+            Get(root).children[2]==menuToggle&&Get(Get(root).children[1]).ints["isOn"]==int(reminder),"Capture d’âme alone, right before Menu, showing the alert");
+        toolsUi::tools=tools;TickSoulWidget();Owned();
+        Check(owner.settings.soulReminder==reminder&&changes==settingChanges,"Hiding and showing the buttons never changed the alert");
+    }
     owner.stopped=true;TickSoulWidget();Check(Get(root).children.size()==3,"Stop removes mod entry only");RestoreSoulWidget();module=nullptr;
-    }Check(handles.empty(),"Widget GC refs leaked");std::cout<<"PASS: native display toggle, settings sync, callback isolation, replaced UI and cleanup\n";return 0;
+    }Check(handles.empty(),"Widget GC refs leaked");std::cout<<"PASS: native display toggle, settings sync, callback isolation, replaced UI and cleanup, optional Capture d’âme button (tools kept before Menu, nothing created with every button off, rebuilt on each change)\n";return 0;
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

@@ -196,7 +196,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
         Check(args.size()==13&&Get(args[0]).text=="Masquer le module"&&!args[1],"Hide menu must use null native fallback and localized title");
         Check(!*static_cast<bool*>(args[2])&&*static_cast<bool*>(args[3])&&*static_cast<int*>(args[9])==137,"Enabled native closing row with eye-slash icon");
         Check(!Get(args[4]).text.empty(),"Explain how to show the module again");
-        auto item=Make("MenuItem"),callback=Make("MenuCallback");Get(item).fields["m_callback"]=callback;
+        auto item=Make("MenuItem"),callback=Make("MenuCallback");Get(item).fields["m_callback"]=callback;Get(item).fields["help"]=args[4];
         Get(obj.fields.at("menuItems")).children.push_back(item);return nullptr;
     }
     if(m.name=="AppendRadioButtonItem") {

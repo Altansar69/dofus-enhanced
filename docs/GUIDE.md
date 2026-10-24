@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.16.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.16.1**.
 
 Miniatures au choix, animations à la carte, surbrillance, aide à la capture d’âmes,
 trajets rapides (passage secret des Roublards compris), ressources, archimonstres
@@ -52,22 +52,29 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 ```
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
-L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet : Apparence, Animations,
-Surbrillance, Cartes, Carnet, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
-Performances, Statistiques, Chargement et mises à jour et À propos. La version
-chargée (x.y.z)
+L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet :
+Apparence, Animations, Surbrillance, Cartes, Carnet, Chasse au trésor,
+Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier, Performances,
+Statistiques, Chargement et mises à jour et À propos. La version chargée (x.y.z)
 figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
 **Ouvrir GitHub** vers le dépôt.
 
 ## Chasse au trésor
 
-Cliquer sur le bouton **Chasse au trésor**, à côté de **Capture d’âme**, en haut à droite.
+Cliquer sur le bouton **Chasse au trésor**, en haut à droite, juste après
+**Capture d’âme** (le premier des boutons du mod si **Capture d’âme** est
+masqué).
 Un second clic ou **⋯ → Masquer le module** ferme le panneau.
 Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
 Son entrée **Réduire les titres des modules** propose en revanche les quatre
 panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet, Statistiques) à la
 suite des modules du jeu ; le choix est conservé entre les lancements et
 **Tout réduire** / **Tout agrandir** les suivent.
+**Options → Dofus Enhanced → Chasse au trésor → Bouton dans la barre du haut**
+(coché par défaut) affiche ce bouton. Décoché, le bouton disparaît et le
+panneau ne s’ouvre plus : recoche la case pour le retrouver. Un panneau déjà
+ouvert reste ouvert et se ferme toujours avec sa croix ou
+**⋯ → Masquer le module**.
 La fenêtre n’utilise que des composants du jeu, comme le carnet : barre de titre
 native avec sa croix de fermeture, poignées de redimensionnement, trois sections
 natives **Point de départ** (X, Y, **Ma position**, onglets natifs Nord / Ouest /
@@ -87,11 +94,17 @@ Un refus d’accès ou une erreur réseau reste visible dans le panneau.
 
 ## Carnet
 
-Cliquer sur le bouton **Carnet personnel**, dans la même barre, à côté de **Capture d’âme**.
+Cliquer sur le bouton **Carnet personnel**, dans la même barre, après
+**Capture d’âme** et **Chasse au trésor** quand ils sont affichés.
 Un second clic, **⋯ → Masquer le module** ou le bouton de fermeture de la barre
 de titre ferme le carnet (une modification non enregistrée demande un second
 clic). Le menu ⋯ des modules ne le liste plus non plus, sauf dans **Réduire les
-titres des modules**.
+titres des modules**. Dans **Options → Dofus Enhanced → Carnet**, **Bouton dans
+la barre du haut** (coché par défaut) affiche ce bouton. Décoché, le bouton
+disparaît et le carnet ne s’ouvre plus, faute d’autre raccourci : recoche la
+case pour le retrouver. Les entrées restent enregistrées, **Ajouter aux
+positions** continue de les compléter, et un carnet déjà ouvert le reste
+jusqu’à sa fermeture.
 La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat.
 Son menu ⋯ liste les deux dispositions comme des choix à puce du jeu, la
 disposition active cochée : **Version complète** (la grande fenêtre, seule à
@@ -454,11 +467,27 @@ tant que le chat montre un archimonstre ou boss de L’éternelle moisson (aprè
 et mise à jour aussitôt après une capture synchronisée ; aucune requête par
 monstre, aucun message en cas d’échec.
 
+## Pierre d’âme
+
+**Options → Dofus Enhanced → Pierre d’âme** règle l’alerte pierre d’âme et
+l’équipement automatique de la bonne pierre, puis la synchro Metamob décrite
+ci-dessous. Le bouton **Capture d’âme**, en haut à droite, avant les autres
+boutons du mod, active ou désactive l’alerte comme la case **Alerte pierre
+d’âme** et reste enfoncé tant qu’elle est active. Depuis la 1.16.1, **Bouton
+dans la barre du haut** (coché par défaut) l’affiche. Décoché, le bouton
+disparaît sans changer l’alerte, qui ne se réactive alors qu’avec la case
+**Alerte pierre d’âme** ; l’aide de **⋯ → Masquer le module** du panneau de
+capture le rappelle. Les autres boutons du mod restent à leur place, juste
+avant Menu, et l’aide de **Masquer le module** de leurs panneaux situe alors
+leur bouton en haut à droite de l’écran. Sans aucun bouton coché (Capture
+d’âme, Chasse au trésor, Carnet, Statistiques, Performances), le mod n’ajoute
+plus rien à la barre.
+
 ## Metamob
 
-Dans **Options → Dofus Enhanced → Pierre d’âme**, sous l’alerte et l’équipement
-automatique, deux lignes synchronisent les captures avec ta quête Ocre sur
-[metamob.fr](https://www.metamob.fr) :
+Dans **Options → Dofus Enhanced → Pierre d’âme**, sous l’alerte, l’équipement
+automatique et le bouton de la barre du haut, deux lignes synchronisent les
+captures avec ta quête Ocre sur [metamob.fr](https://www.metamob.fr) :
 
 1. Sur Metamob, **Paramètres → Clé API → Générer une clé**, puis copie-la.
 2. Colle-la dans le champ masqué **Clé API Metamob** : le bouton **Enregistrer**
@@ -580,29 +609,37 @@ et « Mesure indisponible » si Windows ne fournit aucune des mesures cochées.
 Tant que tu ne l’as pas déplacé, le cadre est en haut à gauche, ou dans le coin
 choisi avant la 1.16.0 (en haut à droite, il se place sous les boutons du menu
 du jeu). Avec **Déplacer et redimensionner l’affichage à la souris** (coché par
-défaut), il se fait glisser au clic gauche et se pose où tu veux. Pris par son
-coin en bas à droite, le seul sans arrondi, il s’agrandit ou se réduit d’un
+défaut), il se fait glisser au clic gauche et se pose où tu veux. Quand la
+souris survole le cadre, une petite poignée de six points apparaît dans son
+coin en bas à droite, le seul sans arrondi ; elle reste visible pendant que tu
+le déplaces ou le redimensionnes et disparaît quand la souris s’en va. Pris par
+ce coin, ou par son bord droit ou son bord bas, il s’agrandit ou se réduit d’un
 bloc, texte, marges et coins compris, de la moitié au triple de sa taille
-normale : son coin en haut à gauche reste en place et son coin en bas à droite
-suit la souris, sans jamais sortir de l’écran. Sa place et sa taille sont
-gardées, même après un redémarrage ou un changement de résolution ; un simple
-clic ne change rien. Les clics sur le cadre ne vont alors pas au jeu. Décochée,
-le cadre reste verrouillé à sa place et à sa taille et laisse passer les clics
-vers le jeu. Le cadre suit l’échelle de l’interface et ne capte jamais le
-clavier ; il passe au-dessus du HUD et des fenêtres du jeu, mais les menus,
-fenêtres de confirmation, infobulles et écrans de chargement restent au-dessus
-de lui, et il disparaît avec l’interface quand le jeu la masque. Les trois cases
-de mesure décochées, il disparaît aussitôt et plus rien n’est mesuré.
+normale : son coin en haut à gauche reste en place, le coin ou le bord tiré
+suit la souris, et il ne sort jamais de l’écran. Le coin se prend sur au moins
+18 pixels de l’écran (davantage quand le cadre est agrandi) et chaque bord sur
+au moins 6, sauf sur un tout petit cadre (une seule ligne réduite, par
+exemple), où ils rétrécissent ; le reste du cadre sert toujours à le déplacer.
+Sa place et sa taille sont gardées, même après un redémarrage ou un changement
+de résolution ; un simple clic ne change rien. Les clics sur le cadre ne vont
+alors pas au jeu. Décochée, le cadre reste verrouillé à sa place et à sa
+taille, sans poignée, et laisse passer les clics vers le jeu. Le cadre suit
+l’échelle de l’interface et ne capte jamais le clavier ; il passe au-dessus du
+HUD et des fenêtres du jeu, mais les menus, fenêtres de confirmation,
+infobulles et écrans de chargement restent au-dessus de lui, et il disparaît
+avec l’interface quand le jeu la masque. Les trois cases de mesure décochées,
+il disparaît aussitôt et plus rien n’est mesuré.
 
-**Bouton dans la barre du haut** (coché par défaut) ajoute en haut à droite, à
-côté de **Capture d’âme**, un bouton **Performances**, enfoncé tant que le cadre
-est affiché. Un clic masque le cadre sans décocher ses mesures, un autre le
-réaffiche ; si aucune mesure n’est cochée, le clic coche **Afficher les FPS et
-la mémoire** pour montrer quelque chose. Masqué avec ce bouton, le cadre ne
-mesure plus rien et le reste après un redémarrage, jusqu’à un nouveau clic ou
-une mesure cochée dans les options. Décoché, le bouton disparaît et seules les
-cases de mesure commandent le cadre, qui réapparaît s’il était masqué. Le cadre
-garde son style discret : ce n’est pas une fenêtre du jeu.
+**Bouton dans la barre du haut** (coché par défaut) ajoute en haut à droite,
+après les autres boutons du mod, un bouton **Performances**, enfoncé tant que le
+cadre est affiché. Un clic masque le cadre sans décocher ses mesures, un autre
+le réaffiche ; si aucune mesure n’est cochée, le clic coche
+**Afficher les FPS et la mémoire** pour montrer quelque chose. Masqué avec ce
+bouton, le cadre ne mesure plus rien et le reste après un redémarrage, jusqu’à
+un nouveau clic ou une mesure cochée dans les options. Décoché, le bouton
+disparaît et seules les cases de mesure commandent le cadre, qui réapparaît
+s’il était masqué. Le cadre garde son style discret : ce n’est pas une fenêtre
+du jeu.
 
 À la mise à jour vers la 1.16.0, si **Afficher les FPS et la mémoire** était
 décochée, **Charge du GPU** et **Activité du disque** sont décochées aussi
@@ -657,7 +694,11 @@ nom à gauche, sa valeur à droite, ce qu’elle compte au survol) :
   le sont. La part des éléments et le plus gros coup ne comptent que les coups
   du personnage, pas ceux de ses invocations.
 - Sorts et éléments : sorts lancés, les cinq sorts les plus lancés avec leur nom
-  dans le jeu, et la part de chaque élément dans les dégâts infligés.
+  dans le jeu, et la part de chaque élément dans les dégâts infligés. Seuls
+  comptent les sorts de ta classe : ni les coups d’arme, ni les effets que tes
+  équipements lancent en ton nom, comme « Pourpre Profond » du Dofus Pourpre
+  ou « Vert Émeraude » du Dofus Émeraude ; la 1.15.0 et la 1.16.0 comptaient
+  ces effets comme des sorts.
 - Téléportations : zaaps, zaapis, prismes, potions de rappel, entrées dans un
   Havre-Sac, trajets du mod et téléportations par une anomalie.
 
@@ -671,6 +712,14 @@ n’efface que l’onglet affiché : ce personnage, ou tous tes personnages. Cha
 d’onglet ou fermer la fenêtre annule la question. Le bouton de réinitialisation
 de la section des options ne remet que ses deux cases et n’efface aucune
 statistique.
+
+Depuis la 1.16.1, les sorts y ont leurs propres clés (`classSpells` et
+`classSpellCasts`). Les sorts qu’y ont mis la 1.15.0 et la 1.16.0, ou qu’un jeu
+encore dans une de ces versions y ajoute, sont convertis une seule fois, en ne
+gardant que les sorts de classe, par le premier jeu à jour qui compte les
+statistiques ou dont la fenêtre **Statistiques** est ouverte. Un jeu encore
+dans une de ces versions n’affiche plus ensuite les sorts déjà convertis,
+jusqu’à ce que tu le relances.
 
 ## Compilation et publication
 

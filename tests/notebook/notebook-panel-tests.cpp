@@ -101,6 +101,10 @@ int main(){
         Get(nativeRoot).fields["layersService"]=service;Get(service).fields["dzrv"]=layers;
         soul::Panel{}.Install(Equip,Save,HideModule);nativeClick::Install();toolsUi::Install();InstallNotebookPanel();TickNotebookPanel();
         Check(Get(middle).children.empty(),"No panel until explicit open");
+        // Its top-bar button, the notebook's only shortcut, follows notebookButton (1.16.1), read on the fly.
+        Check(toolsUi::Shortcuts().size()==1&&toolsUi::Shortcuts()[0].key=="notebook"&&toolsUi::Shortcuts()[0].icon==225,"The notebook's top-bar button, shown by default");
+        owner.settings.notebookButton=false;Check(toolsUi::Shortcuts().empty(),"Unticked, the button leaves the top bar");
+        owner.settings.notebookButton=true;Check(toolsUi::Shortcuts().size()==1,"Ticked again, it comes back");
         OpenNotebookPanel();TickNotebookPanel();auto window=latestWindow;auto inputs=Inputs(window);
         Check(inputs.size()==4&&Get(window).fields["parent"]==middle,"Native window with title, x, y and body (the world is a dropdown)");
         Check(Get(window).enums["set_headerShowCloseButton"]==1&&Get(window).enums["SetHeaderSize"]==0,"The window shows its native close button and keeps the full header while the setting is off");
@@ -113,6 +117,8 @@ int main(){
         Check(!FindText(window,"Mes entrées")&&FindText(window,"Détail")&&FindText(window,"Aucune entrée"),"No entries header, the detail section title and an empty-list counter");
         for(const auto* title:{"Détail"}){auto section=FindType(window,"SectionHeader",title);Check(section&&Get(section).enums["set_isOpen"]==1&&Get(section).enums["set_canBeOpened"]==0,"Sections opened while openable, then locked: their content (new-entry button, rows, form) is shown");}
         OpenNotebookPanel();TickNotebookPanel();Check(window==latestWindow,"Open must reuse window");
+        owner.settings.notebookButton=false;TickNotebookPanel();
+        Check(Panel(window)&&latestWindow==window&&toolsUi::Visible("notebook")&&toolsUi::Shortcuts().empty(),"Its top-bar button removed, the open notebook stays open");
         Get(inputs[0]).text="Mon zaap <b>littéral</b>";Click(FindText(window,"Ma position"));
         Check(Get(inputs[1]).text=="-25"&&Get(inputs[2]).text=="36","Current position captured");
         auto worldList=FindType(window,"Dropdown","1 : Monde des Douze");
@@ -155,6 +161,7 @@ int main(){
         const auto ups=buttonUps;
         Click(CloseButton(window));TickNotebookPanel();Check(Panel(window)&&buttonUps==ups+1,"Unsaved close through the native close button does not lose the draft; the game's own handling still ran");
         Click(CloseButton(window));TickNotebookPanel();Check(!Panel(window),"Second close explicitly discards");
+        owner.settings.notebookButton=true; // the notebook closed with its own header while its top-bar button was off
         for(const auto* key:{"ydf","ydh","ydj","ydl"})
             Check(Get(Get(Get(input).fields[key]).fields["m_input"]).children.size()==1,"Owned input subscriptions removed");
         owner.settings.smallHeaderNotebook=true;

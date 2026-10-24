@@ -32,6 +32,12 @@ struct OptionsUi {
     managed::Ref githubSource, githubOption;
     managed::Ref soulSource, soulOption;
     managed::Ref soulAutoSource, soulAutoOption;
+    // « Bouton dans la barre du haut » (1.16.1), like the statistics window's and
+    // the performance overlay's: Capture d’âme's (« Pierre d’âme », after the two
+    // soul rows), the treasure hunt's (its own section « Chasse au trésor ») and
+    // the notebook's (last row of « Carnet »).
+    managed::Ref soulButtonSource, soulButtonOption, treasureButtonSource, treasureButtonOption;
+    managed::Ref notebookButtonSource, notebookButtonOption;
     managed::Ref glowSource, glowOption;
     // « Surbrillance »: after the level, a checkbox per category (Settings'
     // GlowCategoryToggles): monsters, NPCs, interactive objects, me, party, other players.
@@ -68,9 +74,9 @@ struct OptionsUi {
     // known by its unique description reference (statsOpenMarker) that opens
     // the window, and the checkbox of its top-bar button.
     managed::Ref statsSource, statsOption, statsOpenOption, statsOpenMarker, statsButtonSource, statsButtonOption;
-    // Metamob rows, after the two soul rows of the « Pierre d’âme » section:
-    // capture sync toggle, then the API key row, a text-button row known by its
-    // unique description reference.
+    // Metamob rows, after the two soul rows and Capture d’âme's top-bar button
+    // in the « Pierre d’âme » section: capture sync toggle, then the API key
+    // row, a text-button row known by its unique description reference.
     managed::Ref metamobSyncSource, metamobSyncOption;
     managed::Ref metamobKeyOption, metamobKeyMarker;
     // Owned controls of each pooled row view showing the key row, in one

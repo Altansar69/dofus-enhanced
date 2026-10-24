@@ -1,11 +1,12 @@
 // « Statistiques »: the store and its file (round trip, two clients merging
 // under the file's lock, resets made by another client, a corrupt, partial,
-// missing or later file, bounds), then the module's side (stats.cpp: counting
-// only while statsEnabled is on and the module runs, a write at a change of
-// character, after a minute and at Stop, the played character and the names
-// of the game's data, the dungeons' from the list the game's lobby shows) on a
-// fake runtime that answers FindVerified as the client does. No game,
-// process, window or network.
+// missing or later file, bounds, 1.15.0 to 1.16.0's spells converted), then
+// the module's side (stats.cpp: counting only while statsEnabled is on and the
+// module runs, a write at a change of character, after a minute and at Stop,
+// the played character and the names of the game's data, the dungeons' from
+// the list the game's lobby shows, whose spell a spell is) on a fake runtime
+// that answers FindVerified as the client does. No game, process, window or
+// network.
 #include "stats/stats.cpp"
 #include "appearance/features.hpp"
 #include "ui/options-ui.hpp"
@@ -17,6 +18,8 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <set>
+#include <vector>
 
 namespace fake {
 using managed::Obj;
@@ -50,6 +53,12 @@ std::string characterName;
 std::map<int64_t, std::string> spells, dungeons;
 std::map<int, std::string> worlds;
 unsigned nameReads = 0;
+// The spells with a SpellVariantData (a class's own: get_spellVariant reads
+// counted), the spells' data root missing (SpellData.GetById throws), or
+// get_spellVariant at another address than the pinned one.
+std::set<int64_t> classSpells;
+bool spellsMissing = false, variantMoved = false;
+unsigned variantReads = 0;
 // The dungeons' list GetObjects makes (a new one at each call, counted): no
 // data root to make it from, another class than List`1, a List`1 whose _size
 // moved, an array shorter than its count, or a SpellData with a listed
@@ -65,6 +74,7 @@ const FieldData MovedSize{"List`1", "_size", 0x1C};
 // The calls stats.cpp verifies, exactly as in the pinned snapshot.
 const MethodData Contracts[] = {
     {"esg", "zcx", 0, 0x18BB140}, {"SpellData", "GetById", 1, 0x7CCE20}, {"SpellData", "get_name", 0, 0x7CD300},
+    {"SpellData", "get_spellVariant", 0, 0x7CD6B0},
     {"DataCenterModule", "get_dungeonsDataRoot", 0, 0x7BC7C0}, {"MetadataRoot`1", "GetObjects", 0, 0x3874CB0},
     {"DungeonData", "get_name", 0, 0x7C24C0}, {"WorldMapData", "GetWorldMapById", 1, 0x7D3D50}, {"WorldMapData", "get_name", 0, 0x7D3DE0}};
 // The method pointer the client's MethodInfo holds, the one FindVerified
@@ -78,6 +88,7 @@ const MethodData Contracts[] = {
 constexpr uintptr_t UnresolvedCallStub = 0x5A3D40;
 uintptr_t PointerOf(const std::string& type, const std::string& name, int argc) {
     if (type == "MetadataRoot`1" && name == "GetObjectById" && argc == 1) return UnresolvedCallStub;
+    if (variantMoved && name == "get_spellVariant") return 0x7CD6C0;
     for (const auto& contract : Contracts)
         if (contract.type == type && contract.name == name && contract.argc == argc) return contract.rva;
     return 0;
@@ -186,8 +197,16 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
     }
     if (call.name == "GetById") {
         fake::Check(!self && args.size() == 1, "SpellData.GetById is static, with an Int64");
-        const auto found = fake::spells.find(*static_cast<int64_t*>(argument(0)));
-        return found == fake::spells.end() ? nullptr : fake::Make("SpellData", found->second);
+        // Its data root not loaded: the client's NullReferenceException, as api.Invoke throws it.
+        if (fake::spellsMissing) throw std::runtime_error("System.NullReferenceException");
+        const auto id = *static_cast<int64_t*>(argument(0));
+        const auto found = fake::spells.find(id);
+        return found == fake::spells.end() ? nullptr : fake::Make("SpellData", found->second, id);
+    }
+    if (call.name == "get_spellVariant") {
+        fake::Check(self && fake::Get(self).type == "SpellData" && args.size() == 0, "get_spellVariant on a SpellData");
+        ++fake::variantReads;
+        return fake::classSpells.contains(fake::Get(self).number) ? fake::Make("SpellVariantData") : nullptr;
     }
     if (call.name == "get_dungeonsDataRoot") return fake::noRoot ? nullptr : fake::Make("DungeonsDataRoot");
     if (call.name == "GetObjects") {
@@ -296,8 +315,11 @@ void RoundTrip() {
     Check(store.Pending() && store.Flush(50) == Result::Written && fs::exists(path) && !store.Pending(), "One write of the pending counts");
     const auto bytes = Bytes(path);
     for (const char* key : {"\"schema\"", "\"characters\"", "\"playMs\"", "\"modTrips\"", "\"biggestHit\"", "\"longestSessionMs\"",
-            "\"spells\"", "\"elements\"", "\"dungeons\"", "\"dimensions\"", "\"413\"", "\"Altansar\""})
+            "\"classSpellCasts\"", "\"classSpells\"", "\"elements\"", "\"dungeons\"", "\"dimensions\"", "\"413\"", "\"Altansar\""})
         Check(bytes.find(key) != std::string::npos, std::string("The file keeps its stable key ") + key);
+    // 1.15.0 to 1.16.0's spell keys are never written: whatever is found there is theirs.
+    Check(bytes.find("\"spells\"") == std::string::npos && bytes.find("\"spellCasts\"") == std::string::npos,
+        "The spells of 1.16.1 under their own keys only");
     const auto book = Saved(path);
     const auto& sheet = SheetOf(book, 7);
     Check(book.sheets.size() == 1 && sheet.name == "Altansar" && sheet.first == Day1 && sheet.last == Day3 && sheet.resets == 0,
@@ -588,12 +610,17 @@ void CorruptAndPartialFiles() {
         // Lenient on values: negative or invalid entries are dropped, two sheets of one character merged.
         const auto book = stats::Parse("{\"schema\": 1, \"resets\": 2, \"characters\": ["
             "{\"id\": 4, \"name\": \"Ana\", \"first\": 5, \"last\": 9, \"counters\": {\"xp\": -5, \"maps\": 3, \"playMs\": 1.5},"
-            " \"tables\": {\"spells\": {\"12\": 4, \"x\": 1, \"13\": -1, \"14\": 0, \"9999999999\": 2}}},"
-            "{\"id\": 4, \"first\": 2, \"counters\": {\"maps\": 1}}], \"resetAt\": 77}");
+            " \"tables\": {\"classSpells\": {\"12\": 4, \"x\": 1, \"13\": -1, \"14\": 0, \"9999999999\": 2},"
+            " \"spells\": {\"21\": 3, \"y\": 1, \"22\": -1}}},"
+            "{\"id\": 4, \"first\": 2, \"counters\": {\"maps\": 1, \"spellCasts\": 5}, \"tables\": {\"spells\": {\"21\": 2}}}], \"resetAt\": 77}");
         const auto& sheet = SheetOf(book, 4);
         Check(book.resets == 2 && book.resetAt == 77 && sheet.resetAt == 0 && book.sheets.size() == 1 && sheet.name == "Ana" && sheet.first == 2 && sheet.last == 9 &&
             Count(sheet, Counter::Xp) == 0 && Count(sheet, Counter::Maps) == 4 && Count(sheet, Counter::PlayMs) == 0 &&
-            Entries(sheet, Table::Spells) == std::map<int, int64_t>{{12, 4}}, "Invalid values dropped, duplicates merged");
+            Entries(sheet, Table::Spells) == std::map<int, int64_t>{{12, 4}} && sheet.legacy == std::map<int, int64_t>{{21, 5}} && sheet.legacyCasts,
+            "Invalid values dropped, duplicates merged, 1.16.0's spells too");
+        bool corrupt = false;
+        try { stats::Parse("{\"schema\": 1, \"characters\": [{\"id\": 3, \"tables\": {\"spells\": [1]}}]}"); } catch (const stats::Corrupt&) { corrupt = true; }
+        Check(corrupt, "1.16.0's spells must be a table too");
     }
 }
 
@@ -697,6 +724,126 @@ void UnknownFieldsKept() {
     Check(json.at("note") == "later" && sheet.at("badge") == nlohmann::json({1, 2}) && sheet.at("counters").at("future") == 9 &&
         sheet.at("counters").at("xp") == 3 && sheet.at("tables").at("pets").at("7") == 2 && sheet.at("tables").at("spells").at("5") == 1,
         "Unknown fields, counters and tables kept; known ones updated");
+}
+
+// A file as 1.16.0 writes it. Altansar, an Iop, cast Bond (13107) and Épée
+// Divine (13110); the server cast in its name its Dofus Pourpre's « Pourpre
+// Profond » (8395) and its Dofus Émeraude's « Vert Émeraude » (8393), counted
+// as spells under "spells" and "spellCasts" (64 casts, 40 of them the Dofus').
+nlohmann::json OldSheet(int64_t id, const std::string& name, nlohmann::json counters, nlohmann::json records, nlohmann::json tables) {
+    return {{"id", id}, {"name", name}, {"first", Day1}, {"last", Day2}, {"resets", 0}, {"counters", std::move(counters)},
+        {"records", std::move(records)}, {"tables", std::move(tables)}};
+}
+nlohmann::json OldFile() {
+    using nlohmann::json;
+    return {{"schema", 1}, {"resets", 0}, {"characters", json::array({
+        OldSheet(101, "Altansar", {{"playMs", 3600000}, {"xp", 500}, {"deaths", 2}, {"damageDealt", 12000}, {"fightsPve", 3}, {"spellCasts", 64}},
+            {{"biggestHit", 900}, {"longestSessionMs", 3600000}},
+            {{"spells", {{"8395", 30}, {"8393", 10}, {"13107", 15}, {"13110", 9}}}, {"elements", {{"2", 700}, {"4", 300}}},
+                {"dungeons", {{"51", 1}}}, {"dimensions", {{"1", 4}}}}),
+        OldSheet(202, "Bouftou", {{"maps", 3}, {"spellCasts", 7}}, json::object(), {{"spells", {{"13107", 4}, {"8395", 3}}}})})}};
+}
+// The file without any spell key, old or new.
+nlohmann::json WithoutSpells(nlohmann::json file) {
+    for (auto& sheet : file["characters"]) {
+        for (const char* key : {"spellCasts", "classSpellCasts"}) sheet["counters"].erase(key);
+        for (const char* key : {"spells", "classSpells"}) sheet["tables"].erase(key);
+    }
+    return file;
+}
+// 1.15.0 to 1.16.0's spells are never shown. Once the game told whose each is
+// (Classify), the next write converts them: a class's spell kept under the new
+// keys with its casts, any other dropped, nothing else changed. Converted
+// exactly once, whichever client writes first; what an older client still
+// running adds later under the old keys is converted too; an unknown one waits.
+void OldSpells() {
+    using nlohmann::json;
+    const auto path = File("old-spells");
+    const auto old = OldFile();
+    Put(path, old.dump(1));
+    const auto bytes = Bytes(path);
+    Store store, other;
+    store.Open(path);
+    other.Open(path);
+    const auto shown = store.Show(101);
+    Check(shown.Count(Counter::SpellCasts) == 0 && shown.Entries(Table::Spells).empty() && shown.Count(Counter::Xp) == 500 &&
+        shown.Entries(Table::Elements).size() == 2 && store.Show(0).Count(Counter::SpellCasts) == 0, "1.16.0's spells are never shown as they are");
+    Check(store.Unsorted(100) == std::vector<int>{8393, 8395, 13107, 13110} && store.Unsorted(2) == std::vector<int>{8393, 8395},
+        "Their spells, for the game's data to tell whose each is");
+    Check(!store.Pending() && !store.Converting() && store.Flush(50) == Result::Nothing && Bytes(path) == bytes, "Nothing written before it told");
+    // Told in part: the next write converts what is known, the rest waits under its old key.
+    store.Classify(13107, true);
+    store.Classify(8395, false);
+    Check(store.Pending() && store.Converting() && store.Unsorted(100) == std::vector<int>{8393, 13110}, "Two spells told");
+    Check(store.Flush(50) == Result::Written, "Written");
+    auto file = json::parse(Bytes(path));
+    Check(file["characters"][0]["tables"]["classSpells"] == json({{"13107", 15}}) && file["characters"][0]["counters"]["classSpellCasts"] == 15 &&
+        file["characters"][0]["tables"]["spells"] == json({{"8393", 10}, {"13110", 9}}) && !file["characters"][0]["counters"].contains("spellCasts"),
+        "The class's spell kept with its casts, the Dofus Pourpre's dropped, the others waiting; the old casts counter gone");
+    Check(file["characters"][1]["tables"]["classSpells"] == json({{"13107", 4}}) && file["characters"][1]["counters"]["classSpellCasts"] == 4 &&
+        !file["characters"][1]["tables"].contains("spells") && !file["characters"][1]["counters"].contains("spellCasts"), "Every character's");
+    store.Classify(8393, false);
+    store.Classify(13110, true);
+    Check(store.Pending() && store.Flush(50) == Result::Written, "The rest once told");
+    file = json::parse(Bytes(path));
+    Check(file["characters"][0]["tables"]["classSpells"] == json({{"13107", 15}, {"13110", 9}}) && file["characters"][0]["counters"]["classSpellCasts"] == 24 &&
+        !file["characters"][0]["tables"].contains("spells"), "Altansar's spells: Bond and Épée Divine, 24 casts, never the Dofus' 40");
+    Check(WithoutSpells(file) == WithoutSpells(old), "Nothing else changed: counters, records, elements, dungeons, worlds, names, dates");
+    const auto converted = Bytes(path);
+    Check(!store.Pending() && store.Flush(50) == Result::Nothing && Bytes(path) == converted, "Converted once");
+    Check(store.Show(101).Count(Counter::SpellCasts) == 24 && store.Show(101).Count(Counter::Xp) == 500 &&
+        store.Show(101).Entries(Table::Spells) == std::vector<std::pair<int, int64_t>>{{13107, 15}, {13110, 9}}, "And shown");
+    // Another 1.16.1 client that read the file before, told the same: nothing left to convert, never twice.
+    for (const int spell : {8393, 8395, 13107, 13110}) other.Classify(spell, spell > 10000);
+    Check(other.Pending() && other.Flush(50) == Result::Nothing && Bytes(path) == converted && other.Show(101).Count(Counter::SpellCasts) == 24,
+        "Another client's write after the conversion converts nothing twice");
+    // An older client still running (1.16.0) writes its own counts: under the
+    // old keys, the new ones kept as they are (unknown to it). Converted at the
+    // next write, its Dofus' effects dropped again, with this client's counts.
+    file = json::parse(Bytes(path));
+    file["characters"][0]["counters"]["spellCasts"] = 6;
+    file["characters"][0]["tables"]["spells"] = {{"8395", 4}, {"13107", 2}};
+    file["characters"][0]["counters"]["xp"] = 510;
+    Put(path, file.dump(1));
+    store.Refresh();
+    Check(store.Show(101).Count(Counter::SpellCasts) == 24 && store.Show(101).Count(Counter::Xp) == 510 && store.Converting(),
+        "An older client's spells: never shown, to convert");
+    store.Add(101, Counter::Xp, 5, Day3);
+    store.Add(101, Counter::SpellCasts, 1, Day3);
+    store.AddTo(101, Table::Spells, 13107, 1, Day3);
+    Check(store.Flush(50) == Result::Written, "Written with this client's counts");
+    file = json::parse(Bytes(path));
+    Check(file["characters"][0]["tables"]["classSpells"] == json({{"13107", 18}, {"13110", 9}}) && file["characters"][0]["counters"]["classSpellCasts"] == 27 &&
+        file["characters"][0]["counters"]["xp"] == 515 && !file["characters"][0]["tables"].contains("spells") &&
+        !file["characters"][0]["counters"].contains("spellCasts"), "Its class's spells added, its Dofus' effects dropped");
+    // A spell the game has not told about yet waits under its old key, never
+    // shown; the other counts are written meanwhile, the old casts counter goes.
+    file["characters"][1]["tables"]["spells"] = {{"424242", 2}};
+    file["characters"][1]["counters"]["spellCasts"] = 2;
+    Put(path, file.dump(1));
+    store.Refresh();
+    Check(!store.Pending() && store.Unsorted(100) == std::vector<int>{424242}, "An unknown spell waits");
+    store.Add(202, Counter::Maps, 1, Day3);
+    Check(store.Flush(50) == Result::Written, "Written");
+    file = json::parse(Bytes(path));
+    Check(file["characters"][1]["tables"]["spells"] == json({{"424242", 2}}) && !file["characters"][1]["counters"].contains("spellCasts") &&
+        file["characters"][1]["counters"]["classSpellCasts"] == 4 && file["characters"][1]["counters"]["maps"] == 4, "...under its old key");
+    store.Classify(424242, false);
+    Check(store.Pending() && store.Flush(50) == Result::Written && !json::parse(Bytes(path))["characters"][1]["tables"].contains("spells") &&
+        store.Show(202).Count(Counter::SpellCasts) == 4, "Dropped once told");
+    // A reset erases the character's, and converts the other characters' in the same write.
+    file = json::parse(Bytes(path));
+    file["characters"][1]["tables"]["spells"] = {{"13107", 1}};
+    file["characters"][1]["counters"]["spellCasts"] = 1;
+    file["characters"][0]["tables"]["spells"] = {{"8395", 2}, {"13110", 1}};
+    file["characters"][0]["counters"]["spellCasts"] = 3;
+    Put(path, file.dump(1));
+    Check(store.Clear(202, 50, Day3) == Result::Written, "Erased");
+    file = json::parse(Bytes(path));
+    Check(file["characters"][1]["tables"].empty() && file["characters"][1]["counters"].empty() && store.Show(202).Count(Counter::SpellCasts) == 0,
+        "A reset leaves no spell of any kind");
+    Check(file["characters"][0]["tables"]["classSpells"]["13110"] == 10 && !file["characters"][0]["tables"].contains("spells") &&
+        !file["characters"][0]["counters"].contains("spellCasts") && store.Show(101).Count(Counter::SpellCasts) == 28, "The others' converted with it");
 }
 
 // The module's side, on the fake runtime.
@@ -927,6 +1074,91 @@ void ModuleFollowsOtherResets() {
     Check(Count(SheetOf(Saved(path), 303), Counter::Xp) == 7 && Saved(path).resets == 1, "...and written");
 }
 
+// 1.15.0 to 1.16.0's spells in the module's file: the game's data tells whose
+// each is (a class's spell has a SpellVariantData), once per spell, while
+// counting, or while the window is open with the box unticked (the statistics
+// already counted stay shown), then a write converts them at once. While its
+// spells are not loaded (GetById throws) they wait and it is asked again a
+// second later; what an older client adds later is converted within seconds;
+// without the pinned get_spellVariant nothing is converted, the names still read.
+void ModuleConvertsOldSpells() {
+    const auto folder = Folder("module-old-spells");
+    const auto path = folder / L"DofusMiniatures-stats.json";
+    Put(path, OldFile().dump(1));
+    const auto bytes = Bytes(path);
+    Client client(folder);
+    fake::characterId = 101;
+    fake::characterName = "Altansar";
+    fake::spells = {{8395, "Pourpre Profond"}, {8393, "Vert Émeraude"}, {13107, "Bond"}, {13110, "Épée Divine"}};
+    fake::classSpells = {13107, 13110};
+    fake::spellsMissing = true;
+    fake::logs.clear();
+    Install();
+    for (const auto& line : fake::logs) Check(line.find("_DISABLED") == std::string::npos, "No part disabled on the pinned client: " + line);
+    TickStats();
+    Check(Bytes(path) == bytes && stats::Shown(false).Entries(Table::Spells).empty() && stats::Shown(false).Count(Counter::Xp) == 500 &&
+        stats::KindOf(13107) == stats::SpellKind::Unknown, "The game's spells not loaded: nothing converted or shown, the kind unknown");
+    fake::spellsMissing = false;
+    TickStats();
+    Check(Bytes(path) == bytes, "Asked again only a second later");
+    stats::state.nextSort = 0;
+    const auto reads = fake::variantReads;
+    TickStats();
+    const auto mine = stats::Shown(false);
+    Check(mine.Count(Counter::SpellCasts) == 24 && mine.Entries(Table::Spells) == std::vector<std::pair<int, int64_t>>{{13107, 15}, {13110, 9}} &&
+        stats::Shown(true).Count(Counter::SpellCasts) == 28 && fake::variantReads == reads + 4,
+        "Converted at once: the class's spells with their casts, each spell asked once");
+    Check(std::count(fake::logs.begin(), fake::logs.end(), "STATS_OLD_SPELLS sorted=4 class=2") == 1 &&
+        std::count_if(fake::logs.begin(), fake::logs.end(), [](const std::string& line) { return line.rfind("STATS_SPELL_KIND_ERROR", 0) == 0; }) == 1,
+        "One line for the spells sorted, one (a minute at most) while the game could not tell");
+    Check(WithoutSpells(nlohmann::json::parse(Bytes(path))) == WithoutSpells(OldFile()), "Nothing else changed");
+    Check(stats::KindOf(13107) == stats::SpellKind::Class && stats::KindOf(8395) == stats::SpellKind::Other &&
+        stats::KindOf(8393) == stats::SpellKind::Other && stats::KindOf(424242) == stats::SpellKind::Other && fake::variantReads == reads + 4,
+        "A class's spell, the Dofus' effects, a spell the game does not know: answered from the cache");
+    Check(stats::KeyName(Table::Spells, 13107) == "Bond" && stats::KeyName(Table::Spells, 8395) == "Pourpre Profond", "Their names, from the game's data");
+    // An older client still running adds to the old keys: converted within seconds.
+    auto file = nlohmann::json::parse(Bytes(path));
+    file["characters"][0]["tables"]["spells"] = {{"8393", 5}, {"13110", 1}};
+    file["characters"][0]["counters"]["spellCasts"] = 6;
+    Put(path, file.dump(1));
+    stats::state.nextRefresh = 0;
+    stats::state.nextSort = 0;
+    TickStats();
+    file = nlohmann::json::parse(Bytes(path));
+    Check(stats::Shown(false).Count(Counter::SpellCasts) == 25 && file["characters"][0]["tables"]["classSpells"]["13110"] == 10 &&
+        !file["characters"][0]["tables"].contains("spells") && !file["characters"][0]["counters"].contains("spellCasts"), "An older client's spells converted too");
+    // Unticked, the statistics already counted stay shown, the old spells too:
+    // nothing asked or written while the window is closed; once it is open,
+    // converted and shown at the next pump, nothing counted meanwhile.
+    Put(path, OldFile().dump(1));
+    client.state.settings.statsEnabled = false;
+    Install();
+    const auto asked = fake::variantReads;
+    TickStats();
+    Check(!stats::Counting() && Bytes(path) == bytes && fake::variantReads == asked, "Unticked, the window closed: nothing asked or written");
+    Check(stats::Shown(false).Entries(Table::Spells).empty(), "The window opened: not converted before the next pump");
+    stats::Add(101, Counter::Xp, 1);
+    TickStats();
+    const auto unticked = stats::Shown(false);
+    Check(unticked.Count(Counter::SpellCasts) == 24 && unticked.Entries(Table::Spells) == std::vector<std::pair<int, int64_t>>{{13107, 15}, {13110, 9}} &&
+        fake::variantReads == asked + 4 && WithoutSpells(nlohmann::json::parse(Bytes(path))) == WithoutSpells(OldFile()),
+        "Unticked, the window open: the class's spells converted and shown, nothing counted");
+    client.state.settings.statsEnabled = true;
+    // Without the pinned get_spellVariant: logged once, nothing converted, every kind unknown, the names kept.
+    Put(path, OldFile().dump(1));
+    fake::variantMoved = true;
+    fake::logs.clear();
+    Install();
+    fake::variantMoved = false;
+    stats::state.nextSort = 0;
+    TickStats();
+    Check(std::count(fake::logs.begin(), fake::logs.end(), "STATS_SPELL_KINDS_DISABLED Verified method unavailable: SpellData.get_spellVariant") == 1 &&
+        Bytes(path) == bytes && stats::KindOf(13107) == stats::SpellKind::Unknown && stats::KeyName(Table::Spells, 13107) == "Bond",
+        "Without its contract: off alone, logged once");
+    fake::spells.clear();
+    fake::classSpells.clear();
+}
+
 // Without the game's contracts: still counting, the character unknown, no names; never a throw.
 void ModuleWithoutRuntime() {
     const auto folder = Folder("no-runtime");
@@ -935,7 +1167,8 @@ void ModuleWithoutRuntime() {
     fake::logs.clear();
     Install();
     fake::runtimeMissing = false;
-    for (const char* part : {"STATS_CHARACTER_DISABLED", "STATS_SPELL_NAMES_DISABLED", "STATS_DUNGEON_NAMES_DISABLED", "STATS_WORLD_NAMES_DISABLED"})
+    for (const char* part : {"STATS_CHARACTER_DISABLED", "STATS_SPELL_NAMES_DISABLED", "STATS_SPELL_KINDS_DISABLED", "STATS_DUNGEON_NAMES_DISABLED",
+            "STATS_WORLD_NAMES_DISABLED"})
         Check(std::any_of(fake::logs.begin(), fake::logs.end(), [part](const std::string& line) { return line.rfind(part, 0) == 0; }),
             std::string("Each part disables only itself: ") + part);
     TickStats();
@@ -969,19 +1202,24 @@ int main() {
         BusyLock();
         Bounds();
         UnknownFieldsKept();
+        OldSpells();
         ModuleSide();
         DungeonNames();
         ModuleFollowsOtherResets();
+        ModuleConvertsOldSpells();
         ModuleWithoutRuntime();
         stats::UseGame(nullptr);
         fs::remove_all(root, ignored);
         std::cout << "PASS: statistics store (round trip of every counter, record and table under stable keys; two clients merging under the file's lock in any order; "
                      "resets of one or every character, by this client or another, with their time: unwritten counts older than a reset dropped, later ones written; "
                      "the longest session within the time played; corrupt, partial, oversized and missing files kept aside "
-                     "or recovered from the backup; a later revision's file never rewritten; a busy lock retried; 512 spells and 256 characters; unknown fields kept) "
+                     "or recovered from the backup; a later revision's file never rewritten; a busy lock retried; 512 spells and 256 characters; unknown fields kept; "
+                     "1.16.0's spells never shown, converted once told whose each is: a class's kept with its casts, the Dofus' effects dropped, nothing else "
+                     "changed, once whichever client writes, an older client's later ones too, an unknown one waiting, a reset erasing them) "
                      "and module side (counting only while statsEnabled is on and the module runs, until Stop's flush; the played character from esg; a write after a minute, "
                      "at a change of character and at Stop; another client's reset applied at the next read of the file; this character's and every character's "
-                     "totals; resets; spell, dungeon, world and element names; each contract with its guard) and dungeon names "
+                     "totals; resets; spell, dungeon, world and element names; whose spell a spell is (its SpellVariantData), asked once, the old spells "
+                     "converted at once (unticked: while the window is open), waiting while the game's spells are not loaded; each contract with its guard) and dungeon names "
                      "(1.15.0's MetadataRoot`1.GetObjectById refused as the client refuses it; every dungeon from GetObjects, the one of an id named "
                      "once; no data root or an empty list asked again; another class skipped; an unreadable list turns them off, logged once)\n";
         return 0;

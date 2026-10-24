@@ -22,10 +22,11 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The thirteen native sections of the mod, in display order: section i has the
+// The fourteen native sections of the mod, in display order: section i has the
 // id ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
-enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, NotebookSection, TravelSection, SoulSection, ChatSection,
-    CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
+// « Chasse au trésor » (1.16.1) holds its panel's top-bar button alone.
+enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, MapsSection, NotebookSection, TreasureSection, TravelSection, SoulSection,
+    ChatSection, CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
 // « Statistiques »: the counting checkbox, « Voir mes statistiques » (an owned
 // text button opening the window: OpenStatsWindow below counts the opens) and
 // the checkbox of the window's top-bar button.
@@ -34,7 +35,7 @@ unsigned statsOpens = 0;
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
     PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
-// The Metamob rows sit in « Pierre d’âme », after the two soul rows.
+// The Metamob rows sit in « Pierre d’âme », after the two soul rows and Capture d’âme's top-bar button.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
 // « Apparence » checkbox titles, in Settings' category order.
 constexpr const char* CombatCategoryTitles[] = {"Moi", "Joueurs alliés", "Invocations alliées", "Mes invocations", "Ennemis", "Invocations ennemies"};
@@ -607,9 +608,9 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.extraSources[MiniMapZoneNameExtra].get(), ui.mapCoordsSource.get(), ui.miniMapCoordsSource.get(),
         ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(), ui.mapMenuSource.get(),
         ui.extraSources[NotebookPingExtra].get(), ui.extraSources[NotebookCopyExtra].get(), ui.extraSources[NotebookTravelExtra].get(),
-        ui.extraSources[MapAddPositionExtra].get(),
+        ui.extraSources[MapAddPositionExtra].get(), ui.notebookButtonSource.get(), ui.treasureButtonSource.get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
-        ui.soulSource.get(), ui.soulAutoSource.get(), ui.metamobSyncSource.get(),
+        ui.soulSource.get(), ui.soulAutoSource.get(), ui.soulButtonSource.get(), ui.metamobSyncSource.get(),
         ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.chatCoordsSource.get(),
         ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
         ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.extraSources[PerfButtonExtra].get(),
@@ -667,7 +668,10 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         {"Carnet", {CheckRow(ui.extraOptions[NotebookPingExtra], ui.extraSources[NotebookPingExtra], "Bouton de repère à côté des positions", true),
             CheckRow(ui.extraOptions[NotebookCopyExtra], ui.extraSources[NotebookCopyExtra], "Bouton de copie à côté des positions", true),
             CheckRow(ui.extraOptions[NotebookTravelExtra], ui.extraSources[NotebookTravelExtra], "Bouton de voyage à côté des positions", true),
-            CheckRow(ui.extraOptions[MapAddPositionExtra], ui.extraSources[MapAddPositionExtra], "« Ajouter aux positions » au clic droit sur les cartes", true)}},
+            CheckRow(ui.extraOptions[MapAddPositionExtra], ui.extraSources[MapAddPositionExtra], "« Ajouter aux positions » au clic droit sur les cartes", true),
+            CheckRow(ui.notebookButtonOption, ui.notebookButtonSource, "Bouton dans la barre du haut", true)}},
+        // « Chasse au trésor » (1.16.1): its panel's top-bar button alone, ticked by default.
+        {"Chasse au trésor", {CheckRow(ui.treasureButtonOption, ui.treasureButtonSource, "Bouton dans la barre du haut", true)}},
         {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
             CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true),
@@ -675,6 +679,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.templeOption, ui.templeSource, "Passage secret et temple des Roublards", true)}},
         {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
             CheckRow(ui.soulAutoOption, ui.soulAutoSource, "Équiper automatiquement la pierre d’âme", true),
+            CheckRow(ui.soulButtonOption, ui.soulButtonSource, "Bouton dans la barre du haut", true),
             CheckRow(ui.metamobSyncOption, ui.metamobSyncSource, "Synchroniser les captures avec Metamob", false),
             ButtonRow(ui.metamobKeyOption, "Clé API Metamob")}},
         {"Chat", {CheckRow(ui.chatTravelOption, ui.chatTravelSource, "Bouton TP dans le chat", true),
@@ -694,7 +699,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.16.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.16.1 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -801,12 +806,12 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.16.0" && std::string(ModVersion) == "r116" &&
-        ModRevision == 116,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.16.1" && std::string(ModVersion) == "r117" &&
+        ModRevision == 117,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its thirteen native sections, from Apparence and Animations to À propos, and no row of its own");
+        "Mod must hold its fourteen native sections, from Apparence and Animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -832,12 +837,12 @@ void CheckLayout(Fixture& f) {
         }
     }
     Check(shownSources == AllSources(f.Ui()), "Every private source must be shown once, by its own row");
-    // « Pierre d’âme », after the two soul rows: the Metamob sync preference,
-    // then the key row, an owned text button (no forget row any more: the
-    // saved key's trash replaces it).
+    // « Pierre d’âme », after the two soul rows and Capture d’âme's top-bar
+    // button: the Metamob sync preference, then the key row, an owned text
+    // button (no forget row any more: the saved key's trash replaces it).
     const auto& soul = Rows(Section(parent, SoulSection));
-    const auto sync = soul.at(2), key = soul.at(3);
-    Check(soul.size() == 4, "Pierre d’âme: Alerte, Équiper automatiquement, Synchroniser les captures avec Metamob, Clé API Metamob");
+    const auto sync = soul.at(3), key = soul.at(4);
+    Check(soul.size() == 5, "Pierre d’âme: Alerte, Équiper automatiquement, Bouton dans la barre du haut, Synchroniser les captures avec Metamob, Clé API Metamob");
     Check(Description(sync) == SyncDescription, "The sync row must say what it changes, what it needs and its default");
     Check(Description(key) == KeyDescription, "The key row must explain the masked field, the check, the storage and the trash");
     Check(ButtonText(key) == "Enregistrer" && Get(key).integers.at("icon") == 148, "The key row uses the native floppy button");
@@ -847,14 +852,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.16.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.16.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r116") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r117") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 63 && optionModels == 63 + 3,
-        "The UI must create sixty-three private sources and sixty-six rows");
+    Check(sourceModels == 66 && optionModels == 66 + 3,
+        "The UI must create sixty-six private sources and sixty-nine rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1313,6 +1318,7 @@ Settings AwayFromDefaults() {
     settings.perfOverlayShown = false;
     settings.coordsWorldChatMode = 2; settings.coordsWorldMapMode = 0; settings.coordsWorldMiniMapMode = 2; // away from « Oui, sauf »
     settings.statsEnabled = settings.statsButton = false;
+    settings.soulButton = settings.treasureButton = settings.notebookButton = false;
     return settings;
 }
 // The preferences behind one section's rows, back to their defaults.
@@ -1336,11 +1342,15 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.coordsWorldMapMode = defaults.coordsWorldMapMode; settings.coordsWorldMiniMapMode = defaults.coordsWorldMiniMapMode;
     } else if (index == NotebookSection) {
         for (auto extra : {NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
+        settings.notebookButton = defaults.notebookButton;
+    } else if (index == TreasureSection) {
+        settings.treasureButton = defaults.treasureButton;
     } else if (index == TravelSection) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
         settings.mapTravelPlanner = defaults.mapTravelPlanner; settings.travelRoublardTemple = defaults.travelRoublardTemple;
     } else if (index == SoulSection) {
         settings.soulReminder = defaults.soulReminder; settings.soulAutoEquip = defaults.soulAutoEquip;
+        settings.soulButton = defaults.soulButton;
         settings.metamobSync = defaults.metamobSync;
     } else if (index == ChatSection) {
         settings.chatTravelLinks = defaults.chatTravelLinks; settings.chatSoulInventory = defaults.chatSoulInventory;
@@ -1405,8 +1415,8 @@ void NotebookSectionRows() {
     auto& ui = f.Ui();
     const auto parent = f.Categories().back();
     Check(Rows(Section(parent, NotebookSection)) == std::vector<Obj>({ui.extraOptions[NotebookPingExtra].get(), ui.extraOptions[NotebookCopyExtra].get(),
-        ui.extraOptions[NotebookTravelExtra].get(), ui.extraOptions[MapAddPositionExtra].get()}),
-        "Carnet: the pin, copy and travel buttons, then « Ajouter aux positions »");
+        ui.extraOptions[NotebookTravelExtra].get(), ui.extraOptions[MapAddPositionExtra].get(), ui.notebookButtonOption.get()}),
+        "Carnet: the pin, copy and travel buttons, « Ajouter aux positions », then the notebook's top-bar button");
     struct Row { ExtraIndex extra; bool Settings::* field; const char* title; const char* unticked; };
     const Row rows[] = {
         {NotebookCopyExtra, &Settings::notebookCopyButton, "Bouton de copie à côté des positions",
@@ -1456,6 +1466,87 @@ void NotebookSectionRows() {
     Check(f.state.settings == expected, "The Carnet reset ticks both boxes again");
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
+}
+
+// « Bouton dans la barre du haut » (1.16.1) of Capture d’âme (« Pierre d’âme »,
+// after the two soul rows), of the treasure hunt (« Chasse au trésor », its only
+// row, between « Carnet » and « Déplacements ») and of the notebook (last row of
+// « Carnet »): titled like the statistics window's and the overlay's, each row
+// says what its button does and what is left once unticked (the treasure panel
+// and the notebook have no other shortcut), commits only its own setting,
+// follows an outside change and is ticked again by its own section's reset.
+void TopBarButtonRows() {
+    Fixture f;
+    f.state.settings.soulButton = f.state.settings.treasureButton = f.state.settings.notebookButton = false;
+    initHook(f.page, false, true, SectionId(TreasureSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    const auto parent = f.Categories().back();
+    Check(Name(Section(parent, TreasureSection)) == "Chasse au trésor" && Name(Section(parent, TreasureSection - 1)) == "Carnet" &&
+        Name(Section(parent, TreasureSection + 1)) == "Déplacements" &&
+        Rows(Section(parent, TreasureSection)) == std::vector<Obj>({ui.treasureButtonOption.get()}),
+        "« Chasse au trésor », between « Carnet » and « Déplacements », holds its button's row alone");
+    const auto& soul = Rows(Section(parent, SoulSection));
+    Check(soul.at(0) == ui.soulOption.get() && soul.at(1) == ui.soulAutoOption.get() && soul.at(2) == ui.soulButtonOption.get() &&
+        soul.at(3) == ui.metamobSyncOption.get(), "Pierre d’âme: Capture d’âme's button after the alert and the automatic equipment, before Metamob");
+    Check(Rows(Section(parent, NotebookSection)).back() == ui.notebookButtonOption.get(), "Carnet: the notebook's button last");
+    struct Row { const Ref& option; const Ref& source; bool Settings::* field; std::vector<const char*> terms; };
+    const Row rows[] = {
+        {ui.soulButtonOption, ui.soulButtonSource, &Settings::soulButton,
+            {"Ajoute en haut à droite de l’écran, à gauche des autres boutons du mod, le bouton Capture d’âme",
+             "un clic active ou désactive l’alerte pierre d’âme, comme la case « Alerte pierre d’âme » ci-dessus",
+             "le bouton reste enfoncé tant qu’elle est active", "Décochée, le bouton disparaît sans rien changer à l’alerte",
+             "qui ne se réactive alors qu’avec « Alerte pierre d’âme »", "les autres boutons du mod restent à leur place"}},
+        {ui.treasureButtonOption, ui.treasureButtonSource, &Settings::treasureButton,
+            {"Ajoute en haut à droite de l’écran, à côté de Capture d’âme, un bouton qui ouvre ou ferme le panneau de chasse au trésor",
+             "C’est le seul moyen d’ouvrir ce panneau : décochée, le bouton disparaît et le panneau ne s’ouvre plus ; recoche-la pour retrouver le bouton.",
+             "Un panneau déjà ouvert reste ouvert et se ferme toujours avec sa croix ou « Masquer le module » de son menu."}},
+        {ui.notebookButtonOption, ui.notebookButtonSource, &Settings::notebookButton,
+            {"Ajoute en haut à droite de l’écran, à côté de Capture d’âme, un bouton qui ouvre ou ferme le carnet.",
+             "C’est le seul moyen d’ouvrir le carnet : décochée, le bouton disparaît et le carnet ne s’ouvre plus ; recoche-la pour retrouver le bouton.",
+             "Tes entrées restent enregistrées",
+             "Un carnet déjà ouvert reste ouvert et se ferme toujours avec sa croix ou « Masquer le module » de son menu."}}};
+    for (const auto& row : rows) {
+        const auto& source = Get(row.source.get());
+        Check(Get(row.option.get()).klass->name == "BoolOption" && Label(row.option.get()) == "Bouton dans la barre du haut" &&
+            Label(row.option.get()) == Label(ui.statsButtonOption.get()) && Get(row.option.get()).refs.at("source") == row.source.get() &&
+            source.klass->name == "BoolSource" && !source.boolean && source.defaultBoolean,
+            "A native checkbox titled like the other top-bar buttons, showing the saved choice, ticked as its reset default");
+        const auto description = Description(row.option.get());
+        for (const char* term : row.terms)
+            Check(description.find(term) != std::string::npos, std::string("« Bouton dans la barre du haut » says: ") + term);
+        Check(description.ends_with(" Activé par défaut.") && description.find('\'') == std::string::npos && description.find("⋯") == std::string::npos,
+            "Its default last, typographic apostrophes, no glyph the game's fonts lack");
+    }
+    // Each box commits only its own setting, once; an outside change shows in it.
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (const auto& row : rows)
+        for (bool value : {true, false, true}) {
+            Get(row.source.get()).boolean = value;
+            ui.Tick();
+            expected.*row.field = value;
+            ++commits;
+            Check(f.state.settings == expected && changes == commits, "A click changes only its own button's setting, once");
+        }
+    f.state.settings.soulButton = f.state.settings.treasureButton = f.state.settings.notebookButton = false;
+    ui.Sync();
+    for (const auto& row : rows) Check(!Get(row.source.get()).boolean, "Outside changes show in the boxes");
+    // Each section's reset ticks its own box again and leaves the other two.
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    const std::pair<size_t, bool Settings::*> sections[] = {
+        {SoulSection, &Settings::soulButton}, {TreasureSection, &Settings::treasureButton}, {NotebookSection, &Settings::notebookButton}};
+    for (const auto& [index, field] : sections) {
+        expected = WithSectionDefaults(f.state.settings, index);
+        api.Call(Section(displayedParent, index), "Reset");
+        ui.Tick();
+        Check(f.state.settings == expected && f.state.settings.*field, "A section's reset ticks its own top-bar button again, nothing else");
+    }
+    Check(f.state.settings.soulButton && f.state.settings.treasureButton && f.state.settings.notebookButton, "Every button back after the three resets");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
+    Check(!ui.soulButtonSource.get() && !ui.soulButtonOption.get() && !ui.treasureButtonSource.get() && !ui.treasureButtonOption.get() &&
+        !ui.notebookButtonSource.get() && !ui.notebookButtonOption.get(), "Restore releases the rows");
 }
 
 void ResourceMapMasterPreservesSelection() {
@@ -2438,7 +2529,8 @@ void PerformanceSectionRows() {
                 "Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire.", "Désactivé par défaut."})
             Check(text.find(term) != std::string::npos, std::string("The GPU and disk boxes say: ") + term);
     for (const char* term : {"Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux",
-            "ou par son coin en bas à droite, le seul sans arrondi, pour l’agrandir ou le réduire", "de la moitié au triple de sa taille normale",
+            "Pour l’agrandir ou le réduire (de la moitié au triple de sa taille normale, texte compris), fais glisser son coin en bas à droite",
+            "où une petite poignée de points apparaît quand la souris survole l’affichage", "ou bien son bord droit ou son bord bas",
             "son coin en haut à gauche reste alors en place", "Il reste entièrement à l’écran", "sa place et sa taille sont gardées",
             "Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu.", "Activé par défaut."})
         Check(drag.find(term) != std::string::npos, std::string("« Déplacer et redimensionner l’affichage à la souris » says: ") + term);
@@ -2553,6 +2645,7 @@ int main() {
         run(fake::MapMenuSettingsRow);
         run(fake::ResourceMapMasterPreservesSelection);
         run(fake::NotebookSectionRows);
+        run(fake::TopBarButtonRows);
         run(fake::AutoLoadFailureIsRecoverable);
         run(fake::DeferredAndAccountGate);
         run(fake::CollisionAndSessionMismatch);
@@ -2572,7 +2665,7 @@ int main() {
         run(fake::PerformanceSectionRows);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: thirteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button)\n";
+        std::cout << "PASS: fourteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

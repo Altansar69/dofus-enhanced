@@ -13,6 +13,7 @@ struct Settings {
     int preferredMode = 2;
     int preferredRoleplayMode = 1;
     bool soulReminder = true;
+    bool soulButton = true; // Pierre d’âme : bouton Capture d’âme dans la barre du haut, qui coche ou décoche soulReminder (1.16.1)
     // Surbrillance : une case par catégorie entourée hors combat, dans l'ordre de
     // GlowCategoryToggles (r116). Les monstres, seuls entourés avant ces cases,
     // restent cochés par défaut ; sans case cochée, rien n'est entouré.
@@ -32,6 +33,11 @@ struct Settings {
     bool smallHeaderSoul = false, smallHeaderTreasure = false, smallHeaderNotebook = false; // "Réduire les titres des modules"
     bool smallHeaderStats = false; // "Réduire les titres des modules" : la fenêtre des statistiques (1.16.0)
     bool notebookCompact = false; // Carnet : version compacte (liste et actions seulement), choisie dans le menu ⋯ du panneau
+    // Les boutons de la chasse au trésor et du carnet dans la barre du haut
+    // (1.16.1), leur seul raccourci : décoché, le bouton disparaît et un panneau
+    // ouvert le reste.
+    bool treasureButton = true; // Chasse au trésor : bouton du panneau de recherche DofusDB
+    bool notebookButton = true; // Carnet : bouton du carnet personnel
     bool metamobSync = false; // Metamob : +1 dans la quête Metamob après chaque capture d'archimonstre ou de boss (la clé n'est jamais ici)
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;

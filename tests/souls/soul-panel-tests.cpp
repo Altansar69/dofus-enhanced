@@ -82,6 +82,17 @@ void HeaderMenuRejectsStaleAndCleanupFailure() {
     Check(soul::PanelCleanupPending()&&Get(recreated.button).fields["manipulator"],"Failed manipulator removal retained");
     f.panel.Hide();Check(!soul::PanelCleanupPending()&&!Get(recreated.button).fields["manipulator"],"Cleanup retries exact manipulator");
 }
+// The hide row's help names the way back: the top bar's Capture d'âme button
+// while soulButton shows it, otherwise only the options' checkbox (1.16.1).
+void HeaderMenuHelpFollowsTopBarButton() {
+    Fixture f;MenuFixture shown(f);
+    const auto help=[](const MenuFixture& menu){return Get(Get(menu.item).fields.at("help")).text;};
+    Check(help(shown)=="Réactiver Capture d’âme depuis la barre des modules ou les options du mod.","With its top-bar button, the help names the bar and the options");
+    f.owner.settings.soulButton=false;MenuFixture hidden(f);
+    Check(!Panel(shown.root)&&help(hidden)=="Réactiver Capture d’âme depuis les options du mod : « Alerte pierre d’âme ».","Without it, the next menu names only the options' checkbox");
+    Check(soul::HandlePanelMenuCallback(hidden.callback,hidden.view)&&hides==1&&!f.owner.settings.soulReminder&&!f.owner.settings.soulButton,
+        "Only the help changes: the row still switches the alert off");
+}
 bool OnlyModuleRefs() {
     return module&&handles.size()==2&&std::all_of(handles.begin(),handles.end(),[](const auto& entry) {
         return entry.second==module->cached.get()||entry.second==module->compositor.get();
@@ -335,10 +346,10 @@ int main() {
         soul::Panel preinstall;preinstall.Hide();
         fake::SpellMatchesActionBarAndHudLayer();
         fake::ComposedAuxiliaryActions();
-        for(auto test:{fake::HeaderMenuSelectionAndReopen,fake::HeaderMenuRejectsStaleAndCleanupFailure,fake::CreationAndClicks,fake::EquippedItemRow,fake::CaptureStatusAndActionVisibility,fake::DragCompletionAndClamping,fake::LayoutApplicationAndDragRevision,fake::HideDuringDragAndForeignCapture,fake::LostCaptureStillClearsOnlyOwnedFlag,fake::DetachedAndFailureCleanup,fake::NativeSubscriptionsAndPartialInit,fake::ImmediateSnapAndNativeGroupMove,fake::CompactNativeLockAndCaptureLayout}) {
+        for(auto test:{fake::HeaderMenuSelectionAndReopen,fake::HeaderMenuRejectsStaleAndCleanupFailure,fake::HeaderMenuHelpFollowsTopBarButton,fake::CreationAndClicks,fake::EquippedItemRow,fake::CaptureStatusAndActionVisibility,fake::DragCompletionAndClamping,fake::LayoutApplicationAndDragRevision,fake::HideDuringDragAndForeignCapture,fake::LostCaptureStillClearsOnlyOwnedFlag,fake::DetachedAndFailureCleanup,fake::NativeSubscriptionsAndPartialInit,fake::ImmediateSnapAndNativeGroupMove,fake::CompactNativeLockAndCaptureLayout}) {
             test();fake::Check(fake::handles.empty(),"Leaked 64-bit GC refs");
         }
-        std::cout<<"PASS: soul panel native contracts, click isolation, clamped drag, mid-drag cleanup, foreign capture, detached UI and failures\n";
+        std::cout<<"PASS: soul panel native contracts, hide-row help following the top-bar button, click isolation, clamped drag, mid-drag cleanup, foreign capture, detached UI and failures\n";
         return 0;
     } catch(const std::exception& e) {std::cerr<<"FAIL: "<<e.what()<<'\n';return 1;}
 }

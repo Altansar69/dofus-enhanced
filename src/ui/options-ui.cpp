@@ -15,7 +15,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 13;
+constexpr int ModSections = 14;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -59,7 +59,7 @@ constexpr CheckRow ExtraRows[] = {
     {"Afficher les FPS et la mémoire", "Ajoute à l’affichage des performances les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde. L’affichage apparaît dès que cette case, « Charge du GPU » ou « Activité du disque » est cochée, avec seulement les mesures cochées, dans un coin de l’écran (en haut à gauche par défaut) jusqu’à ce que tu le déplaces ou le redimensionnes à la souris ; sa place et sa taille sont ensuite gardées. Son bouton dans la barre du haut le masque ou le réaffiche sans décocher ces cases. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
     {"Charge du GPU", "Ajoute à l’affichage des performances la part de la carte graphique utilisée par le jeu, comme la colonne GPU du Gestionnaire des tâches : celle de son moteur le plus chargé (la 3D le plus souvent), mesurée une fois par seconde, par exemple « GPU 23 % ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Si Windows ne fournit pas cette mesure, elle n’apparaît pas. Désactivé par défaut."},
     {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % · 1,2 Mo/s ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Pour un jeu installé sur le réseau, elle n’apparaît pas. Désactivé par défaut."},
-    {"Déplacer et redimensionner l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux, ou par son coin en bas à droite, le seul sans arrondi, pour l’agrandir ou le réduire (de la moitié au triple de sa taille normale, texte compris) ; son coin en haut à gauche reste alors en place. Il reste entièrement à l’écran, et sa place et sa taille sont gardées, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu. Activé par défaut."},
+    {"Déplacer et redimensionner l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux. Pour l’agrandir ou le réduire (de la moitié au triple de sa taille normale, texte compris), fais glisser son coin en bas à droite, où une petite poignée de points apparaît quand la souris survole l’affichage, ou bien son bord droit ou son bord bas ; son coin en haut à gauche reste alors en place. Il reste entièrement à l’écran, et sa place et sa taille sont gardées, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu. Activé par défaut."},
     {"Bouton dans la barre du haut", "Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances sans décocher ses mesures ; si aucune n’est cochée, il coche « Afficher les FPS et la mémoire ». Masqué avec ce bouton, l’affichage le reste après un redémarrage, jusqu’à un nouveau clic ou une mesure cochée ici. Décochée, le bouton disparaît et seules les cases ci-dessus commandent l’affichage, qui réapparaît s’il était masqué. Activé par défaut."}};
 // « Dimension avec les coordonnées » on the big map, the mini-map and in the
 // chat: the same three choices, each id the saved mode (Settings'
@@ -142,6 +142,14 @@ constexpr const char* StatsOpenButton = "Ouvrir";
 constexpr int IconChart = 77; // FigmaIcons.chart, the statistics window's own icon
 constexpr const char* StatsButtonTitle = "Bouton dans la barre du haut";
 constexpr const char* StatsButtonDescription = "Ajoute en haut à droite de l’écran, à côté de Capture d’âme, un bouton qui ouvre ou ferme la fenêtre « Statistiques ». Décoché, le bouton disparaît ; la fenêtre s’ouvre toujours avec « Voir mes statistiques ». Activé par défaut.";
+// « Bouton dans la barre du haut » (1.16.1), titled and worded like the
+// statistics window's and the performance overlay's: Capture d’âme's own button
+// (« Pierre d’âme »), the treasure hunt's (« Chasse au trésor ») and the
+// notebook's (« Carnet »). The soul widget reads them at each refresh of the bar.
+constexpr const char* TopBarButtonTitle = "Bouton dans la barre du haut";
+constexpr const char* SoulButtonDescription = "Ajoute en haut à droite de l’écran, à gauche des autres boutons du mod, le bouton Capture d’âme : un clic active ou désactive l’alerte pierre d’âme, comme la case « Alerte pierre d’âme » ci-dessus, et le bouton reste enfoncé tant qu’elle est active. Décochée, le bouton disparaît sans rien changer à l’alerte, qui ne se réactive alors qu’avec « Alerte pierre d’âme » ; les autres boutons du mod restent à leur place. Activé par défaut.";
+constexpr const char* TreasureButtonDescription = "Ajoute en haut à droite de l’écran, à côté de Capture d’âme, un bouton qui ouvre ou ferme le panneau de chasse au trésor (recherche des indices sur DofusDB). C’est le seul moyen d’ouvrir ce panneau : décochée, le bouton disparaît et le panneau ne s’ouvre plus ; recoche-la pour retrouver le bouton. Un panneau déjà ouvert reste ouvert et se ferme toujours avec sa croix ou « Masquer le module » de son menu. Activé par défaut.";
+constexpr const char* NotebookButtonDescription = "Ajoute en haut à droite de l’écran, à côté de Capture d’âme, un bouton qui ouvre ou ferme le carnet. C’est le seul moyen d’ouvrir le carnet : décochée, le bouton disparaît et le carnet ne s’ouvre plus ; recoche-la pour retrouver le bouton. Tes entrées restent enregistrées, et « Ajouter aux positions » au clic droit sur les cartes continue de les compléter. Un carnet déjà ouvert reste ouvert et se ferme toujours avec sa croix ou « Masquer le module » de son menu. Activé par défaut.";
 
 template<class T> T& FieldValue(Obj owner, const char* name) {
     return *static_cast<T*>(api.FieldAddress(owner, name));
@@ -192,7 +200,8 @@ bool ModelsLoaded(const OptionsUi& ui) {
     return loaded(ui.modeSource) && loaded(ui.roleplayModeSource) && allLoaded(ui.combatMiniatureSources) &&
         allLoaded(ui.roleplayMiniatureSources) && allLoaded(ui.animationSources) && loaded(ui.autoLoadSource) && loaded(ui.soulSource) && loaded(ui.soulAutoSource) && loaded(ui.glowSource) && allLoaded(ui.glowCategorySources) && loaded(ui.transitionsSource) && loaded(ui.preloadSource) && loaded(ui.spouseSource) && loaded(ui.resourcesSource) && loaded(ui.resourcesMiniSource) && loaded(ui.miniCenterSource) && loaded(ui.githubSource) && loaded(ui.metamobSyncSource) && loaded(ui.travelPlannerSource) && loaded(ui.chatTravelSource) && loaded(ui.chatSoulSource) && loaded(ui.chatOcreSource) && loaded(ui.chatMetamobSource) && loaded(ui.archiZonesSource) && loaded(ui.archiZonesMiniSource) && loaded(ui.mapMenuSource) && loaded(ui.calendarKraloveSource) && loaded(ui.templeSource) &&
         allLoaded(ui.extraSources) && loaded(ui.chatCoordsSource) && loaded(ui.mapCoordsSource) && loaded(ui.miniMapCoordsSource) &&
-        loaded(ui.statsSource) && loaded(ui.statsButtonSource);
+        loaded(ui.statsSource) && loaded(ui.statsButtonSource) &&
+        loaded(ui.soulButtonSource) && loaded(ui.treasureButtonSource) && loaded(ui.notebookButtonSource);
 }
 template<class T> void SetSource(Obj source, T value, bool notify) {
     if (api.Value<T>(api.Call(source, "get_property")) != value)
@@ -211,6 +220,9 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.githubSource.get(), settings.githubUpdates, notify);
     SetSource(ui.soulSource.get(), settings.soulReminder, notify);
     SetSource(ui.soulAutoSource.get(), settings.soulAutoEquip, notify);
+    SetSource(ui.soulButtonSource.get(), settings.soulButton, notify);
+    SetSource(ui.treasureButtonSource.get(), settings.treasureButton, notify);
+    SetSource(ui.notebookButtonSource.get(), settings.notebookButton, notify);
     SetSource(ui.glowSource.get(), settings.monsterGlowMode, notify);
     for (size_t i = 0; i < ui.glowCategorySources.size(); ++i)
         SetSource(ui.glowCategorySources[i].get(), settings.*GlowCategoryToggles[i], notify);
@@ -312,6 +324,10 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     prepared.githubSource.reset(api.New(booleanType, {&defaults.githubUpdates, &readOnly}));
     prepared.soulSource.reset(api.New(booleanType, {&defaults.soulReminder, &readOnly}));
     prepared.soulAutoSource.reset(api.New(booleanType, {&defaults.soulAutoEquip, &readOnly}));
+    // The top-bar buttons of Capture d’âme, the treasure hunt and the notebook (1.16.1).
+    prepared.soulButtonSource.reset(api.New(booleanType, {&defaults.soulButton, &readOnly}));
+    prepared.treasureButtonSource.reset(api.New(booleanType, {&defaults.treasureButton, &readOnly}));
+    prepared.notebookButtonSource.reset(api.New(booleanType, {&defaults.notebookButton, &readOnly}));
     prepared.glowSource.reset(api.New(integerType, {&defaults.monsterGlowMode, &readOnly}));
     toggleSources(prepared.glowCategorySources, GlowCategoryToggles);
     prepared.transitionsSource.reset(api.New(booleanType, {&defaults.fastMapTransitions, &readOnly}));
@@ -366,6 +382,13 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Pour un combat contenant un boss ou un archimonstre avec une âme capturable définie. Masqué pour les groupes ordinaires et les cartes interdisant la capture. Pendant le placement, affiche la tranche minimale requise, le stock et la pierre équipée. Équiper choisit uniquement cette tranche. En combat : Capture d’âme en rouge si l’état Chercheur d’âmes manque, en vert s’il est actif. L’effet ne garantit pas à lui seul la capture."));
     prepared.soulAutoOption.reset(MakeBoolOption(prepared.soulAutoSource.get(), current.get(), tooltip.get(), "Équiper automatiquement la pierre d’âme",
         "Avec l’alerte pierre d’âme activée, tente d’équiper la pierre de la tranche requise pendant le placement d’un combat capturable. Une seule tentative par combat et tranche, uniquement si une pierre utilisable est disponible. En cas de refus, le bouton Équiper reste disponible. Activé par défaut."));
+    // « Bouton dans la barre du haut »: Capture d’âme's, the treasure hunt's and the notebook's.
+    prepared.soulButtonOption.reset(MakeBoolOption(prepared.soulButtonSource.get(), current.get(), tooltip.get(), TopBarButtonTitle,
+        SoulButtonDescription));
+    prepared.treasureButtonOption.reset(MakeBoolOption(prepared.treasureButtonSource.get(), current.get(), tooltip.get(), TopBarButtonTitle,
+        TreasureButtonDescription));
+    prepared.notebookButtonOption.reset(MakeBoolOption(prepared.notebookButtonSource.get(), current.get(), tooltip.get(), TopBarButtonTitle,
+        NotebookButtonDescription));
     ui.modeSource = std::move(prepared.modeSource);
     prepared.glowOption.reset(MakeChoiceOption(prepared.glowSource.get(), current.get(), "Surbrillance",
         "Affiche hors combat le contour des catégories cochées ci-dessous (les monstres par défaut) derrière les modules d’affichage, derrière ces modules et les murs, ou tout le temps. La grande carte, l’inventaire, les sorts et les autres fenêtres restent devant le contour dans tous les modes. Les clics restent ceux du jeu. Sans case cochée, rien n’est entouré. Au plus 32 contours à la fois : s’il y en a plus, passent d’abord ton personnage, puis ton groupe, les monstres, les PNJ, les éléments interactifs et enfin les autres joueurs. Par défaut : derrière l’interface.", glowModes));
@@ -511,6 +534,12 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.soulOption = std::move(prepared.soulOption);
     ui.soulAutoSource = std::move(prepared.soulAutoSource);
     ui.soulAutoOption = std::move(prepared.soulAutoOption);
+    ui.soulButtonSource = std::move(prepared.soulButtonSource);
+    ui.soulButtonOption = std::move(prepared.soulButtonOption);
+    ui.treasureButtonSource = std::move(prepared.treasureButtonSource);
+    ui.treasureButtonOption = std::move(prepared.treasureButtonOption);
+    ui.notebookButtonSource = std::move(prepared.notebookButtonSource);
+    ui.notebookButtonOption = std::move(prepared.notebookButtonOption);
     ui.container = std::move(current);
     return true;
 }
@@ -1012,9 +1041,11 @@ bool OptionsUi::Attach(Obj page) {
         {"Surbrillance", glow},
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), extra(MiniMapBarRow), miniCenterOption.get(), extra(MiniMapZoneNameRow),
             mapCoordsOption.get(), miniMapCoordsOption.get(), archiZonesOption.get(), archiZonesMiniOption.get(), mapMenuOption.get()}},
-        {"Carnet", {extra(NotebookPingRow), extra(NotebookCopyRow), extra(NotebookTravelRow), extra(MapAddPositionRow)}},
+        {"Carnet", {extra(NotebookPingRow), extra(NotebookCopyRow), extra(NotebookTravelRow), extra(MapAddPositionRow), notebookButtonOption.get()}},
+        // « Chasse au trésor » (1.16.1): its panel's top-bar button, its only option.
+        {"Chasse au trésor", {treasureButtonOption.get()}},
         {"Déplacements", {transitionsOption.get(), preloadOption.get(), spouseOption.get(), travelPlannerOption.get(), templeOption.get()}},
-        {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
+        {"Pierre d’âme", {soulOption.get(), soulAutoOption.get(), soulButtonOption.get(), metamobSyncOption.get(), metamobKeyOption.get()}},
         {"Chat", {chatTravelOption.get(), chatSoulOption.get(), chatOcreOption.get(), chatMetamobOption.get(), chatCoordsOption.get()}},
         {"Calendrier", {calendarKraloveOption.get()}},
         {"Performances", {extra(PerfOverlayRow), extra(PerfGpuRow), extra(PerfDiskRow), extra(PerfDragRow), extra(PerfButtonRow)}},
@@ -1081,6 +1112,11 @@ void OptionsUi::Tick() {
     next.githubUpdates = api.Value<bool>(api.Call(githubSource.get(), "get_property"));
     next.soulReminder = api.Value<bool>(api.Call(soulSource.get(), "get_property"));
     next.soulAutoEquip = api.Value<bool>(api.Call(soulAutoSource.get(), "get_property"));
+    // The top-bar buttons of Capture d’âme, the treasure hunt and the notebook:
+    // switched off, the alert and the panels stay as they are.
+    next.soulButton = api.Value<bool>(api.Call(soulButtonSource.get(), "get_property"));
+    next.treasureButton = api.Value<bool>(api.Call(treasureButtonSource.get(), "get_property"));
+    next.notebookButton = api.Value<bool>(api.Call(notebookButtonSource.get(), "get_property"));
     next.monsterGlowMode = api.Value<int>(api.Call(glowSource.get(), "get_property"));
     for (size_t i = 0; i < glowCategorySources.size(); ++i)
         next.*GlowCategoryToggles[i] = api.Value<bool>(api.Call(glowCategorySources[i].get(), "get_property"));
@@ -1180,6 +1216,9 @@ void OptionsUi::Restore() {
     soulOption.reset();
     soulAutoSource.reset();
     soulAutoOption.reset();
+    soulButtonSource.reset(); soulButtonOption.reset();
+    treasureButtonSource.reset(); treasureButtonOption.reset();
+    notebookButtonSource.reset(); notebookButtonOption.reset();
     glowSource.reset();
     glowOption.reset();
     for (auto& ref : glowCategorySources) ref.reset();

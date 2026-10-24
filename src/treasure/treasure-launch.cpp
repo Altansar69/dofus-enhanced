@@ -401,7 +401,10 @@ void InstallTreasurePanel() {
     api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15BFB50);
     // Shared window/control contracts are verified by InstallSoulHelper first.
     soul::SetAuxiliaryPanelAction(Action); nativeClick::AddHandler(Action);
-    toolsUi::Register("treasure","Chasse au trésor · DofusDB",IconTreasure,[]{return wanted;},[]{wanted=!wanted;if(!wanted&&state.job)state.job->cancelled.store(true);return true;});installed=true;
+    // Its top-bar button, the panel's only shortcut, follows treasureButton
+    // (1.16.1): read at each refresh of the bar; an open panel stays open.
+    toolsUi::Register("treasure","Chasse au trésor · DofusDB",IconTreasure,[]{return wanted;},[]{wanted=!wanted;if(!wanted&&state.job)state.job->cancelled.store(true);return true;},{},
+        []{return module&&module->settings.treasureButton;});installed=true;
 }
 void OpenTreasureOverlay(const std::filesystem::path&) {
     if(!installed || !Session()) return;

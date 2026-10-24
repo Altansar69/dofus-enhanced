@@ -10,7 +10,50 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.16.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.16.1
+
+VERSION 1.16.1 : STATISTIQUES, PERFORMANCES, BOUTONS DE LA BARRE DU HAUT
+- Statistiques : « Sorts lancés » et les cinq sorts les plus lancés ne
+  comptent plus que les sorts de ta classe. Les effets que certains
+  équipements lancent en ton nom, comme « Pourpre Profond » du Dofus
+  Pourpre (à chaque attaque subie) ou « Vert Émeraude » du Dofus Émeraude
+  (à la fin de tes tours), étaient comptés comme des sorts depuis la
+  1.15.0.
+- À la mise à jour, ils sont retirés de tes statistiques dès ta première
+  connexion avec cette version (si « Compter mes statistiques » est
+  décochée : dès que tu ouvres la fenêtre « Statistiques ») ; tes sorts de
+  classe et leurs lancers sont gardés, rien d’autre ne change. Un jeu
+  resté ouvert avec la 1.15.0 ou la 1.16.0 n’affiche plus tes sorts déjà
+  comptés jusqu’à ce que tu le relances.
+- Performances : le redimensionnement du cadre se voit et se prend
+  mieux. Quand la souris survole le cadre, une petite poignée de six
+  points apparaît dans son coin en bas à droite (avec « Déplacer et
+  redimensionner l’affichage à la souris » cochée) ; elle reste visible
+  pendant un déplacement ou un redimensionnement et disparaît quand la
+  souris s’en va. Le coin se prend sur au moins 18 pixels de l’écran
+  (davantage quand le cadre est agrandi), sauf sur un tout petit cadre,
+  et ses bords droit et bas l’agrandissent ou le réduisent aussi, d’un
+  bloc, son coin en haut à gauche en place ; le reste du cadre sert
+  toujours à le déplacer.
+- Barre du haut : comme « Performances » et « Statistiques », chaque
+  bouton du mod se masque par sa case « Bouton dans la barre du haut »
+  (cochée par défaut) : Capture d’âme dans « Pierre d’âme », le carnet
+  dans « Carnet » et la chasse au trésor dans la nouvelle section
+  « Chasse au trésor ». Un bouton décoché quitte la barre aussitôt ; les
+  autres gardent leur ordre, juste avant Menu, et sans aucun bouton coché
+  le mod n’ajoute plus rien à la barre.
+- Masquer Capture d’âme ne change pas l’alerte pierre d’âme ; elle ne se
+  réactive alors qu’avec « Alerte pierre d’âme », ce que rappelle l’aide
+  de « Masquer le module » dans le menu ⋯ du panneau de capture. Dans les
+  autres panneaux du mod, cette aide situe alors leur bouton « en haut à
+  droite de l’écran » plutôt qu’« à côté de Capture d’âme ».
+- Le carnet et le panneau de chasse au trésor n’ont pas d’autre
+  raccourci : sans leur bouton, ils ne s’ouvrent plus (recoche la case
+  pour le retrouver). Un panneau ouvert le reste et se ferme avec sa croix
+  ou « Masquer le module » de son menu ⋯ ; les entrées du carnet restent
+  enregistrées.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.16.0 : PERFORMANCES, STATISTIQUES, CARTES, SURBRILLANCE, CARNET
 - Performances : « Afficher les FPS et la mémoire », « Charge du GPU » et

@@ -49,9 +49,10 @@ bool Populate(Obj owner,Obj event){
     try{
         if(!Current(e)||!event)return true;Ref menu(api.Call(event,"get_menu"));if(!menu.get()||menu.get()==e.menu.get())return true;
         Close(e);e.menu.reset(menu.get());Ref title(api.string_new(e.title.c_str())),text(api.string_new("Masquer le module")),empty(api.string_new(""));
-        // A panel whose top-bar button its option removed comes back from the options.
-        const bool bar=!e.barButton||e.barButton();
-        Ref help(api.string_new(bar?"Réactiver ce panneau avec son bouton à côté de Capture d’âme, en haut à droite.":"Réactiver ce panneau depuis les options du mod."));
+        // A panel whose top-bar button its option removed comes back from the options;
+        // its button sits next to Capture d’âme's unless soulButton hides that one (1.16.1).
+        const bool bar=!e.barButton||e.barButton(),soul=module->settings.soulButton;
+        Ref help(api.string_new(!bar?"Réactiver ce panneau depuis les options du mod.":soul?"Réactiver ce panneau avec son bouton à côté de Capture d’âme, en haut à droite.":"Réactiver ce panneau avec son bouton en haut à droite de l’écran."));
         api.Invoke(appendTitle,e.menu.get(),{title.get()});api.Invoke(appendSeparator,e.menu.get());
         Ref rows(api.Call(e.menu.get(),"get_menuItems"));int index=api.Value<int>(api.Call(rows.get(),"get_Count"));if(index<0||index>128)throw std::runtime_error("Tool menu bounds");
         Ref asset(api.object_new(api.class_from_type(api.method_get_param(appendItem,7)))),color(api.object_new(api.class_from_type(api.method_get_param(appendItem,10))));

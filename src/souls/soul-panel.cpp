@@ -87,7 +87,11 @@ void PopulateMenuHook(Obj owner, Obj event, Method method) {
         api.Invoke(state.appendSeparator, menu.get());
         index = api.Value<int>(api.Call(rows.get(), "get_Count"));
         Ref text(api.string_new("Masquer le module")), empty(api.string_new(""));
-        Ref help(api.string_new("Réactiver Capture d’âme depuis la barre des modules ou les options du mod."));
+        // Capture d’âme's top-bar button follows soulButton (1.16.1): hidden,
+        // only the options switch the alert back on.
+        Ref help(api.string_new(module->settings.soulButton ?
+            "Réactiver Capture d’âme depuis la barre des modules ou les options du mod." :
+            "Réactiver Capture d’âme depuis les options du mod : « Alerte pierre d’âme »."));
         Ref asset(api.object_new(api.class_from_type(api.method_get_param(state.appendMenu, 7))));
         Ref color(api.object_new(api.class_from_type(api.method_get_param(state.appendMenu, 10))));
         bool disabled = false, close = true;

@@ -11,19 +11,27 @@ namespace stats {
 namespace {
 using Json = nlohmann::json;
 constexpr int64_t Largest = std::numeric_limits<int64_t>::max();
-// The file's keys. Never rename them: older clients read the same file.
+// The file's keys. Never rename them: older clients read the same file. Only
+// the spells' changed, in 1.16.1 (stats-store.hpp): "classSpellCasts" and
+// "classSpells" count a class's own spells; "spellCasts" and "spells", 1.15.0
+// to 1.16.0's, every spell cast in the character's name, are converted.
 constexpr const char* CounterNames[] = {
     "playMs", "cellsRoleplay", "cellsFight", "maps", "dimensions", "xp", "levels", "kamasEarned", "kamasSpent",
     "harvests", "crafts", "quests", "achievements", "captures", "fightsPve", "fightsPvp", "fightsKolizeum",
     "winsPve", "winsPvp", "winsKolizeum", "fightMs", "fightTurns", "damageDealt", "damageTaken", "heals", "kills",
-    "deaths", "dungeons", "spellCasts", "teleportZaap", "teleportZaapi", "teleportPrism", "teleportOther",
+    "deaths", "dungeons", "classSpellCasts", "teleportZaap", "teleportZaapi", "teleportPrism", "teleportOther",
     "recallPotions", "havenBag", "modTrips"};
 constexpr const char* RecordNames[] = {"biggestHit", "longestSessionMs"};
-constexpr const char* TableNames[] = {"spells", "elements", "dungeons", "dimensions"};
+constexpr const char* TableNames[] = {"classSpells", "elements", "dungeons", "dimensions"};
+constexpr const char* LegacyCasts = "spellCasts";
+constexpr const char* LegacySpells = "spells";
+constexpr auto SpellsIndex = static_cast<size_t>(Table::Spells), CastsIndex = static_cast<size_t>(Counter::SpellCasts);
 static_assert(std::size(CounterNames) == CounterCount && std::size(RecordNames) == RecordCount &&
     std::size(TableNames) == TableCount && std::size(TableLimits) == TableCount);
 // A writer waits at most this long for the file to be replaced (another client reading it).
 constexpr unsigned ReplaceAttempts = 15;
+// The old spells' kinds a client keeps (Classify): more than the game has spells (17006 in 3.7.12.12's data).
+constexpr size_t MaxKinds = 32768;
 
 struct LockBusy : std::runtime_error { using std::runtime_error::runtime_error; };
 
@@ -64,6 +72,19 @@ void Dates(Sheet& sheet, int64_t now) {
     sheet.first = sheet.first > 0 ? std::min(sheet.first, now) : now;
     sheet.last = std::max(sheet.last, now);
 }
+// A table as the file writes it ("key": amount): invalid entries dropped, the largest kept.
+void Entries(const Json& table, std::map<int, int64_t>& into, size_t limit) {
+    if (!table.is_object()) throw Corrupt("statistics file: invalid table");
+    for (const auto& [text, value] : table.items()) {
+        int key = 0;
+        const auto end = text.data() + text.size();
+        const auto parsed = std::from_chars(text.data(), end, key);
+        const auto amount = Natural(value);
+        if (parsed.ec != std::errc() || parsed.ptr != end || amount <= 0) continue;
+        into[key] = Sum(into[key], amount);
+    }
+    Bound(into, limit);
+}
 Sheet ParseSheet(const Json& item) {
     if (!item.is_object()) throw Corrupt("statistics file: invalid character");
     const auto id = item.find("id");
@@ -86,22 +107,13 @@ Sheet ParseSheet(const Json& item) {
     };
     values("counters", CounterNames, sheet.counters);
     values("records", RecordNames, sheet.records);
+    if (const auto counters = item.find("counters"); counters != item.end()) sheet.legacyCasts = counters->contains(LegacyCasts);
     if (const auto tables = item.find("tables"); tables != item.end()) {
         if (!tables->is_object()) throw Corrupt("statistics file: invalid tables");
-        for (size_t i = 0; i < TableCount; ++i) {
-            const auto table = tables->find(TableNames[i]);
-            if (table == tables->end()) continue;
-            if (!table->is_object()) throw Corrupt("statistics file: invalid table");
-            for (const auto& [text, value] : table->items()) {
-                int key = 0;
-                const auto end = text.data() + text.size();
-                const auto parsed = std::from_chars(text.data(), end, key);
-                const auto amount = Natural(value);
-                if (parsed.ec != std::errc() || parsed.ptr != end || amount <= 0) continue;
-                sheet.tables[i][key] = Sum(sheet.tables[i][key], amount);
-            }
-            Bound(sheet.tables[i], TableLimits[i]);
-        }
+        for (size_t i = 0; i < TableCount; ++i)
+            if (const auto table = tables->find(TableNames[i]); table != tables->end()) Entries(*table, sheet.tables[i], TableLimits[i]);
+        // 1.15.0 to 1.16.0's spells, still to convert (never shown).
+        if (const auto old = tables->find(LegacySpells); old != tables->end()) Entries(*old, sheet.legacy, TableLimits[SpellsIndex]);
     }
     return sheet;
 }
@@ -125,13 +137,17 @@ Json SheetJson(const Sheet& sheet) {
     };
     values("counters", CounterNames, sheet.counters);
     values("records", RecordNames, sheet.records);
+    // The old spells and their casts stay until converted (Convert).
+    if (!sheet.legacyCasts) item["counters"].erase(LegacyCasts);
     Json tables = item.contains("tables") && item["tables"].is_object() ? item["tables"] : Json::object();
-    for (size_t i = 0; i < TableCount; ++i) {
+    const auto put = [&](const char* name, const std::map<int, int64_t>& entries) {
         Json table = Json::object();
-        for (const auto& [key, amount] : sheet.tables[i]) if (amount > 0) table[std::to_string(key)] = amount;
-        if (table.empty()) tables.erase(TableNames[i]);
-        else tables[TableNames[i]] = std::move(table);
-    }
+        for (const auto& [key, amount] : entries) if (amount > 0) table[std::to_string(key)] = amount;
+        if (table.empty()) tables.erase(name);
+        else tables[name] = std::move(table);
+    };
+    for (size_t i = 0; i < TableCount; ++i) put(TableNames[i], sheet.tables[i]);
+    put(LegacySpells, sheet.legacy);
     item["tables"] = std::move(tables);
     return item;
 }
@@ -312,9 +328,31 @@ void Merge(Sheet& into, const Sheet& counted) {
         for (const auto& [key, amount] : counted.tables[i]) into.tables[i][key] = Sum(into.tables[i][key], amount);
         Bound(into.tables[i], TableLimits[i]);
     }
+    for (const auto& [key, amount] : counted.legacy) into.legacy[key] = Sum(into.legacy[key], amount);
+    Bound(into.legacy, TableLimits[SpellsIndex]);
+    into.legacyCasts = into.legacyCasts || counted.legacyCasts;
     if (counted.first > 0) Dates(into, counted.first);
     if (counted.last > 0) Dates(into, counted.last);
     if (!counted.name.empty()) into.name = counted.name;
+}
+bool Convert(Sheet& sheet, const std::unordered_map<int, bool>& kinds) {
+    bool changed = std::exchange(sheet.legacyCasts, false);
+    auto& spells = sheet.tables[SpellsIndex];
+    auto& casts = sheet.counters[CastsIndex];
+    for (auto entry = sheet.legacy.begin(); entry != sheet.legacy.end();) {
+        const auto kind = kinds.find(entry->first);
+        if (kind == kinds.end()) { ++entry; continue; }
+        // 1.15.0 to 1.16.0 added each cast to its spell and to the casts
+        // counter alike: the casts of the spells kept are their entries.
+        if (kind->second) {
+            spells[entry->first] = Sum(spells[entry->first], entry->second);
+            casts = Sum(casts, entry->second);
+        }
+        entry = sheet.legacy.erase(entry);
+        changed = true;
+    }
+    Bound(spells, TableLimits[SpellsIndex]);
+    return changed;
 }
 void Within(Sheet& sheet) {
     auto& longest = sheet.records[static_cast<size_t>(Record::LongestSessionMs)];
@@ -356,6 +394,7 @@ void Store::Open(const std::filesystem::path& file) {
     saved = {};
     seen = {};
     counted.clear();
+    kinds.clear();
     frozen = false;
     stamp = {};
     try {
@@ -439,7 +478,44 @@ void Store::Name(int64_t id, const std::string& name) {
 }
 bool Store::Pending() const {
     std::lock_guard guard(mutex);
-    return !counted.empty();
+    return !counted.empty() || Convertible(saved);
+}
+bool Store::Converting() const {
+    std::lock_guard guard(mutex);
+    return Convertible(saved);
+}
+std::vector<int> Store::Unsorted(size_t most) const {
+    std::vector<int> spells;
+    try {
+        std::lock_guard guard(mutex);
+        std::set<int> unknown;
+        for (const auto& sheet : saved.sheets)
+            for (const auto& entry : sheet.legacy) if (!kinds.contains(entry.first)) unknown.insert(entry.first);
+        for (const int spell : unknown) {
+            if (spells.size() >= most) break;
+            spells.push_back(spell);
+        }
+    } catch (...) {}
+    return spells;
+}
+void Store::Classify(int spell, bool own) {
+    try {
+        std::lock_guard guard(mutex);
+        // More than the game's spells: never full in practice, never unbounded.
+        if (kinds.size() >= MaxKinds && !kinds.contains(spell)) return;
+        kinds[spell] = own;
+    } catch (...) {}
+}
+// Old spells of this book a write would convert now: their kind is known.
+bool Store::Convertible(const Book& book) const {
+    for (const auto& sheet : book.sheets)
+        for (const auto& entry : sheet.legacy) if (kinds.contains(entry.first)) return true;
+    return false;
+}
+bool Store::ConvertAll(Book& book) const {
+    bool changed = false;
+    for (auto& sheet : book.sheets) changed = stats::Convert(sheet, kinds) || changed;
+    return changed;
 }
 bool Store::Frozen() const {
     std::lock_guard guard(mutex);
@@ -492,7 +568,7 @@ Store::Result Store::Flush(unsigned lockWaitMs) {
     {
         std::lock_guard guard(mutex);
         if (frozen) return Result::Newer;
-        if (counted.empty()) return Result::Nothing;
+        if (counted.empty() && !Convertible(saved)) return Result::Nothing;
         if (path.empty()) return Result::Failed;
         work.swap(counted);
         file = path;
@@ -500,8 +576,11 @@ Store::Result Store::Flush(unsigned lockWaitMs) {
     try {
         FileLock lock(file, lockWaitMs);
         auto book = LoadForUpdate(file);
+        bool changed = !work.empty();
         {
             std::lock_guard guard(mutex);
+            // The old spells whose kind is known, converted in this write.
+            changed = ConvertAll(book) || changed;
             for (const auto& sheet : work) {
                 // Erased by another client since this one last read the file: counts older than that are dropped.
                 if (!Current(book, sheet)) continue;
@@ -516,13 +595,17 @@ Store::Result Store::Flush(unsigned lockWaitMs) {
                 Within(*into);
             }
         }
-        Save(file, book);
+        // Only old spells to convert, and another client converted them
+        // meanwhile: the file is only read anew (unless only its backup was there).
+        const bool write = changed || (!book.sheets.empty() && !StampOf(file));
+        if (write) Save(file, book);
         const auto stamped = StampOf(file);
         std::lock_guard guard(mutex);
+        if (!write) std::erase_if(counted, [&](const Sheet& sheet) { return !Current(book, sheet); });
         saved = std::move(book);
         Saw(saved);
         if (stamped) stamp = *stamped;
-        return Result::Written;
+        return write ? Result::Written : Result::Nothing;
     } catch (const Newer&) {
         std::lock_guard guard(mutex);
         frozen = true;
@@ -552,6 +635,7 @@ Store::Result Store::Clear(int64_t id, unsigned lockWaitMs, int64_t now) {
         auto book = LoadForUpdate(file);
         {
             std::lock_guard guard(mutex);
+            ConvertAll(book);
             // The other characters' unwritten counts are written in the same go.
             for (const auto& sheet : work) {
                 if (id == 0 || sheet.id == id || !Current(book, sheet)) continue;

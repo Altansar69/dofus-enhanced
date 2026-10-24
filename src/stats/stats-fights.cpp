@@ -18,8 +18,9 @@
 //   time, turns, monsters defeated, damage dealt and taken, heals, souls
 //   obtained and dungeons completed;
 // - one hook on gau.bixl, the game's listener of the fight actions the server
-//   sends (one call per action, read before the game plays it): spells cast,
-//   deaths, damage dealt by element and the biggest hit.
+//   sends (one call per action, read before the game plays it): spells cast
+//   (counted at the next tick, a class's own spells only), deaths, damage
+//   dealt by element and the biggest hit.
 // A report counts only when its fight started after this client saw the
 // character outside a fight while counting: never a fight that was already
 // running when the mod started or counting was switched on. The report's
@@ -40,7 +41,7 @@ constexpr int32_t CastAction = 2, DeathAction = 3, LossAction = 37; // jsq oneof
 constexpr int32_t SpellCast = 2;                   // jrw oneof case of a spell (9: a weapon, never counted)
 constexpr int MaxFighters = 128, MaxLoot = 512, MaxBosses = 64, MaxSoulQuantity = 100;
 constexpr int64_t MaxFightMs = 86400000, MaxTurns = 100000, MaxHit = 100000000;
-constexpr size_t MaxSeen = 8, MaxCharacters = 64;
+constexpr size_t MaxSeen = 8, MaxCharacters = 64, MaxCasts = 256;
 constexpr uint64_t PendingMs = 120000;
 
 // Pinned 3.7.12.12 offsets, each tied to its field name at installation.
@@ -77,7 +78,12 @@ struct State {
     std::vector<int64_t> outside;        // characters seen outside a fight since counting started
     // The last counted report, until the server's statistics reach it.
     struct Pending { Ref report; int64_t character = 0; uint64_t since = 0; } pending;
-    unsigned casts = 0, hits = 0, deaths = 0; // counted by the hook since the last report, for its log line
+    // Counted since the last report, for its log line; others: the spells cast
+    // in the character's name that are not its class's (never counted).
+    unsigned casts = 0, others = 0, hits = 0, deaths = 0;
+    // The spells the hook read since the last tick, counted there (Tally).
+    struct Cast { int64_t character = 0; int32_t spell = 0; };
+    std::vector<Cast> spells;
     std::map<std::string, uint64_t> nextLog;
 } state;
 // The hook's view, written by the pump: the character it counts for (0: none)
@@ -112,14 +118,14 @@ void Error(const char* stage) {
         Log(std::string("STATS_FIGHTS_ERROR stage=") + stage);
     } catch (...) {}
 }
-void ResetActions() { state.casts = state.hits = state.deaths = 0; }
+void ResetActions() { state.casts = state.others = state.hits = state.deaths = 0; }
 // Counting off: nothing kept; the next complete read is a baseline and a fight
 // running then never counts.
 void Forget() {
     acting.store(0);
     state.history.reset(); state.seen.clear(); state.pending = {};
     state.localId = 0; state.known = state.fighting = false; state.fightMap = 0;
-    state.outside.clear(); ResetActions();
+    state.outside.clear(); state.spells.clear(); ResetActions();
 }
 // Releases every reference: also safe from Module::Stop.
 void Reset() {
@@ -303,8 +309,8 @@ void Process(Obj report, Obj character, int64_t localId) {
         Log("STATS_FIGHT type=" + std::to_string(type) + " kind=" + KindName(kind) + " win=" + (win ? "1" : "0") + " ms=" +
             std::to_string(ms) + " turns=" + std::to_string(turns) + " monsters=" + std::to_string(monsters) + " souls=" +
             std::to_string(souls) + " dungeon=" +
-            std::to_string(dungeon) + " casts=" + std::to_string(state.casts) + " hits=" + std::to_string(state.hits) +
-            " deaths=" + std::to_string(state.deaths));
+            std::to_string(dungeon) + " casts=" + std::to_string(state.casts) + " others=" + std::to_string(state.others) +
+            " hits=" + std::to_string(state.hits) + " deaths=" + std::to_string(state.deaths));
     } catch (...) {}
     ResetActions();
     state.pending.report.reset(report);
@@ -370,15 +376,17 @@ void Act(Obj message) {
     // The action's author (gau.biyu passes it as a death's killer).
     const auto source = Read<int64_t>(message, contract.at.source);
     if (which == CastAction) {
-        // A spell the character casts (gau.bixd); a weapon hit is not a spell.
+        // A spell cast in the character's name (gau.bixd); a weapon hit is not a spell.
         if (source != local || !Is(body, contract.cast) || Read<int32_t>(body, contract.at.castKind) != SpellCast) return;
         const Obj spell = Read<Obj>(body, contract.at.castSpell);
         if (!Is(spell, contract.spell)) return;
+        // The spell's id (jrq.eqvk), the one gau.bixd gives SpellData.GetById,
+        // SpellCastInFightManager.umn and the fight log's « X lance Y » (dvw,
+        // then eei); jrq.eqvi is its level's id.
         const auto id = Read<int32_t>(spell, contract.at.spellId);
         if (id <= 0) return;
-        stats::Add(local, Counter::SpellCasts);
-        stats::AddTo(local, Table::Spells, id);
-        ++state.casts;
+        // Counted at the next tick, once the game's data tells whose spell it is.
+        if (state.spells.size() < MaxCasts) state.spells.push_back({local, id});
     } else if (which == DeathAction) {
         // The character dies (gau.biyu), resurrected later or not.
         if (!Is(body, contract.death) || Read<int64_t>(body, contract.at.dead) != local) return;
@@ -403,6 +411,25 @@ void Act(Obj message) {
 void ActionHook(Obj handler, Obj message, Method method) {
     try { Act(message); } catch (...) { Error("action"); }
     originalAction(handler, message, method);
+}
+// The spells the hook read since the last tick: only the character's class
+// spells count (stats::KindOf). The server also casts in the character's name
+// its equipment's effects, the Dofus Pourpre's « Pourpre Profond » each time
+// it is attacked, the Dofus Émeraude's « Vert Émeraude » at the end of its
+// turns…: 1.15.0 and 1.16.0 counted them, as its most cast spells. A spell
+// whose kind the game's data cannot tell is not counted either.
+void Tally() {
+    if (state.spells.empty()) return;
+    const auto spells = std::move(state.spells);
+    state.spells.clear();
+    try {
+        for (const auto& cast : spells) {
+            if (stats::KindOf(cast.spell) != stats::SpellKind::Class) { ++state.others; continue; }
+            stats::Add(cast.character, Counter::SpellCasts);
+            stats::AddTo(cast.character, Table::Spells, cast.spell);
+            ++state.casts;
+        }
+    } catch (...) { Error("spell"); }
 }
 }
 }
@@ -529,6 +556,9 @@ void TickStatsFights() {
         }
         // Counting off: nothing read.
         if (!stats::Counting()) { Forget(); return; }
+        // The spells cast since the last tick first: a report shown now ends
+        // the fight they belong to.
+        Tally();
         Observe();
     } catch (...) {
         // Nothing reaches Module::Pump. The state is kept: a report shown
