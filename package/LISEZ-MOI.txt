@@ -10,7 +10,14 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.18.1
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.18.2
+
+VERSION 1.18.2 : CONJOINT
+- Groupe : le cœur et le bouton de téléportation du conjoint sont
+  maintenant à droite de sa case, pour ne plus cacher sa barre de vie
+  ni l’épée à gauche.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.18.1 : CURSEUR, JAUGES, CONJOINT, PERFORMANCES, PIERRE D’ÂME
 - Curseur : « Couleur du curseur » propose « Défaut (thème actuel) », qui

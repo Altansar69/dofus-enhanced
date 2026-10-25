@@ -123,7 +123,7 @@ void Create(Obj hub, Obj display, Obj slot, Obj member, Obj root, Obj portrait) 
     api.Call(portrait, "Add", {state.border.get()});
     state.heart.reset(api.New(iconClass)); Name(state.heart.get(), "dofus_miniatures_spouse_heart");
     int heart = 166; api.Call(state.heart.get(), "set_icon", {&heart}); api.Call(state.heart.get(), "set_color", {const_cast<float*>(pink.data())});
-    Ignore(state.heart.get()); Style(state.heart.get(), "position", 1); Pixels(state.heart.get(), "left", 3); Pixels(state.heart.get(), "top", 3);
+    Ignore(state.heart.get()); Style(state.heart.get(), "position", 1); Pixels(state.heart.get(), "right", 3); Pixels(state.heart.get(), "top", 3);
     api.Call(portrait, "Add", {state.heart.get()});
     state.button.reset(api.New(toggleClass)); Name(state.button.get(), "dofus_miniatures_spouse_teleport");
     // Same native secondary component as party auto-follow/join/ready. Keep it
@@ -131,7 +131,7 @@ void Create(Obj hub, Obj display, Obj slot, Obj member, Obj root, Obj portrait) 
     int icon = 304, style = 2, medium = 1;
     api.Call(state.button.get(), "set_iconValue", {&icon}); api.Call(state.button.get(), "set_mainStyle", {&style});
     api.Call(state.button.get(), "set_toggleSize", {&medium});
-    Style(state.button.get(), "position", 1); Pixels(state.button.get(), "left", 3); Pixels(state.button.get(), "bottom", 3);
+    Style(state.button.get(), "position", 1); Pixels(state.button.get(), "right", 3); Pixels(state.button.get(), "bottom", 3);
     api.Call(portrait, "Add", {state.button.get()});
     state.reported = false; Log("SPOUSE_PARTY_WIDGET_READY native-toggle=secondary icon=teleport badge=heart");
 }
