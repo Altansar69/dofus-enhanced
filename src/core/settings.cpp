@@ -36,11 +36,12 @@ constexpr Flag GlowFlags[] = {
     {"glowInteractives", &Settings::glowInteractives}, {"glowSelf", &Settings::glowSelf},
     {"glowParty", &Settings::glowParty}, {"glowPlayers", &Settings::glowPlayers}};
 static_assert(std::size(GlowFlags) == std::size(GlowCategoryToggles));
-// The checkboxes added in 1.13.0, 1.14.0, 1.16.0 and 1.17.1 (ExtraToggles), each
-// its own 0/1 line. A file without the notebook's copy and travel buttons or the
-// performance overlay's top-bar button (before 1.16.0), or without the send
-// buttons of the notebook's messages (before 1.17.1), keeps their default: all
-// shown.
+// The checkboxes added in 1.13.0, 1.14.0, 1.16.0, 1.17.1 and 1.18.0
+// (ExtraToggles), each its own 0/1 line. A file without the notebook's copy and
+// travel buttons or the performance overlay's top-bar button (before 1.16.0),
+// without the send buttons of the notebook's messages (before 1.17.1), or
+// without the gauges' « Afficher à la verticale » row (before 1.18.0), keeps
+// their default: all shown.
 constexpr Flag ExtraFlags[] = {
     {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
     {"notebookPingButton", &Settings::notebookPingButton}, {"notebookCopyButton", &Settings::notebookCopyButton},
@@ -48,7 +49,7 @@ constexpr Flag ExtraFlags[] = {
     {"perfOverlay", &Settings::perfOverlay},
     {"perfOverlayGpu", &Settings::perfOverlayGpu}, {"perfOverlayDisk", &Settings::perfOverlayDisk},
     {"perfOverlayDrag", &Settings::perfOverlayDrag}, {"perfOverlayButton", &Settings::perfOverlayButton},
-    {"notebookSendButtons", &Settings::notebookSendButtons}};
+    {"notebookSendButtons", &Settings::notebookSendButtons}, {"gaugeVerticalMenu", &Settings::gaugeVerticalMenu}};
 static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
 }
 
@@ -118,6 +119,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "customCursor" && (value == 0 || value == 1)) settings.customCursor = value != 0;
             else if (key == "customCursorColor" && ValidCustomCursorColor(value)) settings.customCursorColor = value;
             else if (key == "customCursorSize" && ValidCustomCursorSize(value)) settings.customCursorSize = value;
+            else if (key == "gaugeVertical" && ValidGaugeVertical(value)) settings.gaugeVertical = value;
             else if (key == "metamobSync" && (value == 0 || value == 1)) settings.metamobSync = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
@@ -231,6 +233,7 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         throw std::runtime_error("Invalid performance overlay scale");
     if (!ValidCustomCursorColor(customCursorColor) || !ValidCustomCursorSize(customCursorSize))
         throw std::runtime_error("Invalid cursor choice");
+    if (!ValidGaugeVertical(gaugeVertical)) throw std::runtime_error("Invalid vertical gauges");
     static std::atomic_uint64_t nextSave{0};
     auto temporary = path;
     temporary += L".tmp-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++nextSave);
@@ -301,6 +304,10 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         // file without them (before 1.17.0) keeps the Windows cursor.
         file << "\ncustomCursor=" << (customCursor ? 1 : 0) << "\ncustomCursorColor=" << customCursorColor
              << "\ncustomCursorSize=" << customCursorSize;
+        // 1.18.0: the vertical gauges, their fqd+GaugesType bits in decimal (their
+        // menu row, gaugeVerticalMenu, is an ExtraFlags line). A file without it
+        // (before 1.18.0) keeps every gauge horizontal.
+        file << "\ngaugeVertical=" << gaugeVertical;
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

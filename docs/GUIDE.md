@@ -1,14 +1,14 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.17.1**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.18.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
-de Dofus, aide à la capture d’âmes, trajets rapides (passage secret des
-Roublards compris), ressources, archimonstres manquants et infobulles enrichies
-sur les cartes, ouvertures Kralamoure dans le calendrier et panneau natif de
-recherche manuelle DofusDB. Carnet personnel avec repères sur la carte,
-planification de l’XP des métiers, affichage des performances et statistiques
-par personnage.
+de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
+(passage secret des Roublards compris), ressources, archimonstres manquants et
+infobulles enrichies sur les cartes, ouvertures Kralamoure dans le calendrier
+et panneau natif de recherche manuelle DofusDB. Carnet personnel avec repères
+sur la carte, planification de l’XP des métiers, affichage des performances et
+statistiques par personnage.
 Les détails et les limites figurent dans [LISEZ-MOI.txt](../package/LISEZ-MOI.txt).
 Les nouveautés depuis la 1.13.0 sont vérifiées hors jeu ; leur rendu en jeu reste à confirmer.
 
@@ -54,9 +54,10 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet :
-Apparence, Animations, Surbrillance, Curseur, Cartes, Carnet, Chasse au trésor,
-Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier, Performances,
-Statistiques, Chargement et mises à jour et À propos. La version chargée (x.y.z)
+Apparence, Animations, Surbrillance, Curseur, Jauges, Cartes, Carnet, Chasse au
+trésor, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
+Performances, Statistiques, Chargement et mises à jour et À propos. La version
+chargée (x.y.z)
 figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
 **Ouvrir GitHub** vers le dépôt.
 
@@ -358,6 +359,65 @@ du jeu, même si tu coches la case. `CUSTOM_CURSOR_HOOK_ERROR` ou
 du jeu (`CUSTOM_CURSOR_OFF faulted` si ses curseurs étaient affichés) ; décocher
 puis recocher la case réessaie. Si le curseur paraît trop petit, choisis
 « Grande » ou « Très grande ».
+
+## Jauges
+
+Chaque jauge du jeu a son propre menu ⋯ (les trois petits points, à sa
+droite) : expérience du personnage, expérience de guilde, points d’honneur,
+pods, points d’énergie et expérience de chaque métier. Le mod y ajoute la case
+**Afficher à la verticale**, juste après « Masquer le module » (après
+« Couleur de jauge » quand le jeu ne propose pas « Masquer le module ») et
+avant « Gestion des jauges ». Un clic applique le choix aussitôt et ferme le
+menu.
+
+Cochée, la jauge passe à la verticale :
+
+- c’est la **barre du jeu elle-même**, dans son mode vertical : elle se
+  remplit **de bas en haut**, avec ses graduations et sa couleur (celle de
+  « Couleur de jauge » comprise) ; son infobulle ne change pas ;
+- de haut en bas : l’icône de la jauge, la barre, « NIV. » au-dessus du
+  niveau (rien pour les pods, comme à l’horizontale) ou le badge Oméga d’un
+  personnage Oméga, puis le bouton ⋯ ;
+- elle fait **48 pixels de large** et **garde sa longueur** : sa largeur à
+  l’horizontale, entre 160 pixels et la hauteur de l’écran moins 16. Elle suit
+  la taille enregistrée dans la disposition en cours, celle d’un combat
+  comprise, et sa longueur suit aussi un changement de résolution ou
+  d’échelle de l’interface ;
+- elle **garde sa place** : son coin en haut à gauche ne bouge pas, sauf du
+  nécessaire pour rester entièrement à l’écran (une jauge en bas de l’écran
+  remonte d’autant) ; si le jeu l’avait décalée pour la garder entière à
+  l’écran à l’horizontale (une jauge laissée à la verticale contre le bord
+  droit, par exemple), elle revient là où tu l’avais laissée ;
+- elle **se déplace comme avant** (glisser, aimantation aux autres fenêtres,
+  Alt pour s’en passer, Maj pour déplacer le groupe aimanté) ; le jeu
+  enregistre sa place dans la disposition comme d’habitude ;
+- sa **taille ne se change qu’à l’horizontale** : ses bords de
+  redimensionnement disparaissent tant qu’elle est verticale, et le jeu
+  n’enregistre jamais de taille verticale. Pour l’allonger : décoche, élargis
+  la jauge, puis recoche.
+
+Décochée, la jauge redevient **exactement** celle du jeu (sa taille, celle de
+la disposition en cours, ses réglages, ses bords de redimensionnement), à la
+place où tu l’as laissée, gardée entièrement à l’écran, même collée en haut ou
+à gauche de l’écran.
+
+Le choix de chaque jauge est enregistré dans les réglages du mod, pas dans la
+disposition du jeu, et vaut pour tous tes personnages. Une jauge masquée puis
+réaffichée (« Masquer le module », « Gestion des jauges », le bouton du
+panneau des métiers, le bouton d’expérience de la barre des modules) reste
+verticale ; recréée par le jeu (connexion, changement de personnage), elle
+redevient verticale dès qu’elle s’affiche, en moins d’un quart de seconde, à
+la place où tu l’avais laissée. Quand le jeu replace ses fenêtres (combat,
+disposition, « Réinitialiser » les positions), elle reste verticale et à
+l’écran, même masquée ; masquée pendant un replacement, elle réapparaît à sa
+place. Seule limite connue : après un passage à un écran moins haut
+(résolution, échelle de l’interface), une jauge verticale plus longue que la
+hauteur de l’écran peut dépasser en haut pendant au plus 0,2 seconde.
+
+**Options → Dofus Enhanced → Jauges →** « Affichage vertical dans le menu … des
+jauges » (cochée par défaut) : décochée, la case disparaît des menus et toutes
+les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé et
+revient quand tu la recoches.
 
 ## Ressources sur les cartes
 

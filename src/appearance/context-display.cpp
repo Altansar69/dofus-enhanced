@@ -3,6 +3,7 @@
 #include "social/spouse-party-menu.hpp"
 #include "souls/soul-panel.hpp"
 #include "travel/map-travel.hpp"
+#include "ui/vertical-gauges.hpp"
 #include "core/module.hpp"
 #include "appearance/mode-policy.hpp"
 #include "animations/animation-mode-labels.hpp"
@@ -382,6 +383,7 @@ Obj WorldHook(Obj maker, Method method) { return Create(maker, method, originalW
 Obj FightHook(Obj maker, Method method) { return Create(maker, method, originalFight); }
 void CallbackHook(Obj callback, Obj view, Method method) {
     if (HandleMapTravelCallback(callback, view)) return;
+    if (HandleVerticalGaugeMenuCallback(callback, view)) return; // the gauges' « Afficher à la verticale » row
     if (soul::HandlePanelMenuCallback(callback, view)) return;
     if (HandleSoulGroupMenuCallback(callback, view)) return;
     if (HandleSpousePartyMenuCallback(callback, view)) return;

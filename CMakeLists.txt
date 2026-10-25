@@ -50,7 +50,8 @@ add_library(DofusMiniatures SHARED
   src/stats/stats.cpp src/stats/stats-travel.cpp src/stats/stats-economy.cpp src/stats/stats-fights.cpp
   src/stats/stats-store.cpp
   src/stats/stats-format.cpp src/stats/stats-window.cpp
-  src/ui/cursor-art.cpp src/ui/custom-cursor.cpp)
+  src/ui/cursor-art.cpp src/ui/custom-cursor.cpp
+  src/ui/vertical-gauges.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -118,6 +119,9 @@ dofus_test(CursorArtTests tests/ui/cursor-art-tests.cpp src/ui/cursor-art.cpp)
 # Its runtime (the SetCursor detour, the textures, the hover inputs) on a fake
 # IL2CPP runtime, with fake Windows clock, button, scale and pointer size.
 dofus_test(CustomCursorTests tests/ui/custom-cursor-tests.cpp src/ui/cursor-art.cpp LIBS user32 advapi32)
+# 1.18.0 « Afficher à la verticale »: the gauges' menu row and their vertical
+# layout on a fake IL2CPP runtime (the test includes vertical-gauges.cpp).
+dofus_test(VerticalGaugesTests tests/ui/vertical-gauges-tests.cpp)
 
 # Appearance: miniatures, creatures, sizes and display shortcuts.
 dofus_test(FeaturesTests tests/appearance/features-tests.cpp src/appearance/features.cpp src/appearance/size-measurements.cpp)

@@ -313,7 +313,7 @@ int main() {
             defaults.perfOverlayCorner == 0 && !defaults.perfOverlayGpu && !defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
             defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1 && Settings{} == defaults,
             "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden (no part ticked) in the top left corner");
-        static_assert(std::size(ExtraToggles) == 12); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button) and 1.17.1's (the notebook's send buttons)
+        static_assert(std::size(ExtraToggles) == 13); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons) and 1.18.0's (the gauges' vertical row)
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
             // Every combination of the first five, many times; the others follow inverted bits.
@@ -650,6 +650,47 @@ int main() {
             }
         }
         {
+            // 1.18.0 « Jauges »: the vertical gauges, their fqd+GaugesType bits
+            // (none by default: every gauge horizontal), and the « Afficher à la
+            // verticale » row of their menus, shown by default; each on its own
+            // line, every gauge alone and together. A mask with a bit of no gauge
+            // (4, beyond the twenty jobs) or negative is never read nor saved; a
+            // file written before 1.18.0 keeps every gauge horizontal, the row shown.
+            Require(defaults.gaugeVertical == 0 && defaults.gaugeVerticalMenu && Settings::GaugeVerticalBits == 0x3FFFFFB &&
+                Settings::ValidGaugeVertical(0) && Settings::ValidGaugeVertical(0x3FFFFFB) && Settings::ValidGaugeVertical(0x2000000) &&
+                !Settings::ValidGaugeVertical(4) && !Settings::ValidGaugeVertical(-1) && !Settings::ValidGaugeVertical(0x4000000) &&
+                !Settings::ValidGaugeVertical(0x3FFFFFF), "Every gauge horizontal by default, the row shown; only the gauges' bits are valid");
+            std::vector<int> masks{0, 0x1, 0x2, 0x8, 0x10, 0x20, 0x3FFFFFB, 0x1 | 0x20 | 0x400};
+            for (int bit = 6; bit <= 25; ++bit) masks.push_back(1 << bit); // each job's experience
+            for (int mask : masks)
+                for (bool menu : {false, true}) {
+                    auto gauges = defaults;
+                    gauges.gaugeVertical = mask; gauges.gaugeVerticalMenu = menu;
+                    gauges.Save(path);
+                    const auto saved = FileText(path);
+                    Require(Settings::Read(path) == gauges && saved.find("\ngaugeVertical=" + std::to_string(mask) + "\n") != std::string::npos &&
+                        saved.find(std::string("\ngaugeVerticalMenu=") + (menu ? "1" : "0") + "\n") != std::string::npos,
+                        "The vertical gauges and their menu row persist, each on its own line");
+                    { std::ofstream bad(path, std::ios::app); bad << "gaugeVertical=4\ngaugeVertical=-1\ngaugeVertical=67108864\ngaugeVertical=x\n"
+                        "gaugeVertical=\ngaugeVertical= 1\ngaugeVertical=99999999999\ngaugeVerticalMenu=2\ngaugeVerticalMenu=-1\ngaugeVerticalMenu=oui\n"; }
+                    Require(Settings::Read(path) == gauges, "A malformed or unknown gauge value keeps the saved choice");
+                }
+            { std::ofstream older(path, std::ios::trunc); older << "customCursor=1\nnotebookSendButtons=0\n"; }
+            const auto older = Settings::Read(path);
+            Require(older.gaugeVertical == 0 && older.gaugeVerticalMenu && older.customCursor && !older.notebookSendButtons,
+                "A file written before 1.18.0 keeps every gauge horizontal, the row shown, and the rest");
+            { std::ofstream twice(path, std::ios::trunc); twice << "gaugeVertical=1\ngaugeVertical=8\ngaugeVerticalMenu=0\ngaugeVerticalMenu=1\ngaugeVerticalMenu=0\n"; }
+            const auto last = Settings::Read(path);
+            Require(last.gaugeVertical == 0x8 && !last.gaugeVerticalMenu, "The last valid gauge lines win");
+            auto kept = defaults; kept.gaugeVertical = 0x21; kept.Save(path);
+            for (int invalid : {4, -1, 0x4000000, 0x3FFFFFF}) {
+                auto refused = defaults; refused.gaugeVertical = invalid;
+                std::string refusal;
+                try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+                Require(refusal == "Invalid vertical gauges" && Settings::Read(path) == kept, "A gauge that does not exist is never saved");
+            }
+        }
+        {
             auto corner = defaults; corner.perfOverlayCorner = 4;
             bool rejected = false;
             try { corner.Save(path); } catch (const std::runtime_error&) { rejected = true; }
@@ -919,7 +960,7 @@ int main() {
         Require(MH_EnableHook(pointer) == MH_OK && invoke(3) == 55, "Local hook dispatch and trampoline");
         Require(MH_DisableHook(pointer) == MH_OK && invoke(3) == 34, "Local hook restoration");
         MH_Uninitialize();
-        std::cout << "PASS: settings migration (former animation modes to toggles, legacy keys kept), seventeen appearance/animation checkboxes round trip (« PNJ » off by default), exhaustive category and animation policies, modes, fixed sizing presets, the « Curseur » choices (off, Or and the Windows size by default), version refusal, startup status and local hook roundtrip. No game process accessed.\n";
+        std::cout << "PASS: settings migration (former animation modes to toggles, legacy keys kept), seventeen appearance/animation checkboxes round trip (« PNJ » off by default), exhaustive category and animation policies, modes, fixed sizing presets, the « Curseur » choices (off, Or and the Windows size by default), the « Jauges » choices (every gauge horizontal, the menu row shown by default, unknown gauges refused), version refusal, startup status and local hook roundtrip. No game process accessed.\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n'; return 1;

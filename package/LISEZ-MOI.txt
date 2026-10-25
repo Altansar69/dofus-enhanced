@@ -10,7 +10,29 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.17.1
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.18.0
+
+VERSION 1.18.0 : JAUGES À LA VERTICALE
+- Nouvelle case « Afficher à la verticale » dans le menu ⋯ (les trois
+  petits points) de chaque jauge du jeu : expérience du personnage,
+  expérience de guilde, points d’honneur, pods, points d’énergie et
+  expérience de chaque métier. Cochée, la jauge passe à la verticale : la
+  barre du jeu se remplit de bas en haut, l’icône au-dessus et le niveau
+  en dessous ; elle garde sa longueur et sa place (remontée juste ce qu’il
+  faut si elle dépassait de l’écran) et se déplace comme avant. Sa taille
+  se change seulement à l’horizontale. Décochée, elle redevient exactement
+  la jauge du jeu.
+- Chaque jauge garde son choix, pour tous tes personnages, même masquée
+  puis réaffichée ou recréée par le jeu (elle revient alors à la place où
+  tu l’avais laissée). Replacée par le jeu (combat, disposition,
+  réinitialisation des positions), elle reste verticale et à l’écran, et
+  suit la taille enregistrée dans la disposition en cours.
+- Nouvelle section « Jauges » dans l’onglet Dofus Enhanced, après
+  « Curseur » : « Affichage vertical dans le menu … des jauges » (cochée
+  par défaut). Décochée, la case disparaît des menus et toutes les jauges
+  reviennent à l’horizontale, leurs choix gardés.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.17.1 : PERFORMANCES, CARNET, CURSEUR, TITRES DES MODULES
 - Performances : le cadre se redimensionne maintenant comme une fenêtre.

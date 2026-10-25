@@ -15,7 +15,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 15;
+constexpr int ModSections = 16;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -46,9 +46,9 @@ constexpr const char* AnimationDescriptions[] = {
     "En combat, un combattant vaincu disparaît sans jouer son animation de mort. Sans effet quand Déplacements instantanés ou Sans attentes visuelles est coché : sa mort reste alors celle du jeu, qui retire ensuite le combattant. Expérimental. Désactivé par défaut.",
     "En combat, la marche, les poussées, les lancers de personnage porté et les sauts arrivent aussitôt à destination, cases intermédiaires comprises. Un trajet inhabituel garde son animation. Expérimental. Désactivé par défaut.",
     "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
-// The checkboxes added in 1.13.0, 1.14.0, 1.16.0 and 1.17.1, in the order of Settings' ExtraToggles.
+// The checkboxes added in 1.13.0, 1.14.0, 1.16.0, 1.17.1 and 1.18.0, in the order of Settings' ExtraToggles.
 enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, NotebookPingRow, NotebookCopyRow, NotebookTravelRow, MapAddPositionRow,
-    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow, PerfButtonRow, NotebookSendRow };
+    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow, PerfButtonRow, NotebookSendRow, GaugeVerticalRow };
 constexpr CheckRow ExtraRows[] = {
     {"Barre des ressources sur la mini-carte", "Affiche sur la mini-carte la barre des six métiers qui ouvre le choix des ressources. Décochée, la barre et sa liste disparaissent, mais les repères des ressources choisies restent affichés si « Ressources sur la mini-carte » est cochée ; le choix se fait alors depuis la grande carte. Activé par défaut."},
     {"Nom de la zone au survol de la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche le nom de sa zone au-dessus de ses coordonnées. Activé par défaut."},
@@ -61,7 +61,10 @@ constexpr CheckRow ExtraRows[] = {
     {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % · 1,2 Mo/s ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Pour un jeu installé sur le réseau, elle n’apparaît pas. Désactivé par défaut."},
     {"Déplacer et redimensionner l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux. Redimensionne-le comme une fenêtre : son bord droit change sa largeur, son bord bas sa hauteur, et son coin en bas à droite, où une petite poignée de points apparaît quand la souris survole l’affichage, les deux à la fois ; sa largeur et sa hauteur vont chacune de la moitié au triple de leur taille normale, et son coin en haut à gauche reste en place. Le texte garde ses proportions et prend la plus grande taille qui tient dans le cadre, sans jamais être coupé. Au survol, le jeu affiche le curseur correspondant : une double flèche sur ces deux bords et sur son coin en bas à droite, le curseur de déplacement ailleurs (les curseurs du mod quand « Curseur Dofus » est coché). L’affichage reste entièrement à l’écran, et sa place et sa taille sont gardées, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu. Activé par défaut."},
     {"Bouton dans la barre du haut", "Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances sans décocher ses mesures ; si aucune n’est cochée, il coche « Afficher les FPS et la mémoire ». Masqué avec ce bouton, l’affichage le reste après un redémarrage, jusqu’à un nouveau clic ou une mesure cochée ici. Décochée, le bouton disparaît et seules les cases ci-dessus commandent l’affichage, qui réapparaît s’il était masqué. Activé par défaut."},
-    {"Boutons d’envoi à côté des messages", "Dans les messages du carnet, deux petits boutons à droite de chaque nom : le premier envoie ce message dans le chat, sur le canal enregistré avec lui (« actuel » : le canal en cours du chat) ; le second le place dans le brouillon du chat, sans l’envoyer. Ils utilisent le message tel qu’il est enregistré. L’entrée sélectionnée et tes modifications en cours ne changent pas. Décochée, les deux boutons disparaissent et le carnet ne propose plus d’envoyer ni de préparer ses messages dans le chat ; « Bouton de copie à côté des entrées » permet encore de copier un message pour le coller toi-même dans le chat. Activé par défaut."}};
+    {"Boutons d’envoi à côté des messages", "Dans les messages du carnet, deux petits boutons à droite de chaque nom : le premier envoie ce message dans le chat, sur le canal enregistré avec lui (« actuel » : le canal en cours du chat) ; le second le place dans le brouillon du chat, sans l’envoyer. Ils utilisent le message tel qu’il est enregistré. L’entrée sélectionnée et tes modifications en cours ne changent pas. Décochée, les deux boutons disparaissent et le carnet ne propose plus d’envoyer ni de préparer ses messages dans le chat ; « Bouton de copie à côté des entrées » permet encore de copier un message pour le coller toi-même dans le chat. Activé par défaut."},
+    // « Jauges » (1.18.0): the master switch of the « Afficher à la verticale »
+    // row the mod adds to each gauge's menu (vertical-gauges.cpp).
+    {"Affichage vertical dans le menu … des jauges", "Ajoute la case « Afficher à la verticale » au menu … (les trois petits points) de chaque jauge : expérience du personnage, expérience de guilde, points d’honneur, pods, points d’énergie et expérience de chaque métier. Cochée dans ce menu, la jauge passe à la verticale : elle se remplit de bas en haut, son niveau en dessous ; elle garde sa longueur et sa place, se déplace comme avant, et sa taille se change seulement à l’horizontale. Décochée ici, la case disparaît des menus et toutes les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé. Activé par défaut."}};
 // « Dimension avec les coordonnées » on the big map, the mini-map and in the
 // chat: the same three choices, each id the saved mode (Settings'
 // coordsWorld*Mode), « Oui, sauf dans le Monde des Douze » by default.
@@ -1077,6 +1080,8 @@ bool OptionsUi::Attach(Obj page) {
         {"Surbrillance", glow},
         // « Curseur » (1.17.0): the mod's cursors, their colour and size.
         {"Curseur", {customCursorOption.get(), customCursorColorOption.get(), customCursorSizeOption.get()}},
+        // « Jauges » (1.18.0): the « Afficher à la verticale » row of the gauges' menus.
+        {"Jauges", {extra(GaugeVerticalRow)}},
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), extra(MiniMapBarRow), miniCenterOption.get(), extra(MiniMapZoneNameRow),
             mapCoordsOption.get(), miniMapCoordsOption.get(), archiZonesOption.get(), archiZonesMiniOption.get(), mapMenuOption.get()}},
         {"Carnet", {extra(NotebookPingRow), extra(NotebookCopyRow), extra(NotebookTravelRow), extra(NotebookSendRow), extra(MapAddPositionRow),

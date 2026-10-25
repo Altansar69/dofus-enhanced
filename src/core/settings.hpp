@@ -43,6 +43,12 @@ struct Settings {
     bool customCursor = false; // Curseur : curseurs Dofus du mod à la place de la souris de Windows
     int customCursorColor = 0; // 0 Or, 1 couleur du thème du jeu, 2 Émeraude, 3 Argent
     int customCursorSize = 0; // 0 comme la souris de Windows, 1 grande (×1,5), 2 très grande (×2)
+    // Jauges (1.18.0) : les jauges affichées à la verticale (case « Afficher à
+    // la verticale » du menu … de chaque jauge), un bit fqd+GaugesType chacune
+    // (GaugeVerticalBits) ; la case elle-même dans ces menus, une case
+    // d'ExtraToggles : décochée, toutes les jauges à l'horizontale, leurs choix gardés.
+    int gaugeVertical = 0;
+    bool gaugeVerticalMenu = true; // Jauges : la case « Afficher à la verticale » dans le menu … des jauges
     bool metamobSync = false; // Metamob : +1 dans la quête Metamob après chaque capture d'archimonstre ou de boss (la clé n'est jamais ici)
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
@@ -158,6 +164,11 @@ struct Settings {
     static bool ValidPerfOverlayScale(int value) { return value >= 50 && value <= 300; }
     static bool ValidCustomCursorColor(int value) { return value >= 0 && value <= 3; }
     static bool ValidCustomCursorSize(int value) { return value >= 0 && value <= 2; }
+    // fqd+GaugesType's gauges: the character's experience (1), the guild's (2),
+    // the honour points (8), the pods (0x10), the energy points (0x20) and the
+    // twenty jobs' experience (0x40 to 0x2000000); 4 is none.
+    static constexpr int GaugeVerticalBits = 0x3FFFFFB;
+    static bool ValidGaugeVertical(int value) { return value >= 0 && (value & ~GaugeVerticalBits) == 0; }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
     // metamobSync as the shared file holds it now; nullopt when the file is
     // unreadable or was last written by a revision that does not know it.
@@ -188,10 +199,11 @@ inline constexpr bool Settings::* GlowCategoryToggles[] = {
     &Settings::glowMonsters, &Settings::glowNpcs, &Settings::glowInteractives,
     &Settings::glowSelf, &Settings::glowParty, &Settings::glowPlayers};
 // The checkboxes added in 1.13.0, 1.14.0, 1.16.0 (the notebook's copy and
-// travel buttons, the performance overlay's top-bar button) and 1.17.1 (the
-// send buttons of the notebook's messages), in the order of OptionsUi's extra rows.
+// travel buttons, the performance overlay's top-bar button), 1.17.1 (the
+// send buttons of the notebook's messages) and 1.18.0 (the gauges' « Afficher
+// à la verticale » row), in the order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName,
     &Settings::notebookPingButton, &Settings::notebookCopyButton, &Settings::notebookTravelButton, &Settings::mapAddPosition, &Settings::perfOverlay,
     &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton,
-    &Settings::notebookSendButtons};
+    &Settings::notebookSendButtons, &Settings::gaugeVerticalMenu};

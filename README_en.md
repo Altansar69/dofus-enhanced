@@ -11,13 +11,13 @@
 > - **I don’t know whether using this mod is allowed** by the terms of use of Dofus and Ankama: **a ban cannot be completely ruled out**.
 > - Use it **at your own risk**. The software is provided **“as is”, without any warranty**.
 
-**Dofus Enhanced** brings a good dose of quality of life to **Dofus Unity**, right inside the game’s interface: miniatures your way, combat animations à la carte, resources on the maps, missing archmonsters zone by zone, one-click travel (zaaps, Havenbag and the Roublards’ secret passage included), soul capture helper with Metamob sync, Kralamoure openings in the calendar, treasure hunt, notebook, profession XP, on-screen FPS, per-character statistics and Dofus-style cursors.
+**Dofus Enhanced** brings a good dose of quality of life to **Dofus Unity**, right inside the game’s interface: miniatures your way, combat animations à la carte, resources on the maps, missing archmonsters zone by zone, one-click travel (zaaps, Havenbag and the Roublards’ secret passage included), soul capture helper with Metamob sync, Kralamoure openings in the calendar, treasure hunt, notebook, profession XP, on-screen FPS, per-character statistics, Dofus-style cursors and vertical gauges.
 
 Everything is set up in the game’s options, the mod’s panels are built from the game’s own components, and the mod updates itself when the game starts. Free and open source.
 
 ## ✨ Features
 
-**A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence (appearance), Animations, Surbrillance (highlight), Curseur (cursor), Cartes (maps), Carnet (notebook), Chasse au trésor (treasure hunt), Déplacements (travel), Pierre d’âme (soul stone), Chat, Calendrier (calendar), Performances (performance), Statistiques (statistics), Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
+**A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence (appearance), Animations, Surbrillance (highlight), Curseur (cursor), Jauges (gauges), Cartes (maps), Carnet (notebook), Chasse au trésor (treasure hunt), Déplacements (travel), Pierre d’âme (soul stone), Chat, Calendrier (calendar), Performances (performance), Statistiques (statistics), Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
 
 ### Appearance
 - **Miniatures, Créatures (creatures) or Normal**, chosen separately in and out of combat. Miniatures shrinks to 60% of the original size, never below 50% of a player’s height for monsters and summons.
@@ -36,6 +36,10 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 - **Curseur Dofus** (Dofus cursor, off by default): cursors drawn by the mod in Dofus’ style replace the Windows pointer: the selection arrow, the hand over what the game makes clickable (buttons, tabs, links, map cells and map edges…), the text cursor in input fields (chat and searches included), the open hand on window title bars, closed while you move a window or drag an item, and the double arrows on the edges of resizable windows. The game’s own cursors (sword, bubble, harvesting tools, fight markers…) stay as they are.
 - **Couleur du curseur** (colour): Or (gold, default), Couleur du thème du jeu (follows the theme chosen in the game’s options), Émeraude (emerald) or Argent (silver).
 - **Taille du curseur** (size): Comme la souris de Windows (like the Windows pointer, default, display scaling included), Grande (large, one and a half times) or Très grande (very large, twice), always real Windows cursors that follow the mouse without lag.
+
+### Gauges
+- **Afficher à la verticale** (show vertically): a checkbox in the ⋯ menu (the three small dots) of each of the game’s gauges (character experience, guild experience, honour points, pods, energy points, each profession’s experience) turns it vertical. The game’s own bar fills from the bottom up, the icon above and the level below; the gauge keeps its length and its place, moves as before, and becomes exactly the game’s gauge again when you untick it. Each gauge keeps its choice, for all your characters.
+- **Affichage vertical dans le menu … des jauges** (vertical display in the gauges’ … menu, ticked by default): unticked, the checkbox leaves the menus and every gauge goes back to horizontal, their choices kept.
 
 ### Maps
 - **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). On the world map they are picked in the **Ressources** tab, a real map mode like **Anomalies**. These are known gathering spots, not their real-time availability.

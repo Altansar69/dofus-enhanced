@@ -44,6 +44,10 @@ CreateFn worldHook = nullptr, fightHook = nullptr;
 CallbackFn callbackHook = nullptr;
 bool combat = false;
 unsigned originalCreates = 0, originalCallbacks = 0, changes = 0, nativeCloses = 0, scheduledCloses = 0;
+// The gauges' « Afficher à la verticale » row (vertical-gauges.cpp, its own
+// tests): the handler it claims, and every handler it was asked about.
+Obj verticalGaugeHandler = nullptr;
+std::vector<Obj> verticalGaugeAsked;
 std::string failMethod;
 int failCountdown = 0;
 bool failAfter = false;
@@ -762,6 +766,27 @@ void CallbackIdentityAndDisabledRows() {
     callbackHook(glowHandler, f.glowViews[0], nullptr);
     Check(changes == 0, "Glow radio on a wrong menu root must not commit");
 }
+// The gauges' « Afficher à la verticale » row (1.18.0) goes through the same
+// detour: its handler is offered every callback the map travel does not
+// claim, and one it claims never reaches the game's action nor this menu's rows.
+void VerticalGaugeRowShareTheDetour() {
+    Fixture f;
+    f.Create();
+    f.Open();
+    verticalGaugeAsked.clear();
+    const auto gaugeHandler = Make("ClickCallbackHandler"), otherHandler = Make("ClickCallbackHandler");
+    verticalGaugeHandler = gaugeHandler;
+    callbackHook(gaugeHandler, f.views[0], nullptr);
+    Check(originalCallbacks == 0 && changes == 0 && verticalGaugeAsked == std::vector<Obj>{gaugeHandler},
+        "The gauge row's handler is claimed before the game's action and this menu's rows");
+    callbackHook(otherHandler, f.views[0], nullptr);
+    Check(originalCallbacks == 1 && changes == 0 && verticalGaugeAsked == std::vector<Obj>({gaugeHandler, otherHandler}),
+        "Any other handler is offered to the gauge row, then forwarded untouched");
+    const auto ownHandler = Get(f.Choice(1)).refs.at("m_callback");
+    callbackHook(ownHandler, f.views[1], nullptr);
+    Check(changes == 1 && verticalGaugeAsked.size() == 3, "This menu's own rows still work behind it");
+    verticalGaugeHandler = nullptr;
+}
 void NativeDisabledStateIsPreserved() {
     Fixture f;
     Get(f.original).flags["disabled"] = true;
@@ -1166,6 +1191,7 @@ int main() {
         run(fake::MiniatureCategoryViewsFollowPreferences);
         run(fake::MiniatureCategoryCallbackGuards);
         run(fake::CallbackIdentityAndDisabledRows);
+        run(fake::VerticalGaugeRowShareTheDetour);
         run(fake::NativeDisabledStateIsPreserved);
         run(fake::ReopenPruneAndDuplicateCreation);
         run(fake::StaleContextAndSessionCannotCommit);
@@ -1186,5 +1212,9 @@ int main() {
 bool HandleSoulGroupMenuCallback(managed::Obj, managed::Obj) { return false; }
 bool HandleMapTravelCallback(managed::Obj, managed::Obj) { return false; }
 bool HandleSpousePartyMenuCallback(managed::Obj, managed::Obj) { return false; }
+bool HandleVerticalGaugeMenuCallback(managed::Obj callback, managed::Obj) {
+    fake::verticalGaugeAsked.push_back(callback);
+    return callback && callback == fake::verticalGaugeHandler;
+}
 
 namespace soul { bool HandlePanelMenuCallback(managed::Obj, managed::Obj) { return false; } }

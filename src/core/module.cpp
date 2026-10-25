@@ -38,6 +38,7 @@
 #include "maps/map-info.hpp"
 #include "ui/perf-overlay.hpp"
 #include "ui/custom-cursor.hpp"
+#include "ui/vertical-gauges.hpp"
 #include <MinHook.h>
 #include <fstream>
 #include <mutex>
@@ -174,6 +175,7 @@ void Module::Change(Settings next, bool save) {
     if (!Settings::ValidResourceSelection(next.resourceMapItems)) throw std::runtime_error("Invalid resource map selection");
     if (!Settings::ValidCustomCursorColor(next.customCursorColor) || !Settings::ValidCustomCursorSize(next.customCursorSize))
         throw std::runtime_error("Invalid cursor choice");
+    if (!Settings::ValidGaugeVertical(next.gaugeVertical)) throw std::runtime_error("Invalid vertical gauges");
     const bool withMetamobSync = !save || KeepSharedMetamobSync(next);
     if (next.mode > 0) next.preferredMode = next.mode;
     if (next.roleplayMode > 0) next.preferredRoleplayMode = next.roleplayMode;
@@ -200,7 +202,8 @@ void Module::Change(Settings next, bool save) {
         " miniatures=" + digits(CombatMiniatureToggles) + "/" + digits(RoleplayMiniatureToggles) +
         " animations=" + digits(AnimationToggles) + " autoLoad=" + std::to_string(settings.autoLoad) +
         " sizing=reduce percent=60 minimum=50 cursor=" + std::to_string(settings.customCursor) + "/" +
-        std::to_string(settings.customCursorColor) + "/" + std::to_string(settings.customCursorSize));
+        std::to_string(settings.customCursorColor) + "/" + std::to_string(settings.customCursorSize) +
+        " gauges=" + std::to_string(settings.gaugeVertical) + "/" + std::to_string(settings.gaugeVerticalMenu));
 }
 // metamobSync is shared by every game client of this installation (one per
 // character): a save keeps the file's value unless this client changed it
@@ -309,6 +312,7 @@ void Module::Pump(Obj source) {
     startupStage("soul-helper", [] { TickSoulHelper(); });
     startupStage("soul-widget", [] { TickSoulWidget(); });
     startupStage("tool-module-menu", [] { toolsUi::Tick(); });
+    startupStage("vertical-gauges", [] { TickVerticalGauges(); });
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
     startupStage("notebook-panel", [] { TickNotebookPanel(); });
     startupStage("stats-window", [] { TickStatsWindow(); });
@@ -387,6 +391,9 @@ void Module::Stop() {
     RestoreSoulHelper();
     RestoreSoulWidget();
     RestoreDisplayShortcut();
+    // The gauges back as the game built them, their menu row closed, before the
+    // menu callback detour (context-display's) stops recognising it.
+    RestoreVerticalGauges();
     RestoreContextDisplayMenu();
     try { ui->Restore(); } catch (const std::exception& e) { Log(std::string("UI_RESTORE_ERROR ") + e.what()); }
     try { features->Restore(); } catch (const std::exception& e) { Log(std::string("RENDER_RESTORE_ERROR ") + e.what()); }
@@ -404,7 +411,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -460,7 +467,8 @@ static void UpdateHook(Obj self, Method method) {
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
             if (CustomCursorCleanupPending()) RestoreCustomCursor();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending()) module->stopCompleted.store(true);
+            if (VerticalGaugesCleanupPending()) RestoreVerticalGauges();
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -473,7 +481,7 @@ static void UpdateHook(Obj self, Method method) {
     } else if (self != module->compositor.get()) return;
     if (module->servicesReady) TickMapPreload();
     if (module->servicesReady) TickChatTravelPlanning();
-    if (module->servicesReady) { MapInfoFrame(now); PerfOverlayFrame(now); }
+    if (module->servicesReady) { MapInfoFrame(now); PerfOverlayFrame(now); VerticalGaugesFrame(now); }
     if (module->servicesReady && now < nextPump) { if (CompositorGlowTick(now)) TickMonsterGlow(); resourceMap::PumpRender(now); return; }
     nextPump = now + 200;
     // Three failed pumps in a row stop the module; one that succeeds starts the count again.
@@ -521,6 +529,7 @@ static DWORD WINAPI Worker(void*) {
         InstallSoulHelper();
         nativeClick::Install();
         toolsUi::Install();
+        InstallVerticalGauges(); // never throws: VERTICAL_GAUGES_DISABLED leaves the gauges as the game builds them
         InstallTreasurePanel();
         treasure::InstallHunt();
         InstallNotebookPanel();

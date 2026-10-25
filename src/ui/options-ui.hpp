@@ -63,10 +63,11 @@ struct OptionsUi {
     managed::Ref mapMenuSource, mapMenuOption;
     // « Calendrier »: Metamob's Kralamoure openings in the game's calendar.
     managed::Ref calendarKraloveSource, calendarKraloveOption;
-    // The checkboxes added in 1.13.0, 1.14.0, 1.16.0 and 1.17.1 (Settings'
-    // ExtraToggles), spread over « Cartes », « Carnet » and « Performances » (no
-    // corner choice since 1.16.0: the overlay is placed with the mouse).
-    std::array<managed::Ref, 12> extraSources, extraOptions;
+    // The checkboxes added in 1.13.0, 1.14.0, 1.16.0, 1.17.1 and 1.18.0 (Settings'
+    // ExtraToggles), spread over « Jauges », « Cartes », « Carnet » and
+    // « Performances » (no corner choice since 1.16.0: the overlay is placed
+    // with the mouse).
+    std::array<managed::Ref, 13> extraSources, extraOptions;
     // « Dimension avec les coordonnées », a choice of three each: of shared
     // positions in « Chat », of the cell under the mouse on each map in « Cartes ».
     managed::Ref chatCoordsSource, chatCoordsOption;
