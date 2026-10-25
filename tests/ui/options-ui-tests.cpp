@@ -34,7 +34,7 @@ enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, C
 unsigned statsOpens = 0;
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
-    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra };
+    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra, NotebookSendExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows and Capture d’âme's top-bar button.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
@@ -610,7 +610,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.extraSources[MiniMapZoneNameExtra].get(), ui.mapCoordsSource.get(), ui.miniMapCoordsSource.get(),
         ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(), ui.mapMenuSource.get(),
         ui.extraSources[NotebookPingExtra].get(), ui.extraSources[NotebookCopyExtra].get(), ui.extraSources[NotebookTravelExtra].get(),
-        ui.extraSources[MapAddPositionExtra].get(), ui.notebookButtonSource.get(), ui.treasureButtonSource.get(),
+        ui.extraSources[NotebookSendExtra].get(), ui.extraSources[MapAddPositionExtra].get(), ui.notebookButtonSource.get(), ui.treasureButtonSource.get(),
         ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.soulButtonSource.get(), ui.metamobSyncSource.get(),
         ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.chatCoordsSource.get(),
@@ -673,8 +673,9 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.archiZonesMiniOption, ui.archiZonesMiniSource, "Archimonstres manquants sur la mini-carte", false),
             CheckRow(ui.mapMenuOption, ui.mapMenuSource, "Réglages des cartes au clic droit", true)}},
         {"Carnet", {CheckRow(ui.extraOptions[NotebookPingExtra], ui.extraSources[NotebookPingExtra], "Bouton de repère à côté des positions", true),
-            CheckRow(ui.extraOptions[NotebookCopyExtra], ui.extraSources[NotebookCopyExtra], "Bouton de copie à côté des positions", true),
+            CheckRow(ui.extraOptions[NotebookCopyExtra], ui.extraSources[NotebookCopyExtra], "Bouton de copie à côté des entrées", true),
             CheckRow(ui.extraOptions[NotebookTravelExtra], ui.extraSources[NotebookTravelExtra], "Bouton de voyage à côté des positions", true),
+            CheckRow(ui.extraOptions[NotebookSendExtra], ui.extraSources[NotebookSendExtra], "Boutons d’envoi à côté des messages", true),
             CheckRow(ui.extraOptions[MapAddPositionExtra], ui.extraSources[MapAddPositionExtra], "« Ajouter aux positions » au clic droit sur les cartes", true),
             CheckRow(ui.notebookButtonOption, ui.notebookButtonSource, "Bouton dans la barre du haut", true)}},
         // « Chasse au trésor » (1.16.1): its panel's top-bar button alone, ticked by default.
@@ -706,7 +707,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.17.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.17.1 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -813,8 +814,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.17.0" && std::string(ModVersion) == "r118" &&
-        ModRevision == 118,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.17.1" && std::string(ModVersion) == "r119" &&
+        ModRevision == 119,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -859,14 +860,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.17.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.17.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r118") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r119") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 69 && optionModels == 69 + 3,
-        "The UI must create sixty-nine private sources and seventy-two rows");
+    Check(sourceModels == 70 && optionModels == 70 + 3,
+        "The UI must create seventy private sources and seventy-three rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1318,11 +1319,12 @@ Settings AwayFromDefaults() {
     settings.chatTravelLinks = settings.chatSoulInventory = settings.chatOcreStatus = settings.chatMetamobStatus = false;
     for (auto field : ExtraToggles) settings.*field = !(Settings{}.*field);
     // Not rows (no row resets them, the pump never changes them): the corner an
-    // earlier revision chose and the overlay's mouse place and size, kept with
-    // the mouse placement unticked, and the overlay hidden with its top-bar button.
+    // earlier revision chose and the overlay's mouse place and sizes (its width
+    // and height, 1.17.1), kept with the mouse placement unticked, and the
+    // overlay hidden with its top-bar button.
     settings.perfOverlayCorner = 2;
     settings.perfOverlayX = 3300; settings.perfOverlayY = 4400;
-    settings.perfOverlayScale = 175;
+    settings.perfOverlayScaleX = 175; settings.perfOverlayScaleY = 60;
     settings.perfOverlayShown = false;
     settings.coordsWorldChatMode = 2; settings.coordsWorldMapMode = 0; settings.coordsWorldMiniMapMode = 2; // away from « Oui, sauf »
     settings.statsEnabled = settings.statsButton = false;
@@ -1352,7 +1354,8 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         for (auto extra : {MiniMapBarExtra, MiniMapZoneNameExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
         settings.coordsWorldMapMode = defaults.coordsWorldMapMode; settings.coordsWorldMiniMapMode = defaults.coordsWorldMiniMapMode;
     } else if (index == NotebookSection) {
-        for (auto extra : {NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra}) settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
+        for (auto extra : {NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, NotebookSendExtra, MapAddPositionExtra})
+            settings.*ExtraToggles[extra] = defaults.*ExtraToggles[extra];
         settings.notebookButton = defaults.notebookButton;
     } else if (index == TreasureSection) {
         settings.treasureButton = defaults.treasureButton;
@@ -1420,7 +1423,8 @@ void SectionResetOwnsItsRows() {
 void CursorSectionRows() {
     const std::string boxDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
     const std::string colourDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Couleur du thème du jeu » : reprend la couleur d’accent du thème choisi dans les options du jeu (Thème) et la suit quand tu en changes, par exemple jaune-vert avec le thème Standard ; une couleur trop sombre est éclaircie. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. « Or » par défaut.";
-    const std::string sizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié et « Très grande » la double, sans dépasser 128 pixels. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
+    // 1.17.1: the three sizes are Windows cursors at their real size.
+    const std::string sizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié (48 pixels à 100 %) et « Très grande » la double (64 pixels à 100 %), sans dépasser 128 pixels. À toutes les tailles, ce sont des curseurs de Windows, comme la souris : ils suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) gardent leur taille habituelle. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
     Fixture f;
     f.state.settings.customCursor = true; f.state.settings.customCursorColor = 3; f.state.settings.customCursorSize = 2;
     initHook(f.page, false, true, SectionId(CursorSection), nullptr);
@@ -1491,48 +1495,58 @@ void CursorSectionRows() {
         !ui.customCursorSizeSource.get() && !ui.customCursorSizeOption.get(), "Restore releases the rows");
 }
 
-// « Carnet » (1.16.0): the copy and travel buttons of the position lines,
-// after the pin button and before « Ajouter aux positions », both ticked by
-// default. Each row says what its button does and what is left once
-// unticked (the right-click menu still offers « Voyager », but nothing else
-// copies a position: its menu has no « Copier » and the form's is for notes
-// and messages), commits only its own setting, follows an outside change and
-// is ticked again by the section's reset.
+// « Carnet » (1.16.0, 1.17.1): the line buttons, after the pin button and
+// before « Ajouter aux positions », all ticked by default: the copy button of
+// every entry (a position's since 1.16.0, a note's and a message's since
+// 1.17.1), the travel button of a position and the send and prepare buttons
+// of a message (1.17.1). Each row says what its buttons do and what is left
+// once unticked (the right-click menu still offers « Voyager », but nothing
+// else copies an entry: a position's menu has no « Copier » and the form none
+// any more; a message unticked for copy can still be sent or prepared, one
+// unticked for sending can still be copied), commits only its own setting,
+// follows an outside change and is ticked again by the section's reset.
 void NotebookSectionRows() {
     Fixture f;
-    f.state.settings.notebookCopyButton = false; f.state.settings.notebookTravelButton = false;
+    f.state.settings.notebookCopyButton = f.state.settings.notebookTravelButton = f.state.settings.notebookSendButtons = false;
     initHook(f.page, false, true, SectionId(NotebookSection), nullptr);
     CheckLayout(f);
     auto& ui = f.Ui();
     const auto parent = f.Categories().back();
     Check(Rows(Section(parent, NotebookSection)) == std::vector<Obj>({ui.extraOptions[NotebookPingExtra].get(), ui.extraOptions[NotebookCopyExtra].get(),
-        ui.extraOptions[NotebookTravelExtra].get(), ui.extraOptions[MapAddPositionExtra].get(), ui.notebookButtonOption.get()}),
-        "Carnet: the pin, copy and travel buttons, « Ajouter aux positions », then the notebook's top-bar button");
-    struct Row { ExtraIndex extra; bool Settings::* field; const char* title; const char* unticked; };
+        ui.extraOptions[NotebookTravelExtra].get(), ui.extraOptions[NotebookSendExtra].get(), ui.extraOptions[MapAddPositionExtra].get(),
+        ui.notebookButtonOption.get()}),
+        "Carnet: the pin, copy, travel and send buttons, « Ajouter aux positions », then the notebook's top-bar button");
+    struct Row { ExtraIndex extra; bool Settings::* field; const char* title; const char* where; const char* unticked; };
     const Row rows[] = {
-        {NotebookCopyExtra, &Settings::notebookCopyButton, "Bouton de copie à côté des positions",
-            "Décochée, le bouton disparaît et le carnet ne propose plus de copier les coordonnées d’une position. Activé par défaut."},
-        {NotebookTravelExtra, &Settings::notebookTravelButton, "Bouton de voyage à côté des positions",
-            "Décochée, le bouton disparaît ; le clic droit sur une position propose toujours « Voyager », qui lance le même trajet. Activé par défaut."}};
+        {NotebookCopyExtra, &Settings::notebookCopyButton, "Bouton de copie à côté des entrées", "Dans chaque onglet du carnet, un petit bouton",
+            "Décochée, le bouton disparaît et le carnet ne propose plus de copier ses entrées ; un message peut encore être envoyé ou préparé dans le chat avec « Boutons d’envoi à côté des messages ». Activé par défaut."},
+        {NotebookTravelExtra, &Settings::notebookTravelButton, "Bouton de voyage à côté des positions", "Dans les positions du carnet, un petit bouton",
+            "Décochée, le bouton disparaît ; le clic droit sur une position propose toujours « Voyager », qui lance le même trajet. Activé par défaut."},
+        {NotebookSendExtra, &Settings::notebookSendButtons, "Boutons d’envoi à côté des messages", "Dans les messages du carnet, deux petits boutons",
+            "Décochée, les deux boutons disparaissent et le carnet ne propose plus d’envoyer ni de préparer ses messages dans le chat ; « Bouton de copie à côté des entrées » permet encore de copier un message pour le coller toi-même dans le chat. Activé par défaut."}};
     for (const auto& row : rows) {
         const auto option = ui.extraOptions[row.extra].get();
         const auto& source = Get(ui.extraSources[row.extra].get());
         Check(Get(option).klass->name == "BoolOption" && Label(option) == row.title && Get(option).refs.at("source") == ui.extraSources[row.extra].get() &&
             !source.boolean && source.defaultBoolean, std::string(row.title) + ": a native checkbox showing the saved choice, ticked as its reset default");
         const auto description = Description(option);
-        for (const char* term : {"Dans les positions du carnet, un petit bouton", "à droite de chaque nom",
-                "L’entrée sélectionnée et tes modifications en cours ne changent pas.", row.unticked})
+        for (const char* term : {row.where, "à droite de chaque nom", "L’entrée sélectionnée et tes modifications en cours ne changent pas.", row.unticked})
             Check(description.find(term) != std::string::npos, std::string(row.title) + " says: " + term);
         Check(description.ends_with(" Activé par défaut.") && description.find('\'') == std::string::npos,
             std::string(row.title) + ": its default last, typographic apostrophes");
     }
-    Check(Description(ui.extraOptions[NotebookCopyExtra].get()).find("copie les coordonnées de cette position dans le presse-papiers, par exemple [-25,36].") !=
-        std::string::npos, "The copy row says what is copied");
+    Check(Description(ui.extraOptions[NotebookCopyExtra].get()).find(
+        "copie cette entrée dans le presse-papiers : les coordonnées d’une position, par exemple [-25,36], ou le texte d’une note ou d’un message.") !=
+        std::string::npos, "The copy row says what is copied in each tab");
     Check(Description(ui.extraOptions[NotebookCopyExtra].get()).find("clic droit") == std::string::npos,
         "The copy row promises no right-click copy: a position's menu has no « Copier »");
     Check(Description(ui.extraOptions[NotebookTravelExtra].get()).find(
         "un petit bouton zaap à droite de chaque nom lance le trajet du mod vers cette position : zaaps, bateaux puis /travel (indisponible en combat).") !=
         std::string::npos, "The travel row says where it goes, how, and when it cannot");
+    Check(Description(ui.extraOptions[NotebookSendExtra].get()).find(
+        "le premier envoie ce message dans le chat, sur le canal enregistré avec lui (« actuel » : le canal en cours du chat) ; le second le place dans le "
+        "brouillon du chat, sans l’envoyer. Ils utilisent le message tel qu’il est enregistré.") != std::string::npos,
+        "The send row says what each button does, on which channel and with which text");
     // Each box commits only its own setting, once.
     auto expected = f.state.settings;
     unsigned commits = 0;
@@ -1545,16 +1559,17 @@ void NotebookSectionRows() {
             Check(f.state.settings == expected && changes == commits, std::string(row.title) + ": a click changes only its own setting, once");
         }
     // An outside change shows in each box.
-    f.state.settings.notebookCopyButton = false; f.state.settings.notebookTravelButton = false;
+    f.state.settings.notebookCopyButton = f.state.settings.notebookTravelButton = f.state.settings.notebookSendButtons = false;
     ui.Sync();
-    Check(!Get(ui.extraSources[NotebookCopyExtra].get()).boolean && !Get(ui.extraSources[NotebookTravelExtra].get()).boolean, "Outside changes show in the boxes");
+    Check(!Get(ui.extraSources[NotebookCopyExtra].get()).boolean && !Get(ui.extraSources[NotebookTravelExtra].get()).boolean &&
+        !Get(ui.extraSources[NotebookSendExtra].get()).boolean, "Outside changes show in the boxes");
     // The section's reset ticks them again.
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
     expected = f.state.settings;
     api.Call(Section(displayedParent, NotebookSection), "Reset");
     ui.Tick();
-    expected.notebookCopyButton = expected.notebookTravelButton = true;
-    Check(f.state.settings == expected, "The Carnet reset ticks both boxes again");
+    expected.notebookCopyButton = expected.notebookTravelButton = expected.notebookSendButtons = true;
+    Check(f.state.settings == expected, "The Carnet reset ticks the three boxes again");
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
 }
@@ -2599,7 +2614,7 @@ void PerformanceSectionRows() {
     Fixture f;
     f.state.settings.perfOverlayCorner = 3;
     f.state.settings.perfOverlayX = 6400; f.state.settings.perfOverlayY = 1200;
-    f.state.settings.perfOverlayScale = 150;
+    f.state.settings.perfOverlayScaleX = 150; f.state.settings.perfOverlayScaleY = 90;
     initHook(f.page, false, true, SectionId(PerformanceSection), nullptr);
     CheckLayout(f);
     const auto parent = f.Categories().back();
@@ -2628,9 +2643,12 @@ void PerformanceSectionRows() {
                 "Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire.", "Désactivé par défaut."})
             Check(text.find(term) != std::string::npos, std::string("The GPU and disk boxes say: ") + term);
     for (const char* term : {"Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux",
-            "Pour l’agrandir ou le réduire (de la moitié au triple de sa taille normale, texte compris), fais glisser son coin en bas à droite",
-            "où une petite poignée de points apparaît quand la souris survole l’affichage", "ou bien son bord droit ou son bord bas",
-            "son coin en haut à gauche reste alors en place", "Il reste entièrement à l’écran", "sa place et sa taille sont gardées",
+            "Redimensionne-le comme une fenêtre : son bord droit change sa largeur, son bord bas sa hauteur, et son coin en bas à droite",
+            "où une petite poignée de points apparaît quand la souris survole l’affichage", "les deux à la fois",
+            "sa largeur et sa hauteur vont chacune de la moitié au triple de leur taille normale", "son coin en haut à gauche reste en place",
+            "Le texte garde ses proportions et prend la plus grande taille qui tient dans le cadre, sans jamais être coupé.",
+            "Au survol, le jeu affiche le curseur correspondant : une double flèche sur ces deux bords et sur son coin en bas à droite, le curseur de déplacement ailleurs",
+            "les curseurs du mod quand « Curseur Dofus » est coché", "L’affichage reste entièrement à l’écran", "sa place et sa taille sont gardées",
             "Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu.", "Activé par défaut."})
         Check(drag.find(term) != std::string::npos, std::string("« Déplacer et redimensionner l’affichage à la souris » says: ") + term);
     for (const char* term : {"Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances",
@@ -2651,21 +2669,22 @@ void PerformanceSectionRows() {
     Get(ui.extraSources[PerfDragExtra].get()).boolean = false;
     ui.Tick();
     Check(changes == 2 && !f.state.settings.perfOverlayDrag && f.state.settings.perfOverlayX == 6400 && f.state.settings.perfOverlayY == 1200 &&
-        f.state.settings.perfOverlayScale == 150 && f.state.settings.perfOverlayCorner == 3, "Unticked: the place and the size kept, locked");
+        f.state.settings.perfOverlayScaleX == 150 && f.state.settings.perfOverlayScaleY == 90 && f.state.settings.perfOverlayCorner == 3,
+        "Unticked: the place and the size kept, locked");
     // Ticked again with the disk: still the same place, size and corner.
     Get(ui.extraSources[PerfDragExtra].get()).boolean = true;
     Get(ui.extraSources[PerfDiskExtra].get()).boolean = true;
     ui.Tick();
     Check(changes == 3 && f.state.settings.perfOverlayDrag && f.state.settings.perfOverlayDisk && f.state.settings.perfOverlayX == 6400 &&
-        f.state.settings.perfOverlayY == 1200 && f.state.settings.perfOverlayScale == 150 && f.state.settings.perfOverlayCorner == 3,
-        "Ticked again: the same place and size");
+        f.state.settings.perfOverlayY == 1200 && f.state.settings.perfOverlayScaleX == 150 && f.state.settings.perfOverlayScaleY == 90 &&
+        f.state.settings.perfOverlayCorner == 3, "Ticked again: the same place and size");
     // A place and a size saved meanwhile (a drop, a resize) show nowhere in the options and stay.
     f.state.settings.perfOverlayX = 100; f.state.settings.perfOverlayY = 9900;
-    f.state.settings.perfOverlayScale = 80;
+    f.state.settings.perfOverlayScaleX = 80; f.state.settings.perfOverlayScaleY = 240;
     ui.Sync();
     ui.Tick();
-    Check(changes == 3 && f.state.settings.perfOverlayX == 100 && f.state.settings.perfOverlayY == 9900 && f.state.settings.perfOverlayScale == 80,
-        "A new place and size left as they are");
+    Check(changes == 3 && f.state.settings.perfOverlayX == 100 && f.state.settings.perfOverlayY == 9900 && f.state.settings.perfOverlayScaleX == 80 &&
+        f.state.settings.perfOverlayScaleY == 240, "A new place and size left as they are");
     // Hidden with its top-bar button meanwhile: left as it is by the pump, and
     // by a part unticked; a part ticked here shows it again.
     f.state.settings.perfOverlayShown = false;
@@ -2701,7 +2720,8 @@ void PerformanceSectionRows() {
     ui.Tick();
     Check(changes == 8 && !f.state.settings.perfOverlay && !f.state.settings.perfOverlayGpu && !f.state.settings.perfOverlayDisk &&
         f.state.settings.perfOverlayDrag && f.state.settings.perfOverlayButton && f.state.settings.perfOverlayX == 100 &&
-        f.state.settings.perfOverlayY == 9900 && f.state.settings.perfOverlayScale == 80 && !f.state.settings.perfOverlayShown &&
+        f.state.settings.perfOverlayY == 9900 && f.state.settings.perfOverlayScaleX == 80 && f.state.settings.perfOverlayScaleY == 240 &&
+        !f.state.settings.perfOverlayShown &&
         f.state.settings.perfOverlayCorner == 3, "Reset: no part ticked, the button on; the place, the size, the hiding and the corner kept");
     // Any part ticked here shows it again, not only the FPS: « Charge du GPU »
     // alone, then, hidden again, « Activité du disque ».

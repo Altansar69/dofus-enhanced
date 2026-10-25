@@ -44,6 +44,15 @@ bool notebook=false,treasure=false,refuseNotebook=false;
 bool perf=false,perfButton=false; // a tool whose top-bar button follows an option
 int notebookToggles=0,treasureToggles=0;
 Obj soulWindow=nullptr,currentPanel=nullptr;
+// The game's « Réduire les titres des modules » sub-menu (WidgetManager.CreateHeaderSubMenu):
+// one checkbox row per game widget, then a separator and its single « Tout réduire » /
+// « Tout agrandir » row. A game row may share a mod panel's label: rows match by identity.
+const char* const GameWidgets[]={"Banni\xC3\xA8re","Bonus et malus","Chasse au tr\xC3\xA9sor","Mini-carte","Discussion"};
+constexpr int GameRows=static_cast<int>(std::size(GameWidgets)),SubMenuRows=GameRows+4+2;
+bool nativeSeparator=true; // false: a sub-menu without separator
+int insertFailures=0,moves=0;
+std::vector<Obj> nativeRows; // the rows of the game's last sub-menu, as the game built them
+Obj taken=nullptr; // the last row RemoveItemAt took out of a menu
 
 void Check(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 Object& Get(Obj value){Check(value!=nullptr,"Null menu fixture object");return *static_cast<Object*>(value);}
@@ -52,7 +61,7 @@ Obj Make(const std::string& name){auto object=std::make_unique<Object>();object-
 Obj String(const std::string& text){auto result=Make("String");Get(result).text=text;return result;}
 template<class T>Obj Box(T value){auto result=Make("Box");std::memcpy(Get(result).bytes.data(),&value,sizeof(value));return result;}
 Obj Row(Obj menu,const std::string& kind,const std::string& title){
-    auto row=Make(kind);Get(row).text=title;
+    auto row=Make(kind);Get(row).text=title;Get(row).fields["root"]=menu;
     Get(Get(menu).fields.at("rows")).items.push_back(row);return row;
 }
 Obj NewMenu(){
@@ -60,7 +69,13 @@ Obj NewMenu(){
     Get(menu).fields["rows"]=Make("MenuRows");Get(menu).fields["dofusContextualMenuRoot"]=root;
     Get(root).fields["menu"]=menu;Get(root).fields["panel"]=currentPanel;Get(root).fields["views"]=Make("Views");return menu;
 }
-Obj OriginalSubMenu(Obj,Method){++nativeSubMenus;return NewMenu();}
+Obj OriginalSubMenu(Obj,Method){
+    ++nativeSubMenus;auto menu=NewMenu();
+    for(auto title:GameWidgets){auto row=Row(menu,"CheckboxItem",title);Get(row).fields["callback"]=Make("GameCallback");}
+    if(nativeSeparator)Row(menu,"ContextMenuSeparatorItem","");
+    auto all=Row(menu,"CheckboxItem","Tout r\xC3\xA9" "duire");Get(all).fields["callback"]=Make("GameCallback");
+    nativeRows=Get(Get(menu).fields.at("rows")).items;return menu;
+}
 void OriginalAllHeaders(Obj,bool,Method){++nativeAllHeaders;}
 bool NotebookVisible(){return notebook;}
 bool TreasureVisible(){return treasure;}
@@ -118,7 +133,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
     if(m.name=="SetHeaderSize"){Check(object.type->name=="Window"||object.type->name.starts_with("SoulWindow"),"Header size goes to a panel window");object.small=*static_cast<bool*>(args[0]);++object.headerSizes;return nullptr;}
     if(m.name=="set_isOn"){object.on=*static_cast<bool*>(args[0]);return nullptr;}
     if(m.name=="AppendTitle"){Row(self,"Title",Get(args[0]).text);return nullptr;}
-    if(m.name=="AppendSeparator"){Row(self,"Separator","");return nullptr;}
+    if(m.name=="AppendSeparator"){Row(self,"ContextMenuSeparatorItem","");return nullptr;}
     if(m.name=="AppendCheckboxItem"){
         Check(args.size()==9&&!args[1]&&!Get(args[5]).text.empty(),"Owned checkbox rows use the null native callback and explain themselves");
         auto item=Row(self,"CheckboxItem",Get(args[0]).text);auto& row=Get(item);
@@ -137,6 +152,18 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments){
         auto item=Row(self,"DefaultItem",Get(args[0]).text);auto& row=Get(item);
         row.disabled=*static_cast<bool*>(args[2]);row.close=*static_cast<bool*>(args[3]);
         row.icon=*static_cast<int*>(args[9]);row.fields["callback"]=Make("Callback");row.fields["help"]=args[4];return nullptr;
+    }
+    if(m.name=="RemoveItemAt"){
+        auto& list=Get(object.fields.at("rows")).items;const int index=*static_cast<int*>(args[0]);
+        Check(index>=0&&index<static_cast<int>(list.size()),"RemoveItemAt within the menu (List.RemoveAt)");
+        taken=list[index];list.erase(list.begin()+index);return self;
+    }
+    if(m.name=="InsertItem"){
+        if(insertFailures>0){--insertFailures;throw std::runtime_error("Injected insert failure");}
+        // DofusContextualMenu.Insert: 0 <= index <= Count (else ArgumentOutOfRangeException), then the row's menu.
+        auto& list=Get(object.fields.at("rows")).items;const int index=*static_cast<int*>(args[0]);
+        Check(index>=0&&index<=static_cast<int>(list.size())&&args[1]&&Get(args[1]).type->name=="CheckboxItem","InsertItem places a checkbox row within the menu");
+        list.insert(list.begin()+index,args[1]);Get(args[1]).fields["root"]=self;++moves;return self;
     }
     if(m.name=="RemoveMenu"){
         Check(!*static_cast<bool*>(args[0]),"Owned menu closes immediately");
@@ -207,8 +234,9 @@ struct Fixture {
         services["fpz"]=Make("ContextMenuService");
         notebook=treasure=false;notebookToggles=treasureToggles=closed=nativeSubMenus=nativeAllHeaders=changes=0;compactToggles=0;compact=false;failCompact=false;
         closeFailures=removeFailures=0;soulWindow=nullptr;logs.clear();
+        nativeSeparator=true;insertFailures=moves=0;nativeRows.clear();taken=nullptr;
     }
-    ~Fixture(){closeFailures=removeFailures=0;toolsUi::Restore();soulWindow=nullptr;module=nullptr;}
+    ~Fixture(){closeFailures=removeFailures=insertFailures=0;nativeSeparator=true;toolsUi::Restore();soulWindow=nullptr;module=nullptr;}
     Obj Menu(){return NewMenu();}
     Obj MenuRoot(Obj menu){return Get(menu).fields["dofusContextualMenuRoot"];}
     std::vector<Obj>& Rows(Obj menu){return Get(Get(menu).fields["rows"]).items;}
@@ -226,6 +254,8 @@ struct Fixture {
         Check(populate(manipulator,event),"Owned header population handled");return menu;
     }
     Obj SubMenu(){auto menu=subMenuHook(owner,nullptr);Check(menu!=nullptr,"The game's sub-menu is returned");return menu;}
+    // A mod panel's row in the game's sub-menu: after the game's widget rows.
+    Obj PanelRow(Obj menu,int index){return Rows(menu).at(GameRows+index);}
 };
 void ToolButtonFollowsItsOption(){
     Fixture f;perfButton=false;perf=false;
@@ -256,8 +286,8 @@ void NativeWidgetListKeepsNativeRows(){
 }
 void HeaderTitleAndHide(){
     Fixture f;notebook=true;f.Header();auto menu=f.HeaderMenu();auto rows=f.Rows(menu);
-    Check(rows.size()==6&&Get(rows[0]).type->name=="Title"&&Get(rows[0]).text=="Carnet"&&Get(rows[1]).type->name=="Separator","Header menu includes title and separator");
-    Check(Get(rows[3]).type->name=="Separator"&&Get(rows[4]).type->name=="RadioItem"&&Get(rows[5]).type->name=="RadioItem"&&Get(rows[4]).text=="Version complète"&&Get(rows[5]).text=="Version compacte",
+    Check(rows.size()==6&&Get(rows[0]).type->name=="Title"&&Get(rows[0]).text=="Carnet"&&Get(rows[1]).type->name=="ContextMenuSeparatorItem","Header menu includes title and separator");
+    Check(Get(rows[3]).type->name=="ContextMenuSeparatorItem"&&Get(rows[4]).type->name=="RadioItem"&&Get(rows[5]).type->name=="RadioItem"&&Get(rows[4]).text=="Version complète"&&Get(rows[5]).text=="Version compacte",
         "The notebook menu lists its two layouts as radio rows after the hide row");
     Check(Get(rows[4]).on&&!Get(rows[5]).on&&Get(rows[4]).close&&Get(rows[5]).close&&!Get(rows[5]).disabled,"The current layout is marked and a choice closes the menu");
     Check(Get(rows[2]).text=="Masquer le module"&&Get(rows[2]).icon==137&&Get(rows[2]).close,"Native hide row includes eye-slash icon and closes");
@@ -343,32 +373,77 @@ void StopClosesHeaderMenus(){
     Check(!toolsUi::CleanupPending()&&!Get(f.MenuRoot(menu)).fields["panel"]&&Get(f.button).items.empty()&&notebookToggles==0,"Stop closes owned menus, releases the header and discards stale actions");
 }
 // "Réduire les titres des modules" sub-menu of the native widget manager.
+bool IsSeparator(Obj row){return Get(row).type->name=="ContextMenuSeparatorItem";}
+const char* const PanelTitles[]={"Pierre d\xE2\x80\x99\xC3\xA2me","Chasse au tr\xC3\xA9sor \xC2\xB7 DofusDB","Carnet personnel","Statistiques"};
 void HeaderSubMenuListsPanels(){
     Fixture f;auto menu=f.SubMenu();auto rows=f.Rows(menu);
-    Check(nativeSubMenus==1&&rows.size()==5&&Get(rows[0]).type->name=="Separator","The game's rows come first, then a separator and the mod panels");
-    const char* titles[]={"Pierre d\xE2\x80\x99\xC3\xA2me","Chasse au tr\xC3\xA9sor","Carnet personnel","Statistiques"};const int icons[]={128,317,225,77};
+    Check(nativeSubMenus==1&&static_cast<int>(rows.size())==SubMenuRows&&moves==4,"The game's sub-menu receives one row per mod panel, each moved once into place");
+    for(int i=0;i<GameRows;++i)Check(rows[i]==nativeRows[i],"The game's widget rows come first, in their order");
     for(int i=0;i<4;++i){
-        const auto& row=Get(rows[i+1]);
-        Check(row.type->name=="CheckboxItem"&&row.text==titles[i]&&row.icon==icons[i]&&!row.on&&!row.close&&!row.disabled,"Each mod panel has an unchecked native checkbox row that keeps the menu open");
+        const auto& row=Get(rows[GameRows+i]);
+        Check(row.type->name=="CheckboxItem"&&row.text==PanelTitles[i]&&row.icon==0&&!row.on&&!row.close&&!row.disabled&&row.fields.at("root")==menu,
+            "Each mod panel follows the game's widgets: an unchecked checkbox row of this menu, without icon (FigmaIcons.none, as the game's rows), that keeps the menu open");
     }
+    Check(rows[GameRows+4]==nativeRows[GameRows]&&IsSeparator(rows[GameRows+4])&&rows[GameRows+5]==nativeRows[GameRows+1]&&Get(rows[GameRows+5]).text=="Tout r\xC3\xA9" "duire",
+        "The game's separator and its « Tout réduire » row stay last, below the mod's panels");
+    Check(std::count_if(rows.begin(),rows.end(),IsSeparator)==1,"No separator of the mod's own");
     Check(toolsUi::CleanupPending(),"Owned rows are tracked until the menu goes away");
-    auto foreign=subMenuHook(Make("OtherManager"),nullptr);Check(f.Rows(foreign).empty()&&nativeSubMenus==2,"A foreign widget manager gets no rows");
-    f.state.stopRequested=true;auto stopped=subMenuHook(f.owner,nullptr);Check(f.Rows(stopped).empty()&&nativeSubMenus==3,"A stopping module adds nothing but the game's menu still opens");
+    auto foreign=subMenuHook(Make("OtherManager"),nullptr);Check(f.Rows(foreign)==nativeRows&&nativeSubMenus==2&&moves==4,"A foreign widget manager's menu keeps only the game's rows");
+    f.state.stopRequested=true;auto stopped=subMenuHook(f.owner,nullptr);Check(f.Rows(stopped)==nativeRows&&nativeSubMenus==3&&moves==4,"A stopping module adds nothing but the game's menu still opens");
+}
+// Moved among the game's rows, each mod row keeps its click: its own panel only.
+// The game's rows, « Tout réduire » included, stay the game's.
+void HeaderRowsKeepTheirClicks(){
+    Fixture f;auto menu=f.SubMenu();const auto rows=f.Rows(menu);
+    bool Settings::* const panels[]={&Settings::smallHeaderSoul,&Settings::smallHeaderTreasure,&Settings::smallHeaderNotebook,&Settings::smallHeaderStats};
+    const auto modTreasure=f.PanelRow(menu,1),gameTreasure=rows[2];
+    // Named apart (« Chasse au trésor · DofusDB »), and matched by identity anyway.
+    Check(Get(modTreasure).text!=Get(gameTreasure).text&&modTreasure!=gameTreasure,"The mod's treasure row is told apart from the game's own");
+    Check(callback(f.Callback(modTreasure),f.View(gameTreasure))&&changes==0,"A mod row's callback with the view of the game's row of the same label does nothing");
+    Check(!callback(f.Callback(gameTreasure),f.View(gameTreasure))&&changes==0,"The game's row of the same label stays the game's");
+    for(int i=0;i<4;++i){
+        const auto row=f.PanelRow(menu,i);
+        Check(callback(f.Callback(row),f.View(row))&&changes==i+1&&Get(row).on,"Each moved row still toggles and shows its state");
+        for(int p=0;p<4;++p)Check(f.state.settings.*panels[p]==(p<=i),"Each row toggles its own panel only");
+    }
+    for(int i=0;i<GameRows;++i)Check(!callback(f.Callback(rows[i]),f.View(rows[i])),"The game's widget rows stay the game's");
+    Check(!callback(f.Callback(rows[GameRows+5]),f.View(rows[GameRows+5]))&&changes==4,"The « Tout réduire » row stays the game's");
+}
+// A sub-menu without separator: the mod's rows follow the game's last row,
+// still without a separator of their own.
+void HeaderMenuWithoutSeparator(){
+    Fixture f;nativeSeparator=false;auto menu=f.SubMenu();auto rows=f.Rows(menu);
+    Check(static_cast<int>(rows.size())==GameRows+1+4&&moves==0&&std::none_of(rows.begin(),rows.end(),IsSeparator),"Without the game's separator, the mod's rows go last, unmoved");
+    for(int i=0;i<=GameRows;++i)Check(rows[i]==nativeRows[i],"The game's rows keep their order");
+    for(int i=0;i<4;++i)Check(Get(rows[GameRows+1+i]).text==PanelTitles[i]&&Get(rows[GameRows+1+i]).icon==0,"The mod's rows in their order, without icon");
+    const auto row=rows[GameRows+3];Check(callback(f.Callback(row),f.View(row))&&f.state.settings.smallHeaderNotebook&&changes==1,"They still toggle their panel");
+}
+// A failing move is logged: the game's rows stay as the game built them and the
+// row taken out of the menu does nothing; the next sub-menu is whole again.
+void HeaderMoveFailure(){
+    Fixture f;insertFailures=1;auto menu=f.SubMenu();
+    Check(f.Rows(menu)==nativeRows&&moves==0&&taken&&std::any_of(logs.begin(),logs.end(),[](const std::string& line){return line.starts_with("TOOL_HEADER_MENU_ERROR");}),
+        "A failed insertion is logged and leaves the game's rows as they were");
+    const auto lost=taken;
+    Check(callback(f.Callback(lost),f.View(lost))&&changes==0&&!f.state.settings.smallHeaderSoul,"The row taken out of the menu does nothing");
+    auto next=f.SubMenu();
+    Check(static_cast<int>(f.Rows(next).size())==SubMenuRows&&moves==4&&f.Rows(next)[GameRows]!=lost&&Get(f.Rows(next)[GameRows]).text==PanelTitles[0],"The next sub-menu has all the mod's rows in place");
+    toolsUi::Restore();Check(!toolsUi::CleanupPending(),"Restore releases the rows of both menus");
 }
 void HeaderToggleAppliesAndPersists(){
     Fixture f;notebook=true;f.Header();
     Check(Get(f.window).headerSizes==1&&!Get(f.window).small,"Attaching a header applies the saved (full) size once");
-    auto menu=f.SubMenu();auto row=f.Rows(menu)[3],view=f.View(row);
+    auto menu=f.SubMenu();auto row=f.PanelRow(menu,2),view=f.View(row);
     Check(callback(f.Callback(row),view)&&f.state.settings.smallHeaderNotebook&&changes==1,"Clicking the notebook row reduces its header in the settings");
     Check(Get(f.window).small&&Get(f.window).headerSizes==2&&Get(row).on&&Get(view).on,"The open window shrinks and the row shows the new state");
     Check(callback(f.Callback(row),view)&&!f.state.settings.smallHeaderNotebook&&!Get(f.window).small&&!Get(row).on&&changes==2,"A second click restores the header");
-    auto soulRow=f.Rows(menu)[1];soulWindow=Make("SoulWindow");toolsUi::Tick();
+    auto soulRow=f.PanelRow(menu,0);soulWindow=Make("SoulWindow");toolsUi::Tick();
     Check(Get(soulWindow).headerSizes==1&&!Get(soulWindow).small,"The soul window receives its size the frame it appears");
     Check(callback(f.Callback(soulRow),f.View(soulRow))&&f.state.settings.smallHeaderSoul&&Get(soulWindow).small,"The soul row toggles the soul panel's header");
     toolsUi::Tick();Check(Get(soulWindow).headerSizes==2,"Idle ticks do not reapply the size");
     soulWindow=nullptr;toolsUi::Tick();soulWindow=Make("SoulWindow2");toolsUi::Tick();
     Check(Get(soulWindow).small&&Get(soulWindow).headerSizes==1,"A new soul window applies the saved reduced size");
-    auto treasureRow=f.Rows(menu)[2];
+    auto treasureRow=f.PanelRow(menu,1);
     Check(callback(f.Callback(treasureRow),f.View(treasureRow))&&f.state.settings.smallHeaderTreasure&&changes==4,"The treasure row persists even while its panel is closed");
     Check(!callback(Make("ForeignCallback"),view),"Foreign callbacks remain native");
 }
@@ -379,22 +454,24 @@ void SavedSizeAppliesOnAttach(){
 void AllHeadersCoverPanels(){
     Fixture f;notebook=true;f.Header();soulWindow=Make("SoulWindow");toolsUi::Tick();
     auto menu=f.SubMenu();auto rows=f.Rows(menu);
-    auto views=Get(f.MenuRoot(menu)).fields["views"];for(int i=1;i<5;++i)Get(views).items.push_back(f.View(rows[i]));
+    auto views=Get(f.MenuRoot(menu)).fields["views"];for(auto row:rows)Get(views).items.push_back(f.View(row));
+    const auto all=rows[GameRows+5];Check(!callback(f.Callback(all),f.View(all))&&changes==0,"« Tout réduire » is the game's own row: its click runs the game's code");
     allHeadersHook(f.owner,true,nullptr);
     Check(nativeAllHeaders==1&&f.state.settings.smallHeaderSoul&&f.state.settings.smallHeaderTreasure&&f.state.settings.smallHeaderNotebook&&f.state.settings.smallHeaderStats&&changes==1,"Reducing all native headers also reduces the mod panels and saves once");
     Check(Get(f.window).small&&Get(soulWindow).small,"Open mod windows shrink with the native ones");
-    for(int i=1;i<5;++i)Check(Get(rows[i]).on&&Get(Get(views).items[i-1]).on,"Owned rows and their rendered views refresh");
+    for(int i=0;i<4;++i)Check(Get(f.PanelRow(menu,i)).on&&Get(Get(views).items[GameRows+i]).on,"Owned rows and their rendered views refresh");
+    for(int i=0;i<SubMenuRows;++i)if(i<GameRows||i>=GameRows+4)Check(!Get(Get(views).items[i]).on,"The game's rows are left to the game");
     allHeadersHook(f.owner,true,nullptr);Check(changes==1&&nativeAllHeaders==2,"An unchanged state saves nothing");
-    allHeadersHook(f.owner,false,nullptr);Check(!f.state.settings.smallHeaderNotebook&&!f.state.settings.smallHeaderStats&&!Get(f.window).small&&!Get(rows[3]).on&&changes==2,"Restoring all headers restores the mod panels");
+    allHeadersHook(f.owner,false,nullptr);Check(!f.state.settings.smallHeaderNotebook&&!f.state.settings.smallHeaderStats&&!Get(f.window).small&&!Get(f.PanelRow(menu,2)).on&&changes==2,"Restoring all headers restores the mod panels");
     allHeadersHook(Make("OtherManager"),true,nullptr);Check(!f.state.settings.smallHeaderNotebook&&nativeAllHeaders==4,"A foreign manager only runs the game's own code");
 }
 void StaleHeaderChoices(){
     for(int reason=0;reason<5;++reason){
-        Fixture f;notebook=true;f.Header();auto menu=f.SubMenu();auto row=f.Rows(menu)[3],view=f.View(row);
+        Fixture f;notebook=true;f.Header();auto menu=f.SubMenu();auto row=f.PanelRow(menu,2),view=f.View(row);
         if(reason==0)f.state.cached.reset(Make("OtherCache"));
         if(reason==1)Get(services["frm"]).fields["<dzqi>k__BackingField"]=Make("OtherManager");
         if(reason==2)Get(row).disabled=true;
-        if(reason==3){auto& rows=f.Rows(menu);rows.erase(rows.begin()+3);}
+        if(reason==3){auto& rows=f.Rows(menu);rows.erase(std::find(rows.begin(),rows.end(),row));}
         if(reason==4)f.state.stopRequested=true;
         Check(callback(f.Callback(row),view)&&!f.state.settings.smallHeaderNotebook&&changes==0&&Get(f.window).headerSizes==1,"Invalid sub-menu context must not change the setting");
     }
@@ -404,7 +481,7 @@ void RestoreClosesSubMenu(){
     Check(toolsUi::CleanupPending(),"Sub-menu rows keep cleanup pending");
     toolsUi::Restore();Check(!Get(f.MenuRoot(menu)).fields["panel"]&&closed==1&&!toolsUi::CleanupPending(),"Restore closes the owned sub-menu and releases its rows");
     auto next=f.SubMenu();Get(f.MenuRoot(next)).fields["panel"]=nullptr;
-    auto third=f.SubMenu();Check(closed==1&&f.Rows(third).size()==5&&f.Rows(next).size()==5,"Rebuilding for a newer menu drops rows of a menu the game already closed");
+    auto third=f.SubMenu();Check(closed==1&&static_cast<int>(f.Rows(third).size())==SubMenuRows&&static_cast<int>(f.Rows(next).size())==SubMenuRows,"Rebuilding for a newer menu drops rows of a menu the game already closed");
     f.state.stopRequested=true;toolsUi::Tick();Check(closed==2&&!toolsUi::CleanupPending(),"Stop closes the open sub-menu");
 }
 }
@@ -423,10 +500,12 @@ int main(){
         fake::Check(refused,"Layouts need their current and choose callbacks");
         toolsUi::Install();toolsUi::Install();
         fake::Check(fake::installs==2&&fake::menuRegistrations==1&&fake::subMenuHook&&fake::allHeadersHook,"Install registers header menus once and hooks the native header sub-menu");
-        fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16D72F0,"Native header entry points are pinned");
+        fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16D72F0&&
+            fake::guards.at("DofusContextualMenu.InsertItem")==0x16D8850&&fake::guards.at("DofusContextualMenu.RemoveItemAt")==0x16D8BF0,"Native header entry points are pinned");
         for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ToolButtonFollowsItsOption,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,fake::HideHelpNamesTheWayBack,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
-                fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus,fake::HeaderSubMenuListsPanels,fake::HeaderToggleAppliesAndPersists,
+                fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus,fake::HeaderSubMenuListsPanels,fake::HeaderRowsKeepTheirClicks,
+                fake::HeaderMenuWithoutSeparator,fake::HeaderMoveFailure,fake::HeaderToggleAppliesAndPersists,
                 fake::SavedSizeAppliesOnAttach,fake::AllHeadersCoverPanels,fake::StaleHeaderChoices,fake::RestoreClosesSubMenu})test();
         fake::Check(fake::handles.empty(),"All menu handles released");
         std::cout<<"ToolsUiTests: native panel header menus and header-size sub-menu passed\n";return 0;

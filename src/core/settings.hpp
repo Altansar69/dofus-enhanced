@@ -60,8 +60,9 @@ struct Settings {
     bool resourceMiniMapBar = true; // Cartes : la barre des six métiers sur la mini-carte
     bool miniMapZoneName = true; // Cartes : le nom de la zone de la case survolée sur la mini-carte
     bool notebookPingButton = true; // Carnet : bouton de repère sur la carte à droite de chaque position
-    bool notebookCopyButton = true; // Carnet : bouton de copie des coordonnées à droite de chaque position (1.16.0, à la place de « Copier »)
+    bool notebookCopyButton = true; // Carnet : bouton de copie à droite de chaque entrée : coordonnées d'une position (1.16.0), texte d'une note ou d'un message (1.17.1), à la place de « Copier »
     bool notebookTravelButton = true; // Carnet : bouton de voyage à droite de chaque position (1.16.0, à la place de « Voyager »)
+    bool notebookSendButtons = true; // Carnet : boutons d'envoi et de préparation dans le chat à droite de chaque message (1.17.1, à la place de « Envoyer » et « Préparer dans le chat »)
     bool mapAddPosition = true; // Carnet : « Ajouter aux positions » au clic droit d'une case des cartes
     // La dimension avec les coordonnées, [x, y, dimension], une liste chacune :
     // 0 non, 1 oui sauf dans le Monde des Douze, 2 oui ; « oui sauf » par défaut
@@ -86,7 +87,7 @@ struct Settings {
     // overlay by itself (Settings::Read migrates older files).
     bool perfOverlayGpu = false; // Performances : charge du GPU (part du jeu) dans l'affichage
     bool perfOverlayDisk = false; // Performances : le disque du jeu (temps d'activité, débit de tous les programmes)
-    bool perfOverlayDrag = true; // Performances : l'affichage se déplace en le faisant glisser au clic gauche et se redimensionne par son coin en bas à droite ; décochée, il reste verrouillé à sa place et à sa taille
+    bool perfOverlayDrag = true; // Performances : l'affichage se déplace en le faisant glisser au clic gauche et se redimensionne comme une fenêtre (bord droit : largeur, bord bas : hauteur, coin en bas à droite : les deux) ; décochée, il reste verrouillé à sa place et à sa taille
     // 1.16.0 : son bouton dans la barre du haut (une case d'ExtraToggles), qui le
     // masque et le réaffiche sans décocher ses parties : perfOverlayShown, faux
     // une fois masqué avec ce bouton, gardé d'un démarrage à l'autre (pas une case).
@@ -98,9 +99,12 @@ struct Settings {
     // perfOverlayDrag soit cochée ou non. -1 et -1 : le coin perfOverlayCorner.
     // Jamais une seule des deux.
     int perfOverlayX = -1, perfOverlayY = -1;
-    // Taille choisie à la souris par le coin en bas à droite (1.16.0) : en pour
-    // cent de la taille normale, texte, marges et coins compris, de 50 à 300.
-    int perfOverlayScale = 100;
+    // Taille choisie à la souris (1.16.0), en pour cent de la taille normale,
+    // de 50 à 300 : depuis la 1.17.1, sa largeur (X) et sa hauteur (Y) chacune,
+    // son texte, ses marges et ses coins à la plus petite des deux. Un fichier
+    // de la 1.16.x ou de la 1.17.0 n'a que perfOverlayScale, la taille des deux,
+    // que Read leur donne et que Save écrit toujours pour elles (la plus petite).
+    int perfOverlayScaleX = 100, perfOverlayScaleY = 100;
     // Apparence : avec le mode Miniatures, chaque catégorie cochée est réduite et
     // les autres gardent leur taille normale (Créatures reste pour tous). Par
     // défaut cochées comme avant ces cases, sauf les PNJ, que le jeu ne laissait
@@ -183,10 +187,11 @@ inline constexpr bool Settings::* RoleplayMiniatureToggles[] = {
 inline constexpr bool Settings::* GlowCategoryToggles[] = {
     &Settings::glowMonsters, &Settings::glowNpcs, &Settings::glowInteractives,
     &Settings::glowSelf, &Settings::glowParty, &Settings::glowPlayers};
-// The checkboxes added in 1.13.0, 1.14.0 and 1.16.0 (the notebook's copy and
-// travel buttons, the performance overlay's top-bar button), in the order of
-// OptionsUi's extra rows.
+// The checkboxes added in 1.13.0, 1.14.0, 1.16.0 (the notebook's copy and
+// travel buttons, the performance overlay's top-bar button) and 1.17.1 (the
+// send buttons of the notebook's messages), in the order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName,
     &Settings::notebookPingButton, &Settings::notebookCopyButton, &Settings::notebookTravelButton, &Settings::mapAddPosition, &Settings::perfOverlay,
-    &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton};
+    &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton,
+    &Settings::notebookSendButtons};

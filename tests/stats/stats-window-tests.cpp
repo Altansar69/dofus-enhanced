@@ -322,6 +322,7 @@ const std::map<uintptr_t, Contract> Contracts = {
     {0x16D7F70, {"DofusContextualMenu", "AppendTitle", 1}}, {0x16D76E0, {"DofusContextualMenu", "AppendSeparator", 0}},
     {0x16D6C60, {"DofusContextualMenu", "AppendDefaultItem", 13}}, {0x16D63D0, {"DofusContextualMenu", "AppendCheckboxItem", 9}},
     {0x16D72F0, {"DofusContextualMenu", "AppendRadioButtonItem", 12}},
+    {0x16D8850, {"DofusContextualMenu", "InsertItem", 2}}, {0x16D8BF0, {"DofusContextualMenu", "RemoveItemAt", 1}},
     {0x56755F0, {"VisualElementExtensions", "AddManipulator", 2}}, {0x5676A90, {"VisualElementExtensions", "RemoveManipulator", 2}},
     {0x15B27B0, {"MagneticDragWindow", "SetHeaderSize", 1}}, {0x17D9B00, {"WidgetManager", "CreateHeaderSubMenu", 0}},
     {0x17DDDD0, {"WidgetManager", "SetAllHeaderState", 1}},

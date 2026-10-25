@@ -409,6 +409,7 @@ void* Api::Native(Method method,uintptr_t rva) const {
         {0x1734630,{".ctor",0}}, {0x1734700,{"set_listElementStyle",1}},
         {0x57A9FD0,{"HasMouseCapture",1}}, {0x57AA140,{"ReleaseMouse",1}},
         {0x15B27B0,{"SetHeaderSize",1}},{0x17D9B00,{"CreateHeaderSubMenu",0}},{0x17DDDD0,{"SetAllHeaderState",1}},
+        {0x16D8850,{"InsertItem",2}},{0x16D8BF0,{"RemoveItemAt",1}}, // tools-ui: the mod's rows among the game's header sub-menu rows
         {0x172B6A0,{"ProcessUpEvent",3}},{0x752840,{"get_active",0}},{0x5590600,{"ContainsPointer",1}},{0x30D6960,{"get_target",0}},{0x55F5EF0,{"get_enabledInHierarchy",0}},
         {0x1712DC0,{".ctor",0}},{0x17136F0,{"set_text",1}},{0x1713550,{"set_size",1}},{0x1712FC0,{"set_fontCase",1}},{0x1712F50,{"get_isOn",0}},{0x1711970,{"SetValueWithoutNotify",1}},
         {0x170D6F0,{".ctor",0}},{0x170DFE0,{"set_icon",1}},{0x170E5F0,{"set_text",1}},{0x170E210,{"set_mainStyle",1}},{0x170E330,{"set_size",1}},{0x170E400,{"set_status",1}},

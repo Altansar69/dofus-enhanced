@@ -1,8 +1,10 @@
 #include "ui/custom-cursor.hpp"
 #include "ui/custom-cursor-policy.hpp"
+#include "ui/custom-cursor-player.hpp"
 #include "core/module.hpp"
 #include <intrin.h>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <iterator>
@@ -24,8 +26,9 @@ constexpr const char* UiSpace = "UnityEngine.UIElements";
 constexpr uintptr_t ApplyCursorCall = 0x280A73C, ApplyCursorJump = 0x28088F9;
 constexpr uintptr_t ApplyCursorReturn = ApplyCursorCall + 5;
 // TextureFormat.RGBA32; HideFlags.DontUnloadUnusedAsset (the game unloads its
-// unused assets: never the mod's cursors); CursorMode.Auto (a hardware cursor,
-// as the game's); PointerId.mousePointerId.
+// unused assets: never the mod's cursors); CursorMode.Auto (a Windows cursor,
+// as the game's, at every size: never ForceSoftware, custom-cursor-player.hpp);
+// PointerId.mousePointerId.
 constexpr int Rgba32 = 4, DontUnloadUnusedAsset = 0x20, CursorModeAuto = 0, MousePointerId = 0;
 // In milliseconds: the frame work at most every FrameMs; the UIDocument's
 // panel, and the drag service while missing, looked up every LookupMs; the
@@ -47,7 +50,9 @@ struct Natives {
     size_t layer = 0, type = 0, state = 0, cachedPtr = 0, dragging = 0;
     Method setCursor{}, update{}, textureCtor{}, loadRaw{}, apply{}, hideFlags{}, destroy{};
     Method documentRoot{}, parent{}, panelOf{}, topElement{}, enabled{}, customStyle{}, readColor{};
-    bool textHover = false, theme = false, drag = false; // the optional parts installed
+    // The optional parts installed; sized: the player loads the mod's cursors at
+    // their own size (without it, Windows' size, as 1.17.0).
+    bool textHover = false, theme = false, drag = false, sized = false;
 } n;
 
 // UnityEngine.Vector2: SetCursor's hotspot, by value in RDX.
@@ -72,10 +77,12 @@ struct Set {
     Look look;
     std::array<Drawn, cursorArt::ShapeCount> shapes;
     size_t built = 0; // uploaded, in Shape order
+    bool loadLogged = false; // CUSTOM_CURSOR_LOADED written for this set
     bool Complete() const { return built == shapes.size(); }
 };
-// A call going on to Unity: the texture, its hotspot and the mode.
-struct Call { Obj texture = nullptr; Vector2 hotspot; int32_t mode = CursorModeAuto; };
+// A call going on to Unity: the texture, its hotspot and the mode; for a
+// cursor of the mod, the size it is drawn at (0 otherwise).
+struct Call { Obj texture = nullptr; Vector2 hotspot; int32_t mode = CursorModeAuto; int pixels = 0; };
 // A request logged once: caller, layer, type, state, no texture.
 using Seen = std::tuple<uintptr_t, int32_t, int64_t, int32_t, bool>;
 struct Throttle { std::string last; uint64_t until = 0; };
@@ -153,12 +160,76 @@ unsigned PointerBase() {
         return 32;
     return value;
 }
+// The player's code at a site of custom-cursor-player.hpp, or null when
+// UnityPlayer.dll is not loaded or smaller than that.
+const unsigned char* PlayerCode(uintptr_t rva, size_t size) {
+    const auto image = reinterpret_cast<const unsigned char*>(GetModuleHandleW(L"UnityPlayer.dll"));
+    if (!image) return nullptr;
+    const auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) return nullptr;
+    const auto headers = reinterpret_cast<const IMAGE_NT_HEADERS64*>(image + dos->e_lfanew);
+    if (headers->Signature != IMAGE_NT_SIGNATURE || headers->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+        rva + size > headers->OptionalHeader.SizeOfImage)
+        return nullptr;
+    return image + rva;
+}
+// user32's LoadImageW, the function the player's import reaches.
+void* LoadImageAddress() {
+    const HMODULE user = GetModuleHandleW(L"user32.dll");
+    return user ? reinterpret_cast<void*>(GetProcAddress(user, "LoadImageW")) : nullptr;
+}
+// Windows' own cursor size, the one the player's load would give (logged only).
+int WindowsCursor() { return GetSystemMetrics(SM_CXCURSOR); }
 struct System {
     uint64_t (*milliseconds)() = Milliseconds;
     bool (*button)() = PrimaryButton;
     unsigned (*dpi)() = WindowDpi;
     unsigned (*pointerBase)() = PointerBase;
+    const unsigned char* (*playerCode)(uintptr_t, size_t) = PlayerCode;
+    void* (*loadImage)() = LoadImageAddress;
+    int (*windowsCursor)() = WindowsCursor;
 } sys;
+
+// ------------------------------------------------------ the cursors' size
+// The player makes the Windows cursor of a new texture at Windows' own size
+// (custom-cursor-player.hpp). While the mod's own cursor goes on to Unity, on
+// this thread, that load gets the size the mod drew it at instead: a Windows
+// cursor still, at its own size. Any other load (another thread, the game's
+// own textures, other arguments, once the call is over) goes on as it is.
+using LoadImageFn = HANDLE(WINAPI*)(HINSTANCE, LPCWSTR, UINT, int, int, UINT);
+LoadImageFn originalLoadImage = nullptr;
+std::atomic<DWORD> sizedThread{0};
+std::atomic<int> sizedPixels{0};
+std::atomic<unsigned> sizedLoads{0}; // the loads given the mod's size, ever
+HANDLE WINAPI LoadImageHook(HINSTANCE instance, LPCWSTR name, UINT type, int cx, int cy, UINT flags) {
+    const int pixels = sizedPixels.load(std::memory_order_relaxed);
+    if (pixels > 0 && sizedThread.load(std::memory_order_relaxed) == GetCurrentThreadId() &&
+        player::PlayerLoad(instance, type, cx, cy, flags)) {
+        cx = cy = pixels;
+        flags &= ~player::DefaultSize;
+        sizedLoads.fetch_add(1, std::memory_order_relaxed);
+    }
+    return originalLoadImage(instance, name, type, cx, cy, flags);
+}
+// For as long as the mod's cursor of `pixels` goes on to Unity, on this thread
+// (0: another cursor, nothing changed).
+class SizedLoad {
+public:
+    explicit SizedLoad(int pixels) : on(pixels > 0) {
+        if (!on) return;
+        sizedThread.store(GetCurrentThreadId(), std::memory_order_relaxed);
+        sizedPixels.store(pixels, std::memory_order_relaxed);
+    }
+    ~SizedLoad() {
+        if (!on) return;
+        sizedPixels.store(0, std::memory_order_relaxed);
+        sizedThread.store(0, std::memory_order_relaxed);
+    }
+    SizedLoad(const SizedLoad&) = delete;
+    SizedLoad& operator=(const SizedLoad&) = delete;
+private:
+    bool on;
+};
 
 // ------------------------------------------------------------------ logging
 // The same line at most once a minute; another line at once.
@@ -264,8 +335,18 @@ void Install() {
         n.dragService = api.Class("Core.dll", "Core.UILogic.Components.DragAndDrop", "DragAndDropService");
         n.dragging = RequireField(n.dragService, "<isDragging>k__BackingField", 0x10);
     });
-    // Last: once applied, SetCursor's bytes no longer match its guard.
+    // Last of the game's: once applied, SetCursor's bytes no longer match its guard.
     AddHook(n.setCursor, 0x54024F0, reinterpret_cast<void*>(SetCursorHook), reinterpret_cast<void**>(&originalSetCursor));
+    // Optional, once the detour exists (never without it): the player loads the
+    // mod's cursors at their own size, its loading checked first
+    // (custom-cursor-player.hpp). Without it, they keep Windows' size.
+    Optional("size", n.sized, [] {
+        if (!player::SiteMatches(sys.playerCode(player::LoadSite, player::LoadBytes.size())))
+            throw std::runtime_error("UnityPlayer.dll does not load cursors as the supported client's");
+        void* const target = sys.loadImage();
+        if (!target) throw std::runtime_error("LoadImageW unavailable");
+        AddSystemHook(target, reinterpret_cast<void*>(LoadImageHook), reinterpret_cast<void**>(&originalLoadImage));
+    });
 }
 
 // ------------------------------------------------------------ hover inputs
@@ -361,7 +442,7 @@ bool Decide(Obj texture, uintptr_t caller, Call& call) {
         if (Alive(ours)) {
             if (!forced && s.lastOurs && s.last.texture == ours && s.last.hotspot == drawn.hotspot && now - s.lastAt < DedupeMs)
                 return false;
-            call = {ours, drawn.hotspot, CursorModeAuto};
+            call = {ours, drawn.hotspot, CursorModeAuto, s.current.look.size};
             Remember(call, now, true);
             return true;
         }
@@ -377,9 +458,18 @@ void HookFault(const char* what) {
     s.hookErrorLogged = true;
     Log(std::string("CUSTOM_CURSOR_HOOK_ERROR ") + what);
 }
+// The player made a Windows cursor of the set in use at its own size: logged
+// once a set, with the size Windows would have given it.
+void NoteSizedLoad(int pixels) {
+    if (s.current.loadLogged) return;
+    s.current.loadLogged = true;
+    try { Log("CUSTOM_CURSOR_LOADED size=" + std::to_string(pixels) + " windows=" + std::to_string(sys.windowsCursor())); }
+    catch (...) {}
+}
 // Every call of UnityEngine.Cursor.SetCursor, on the main thread. Never throws
 // into the game: a call goes on as the game made it unless the mod's cursor
-// stands in; the mod's own calls go through the trampoline.
+// stands in; the mod's own calls go through the trampoline, a cursor of the
+// mod loaded at its own size if the player makes its Windows cursor then.
 void OnSetCursor(Obj texture, Vector2 hotspot, int32_t mode, Method method, uintptr_t caller) {
     Call call{texture, hotspot, mode};
     bool send = true;
@@ -396,7 +486,13 @@ void OnSetCursor(Obj texture, Vector2 hotspot, int32_t mode, Method method, uint
             send = true;
         }
     }
-    if (send) originalSetCursor(call.texture, call.hotspot, call.mode, method);
+    if (!send) return;
+    const unsigned loads = sizedLoads.load(std::memory_order_relaxed);
+    {
+        const SizedLoad sized(n.sized ? call.pixels : 0);
+        originalSetCursor(call.texture, call.hotspot, call.mode, method);
+    }
+    if (call.pixels && sizedLoads.load(std::memory_order_relaxed) != loads) NoteSizedLoad(call.pixels);
 }
 void SetCursorHook(Obj texture, Vector2 hotspot, int32_t mode, Method method) {
     OnSetCursor(texture, hotspot, mode, method, reinterpret_cast<uintptr_t>(_ReturnAddress()));
@@ -514,12 +610,15 @@ void Build(const Look& look, uint64_t now) {
     const bool first = !s.active;
     s.active = true;
     s.lastOurs = false;
+    // Always Windows cursors (mode=hardware): loaded at the set's size by the
+    // player (load=texture), or at Windows' own size without the size part
+    // (load=windows). Logged before the refresh that sends the first of them.
+    Log(std::string(first ? "CUSTOM_CURSOR_ON" : "CUSTOM_CURSOR_REDRAWN") + " size=" + std::to_string(look.size) + " dpi=" +
+        std::to_string(s.dpi) + " base=" + std::to_string(s.base) + " color=" + std::to_string(look.colour) +
+        " mid=" + Rgb(PaletteFor(look).mid) + " mode=hardware load=" + (n.sized ? "texture" : "windows"));
     Refresh();
     Doom(previous);
     DestroyDoomed(now, false);
-    Log(std::string(first ? "CUSTOM_CURSOR_ON" : "CUSTOM_CURSOR_REDRAWN") + " size=" + std::to_string(look.size) + " dpi=" +
-        std::to_string(s.dpi) + " base=" + std::to_string(s.base) + " color=" + std::to_string(look.colour) +
-        " mid=" + Rgb(PaletteFor(look).mid));
 }
 // A texture of the set in use destroyed by something else: the game's cursor
 // until the set is drawn again.
@@ -680,7 +779,7 @@ void InstallCustomCursor() {
     catch (const std::exception& error) { Log(std::string("CUSTOM_CURSOR_DISABLED ") + error.what()); return; }
     s.installed = true;
     Log(std::string("CUSTOM_CURSOR_READY textHover=") + (n.textHover ? "1" : "0") + " theme=" + (n.theme ? "1" : "0") +
-        " drag=" + (n.drag ? "1" : "0"));
+        " drag=" + (n.drag ? "1" : "0") + " size=" + (n.sized ? "1" : "0"));
 }
 void CustomCursorFrame(unsigned long long now) {
     using namespace customCursor;

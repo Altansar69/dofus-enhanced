@@ -12,6 +12,7 @@
 #include "ui/options-ui.hpp"
 #include "ui/cursor-art.hpp"
 #include "ui/custom-cursor-policy.hpp"
+#include "ui/custom-cursor-player.hpp"
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -22,6 +23,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -104,6 +106,20 @@ uint64_t FakeMilliseconds() { return nowMs; }
 bool FakeButton() { ++buttonReads; return buttonDown; }
 unsigned FakeDpi() { ++dpiReads; return dpi; }
 unsigned FakeBase() { return pointerBase; }
+// Unity's player (custom-cursor-player.hpp): its code at the checked site, and
+// user32's LoadImageW that its import reaches. Breaking them turns the size
+// part off.
+std::array<unsigned char, customCursor::player::LoadBytes.size()> playerBytes{};
+bool playerMissing = false, loadImageMissing = false, systemHookFails = false;
+std::vector<std::pair<uintptr_t, size_t>> playerReads;
+const unsigned char* FakePlayerCode(uintptr_t rva, size_t size) {
+    playerReads.push_back({rva, size});
+    if (playerMissing || rva != customCursor::player::LoadSite || size != playerBytes.size()) return nullptr;
+    return playerBytes.data();
+}
+void FakeLoadImageTarget() {} // stands for user32's LoadImageW
+void* FakeLoadImageAddress() { return loadImageMissing ? nullptr : reinterpret_cast<void*>(&FakeLoadImageTarget); }
+int FakeWindowsCursor() { return 32; }
 
 void Check(bool value, const std::string& message) { if (!value) throw std::runtime_error(message); }
 Object& Get(Obj obj) { Check(obj != nullptr, "Null fake object"); return *static_cast<Object*>(obj); }
@@ -147,6 +163,16 @@ Obj GameTexture(int64_t type) {
 bool Logged(const std::string& line) { return std::find(logs.begin(), logs.end(), line) != logs.end(); }
 size_t LoggedPrefix(const std::string& prefix) {
     return static_cast<size_t>(std::count_if(logs.begin(), logs.end(), [&](const std::string& line) { return line.starts_with(prefix); }));
+}
+// The place of the first line starting with `prefix` (logs.size() without
+// one), and that line ("" without one).
+size_t LoggedIndex(const std::string& prefix) {
+    return static_cast<size_t>(std::find_if(logs.begin(), logs.end(), [&](const std::string& line) { return line.starts_with(prefix); }) -
+        logs.begin());
+}
+std::string LoggedLine(const std::string& prefix) {
+    const auto index = LoggedIndex(prefix);
+    return index < logs.size() ? logs[index] : std::string();
 }
 void Setup() {
     api.object_get_class = [](Obj o) -> Klass { return Get(o).klass; };
@@ -219,7 +245,58 @@ using cursorArt::Shape;
 // What reached Unity: the trampoline's calls.
 struct Sent { Obj texture; Vector2 hotspot; int32_t mode; Method method; };
 std::vector<Sent> sent;
-void FakeSetCursor(Obj texture, Vector2 hotspot, int32_t mode, Method method) { sent.push_back({texture, hotspot, mode, method}); }
+// The size part's hook as the module made it (AddSystemHook), and every
+// LoadImageW call that reached user32: its arguments, its thread, the texture
+// the player was making a cursor of.
+struct SystemHook { void* target; void* replacement; size_t hooksBefore; };
+std::vector<SystemHook> systemHooks;
+struct Load { Obj texture; HINSTANCE instance; std::wstring file; UINT type; int cx, cy; UINT flags; DWORD thread; };
+std::vector<Load> loads;
+Obj makingCursorOf = nullptr;
+HANDLE WINAPI FakeLoadImage(HINSTANCE instance, LPCWSTR file, UINT type, int cx, int cy, UINT flags) {
+    loads.push_back({makingCursorOf, instance, file ? file : L"", type, cx, cy, flags, GetCurrentThreadId()});
+    return reinterpret_cast<HANDLE>(static_cast<uintptr_t>(0x10000 + loads.size()));
+}
+// LoadImageW as the game calls it: through the mod's detour once hooked.
+HANDLE CallLoadImage(HINSTANCE instance, LPCWSTR file, UINT type, int cx, int cy, UINT flags) {
+    return systemHooks.empty() ? FakeLoadImage(instance, file, type, cx, cy, flags)
+                               : customCursor::LoadImageHook(instance, file, type, cx, cy, flags);
+}
+// While the player makes a cursor: other loads in the same moment, from
+// another thread or with other arguments (never changed).
+bool probeLoads = false;
+const wchar_t* const CursorFile = L"C:\\Users\\Player\\AppData\\Local\\Temp\\CUR1A2B.tmp";
+// The player's Cursor.SetCursor (custom-cursor-player.hpp): one Windows cursor
+// per texture and hotspot, made at the first call with CursorMode.Auto, its
+// temporary file loaded at Windows' size (0 × 0, LR_LOADFROMFILE |
+// LR_DEFAULTSIZE); none with ForceSoftware or without a texture.
+std::set<std::tuple<Obj, float, float>> playerCursors;
+void FakeSetCursor(Obj texture, Vector2 hotspot, int32_t mode, Method method) {
+    sent.push_back({texture, hotspot, mode, method});
+    if (!texture || mode != 0 || !playerCursors.insert({texture, hotspot.x, hotspot.y}).second) return;
+    makingCursorOf = texture;
+    CallLoadImage(nullptr, CursorFile, 2, 0, 0, 0x50);
+    if (probeLoads) {
+        std::thread([] { CallLoadImage(nullptr, L"other thread", 2, 0, 0, 0x50); }).join();
+        CallLoadImage(nullptr, L"icon", 1, 0, 0, 0x50);
+        CallLoadImage(nullptr, L"sized", 2, 32, 32, 0x50);
+        CallLoadImage(nullptr, L"actual size", 2, 0, 0, 0x10);
+        CallLoadImage(reinterpret_cast<HINSTANCE>(&FakeLoadImageTarget), L"resource", 2, 0, 0, 0x50);
+    }
+    makingCursorOf = nullptr;
+}
+// The player's last cursor made of a texture (its file's load), or null.
+const Load* LoadOf(Obj texture) {
+    for (auto it = loads.rbegin(); it != loads.rend(); ++it)
+        if (it->texture == texture && it->file == CursorFile) return &*it;
+    return nullptr;
+}
+// Loaded at `pixels` (the mod's size), or at Windows' own size (0).
+bool LoadedAt(Obj texture, int pixels) {
+    const auto load = LoadOf(texture);
+    return load && load->instance == nullptr && load->type == 2 && load->cx == pixels && load->cy == pixels &&
+        load->flags == (pixels ? 0x10u : 0x50u) && load->thread == GetCurrentThreadId();
+}
 const Vector2 GameHotspot{7, 3};
 // DofusCursor.ApplyCursor: its texture for the current request (none for
 // None, or when the game has none), back from UpdateCursorTexture's call.
@@ -248,6 +325,15 @@ void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** or
     hooks.push_back({rva, &m, contracts.size(), natives.size(), fieldLookups.size()});
     setCursorMethod = method;
     *original = reinterpret_cast<void*>(&FakeSetCursor);
+}
+// The size part: a detour on user32's LoadImageW (here its stand-in).
+void AddSystemHook(void* target, void* replacement, void** original) {
+    using namespace fake;
+    Check(target == reinterpret_cast<void*>(&FakeLoadImageTarget) && replacement == reinterpret_cast<void*>(&customCursor::LoadImageHook),
+        "The only Windows hook: LoadImageW, its detour LoadImageHook");
+    if (systemHookFails) throw std::runtime_error("Injected hook failure");
+    systemHooks.push_back({target, replacement, hooks.size()});
+    *original = reinterpret_cast<void*>(&FakeLoadImage);
 }
 
 namespace managed {
@@ -382,13 +468,20 @@ void Fresh(bool install = true) {
     customCursor::s = customCursor::State{};
     customCursor::n = customCursor::Natives{};
     customCursor::originalSetCursor = nullptr;
-    customCursor::sys = {FakeMilliseconds, FakeButton, FakeDpi, FakeBase};
+    customCursor::originalLoadImage = nullptr;
+    customCursor::sizedThread = 0;
+    customCursor::sizedPixels = 0;
+    customCursor::sizedLoads = 0;
+    customCursor::sys = {FakeMilliseconds, FakeButton, FakeDpi, FakeBase, FakePlayerCode, FakeLoadImageAddress, FakeWindowsCursor};
     delete module;
     module = nullptr;
     Check(handles.empty(), "Every GC handle released");
     objects.clear(); methods.clear(); fieldInfos.clear(); classes.clear();
     contracts.clear(); classLookups.clear(); fieldLookups.clear(); natives.clear(); hooks.clear(); invokes.clear();
     logs.clear(); events.clear(); sent.clear(); gameTextures.clear();
+    systemHooks.clear(); loads.clear(); playerCursors.clear(); playerReads.clear();
+    playerBytes = customCursor::player::LoadBytes;
+    playerMissing = loadImageMissing = systemHookFails = probeLoads = false;
     missingClasses.clear(); failVerified.clear(); nativeMismatch = 0;
     ctorFails = destroyFails = 0; updateFails = topFails = staticReadFails = false;
     destroyAttempts = serviceLookups = staticReads = parentCalls = topCalls = updates = 0;
@@ -538,12 +631,27 @@ void PolicyTable() {
     Check(customCursor::RgbOf(240 / 255.f, 1.f, 79 / 255.f) == customCursor::StandardAccent &&
         customCursor::RgbOf(27 / 255.f, 29 / 255.f, 50 / 255.f) == customCursor::StandardDark &&
         customCursor::RgbOf(-1.f, 2.f, .5f) == 0x00FF80, "USS colours as 0xRRGGBB, clamped");
+    // The player's load the mod changes (custom-cursor-player.hpp): exactly
+    // its own, a cursor file at Windows' size; its site, byte for byte.
+    using customCursor::player::PlayerLoad;
+    const int owner = 1;
+    Check(PlayerLoad(nullptr, 2, 0, 0, 0x50) && !PlayerLoad(&owner, 2, 0, 0, 0x50) && !PlayerLoad(nullptr, 1, 0, 0, 0x50) &&
+        !PlayerLoad(nullptr, 0, 0, 0, 0x50) && !PlayerLoad(nullptr, 2, 32, 0, 0x50) && !PlayerLoad(nullptr, 2, 0, 32, 0x50) &&
+        !PlayerLoad(nullptr, 2, 0, 0, 0x10) && !PlayerLoad(nullptr, 2, 0, 0, 0x40) && !PlayerLoad(nullptr, 2, 0, 0, 0x2050),
+        "Only the player's load of a cursor file at Windows' size is changed");
+    const auto site = customCursor::player::LoadBytes;
+    Check(customCursor::player::SiteMatches(site.data()) && !customCursor::player::SiteMatches(nullptr), "The pinned site, never nothing");
+    for (size_t i = 0; i < site.size(); ++i) {
+        auto altered = site;
+        altered[i] ^= 0x80;
+        Check(!customCursor::player::SiteMatches(altered.data()), "Any byte different: another player, byte " + std::to_string(i));
+    }
 }
 
 // ------------------------------------------------------------ installation
 void InstallContracts() {
     Fresh();
-    Check(customCursor::s.installed && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=1"), "Installed, with its three optional parts");
+    Check(customCursor::s.installed && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=1 size=1"), "Installed, with its four optional parts");
     const std::set<std::tuple<std::string, std::string, int, uintptr_t>> expected{
         {"Core.UILogic.DofusCursor", "UpdateCursorTexture", 0, 0x280A4C0}, {"UnityEngine.Cursor", "SetCursor", 3, 0x54024F0},
         {"UnityEngine.Texture2D", ".ctor", 5, 0x5410E20}, {"UnityEngine.Texture2D", "LoadRawTextureData", 2, 0x540E4C0},
@@ -564,12 +672,19 @@ void InstallContracts() {
     Check(classLookups == images, "Each class from its own image");
     for (const auto& [field, offset] : offsets) Check(fieldLookups.contains(field), "Field layout checked: " + field.second);
     Check(hooks.size() == 1 && hooks[0].contracts == contracts.size() && hooks[0].natives == natives.size() && hooks[0].fields == fieldLookups.size(),
-        "The detour is added last, every method resolved before its bytes change");
-    Check(customCursor::originalSetCursor == &FakeSetCursor && sent.empty() && updates == 0 && Made().empty(), "Nothing changed at install");
+        "The detour is added after the game's contracts, every method resolved before its bytes change");
+    // The size part: the player's cursor loading checked once, at its pinned
+    // site, then LoadImageW hooked, after the SetCursor detour only.
+    Check(playerReads == std::vector<std::pair<uintptr_t, size_t>>{{customCursor::player::LoadSite, customCursor::player::LoadBytes.size()}},
+        "UnityPlayer.dll's loading of a cursor checked at its pinned site");
+    Check(systemHooks.size() == 1 && systemHooks[0].hooksBefore == 1 && customCursor::n.sized &&
+        customCursor::originalLoadImage == &FakeLoadImage, "LoadImageW hooked last, once the SetCursor detour exists");
+    Check(customCursor::originalSetCursor == &FakeSetCursor && sent.empty() && updates == 0 && Made().empty() && loads.empty(),
+        "Nothing changed at install");
     Fresh(false);
     InstallCustomCursor();
     InstallCustomCursor();
-    Check(hooks.size() == 1 && LoggedPrefix("CUSTOM_CURSOR_READY") == 1, "Installed once");
+    Check(hooks.size() == 1 && systemHooks.size() == 1 && LoggedPrefix("CUSTOM_CURSOR_READY") == 1, "Installed once");
 }
 // A required contract missing: no hook, nothing else, the Windows cursor.
 void RequiredContractMissing() {
@@ -587,8 +702,9 @@ void RequiredContractMissing() {
         breakIt();
         InstallCustomCursor();
         const std::string name = what;
-        Check(!customCursor::s.installed && hooks.empty() && LoggedPrefix("CUSTOM_CURSOR_DISABLED ") == 1 && LoggedPrefix("CUSTOM_CURSOR_READY") == 0,
-            name + " missing: CUSTOM_CURSOR_DISABLED and no hook");
+        Check(!customCursor::s.installed && hooks.empty() && systemHooks.empty() && playerReads.empty() &&
+            LoggedPrefix("CUSTOM_CURSOR_DISABLED ") == 1 && LoggedPrefix("CUSTOM_CURSOR_READY") == 0,
+            name + " missing: CUSTOM_CURSOR_DISABLED and no hook, LoadImageW's neither");
         module->settings.customCursor = true;
         Frames(30);
         RestoreCustomCursor();
@@ -600,7 +716,7 @@ void OptionalParts() {
     Fresh(false);
     missingClasses.insert(Ui + "TextField");
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE text ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=1 drag=1"), "Without TextField: the text part off");
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE text ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=1 drag=1 size=1"), "Without TextField: the text part off");
     Activate();
     topElement = chatText;
     nowMs += 300;
@@ -610,7 +726,7 @@ void OptionalParts() {
     Fresh(false);
     failVerified.insert(0x55F7180);
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE ui ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=0 drag=1"),
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE ui ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=0 drag=1 size=1"),
         "Without get_parent: the text and theme parts off");
     Activate(1);
     Check(customCursor::s.current.look.accent == customCursor::StandardAccent && customCursor::s.current.look.dark == customCursor::StandardDark &&
@@ -618,7 +734,7 @@ void OptionalParts() {
     Fresh(false);
     missingClasses.insert(Ui + "VisualElement+CustomStyleAccess");
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE theme ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=0 drag=1"), "Without CustomStyleAccess: the theme part off");
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE theme ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=0 drag=1 size=1"), "Without CustomStyleAccess: the theme part off");
     Get(visualRoot).variables["--highlight_primary100"] = {1.f, 0.f, 0.f, 1.f};
     Activate(1);
     Check(customCursor::s.current.look.accent == customCursor::StandardAccent && invokes["TryGetValue"] == 0, "Without the theme part: the Standard theme's colours");
@@ -628,7 +744,7 @@ void OptionalParts() {
     Fresh(false);
     offsets[{"Core.UILogic.Components.DragAndDrop.DragAndDropService", "<isDragging>k__BackingField"}] = 0x18;
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE drag ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=0"), "Another isDragging layout: the drag part off");
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE drag ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=0 size=1"), "Another isDragging layout: the drag part off");
     Activate();
     Put<bool>(dragService, 0x10, true);
     GameAsks(UiLayer, cursorType::Link);
@@ -655,6 +771,8 @@ void OptionOffPassesThrough() {
     ExpectSent(nullptr, {}, 0, "Off: another caller's reset, unchanged");
     Check(sent.size() == 5 && Made().empty() && serviceLookups == 0 && invokes.empty() && staticReads == 0 && dpiReads == 0,
         "Off: no texture, no lookup, no read");
+    Check(loads.size() == 2 && LoadedAt(GameTexture(cursorType::Link), 0) && LoadedAt(GameTexture(Sword), 0) && customCursor::sizedLoads == 0,
+        "Off: the player loads the game's cursors at Windows' size, as it makes them");
 }
 // Ticked: one shape a frame; the set complete, the game's cursor applied
 // again at once, the mod's in its place.
@@ -672,7 +790,10 @@ void EnableBuildsAcrossFrames() {
     ExpectOurs(Shape::Arrow, "The refresh: the mod's arrow for the game's None, at its hotspot, CursorMode.Auto");
     CheckSet(CurrentSet(), 32, cursorArt::Colour::Gold, 0, 0, "Gold at 32 px");
     Check(Made().size() == 13 && TextureHandles() == 13, "Thirteen textures, each held once");
-    Check(LoggedPrefix("CUSTOM_CURSOR_ON size=32 dpi=96 base=32 color=0 mid=#") == 1, "CUSTOM_CURSOR_ON logs the size and its inputs");
+    Check(LoggedPrefix("CUSTOM_CURSOR_ON size=32 dpi=96 base=32 color=0 mid=#") == 1 && LoggedLine("CUSTOM_CURSOR_ON ").ends_with(" mode=hardware load=texture"),
+        "CUSTOM_CURSOR_ON logs the size, its inputs and the mode: Windows cursors loaded at their size");
+    Check(LoadedAt(Ours(Shape::Arrow), 32) && Logged("CUSTOM_CURSOR_LOADED size=32 windows=32") &&
+        LoggedIndex("CUSTOM_CURSOR_ON ") < LoggedIndex("CUSTOM_CURSOR_LOADED "), "The player loads the arrow at 32 px, logged after CUSTOM_CURSOR_ON");
     Frames(50);
     Check(Made().size() == 13 && updates == 1, "Nothing drawn again while nothing changes");
 }
@@ -957,6 +1078,131 @@ void SizeChanges() {
     Frames(300);
     Check(customCursor::s.current.look.size == 48, "A Windows pointer enlarged to 48: 48 px at 100 %");
 }
+bool AllAuto() { return std::all_of(sent.begin(), sent.end(), [](const Sent& call) { return call.mode == 0; }); }
+// « Taille du curseur » as Windows shows it: the player makes the Windows
+// cursor of each texture of the mod at that texture's size (its own load at
+// Windows' size changed, custom-cursor-player.hpp), always with
+// CursorMode.Auto, never a software cursor; the game's own cursors keep
+// Windows' size.
+void SizeLoads() {
+    // Every choice at 100 % and 150 %: the refresh's arrow, then the hand.
+    const std::tuple<unsigned, int, int> cases[] = {{96, 0, 32}, {96, 1, 48}, {96, 2, 64}, {144, 0, 48}, {144, 1, 72}, {144, 2, 96}};
+    for (const auto& [scale, choice, pixels] : cases) {
+        Fresh();
+        dpi = scale;
+        Activate(0, choice);
+        const std::string what = std::to_string(pixels) + " px (dpi " + std::to_string(scale) + ", choice " + std::to_string(choice) + ")";
+        Check(customCursor::s.current.look.size == pixels && LoadedAt(Ours(Shape::Arrow), pixels), "The arrow loaded at " + what);
+        nowMs += 300;
+        GameAsks(UiLayer, cursorType::Link);
+        ExpectOurs(Shape::Hand, "The hand at " + what, pixels);
+        Check(LoadedAt(Ours(Shape::Hand), pixels), "The hand loaded at " + what);
+        GameAsks(Interactive, Sword);
+        ExpectGame(Sword, "The sword stays the game's: " + what);
+        Check(LoadedAt(GameTexture(Sword), 0), "The game's sword at Windows' size, as the player makes it: " + what);
+        Check(LoggedLine("CUSTOM_CURSOR_ON size=" + std::to_string(pixels) + " dpi=" + std::to_string(scale) + " base=32 color=0 mid=#")
+                .ends_with(" mode=hardware load=texture") &&
+            LoggedPrefix("CUSTOM_CURSOR_LOADED ") == 1 && Logged("CUSTOM_CURSOR_LOADED size=" + std::to_string(pixels) + " windows=32"),
+            "CUSTOM_CURSOR_ON with the mode, then CUSTOM_CURSOR_LOADED once for the set: " + what);
+        Check(AllAuto() && customCursor::sizedLoads == 2, "Always CursorMode.Auto, only the mod's two loads changed: " + what);
+        // Sent again: the player reuses the cursor it made, nothing loaded again.
+        const auto count = loads.size();
+        nowMs += 300;
+        GameAsks(UiLayer, cursorType::Link);
+        ExpectOurs(Shape::Hand, "The hand again at " + what, pixels);
+        Check(loads.size() == count, "The player's own cursor reused: " + what);
+    }
+    // A switch of size: the new set made, applied in one call, its cursors
+    // loaded at the new size; then the old set destroyed. Never two cursors,
+    // never none.
+    Fresh();
+    Activate(0, 2);
+    nowMs += 300;
+    GameAsks(UiLayer, cursorType::Link);
+    const Obj big = Ours(Shape::Hand);
+    Check(LoadedAt(big, 64), "« Très grande » at 100 %: the hand at 64 px");
+    events.clear();
+    const auto calls = sent.size();
+    module->settings.customCursorSize = 0;
+    Frames(13);
+    ExpectOurs(Shape::Hand, "« Comme la souris de Windows »: the hand at 32 px, at once", 32);
+    std::vector<std::string> expected(13, "ctor");
+    expected.push_back("update");
+    expected.insert(expected.end(), 13, "destroy");
+    Check(events == expected && sent.size() == calls + 1 && Get(big).destroyed && LoadedAt(Ours(Shape::Hand), 32),
+        "Switched: the new hand sent once and loaded at 32 px, then the 64 px set destroyed");
+    Check(LoggedLine("CUSTOM_CURSOR_REDRAWN size=32 dpi=96 base=32 color=0 mid=#").ends_with(" mode=hardware load=texture") &&
+        Logged("CUSTOM_CURSOR_LOADED size=64 windows=32") && Logged("CUSTOM_CURSOR_LOADED size=32 windows=32") && AllAuto(),
+        "Each set logged with its mode and its load");
+    // While the player makes a cursor of the mod, only its own load changes,
+    // on its thread: another thread's, or other arguments, go on as they are.
+    Fresh();
+    Activate(0, 1);
+    probeLoads = true;
+    nowMs += 300;
+    GameAsks(UiLayer, cursorType::Link);
+    probeLoads = false;
+    Check(LoadedAt(Ours(Shape::Hand), 48), "« Grande » at 100 %: the hand at 48 px");
+    const auto probe = [](const wchar_t* file) -> const Load& {
+        const auto found = std::find_if(loads.begin(), loads.end(), [&](const Load& load) { return load.file == file; });
+        Check(found != loads.end(), "Probed load made");
+        return *found;
+    };
+    Check(probe(L"other thread").thread != GetCurrentThreadId() && probe(L"other thread").cx == 0 && probe(L"other thread").cy == 0 &&
+        probe(L"other thread").flags == 0x50, "Another thread's load at that moment: unchanged");
+    Check(probe(L"icon").type == 1 && probe(L"icon").cx == 0 && probe(L"icon").flags == 0x50, "An icon: unchanged");
+    Check(probe(L"sized").cx == 32 && probe(L"sized").cy == 32 && probe(L"sized").flags == 0x50, "A size asked: unchanged");
+    Check(probe(L"actual size").cx == 0 && probe(L"actual size").flags == 0x10, "Other flags: unchanged");
+    Check(probe(L"resource").instance != nullptr && probe(L"resource").cx == 0 && probe(L"resource").flags == 0x50, "From a module: unchanged");
+    customCursor::LoadImageHook(nullptr, L"after", 2, 0, 0, 0x50);
+    Check(loads.back().file == L"after" && loads.back().cx == 0 && loads.back().flags == 0x50 && customCursor::sizedPixels == 0 &&
+        customCursor::sizedThread == 0 && customCursor::sizedLoads == 2, "Once the call is over: unchanged, nothing left set");
+    // Unticked: the game's own cursors as the player makes them.
+    module->settings.customCursor = false;
+    Frame();
+    ExpectGame(cursorType::Link, "Unticked: the game's hand");
+    Check(LoadedAt(GameTexture(cursorType::Link), 0) && customCursor::sizedLoads == 2, "Unticked: the game's hand at Windows' size");
+    // Ticked again, then Stop: the game's cursor back as the player makes it,
+    // nothing changed after.
+    Activate(0, 2);
+    nowMs += 300;
+    GameAsks(UiLayer, cursorType::Move);
+    Check(LoadedAt(Ours(Shape::Open), 64), "Ticked again: the open hand at 64 px");
+    const unsigned changed = customCursor::sizedLoads;
+    module->stopped = true;
+    RestoreCustomCursor();
+    ExpectGame(cursorType::Move, "Stop: the game's own move cursor");
+    GameAsks(UiLayer, cursorType::ResizeNS);
+    ExpectGame(cursorType::ResizeNS, "Stopped: the game's resize cursor");
+    Check(LoadedAt(GameTexture(cursorType::Move), 0) && LoadedAt(GameTexture(cursorType::ResizeNS), 0) && customCursor::sizedLoads == changed &&
+        customCursor::sizedPixels == 0 && AllAuto(), "Stop: every load as the player makes it, never ForceSoftware");
+}
+// The size part off (another player build, no LoadImageW, the hook refused):
+// the cursors still there, at Windows' size as in 1.17.0, and logged.
+void SizePartUnavailable() {
+    struct Break { const char* what; std::function<void()> breakIt; const char* reason; };
+    const Break breaks[] = {
+        {"UnityPlayer.dll missing", [] { playerMissing = true; }, "UnityPlayer.dll does not load cursors as the supported client's"},
+        {"another UnityPlayer.dll", [] { playerBytes[61] ^= 0x01; }, "UnityPlayer.dll does not load cursors as the supported client's"},
+        {"no LoadImageW", [] { loadImageMissing = true; }, "LoadImageW unavailable"},
+        {"the hook refused", [] { systemHookFails = true; }, "Injected hook failure"}};
+    for (const auto& [what, breakIt, reason] : breaks) {
+        Fresh(false);
+        breakIt();
+        InstallCustomCursor();
+        const std::string name = what;
+        Check(customCursor::s.installed && !customCursor::n.sized && hooks.size() == 1 && systemHooks.empty() &&
+            Logged(std::string("CUSTOM_CURSOR_PART_UNAVAILABLE size ") + reason) && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=1 size=0"),
+            name + ": the size part off and logged, the cursors installed");
+        Activate(0, 2);
+        nowMs += 300;
+        GameAsks(UiLayer, cursorType::Link);
+        ExpectOurs(Shape::Hand, name + ": the mod's hand still", 64);
+        Check(LoadedAt(Ours(Shape::Hand), 0) && LoadedAt(Ours(Shape::Arrow), 0) && customCursor::sizedLoads == 0 &&
+            LoggedPrefix("CUSTOM_CURSOR_LOADED") == 0 && AllAuto(), name + ": loaded at Windows' size, as 1.17.0");
+        Check(LoggedLine("CUSTOM_CURSOR_ON size=64 ").ends_with(" mode=hardware load=windows"), name + ": CUSTOM_CURSOR_ON says so");
+    }
+}
 // Unticked: the game's cursor back in the same frame, the textures destroyed.
 void DisableRestores() {
     Fresh();
@@ -1225,6 +1471,8 @@ int main() {
         fake::NoRefreshWhenUnchanged();
         fake::ThemeColour();
         fake::SizeChanges();
+        fake::SizeLoads();
+        fake::SizePartUnavailable();
         fake::DisableRestores();
         fake::StopRestores();
         fake::CleanupRetries();
@@ -1238,10 +1486,13 @@ int main() {
         module = nullptr;
         std::cout << "PASS: « Curseur Dofus » runtime: the policy table (the arrow, the hand on every layer, the text cursor, the open and "
             "closed hands, the four resizes, the badges, the game's icons and unknown types kept, another caller's texture kept and its "
-            "reset replaced), the sizes, the exact contracts (the detour added last), a required contract missing (no hook) or an "
-            "optional one (its part off), the option off (every call unchanged), the set drawn one shape a frame then applied at once, "
+            "reset replaced), the sizes, the exact contracts (the detour added after the game's, then LoadImageW once the player's "
+            "loading is checked), a required contract missing (no hook) or an optional one (its part off; without the size part, "
+            "Windows' size as in 1.17.0), the option off (every call unchanged), the set drawn one shape a frame then applied at once, "
             "the dedupe, the drag, the button and the text field read and followed, the theme's colours followed (a new set in use "
-            "before the old one goes), the window's scale and the size choice, unticking and Stop (the game's cursor back first, every "
+            "before the old one goes), the window's scale and the size choice, each size a Windows cursor (CursorMode.Auto) loaded by "
+            "the player at the texture's size at 100 % and 150 % (only the mod's own loads, on their thread; the game's at Windows' "
+            "size; a switch applied in one call), the mode and the loads logged, unticking and Stop (the game's cursor back first, every "
             "texture destroyed, every reference released), failed destroys retried then abandoned (at once by a Stop before the "
             "services, even within the retry wait), errors in the detour (forwarded, "
             "then off) and in the frames, a lost texture, a failed refresh, the requests logged. No game process accessed.\n";

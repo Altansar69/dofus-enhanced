@@ -10,7 +10,56 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.17.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.17.1
+
+VERSION 1.17.1 : PERFORMANCES, CARNET, CURSEUR, TITRES DES MODULES
+- Performances : le cadre se redimensionne maintenant comme une fenêtre.
+  Son bord droit règle sa largeur, son bord bas sa hauteur, et son coin
+  en bas à droite les deux à la fois, librement (avant, tout le cadre
+  grandissait d’un bloc) ; sa largeur et sa hauteur vont chacune de la
+  moitié au triple de leur taille normale. Le texte garde ses proportions
+  et prend la plus grande taille qui tient dans le cadre, calé en haut à
+  gauche, sans jamais être coupé ; le fond et la poignée suivent le
+  cadre.
+- Performances : au survol du cadre (avec « Déplacer et redimensionner
+  l’affichage à la souris » cochée), le jeu affiche le curseur
+  correspondant, comme sur ses fenêtres : une double flèche gauche-droite
+  sur le bord droit, haut-bas sur le bord bas, en diagonale sur le coin
+  en bas à droite, et le curseur de déplacement ailleurs (les curseurs du
+  mod avec « Curseur Dofus »).
+- La taille du cadre choisie avec une version précédente devient sa
+  largeur et sa hauteur ; sa place est gardée.
+- Carnet : plus de compteur (« 1 entrée ») ni d’aide permanente sous les
+  listes (« Choisis une entrée dans la liste de gauche. », « Copie les
+  coordonnées d’une position ou lance le trajet… ») : la ligne d’état
+  n’affiche plus que le résultat d’une action ou une erreur, quelques
+  secondes (seul un carnet illisible y reste signalé jusqu’à sa
+  correction), et ne prend aucune place le reste du temps. La fenêtre
+  peut donc être raccourcie davantage, en version complète comme en
+  version compacte. Les flèches de pagination n’apparaissent qu’à partir
+  de sept entrées ; un onglet vide le dit dans sa liste.
+- Carnet : les notes et les messages s’utilisent comme les positions,
+  avec de petits boutons à droite de chaque nom : copier pour une note ;
+  envoyer (sur le canal enregistré avec le message), préparer dans le chat
+  et copier pour un message. « Envoyer », « Préparer dans le chat » et
+  « Copier » quittent le formulaire : plus rien n’est coupé en version
+  compacte. Le canal d’un message se choisit toujours dans le formulaire
+  et sert une fois l’entrée enregistrée.
+- Options, Carnet : « Bouton de copie à côté des positions » devient
+  « Bouton de copie à côté des entrées » (dans chaque onglet) ; nouvelle
+  case « Boutons d’envoi à côté des messages », cochée par défaut.
+- « Taille du curseur » : « Grande » et « Très grande » agrandissent
+  vraiment les curseurs du mod (48 et 64 pixels à 100 %, jusqu’à 128) :
+  le jeu les ramenait jusqu’ici à la taille du pointeur de Windows. Ce
+  sont toujours des curseurs de Windows, qui suivent la souris sans
+  retard ; les curseurs propres au jeu gardent leur taille.
+- Menu ⋯ → Réduire les titres des modules : Pierre d’âme, Chasse au
+  trésor · DofusDB (le module « Chasse au trésor » du jeu garde son nom),
+  Carnet personnel et Statistiques suivent directement les modules du
+  jeu, au-dessus de « Tout réduire / Tout agrandir » (et non plus en
+  dessous), sans icône, comme les lignes du jeu.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.17.0 : CURSEUR DOFUS
 - Nouvelle section « Curseur » dans l’onglet Dofus Enhanced, après

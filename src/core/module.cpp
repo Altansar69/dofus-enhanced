@@ -77,6 +77,13 @@ void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
     if (result != MH_OK) throw std::runtime_error(std::string("Cannot prepare hook: ") + MH_StatusToString(result));
     hookTargets.push_back(target);
 }
+// A Windows function (not the game's: no guard), enabled and disabled with the
+// game's hooks; its caller checks what it changes (custom-cursor.cpp).
+void AddSystemHook(void* target, void* replacement, void** original) {
+    auto result = MH_CreateHook(target, replacement, original);
+    if (result != MH_OK) throw std::runtime_error(std::string("Cannot prepare hook: ") + MH_StatusToString(result));
+    hookTargets.push_back(target);
+}
 static Obj Service(Obj dictionary, const char* name, bool diagnostic = true) {
     if (diagnostic) Log("DISCOVER_SERVICE lookup=" + std::string(name));
     auto type = api.Class("Core.dll", "", name);

@@ -2,6 +2,7 @@
 #include "core/common.hpp"
 #include "appearance/mode-policy.hpp"
 #include "appearance/size-policy.hpp"
+#include <algorithm>
 #include <cmath>
 #include <MinHook.h>
 #include <fstream>
@@ -222,6 +223,27 @@ int main() {
             const auto lastLine = Settings::Read(path);
             Require(lastLine.notebookCopyButton && !lastLine.notebookTravelButton, "The last valid copy or travel line wins");
         }
+        {
+            // 1.17.1: the send and prepare buttons of the notebook's message lines
+            // (in place of « Envoyer » and « Préparer dans le chat » under the
+            // form), shown by default, on their own 0/1 line; a file written
+            // before them shows them, whatever its other line buttons.
+            Require(defaults.notebookSendButtons, "The notebook's send buttons start shown");
+            for (int sendValue : {0, 1}) {
+                auto buttons = defaults; buttons.notebookSendButtons = sendValue != 0;
+                buttons.Save(path);
+                Require(FileText(path).find("\nnotebookSendButtons=" + std::to_string(sendValue) + "\n") != std::string::npos && Settings::Read(path) == buttons,
+                    "The send buttons are saved on their own line and read back");
+                { std::ofstream invalid(path, std::ios::app); invalid << "notebookSendButtons=2\nnotebookSendButtons=-1\nnotebookSendButtons=x\nnotebookSendButtons=\nnotebookSendButtons= 0\n"; }
+                Require(Settings::Read(path) == buttons, "Malformed send lines preserve the saved choice");
+            }
+            { std::ofstream older(path); older << "mode=2\nnotebookCopyButton=0\nnotebookTravelButton=0\n"; }
+            const auto beforeSend = Settings::Read(path);
+            Require(beforeSend.notebookSendButtons && !beforeSend.notebookCopyButton && !beforeSend.notebookTravelButton,
+                "A file written before them shows the send buttons");
+            { std::ofstream twice(path); twice << "notebookSendButtons=0\nnotebookSendButtons=1\nnotebookSendButtons=0\n"; }
+            Require(!Settings::Read(path).notebookSendButtons, "The last valid send line wins");
+        }
         Require(!defaults.metamobSync, "Metamob capture sync starts disabled");
         Require(defaults.chatTravelLinks && defaults.chatSoulInventory && defaults.chatOcreStatus && defaults.chatMetamobStatus && defaults.mapTravelPlanner,
             "Chat additions and the mod's map travel start enabled, as they were before they had options");
@@ -291,7 +313,7 @@ int main() {
             defaults.perfOverlayCorner == 0 && !defaults.perfOverlayGpu && !defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
             defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1 && Settings{} == defaults,
             "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden (no part ticked) in the top left corner");
-        static_assert(std::size(ExtraToggles) == 11); // with 1.16.0's: the notebook's copy and travel buttons, the overlay's top-bar button
+        static_assert(std::size(ExtraToggles) == 12); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button) and 1.17.1's (the notebook's send buttons)
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
             // Every combination of the first five, many times; the others follow inverted bits.
@@ -371,37 +393,79 @@ int main() {
         {
             // 1.16.0: the overlay's top-bar button (a checkbox, on by default),
             // whether that button hid it (perfOverlayShown, not hidden by default)
-            // and its size in percent of its natural size (perfOverlayScale, 100 by
-            // default, 50 to 300). Each persists alone and together; anything else
-            // is never read, and a size outside 50..300 is never saved.
-            Require(defaults.perfOverlayButton && defaults.perfOverlayShown && defaults.perfOverlayScale == 100 &&
+            // and its size; since 1.17.1 its width and its height, each in percent
+            // of its natural size (perfOverlayScaleX/Y, 100 by default, 50 to 300),
+            // with the size of both of 1.16.x and 1.17.0 still written for them
+            // (perfOverlayScale: the smaller one). Each persists alone and
+            // together; anything else is never read, and a size outside 50..300 is
+            // never saved.
+            Require(defaults.perfOverlayButton && defaults.perfOverlayShown && defaults.perfOverlayScaleX == 100 && defaults.perfOverlayScaleY == 100 &&
                 Settings::ValidPerfOverlayScale(50) && Settings::ValidPerfOverlayScale(300) && !Settings::ValidPerfOverlayScale(49) &&
                 !Settings::ValidPerfOverlayScale(301), "The top-bar button shown, the overlay not hidden by it, at its natural size");
-            for (int scale : {50, 77, 100, 150, 300})
-                for (int mask = 0; mask < 4; ++mask) {
-                    auto overlay = defaults;
-                    overlay.perfOverlayScale = scale;
-                    overlay.perfOverlayShown = (mask & 1) != 0;
-                    overlay.perfOverlayButton = (mask & 2) != 0;
-                    overlay.Save(path);
-                    const auto saved = FileText(path);
-                    Require(Settings::Read(path) == overlay && saved.find("\nperfOverlayScale=" + std::to_string(scale) + "\n") != std::string::npos &&
-                        saved.find(std::string("\nperfOverlayShown=") + ((mask & 1) ? "1" : "0") + "\n") != std::string::npos &&
-                        saved.find(std::string("\nperfOverlayButton=") + ((mask & 2) ? "1" : "0") + "\n") != std::string::npos,
-                        "The overlay's size, its hiding by the button and the button itself persist");
-                    { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayScale=49\nperfOverlayScale=301\nperfOverlayScale=0\n"
-                        "perfOverlayScale=-100\nperfOverlayScale=x\nperfOverlayShown=2\nperfOverlayShown=-1\nperfOverlayButton=2\nperfOverlayButton=x\n"; }
-                    Require(Settings::Read(path) == overlay, "Malformed overlay values keep the saved ones");
-                }
+            for (int width : {50, 77, 100, 150, 300})
+                for (int height : {50, 100, 120, 300})
+                    for (int mask = 0; mask < 4; ++mask) {
+                        auto overlay = defaults;
+                        overlay.perfOverlayScaleX = width;
+                        overlay.perfOverlayScaleY = height;
+                        overlay.perfOverlayShown = (mask & 1) != 0;
+                        overlay.perfOverlayButton = (mask & 2) != 0;
+                        overlay.Save(path);
+                        const auto saved = FileText(path);
+                        Require(Settings::Read(path) == overlay && saved.find("\nperfOverlayScaleX=" + std::to_string(width) + "\n") != std::string::npos &&
+                            saved.find("\nperfOverlayScaleY=" + std::to_string(height) + "\n") != std::string::npos &&
+                            saved.find("\nperfOverlayScale=" + std::to_string(std::min(width, height)) + "\n") != std::string::npos &&
+                            saved.find(std::string("\nperfOverlayShown=") + ((mask & 1) ? "1" : "0") + "\n") != std::string::npos &&
+                            saved.find(std::string("\nperfOverlayButton=") + ((mask & 2) ? "1" : "0") + "\n") != std::string::npos,
+                            "The overlay's width and height (the smaller one as the size of both), its hiding by the button and the button itself persist");
+                        { std::ofstream invalid(path, std::ios::app); invalid << "perfOverlayScaleX=49\nperfOverlayScaleX=301\nperfOverlayScaleX=x\n"
+                            "perfOverlayScaleY=0\nperfOverlayScaleY=-100\nperfOverlayScaleY=\nperfOverlayScale=49\nperfOverlayScale=301\nperfOverlayScale=0\n"
+                            "perfOverlayScale=-100\nperfOverlayScale=x\nperfOverlayShown=2\nperfOverlayShown=-1\nperfOverlayButton=2\nperfOverlayButton=x\n"; }
+                        Require(Settings::Read(path) == overlay, "Malformed overlay values keep the saved ones");
+                        // Another valid size of both (a hand edit: 1.16.x and 1.17.0 drop the axes they rewrite): the axes win.
+                        { std::ofstream other(path, std::ios::app); other << "perfOverlayScale=" << (std::min(width, height) == 77 ? 150 : 77) << "\n"; }
+                        Require(Settings::Read(path) == overlay, "The width and the height win over the size of both");
+                    }
+            // A file of 1.16.x or 1.17.0 (the size of both only): each axis at that
+            // size, both written at the next save with that size of both again.
+            for (int scale : {50, 77, 150, 300}) {
+                { std::ofstream older(path); older << "mode=2\nperfOverlay=1\nperfOverlayScale=" << scale << "\nperfOverlayX=1200\nperfOverlayY=300\n"; }
+                auto migrated = Settings::Read(path);
+                Require(migrated.perfOverlayScaleX == scale && migrated.perfOverlayScaleY == scale && migrated.perfOverlayX == 1200 &&
+                    migrated.perfOverlayY == 300 && migrated.perfOverlay, "1.16.x and 1.17.0: their size of both on each axis");
+                migrated.Save(path);
+                const auto saved = FileText(path);
+                Require(saved.find("\nperfOverlayScaleX=" + std::to_string(scale) + "\n") != std::string::npos &&
+                    saved.find("\nperfOverlayScaleY=" + std::to_string(scale) + "\n") != std::string::npos &&
+                    saved.find("\nperfOverlayScale=" + std::to_string(scale) + "\n") != std::string::npos && Settings::Read(path) == migrated,
+                    "Saved migrated: both axes, and the size of both for those revisions");
+            }
+            // One axis without the other (never written so): the other at the size
+            // of both, at 100 without it; an axis out of 50..300 or not a number
+            // counts as missing.
+            const auto axes = [&](const char* text) {
+                { std::ofstream file(path); file << text; }
+                const auto read = Settings::Read(path);
+                return std::pair<int, int>{read.perfOverlayScaleX, read.perfOverlayScaleY};
+            };
+            Require(axes("perfOverlayScale=150\nperfOverlayScaleX=200\n") == std::pair<int, int>{200, 150} &&
+                axes("perfOverlayScaleY=80\nperfOverlayScale=120\n") == std::pair<int, int>{120, 80} &&
+                axes("perfOverlayScaleY=80\n") == std::pair<int, int>{100, 80} && axes("perfOverlayScaleX=250\n") == std::pair<int, int>{250, 100},
+                "One axis alone: the other at the size of both, 100 without it");
+            Require(axes("perfOverlayScale=150\nperfOverlayScaleX=999\nperfOverlayScaleY=x\n") == std::pair<int, int>{150, 150} &&
+                axes("perfOverlayScale=999\nperfOverlayScaleX=49\nperfOverlayScaleY=301\n") == std::pair<int, int>{100, 100},
+                "An invalid axis: the valid size of both, 100 without one");
             // A file without them (before 1.16.0): shown, with its button, at its natural size.
             { std::ofstream older(path); older << "perfOverlay=1\nperfOverlayX=1200\nperfOverlayY=300\n"; }
             const auto older = Settings::Read(path);
-            Require(older.perfOverlay && older.perfOverlayShown && older.perfOverlayButton && older.perfOverlayScale == 100,
+            Require(older.perfOverlay && older.perfOverlayShown && older.perfOverlayButton && older.perfOverlayScaleX == 100 && older.perfOverlayScaleY == 100,
                 "Before 1.16.0: shown, with its button, at its natural size");
-            for (const char* scale : {"49", "301", "0", "-1", "1000", "150x", ""}) {
-                { std::ofstream odd(path); odd << "perfOverlayScale=" << scale << "\n"; }
-                Require(Settings::Read(path).perfOverlayScale == 100, "An overlay size outside 50..300, or not a number, reads as 100");
-            }
+            for (const char* scale : {"49", "301", "0", "-1", "1000", "150x", ""})
+                for (const char* key : {"perfOverlayScale=", "perfOverlayScaleX=", "perfOverlayScaleY="}) {
+                    { std::ofstream odd(path); odd << key << scale << "\n"; }
+                    const auto read = Settings::Read(path);
+                    Require(read.perfOverlayScaleX == 100 && read.perfOverlayScaleY == 100, "An overlay size outside 50..300, or not a number, reads as 100");
+                }
             // Hidden with the button: still hidden at the next start, its parts still ticked.
             auto hidden = defaults;
             hidden.perfOverlay = hidden.perfOverlayGpu = true;
@@ -410,13 +474,14 @@ int main() {
             const auto restarted = Settings::Read(path);
             Require(!restarted.perfOverlayShown && restarted.perfOverlay && restarted.perfOverlayGpu && restarted == hidden,
                 "Hidden with its button: hidden at the next start, its parts still ticked");
-            for (int invalid : {49, 301, 0, -100}) {
-                auto refused = defaults;
-                refused.perfOverlayScale = invalid;
-                std::string refusal;
-                try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
-                Require(refusal == "Invalid performance overlay scale" && Settings::Read(path) == hidden, "An overlay size outside 50..300 is never saved");
-            }
+            for (int invalid : {49, 301, 0, -100})
+                for (bool width : {false, true}) {
+                    auto refused = defaults;
+                    (width ? refused.perfOverlayScaleX : refused.perfOverlayScaleY) = invalid;
+                    std::string refusal;
+                    try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+                    Require(refusal == "Invalid performance overlay scale" && Settings::Read(path) == hidden, "An overlay width or height outside 50..300 is never saved");
+                }
         }
         {
             // The dimension with the coordinates, three choices each (0 « Non », 1 « Oui,

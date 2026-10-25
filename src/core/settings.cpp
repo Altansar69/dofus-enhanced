@@ -36,17 +36,19 @@ constexpr Flag GlowFlags[] = {
     {"glowInteractives", &Settings::glowInteractives}, {"glowSelf", &Settings::glowSelf},
     {"glowParty", &Settings::glowParty}, {"glowPlayers", &Settings::glowPlayers}};
 static_assert(std::size(GlowFlags) == std::size(GlowCategoryToggles));
-// The checkboxes added in 1.13.0, 1.14.0 and 1.16.0 (ExtraToggles), each its own
-// 0/1 line. A file without the notebook's copy and travel buttons or the
-// performance overlay's top-bar button (before 1.16.0) keeps their default:
-// all shown.
+// The checkboxes added in 1.13.0, 1.14.0, 1.16.0 and 1.17.1 (ExtraToggles), each
+// its own 0/1 line. A file without the notebook's copy and travel buttons or the
+// performance overlay's top-bar button (before 1.16.0), or without the send
+// buttons of the notebook's messages (before 1.17.1), keeps their default: all
+// shown.
 constexpr Flag ExtraFlags[] = {
     {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
     {"notebookPingButton", &Settings::notebookPingButton}, {"notebookCopyButton", &Settings::notebookCopyButton},
     {"notebookTravelButton", &Settings::notebookTravelButton}, {"mapAddPosition", &Settings::mapAddPosition},
     {"perfOverlay", &Settings::perfOverlay},
     {"perfOverlayGpu", &Settings::perfOverlayGpu}, {"perfOverlayDisk", &Settings::perfOverlayDisk},
-    {"perfOverlayDrag", &Settings::perfOverlayDrag}, {"perfOverlayButton", &Settings::perfOverlayButton}};
+    {"perfOverlayDrag", &Settings::perfOverlayDrag}, {"perfOverlayButton", &Settings::perfOverlayButton},
+    {"notebookSendButtons", &Settings::notebookSendButtons}};
 static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
 }
 
@@ -58,6 +60,10 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     bool preferredRead = false, preferredRoleplayRead = false, animationModeRead = false, monsterGlowModeRead = false;
     bool resourceMiniMapRead = false, chatModeRead = false;
     bool perfOverlayPartsRead = false; // written by 1.16.0 or later: the overlay's boxes are independent
+    // The overlay's width and height (1.17.1), each read or not, and the size
+    // of both before (1.16.x, 1.17.0; -1: absent).
+    bool perfOverlayScaleXRead = false, perfOverlayScaleYRead = false;
+    int legacyPerfOverlayScale = -1;
     int legacyChatDimension = -1; // 1.13.0's checkbox, before the chat's three choices
     // The maps' dimension choices (1.16.0), each read or not, and their
     // checkboxes before (-1: absent); dimensionChoices=1 marks a file written since.
@@ -140,7 +146,9 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "statsButton" && (value == 0 || value == 1)) settings.statsButton = value != 0;
             else if (key == "perfOverlayX" && ValidPerfOverlayPlace(value)) settings.perfOverlayX = value;
             else if (key == "perfOverlayY" && ValidPerfOverlayPlace(value)) settings.perfOverlayY = value;
-            else if (key == "perfOverlayScale" && ValidPerfOverlayScale(value)) settings.perfOverlayScale = value;
+            else if (key == "perfOverlayScaleX" && ValidPerfOverlayScale(value)) { settings.perfOverlayScaleX = value; perfOverlayScaleXRead = true; }
+            else if (key == "perfOverlayScaleY" && ValidPerfOverlayScale(value)) { settings.perfOverlayScaleY = value; perfOverlayScaleYRead = true; }
+            else if (key == "perfOverlayScale" && ValidPerfOverlayScale(value)) legacyPerfOverlayScale = value;
             else if (key == "perfOverlayShown" && (value == 0 || value == 1)) settings.perfOverlayShown = value != 0;
             else if (key == "perfOverlayParts" && value >= 1) perfOverlayPartsRead = true;
             else if (key == "resourceMapEnabled" && (value == 0 || value == 1)) settings.resourceMapEnabled = value != 0;
@@ -181,6 +189,13 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     if (!dimensionChoices && settings.coordsWorldChatMode == 2) settings.coordsWorldChatMode = 1;
     // A place needs both coordinates; one alone means the chosen corner.
     if (!ValidPerfOverlayPlace(settings.perfOverlayX, settings.perfOverlayY)) settings.perfOverlayX = settings.perfOverlayY = -1;
+    // 1.16.x and 1.17.0 sized the overlay alike on both axes (perfOverlayScale,
+    // still written for them): an axis this file does not hold, or holds out of
+    // 50..300, takes that size when the file holds a valid one, 100 otherwise.
+    if (legacyPerfOverlayScale > 0) {
+        if (!perfOverlayScaleXRead) settings.perfOverlayScaleX = legacyPerfOverlayScale;
+        if (!perfOverlayScaleYRead) settings.perfOverlayScaleY = legacyPerfOverlayScale;
+    }
     // Before 1.16.0, « Charge du GPU » and « Activité du disque » only added to
     // the overlay of « Afficher les FPS et la mémoire »: a file of those
     // revisions keeps them only with that box ticked, so that no overlay
@@ -212,7 +227,8 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
     if (!ValidCoordsWorldMode(coordsWorldMapMode) || !ValidCoordsWorldMode(coordsWorldMiniMapMode))
         throw std::runtime_error("Invalid map dimension choice");
     if (!ValidPerfOverlayPlace(perfOverlayX, perfOverlayY)) throw std::runtime_error("Invalid performance overlay place");
-    if (!ValidPerfOverlayScale(perfOverlayScale)) throw std::runtime_error("Invalid performance overlay scale");
+    if (!ValidPerfOverlayScale(perfOverlayScaleX) || !ValidPerfOverlayScale(perfOverlayScaleY))
+        throw std::runtime_error("Invalid performance overlay scale");
     if (!ValidCustomCursorColor(customCursorColor) || !ValidCustomCursorSize(customCursorSize))
         throw std::runtime_error("Invalid cursor choice");
     static std::atomic_uint64_t nextSave{0};
@@ -262,7 +278,10 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         for (const auto& [name, field] : AnimationFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         for (const auto& [name, field] : ExtraFlags) file << '\n' << name << '=' << (this->*field ? 1 : 0);
         file << "\nperfOverlayCorner=" << perfOverlayCorner << "\nperfOverlayX=" << perfOverlayX << "\nperfOverlayY=" << perfOverlayY;
-        file << "\nperfOverlayScale=" << perfOverlayScale << "\nperfOverlayShown=" << (perfOverlayShown ? 1 : 0);
+        // 1.17.1: the overlay's width and height, then the size of both of 1.16.x
+        // and 1.17.0 for them, the smaller one (its text's).
+        file << "\nperfOverlayScaleX=" << perfOverlayScaleX << "\nperfOverlayScaleY=" << perfOverlayScaleY
+             << "\nperfOverlayScale=" << std::min(perfOverlayScaleX, perfOverlayScaleY) << "\nperfOverlayShown=" << (perfOverlayShown ? 1 : 0);
         // The overlay's boxes are independent (1.16.0): Read keeps them as they are.
         file << "\nperfOverlayParts=1";
         // Each dimension choice with the checkbox of the revisions before it (the

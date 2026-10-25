@@ -19,19 +19,20 @@ struct Entry {
     bool armed=false;
 };
 // "Réduire les titres des modules": the game's header sub-menu lists its own
-// widgets; the mod's panels are appended there, remembered in the settings
-// and applied to each window through the native header size.
-struct HeaderPanel { const char* key; const char* title; int icon; bool Settings::*small; };
+// widgets; the mod's panels join them there, remembered in the settings and
+// applied to each window through the native header size.
+struct HeaderPanel { const char* key; const char* title; bool Settings::*small; };
 constexpr HeaderPanel HeaderPanels[]={
-    {"soul","Pierre d\xE2\x80\x99\xC3\xA2me",128,&Settings::smallHeaderSoul},
-    {"treasure","Chasse au tr\xC3\xA9sor",317,&Settings::smallHeaderTreasure},
-    {"notebook","Carnet personnel",225,&Settings::smallHeaderNotebook},
-    {"stats","Statistiques",77,&Settings::smallHeaderStats}};
+    {"soul","Pierre d\xE2\x80\x99\xC3\xA2me",&Settings::smallHeaderSoul},
+    {"treasure","Chasse au tr\xC3\xA9sor \xC2\xB7 DofusDB",&Settings::smallHeaderTreasure}, // the game lists its own « Chasse au trésor »
+    {"notebook","Carnet personnel",&Settings::smallHeaderNotebook},
+    {"stats","Statistiques",&Settings::smallHeaderStats}};
 struct Choice { size_t panel=0; Ref menu,item,callback,cached,compositor,owner,service; };
 std::vector<Entry> entries;
 std::vector<Choice> choices;
 Ref soulWindow;
-Method add{},remove{},appendTitle{},appendSeparator{},appendItem{},appendCheckbox{},appendRadio{},setHeaderSize{};
+Method add{},remove{},appendTitle{},appendSeparator{},appendItem{},appendCheckbox{},appendRadio{},setHeaderSize{},insertItem{},removeItemAt{};
+Klass separatorItem=nullptr; // ContextMenuSeparatorItem
 using SubMenuFn=Obj(*)(Obj,Method);
 using AllFn=void(*)(Obj,bool,Method);
 SubMenuFn originalSubMenu=nullptr;
@@ -111,20 +112,32 @@ void RefreshChoices(){
         for(int i=0;i<n;++i){Ref view(api.Call(views.get(),"get_Item",{&i}));if(view.get()&&api.Call(view.get(),"get_itemData")==c.item.get())api.Call(view.get(),"set_isOn",{&on});}
     }
 }
+// The game builds this sub-menu (WidgetManager.CreateHeaderSubMenu) as one
+// checkbox row per game widget, then a separator and its single « Tout réduire »
+// / « Tout agrandir » row, and shows it later. The mod's panels join the widget
+// rows, before that separator, as rows like the game's own: no icon (its rows
+// pass FigmaIcons.none) and the menu kept open.
 Obj SubMenuHook(Obj self,Method method){
     Obj menu=originalSubMenu(self,method);
     try{
         if(!Ready()||!self||!menu)return menu;
         Ref service(module->FindService("frm"));if(!service.get()||api.Field(service.get(),"<dzqi>k__BackingField")!=self)return menu;
-        DropChoices();api.Invoke(appendSeparator,menu);
-        for(size_t i=0;i<std::size(HeaderPanels);++i){
-            Ref rows(api.Call(menu,"get_menuItems"));int index=api.Value<int>(api.Call(rows.get(),"get_Count"));if(index<0||index>256)throw std::runtime_error("Header menu bounds");
+        DropChoices();
+        Ref rows(api.Call(menu,"get_menuItems"));
+        const auto count=[&rows]{int n=api.Value<int>(api.Call(rows.get(),"get_Count"));if(n<0||n>256)throw std::runtime_error("Header menu bounds");return n;};
+        // The place of the game's last separator (the end of a menu without one).
+        int at=count();
+        for(int i=at-1;i>=0;--i){Ref row(api.Call(rows.get(),"get_Item",{&i}));if(row.get()&&api.object_get_class(row.get())==separatorItem){at=i;break;}}
+        for(size_t i=0;i<std::size(HeaderPanels);++i,++at){
             Ref title(api.string_new(HeaderPanels[i].title)),help(api.string_new("Réduire ou agrandir le titre de ce panneau du mod.")),empty(api.string_new(""));
-            bool on=Small(i),disabled=false,close=false;unsigned delay=500;int icon=HeaderPanels[i].icon;
+            bool on=Small(i),disabled=false,close=false;unsigned delay=500;int icon=0;
             api.Invoke(appendCheckbox,menu,{title.get(),nullptr,&on,&disabled,&close,help.get(),&delay,&icon,empty.get()});
-            Ref item(api.Call(rows.get(),"get_Item",{&index}));Ref callback(api.Call(item.get(),"get_m_callback"));
+            int last=count()-1;if(last<at)throw std::runtime_error("Header menu bounds");
+            Ref item(api.Call(rows.get(),"get_Item",{&last}));Ref callback(api.Call(item.get(),"get_m_callback"));
             Choice c;c.panel=i;c.menu.reset(menu);c.item=std::move(item);c.callback=std::move(callback);c.cached.reset(module->cached.get());c.compositor.reset(module->compositor.get());c.owner.reset(self);c.service.reset(service.get());
             choices.push_back(std::move(c));
+            // Appended last, the row moves up to its place (the game's InsertItem gives it its menu again).
+            if(last!=at){Obj row=choices.back().item.get();api.Invoke(removeItemAt,menu,{&last});api.Invoke(insertItem,menu,{&at,row});}
         }
     }catch(const std::exception& error){Log(std::string("TOOL_HEADER_MENU_ERROR ")+error.what());}
     return menu;
@@ -187,6 +200,9 @@ void Install(){if(installed)return;
     appendTitle=api.FindVerified(klass,"AppendTitle",1,0x16D7F70);appendSeparator=api.FindVerified(klass,"AppendSeparator",0,0x16D76E0);appendItem=api.FindVerified(klass,"AppendDefaultItem",13,0x16D6C60);
     appendCheckbox=api.FindVerified(klass,"AppendCheckboxItem",9,0x16D63D0);
     appendRadio=api.FindVerified(klass,"AppendRadioButtonItem",12,0x16D72F0);
+    // "Réduire les titres des modules": the mod's rows move up before the game's separator.
+    insertItem=api.FindVerified(klass,"InsertItem",2,0x16D8850);removeItemAt=api.FindVerified(klass,"RemoveItemAt",1,0x16D8BF0);
+    separatorItem=api.Class("Core.dll",Menus,"ContextMenuSeparatorItem");
     auto extensions=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElementExtensions");add=api.FindVerified(extensions,"AddManipulator",2,0x56755F0);remove=api.FindVerified(extensions,"RemoveManipulator",2,0x5676A90);
     auto window=api.Class("Core.dll","Core.UILogic.Components","MagneticDragWindow");
     setHeaderSize=api.FindVerified(window,"SetHeaderSize",1,0x15B27B0);

@@ -79,10 +79,40 @@ void Click(Obj object){
 void ClickTab(Obj window,const char* text){auto tab=FindType(window,"DofusTab",text);Check(!!tab,"Missing native tab");Get(tab).enums["isOn"]=1;TickNotebookPanel();}
 bool TabOn(Obj window,const char* text){return Get(FindType(window,"DofusTab",text)).enums["isOn"]==1;}
 Obj CloseButton(Obj window){return Get(Get(window).fields.at("header")).fields.at("closeButton");}
-// The buttons after an entry's row, in its line: map pin, copy, travel.
-enum LineButtonIndex : size_t { PinButton=1, CopyButton, TravelButton };
+// The buttons after an entry's row, in its line: map pin, send, prepare, copy, travel.
+enum LineButtonIndex : size_t { PinButton=1, SendButton, PrepareButton, CopyButton, TravelButton };
 Obj LineButton(Obj row,LineButtonIndex index){return Get(Get(row).fields.at("parent")).children.at(index);}
 bool Shown(Obj element){return Get(element).enums["display"]==0;}
+// An element's tooltip, empty without one.
+std::string Tip(Obj element){const auto tip=Get(element).fields.find("set_tooltip");return tip==Get(element).fields.end()?std::string():Get(tip->second).text;}
+Obj FindTip(Obj root,const std::string& tip){
+    if(Tip(root)==tip)return root;
+    for(auto child:Get(root).children)if(auto found=FindTip(child,tip))return found;
+    return nullptr;
+}
+// The status line's row (the last of the window's content) and its text, the
+// notice of an empty tab (right after the new-entry button) and the paging row.
+Obj Footer(Obj window){return Get(Get(Get(FindType(window,"DofusTab","Positions")).fields.at("parent")).fields.at("parent")).children.back();}
+std::string StatusText(Obj window){return Get(Get(Footer(window)).children.front()).text;}
+Obj Notice(Obj window){return Get(Get(FindText(window,"Nouvelle entrée")).fields.at("parent")).children.at(1);}
+Obj Paging(Obj window){return Get(FindTip(window,"Entrées précédentes")).fields.at("parent");}
+const std::string EmptyFull="Aucune entrée ici. Clique sur « Nouvelle entrée » pour commencer.",EmptyCompact="Aucune entrée ici. Passe en Version complète (menu …) pour en créer.";
+// 1.17.1: no entry counter, and none of the hints the status line used to keep.
+bool NoCounter(Obj window){
+    if(FindText(window,"Aucune entrée")||FindText(window,"1 entrée"))return false;
+    for(int count=2;count<=20;++count)if(FindText(window,std::to_string(count)+" entrées"))return false;
+    return true;
+}
+bool NoHint(Obj window){
+    for(const char* hint:{"Choisis une entrée dans la liste de gauche.","Copie les coordonnées d’une position ou lance le trajet avec les boutons de sa ligne.",
+            "Copie les coordonnées d’une position avec le bouton de sa ligne.","Lance le trajet vers une position avec le bouton de sa ligne.",
+            "Clic droit sur une position pour lancer le trajet.","Les boutons de copie et de voyage des positions sont désactivés dans les options du mod.",
+            "Choisis une entrée, puis Copier.","Choisis une entrée, puis Envoyer, Préparer dans le chat ou Copier.",
+            "Entrée sélectionnée. Clique sur Enregistrer après modification.","Nouvelle entrée. Renseigne un titre puis enregistre.",
+            "Le carnet est vide. Clique sur « Nouvelle entrée » pour commencer."})
+        if(FindText(window,hint))return false;
+    return true;
+}
 int main(){
     const auto directory=std::filesystem::temp_directory_path()/("DofusNotebookPanelTests-"+std::to_string(GetCurrentProcessId()));
     try {
@@ -111,10 +141,14 @@ int main(){
         Check(Get(window).enums["set_verticalResizable"]==1&&Get(window).enums["set_horizontalResizable"]==1&&Get(window).enums["set_cornerResizable"]==1,"The notebook window resizes like the game's own windows");
         Check(Count(window,"DofusTab")==3&&TabOn(window,"Positions")&&!TabOn(window,"Notes")&&!TabOn(window,"Messages"),"Three native tabs with Positions selected");
         Check(Get(FindType(window,"DofusTab","Notes")).enums["set_fontCase"]==1&&Get(FindType(window,"DofusTab","Notes")).enums["set_size"]==1,"Tabs use the game's capitalised medium style");
-        Check(Count(window,"DofusButtonCustom")==30&&Count(window,"SectionHeader")==1&&Count(window,"Divider")==1&&Count(window,"ListElementBasic")==9,"Native buttons (eighteen of them the map pin, copy and travel buttons of the six lines), one titled section (the entries list has no header), the tab divider only, six list rows and three world items");
+        Check(Count(window,"DofusButtonCustom")==39&&Count(window,"SectionHeader")==1&&Count(window,"Divider")==1&&Count(window,"ListElementBasic")==9,"Native buttons (thirty of them the map pin, send, prepare, copy and travel buttons of the six lines), one titled section (the entries list has no header), the tab divider only, six list rows and three world items");
         Check(!FindText(window,"Fermer")&&FindText(window,"Nouvelle entrée")&&FindText(window,"Ma position")&&!FindText(window,"Actualiser")&&!FindType(window,"Divider","Utiliser"),"No custom close row, no Actualiser button, no Utiliser separator; native action buttons");
         Check(Get(FindText(window,"Enregistrer")).enums["set_mainStyle"]==0&&Get(FindText(window,"Supprimer")).enums["set_status"]==1&&Get(FindText(window,"Enregistrer")).enums["set_icon"]==148,"Primary save, negative delete, floppy icon");
-        Check(!FindText(window,"Mes entrées")&&FindText(window,"Détail")&&FindText(window,"Aucune entrée"),"No entries header, the detail section title and an empty-list counter");
+        Check(!FindText(window,"Mes entrées")&&FindText(window,"Détail")&&Notice(window)==FindText(window,EmptyFull)&&Shown(Notice(window))&&Get(Notice(window)).type->name=="Label",
+            "No entries header, the detail section title; the empty tab says so inside its list, under the new-entry button");
+        Check(NoCounter(window)&&NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window))&&!Shown(Paging(window)),
+            "No entry counter, no hint, an empty status line taking no room and no paging row for a single page");
+        Check(Get(window).dimensions["width"]==730&&Get(window).dimensions["minHeight"]==300,"The full window can be made shorter: no room is kept for a hint");
         for(const auto* title:{"Détail"}){auto section=FindType(window,"SectionHeader",title);Check(section&&Get(section).enums["set_isOpen"]==1&&Get(section).enums["set_canBeOpened"]==0,"Sections opened while openable, then locked: their content (new-entry button, rows, form) is shown");}
         OpenNotebookPanel();TickNotebookPanel();Check(window==latestWindow,"Open must reuse window");
         owner.settings.notebookButton=false;TickNotebookPanel();
@@ -133,28 +167,54 @@ int main(){
         Check(!travels&&!prepares,"Saving never travels or sends/prepares");
         auto row=FindText(window,"[-25,36]  Mon zaap <b>littéral</b>");
         Check(row&&Get(Get(row).fields["m_textLabel"]).enums["set_enableRichText"]==0,"User text displayed literally");
-        Check(Get(row).enums["set_listElementStyle"]==0&&Get(row).enums["set_icon"]==225&&Get(row).enums["set_isActivated"]==1&&FindText(window,"1 entrée"),"Choice row with the position icon, activated for the saved entry");
-        Check(!FindText(window,"Voyager")&&!Shown(FindText(window,"Copier")),"Positions: no « Voyager » under the form, and « Copier » hidden there");
-        Click(row);Click(LineButton(row,TravelButton));Check(travels==1&&travelled.x==-25,"Explicit travel only, from the position's own line");
+        Check(Get(row).enums["set_listElementStyle"]==0&&Get(row).enums["set_icon"]==225&&Get(row).enums["set_isActivated"]==1&&NoCounter(window)&&
+            !Shown(Paging(window))&&!Shown(Notice(window)),"Choice row with the position icon, activated for the saved entry; no counter, no paging, no empty notice");
+        Check(!FindText(window,"Voyager")&&!FindText(window,"Copier")&&!FindText(window,"Envoyer")&&!FindText(window,"Préparer dans le chat"),
+            "The form has no « Voyager », « Copier », « Envoyer » nor « Préparer dans le chat »: an entry is used from its own line");
+        Check(Shown(LineButton(row,CopyButton))&&Shown(LineButton(row,TravelButton))&&!Shown(LineButton(row,SendButton))&&!Shown(LineButton(row,PrepareButton)),
+            "A position's line: copy and travel buttons, no send nor prepare button");
+        Click(row);Check(NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),"A selection shows in its row and the form: nothing on the status line");
+        Click(LineButton(row,TravelButton));Check(travels==1&&travelled.x==-25,"Explicit travel only, from the position's own line");
         Click(LineButton(row,CopyButton));Check(copies==1&&copied=="[-25,36]","The line's copy button copies the coordinates, as « Copier » did");
         ClickTab(window,"Notes");Check(Get(inputs[3]).enums["set_isMultiline"]==1&&TabOn(window,"Notes")&&!TabOn(window,"Positions"),"Notes use native multiline input and the tab switches");
         Get(inputs[0]).text="Plan";Get(inputs[3]).text="Ligne un\nLigne deux";
         ClickTab(window,"Messages");Check(Get(inputs[0]).text=="Plan"&&!TabOn(window,"Messages")&&TabOn(window,"Notes"),"Unsaved tab change is refused and the tab snaps back without destroying text");
         Click(FindText(window,"Enregistrer"));Check(notebook::Read(path).entries.size()==2,"Multiline note saved");
-        Check(Shown(FindText(window,"Copier"))&&!Shown(LineButton(row,CopyButton))&&!Shown(LineButton(row,TravelButton)),"Notes: « Copier » under the form, no copy or travel button on the lines");
-        Click(FindText(window,"Copier"));Check(copies==2&&copied=="Ligne un\nLigne deux","« Copier » copies the note's text");
-        ClickTab(window,"Messages");Check(TabOn(window,"Messages"),"After saving the tab change goes through");
+        auto plan=FindType(window,"ListElementBasic","Plan");
+        Check(plan&&Shown(LineButton(plan,CopyButton))&&!Shown(LineButton(plan,PinButton))&&!Shown(LineButton(plan,SendButton))&&!Shown(LineButton(plan,PrepareButton))&&
+            !Shown(LineButton(plan,TravelButton))&&Tip(LineButton(plan,CopyButton))=="Copier le texte de cette note dans le presse-papiers.",
+            "Notes: the copy button alone on their lines, telling what it copies");
+        Click(LineButton(plan,CopyButton));Check(copies==2&&copied=="Ligne un\nLigne deux"&&StatusText(window)=="Copié dans le presse-papiers.","The note's own line copies its text");
+        ClickTab(window,"Messages");
+        Check(TabOn(window,"Messages")&&Shown(Notice(window))&&Get(Notice(window)).text==EmptyFull&&NoHint(window)&&StatusText(window).empty(),
+            "After saving the tab change goes through; the empty tab says so in its list, not on the status line");
         Get(inputs[0]).text="Salut";Get(inputs[3]).text="Bonjour groupe";
-        Click(FindText(window,"Enregistrer"));Click(FindText(window,"Préparer dans le chat"));
-        Check(prepares==1&&prepared=="Bonjour groupe","Only explicit prepare action touches draft");
+        Click(FindText(window,"Enregistrer"));
+        auto salut=FindType(window,"ListElementBasic","Salut");
+        Check(salut&&!Shown(Notice(window))&&Shown(LineButton(salut,SendButton))&&Shown(LineButton(salut,PrepareButton))&&Shown(LineButton(salut,CopyButton))&&
+            !Shown(LineButton(salut,PinButton))&&!Shown(LineButton(salut,TravelButton))&&Get(LineButton(salut,SendButton)).enums["set_icon"]==262&&
+            Get(LineButton(salut,PrepareButton)).enums["set_icon"]==78&&Get(LineButton(salut,CopyButton)).enums["set_icon"]==99&&
+            Tip(LineButton(salut,SendButton))=="Envoyer ce message dans le chat (canal actuel)."&&
+            Tip(LineButton(salut,PrepareButton))=="Placer ce message dans le brouillon du chat, sans l’envoyer."&&
+            Tip(LineButton(salut,CopyButton))=="Copier ce message dans le presse-papiers.","Messages: send, prepare and copy buttons on their lines, each with its icon and tooltip");
+        Click(LineButton(salut,PrepareButton));
+        Check(prepares==1&&prepared=="Bonjour groupe"&&!sends&&StatusText(window)=="Ajouté au brouillon du chat. À toi de l’envoyer.","Only the explicit prepare button touches the chat's draft");
         auto channel=FindText(window,"Canal : actuel");
-        Check(!sends&&channel&&Get(channel).type->name=="DofusButtonCustom","Nothing is sent without the explicit button; a message starts on the chat's current channel");
-        Click(channel);Check(Get(channel).text=="Canal : Général","The channel button cycles to the first game channel");
+        Check(channel&&Get(channel).type->name=="DofusButtonCustom","A message starts on the chat's current channel");
+        Check(Tip(channel)=="Canal du chat où le bouton d’envoi de sa ligne envoie ce message, une fois l’entrée enregistrée. Clique pour passer au suivant ; « actuel » garde le canal en cours du chat.",
+            "The channel button's tooltip tells that the line's send button uses it once the entry is saved");
+        Click(channel);
+        Check(Get(channel).text=="Canal : Général"&&StatusText(window)=="Canal choisi : Général. Enregistre l’entrée pour que le bouton d’envoi de sa ligne utilise ce canal.",
+            "The channel button cycles to the first game channel; the status line says the line sends on it only once the entry is saved");
         Click(channel);Click(channel);Check(Get(channel).text=="Canal : Guilde","The channel button cycles through the game's channels");
-        Click(FindText(window,"Envoyer"));Check(sends==1&&sent=="Bonjour groupe"&&sentChannel==4,"Explicit send carries the chosen channel");
-        Click(FindText(window,"Copier"));Check(copies==3&&copied=="Bonjour groupe","Messages keep « Copier »: it copies the message");
+        Click(LineButton(salut,SendButton));
+        Check(sends==1&&sent=="Bonjour groupe"&&sentChannel==0&&StatusText(window)=="Message envoyé dans le chat (canal actuel).",
+            "The line sends its message on the channel saved with it, not on the form's unsaved choice");
+        Click(LineButton(salut,CopyButton));Check(copies==3&&copied=="Bonjour groupe","The message's line copies it");
         Click(FindText(window,"Enregistrer"));Check(notebook::Read(path).entries.back().channel==4,"The channel is saved with the message");
-        Check(FindText(window,"Enregistré dans le carnet.")!=nullptr,"Saving with a channel reports success and keeps the entry selected");
+        Check(FindText(window,"Enregistré dans le carnet.")&&Tip(LineButton(salut,SendButton))=="Envoyer ce message dans le chat (canal Guilde).",
+            "Saving with a channel reports success; the send button names the saved channel");
+        Click(LineButton(salut,SendButton));Check(sends==2&&sentChannel==4&&StatusText(window)=="Message envoyé dans le chat (canal Guilde).","Saved, it is the channel the line sends on");
         Click(FindText(window,"Supprimer"));Check(notebook::Read(path).entries.size()==3,"First delete requires confirmation");
         Click(FindText(window,"Confirmer la suppression"));Check(notebook::Read(path).entries.size()==2,"Confirmed delete");
         Get(inputs[0]).text="Brouillon";Get(inputs[3]).text="À garder";
@@ -196,26 +256,25 @@ int main(){
         Check(latestWindow==window&&Panel(window)&&Get(window).fields["parent"]==middle&&Get(window).dimensions["left"]==230&&Get(window).dimensions["top"]==140,
             "The same window stays where it was dragged: no rebuild, no position reset");
         auto detail=FindType(window,"SectionHeader","Détail"),add=FindText(window,"Nouvelle entrée"),entries=Get(add).fields.at("parent");
-        Check(Get(window).dimensions["width"]==360&&Get(window).dimensions["minWidth"]==300&&Get(Get(detail).fields.at("parent")).enums["display"]==1&&Get(add).enums["display"]==1,
-            "Compact: narrow window, hidden editor, no new-entry button");
-        auto channelRow=Get(FindText(window,"Canal : actuel")).fields.at("parent"),useRow=Get(FindText(window,"Copier")).fields.at("parent");
+        Check(Get(window).dimensions["width"]==360&&Get(window).dimensions["minWidth"]==300&&Get(window).dimensions["minHeight"]==180&&
+            Get(Get(detail).fields.at("parent")).enums["display"]==1&&Get(add).enums["display"]==1,"Compact: narrow window, shorter minimum height, hidden editor, no new-entry button");
         const auto& listed=Get(entries).children;
-        Check(listed.size()>=3&&listed[listed.size()-2]==channelRow&&listed.back()==useRow&&!FindText(detail,"Copier")&&!FindText(detail,"Canal : actuel"),
-            "Compact: the channel and use actions sit under the entries list");
-        Check(FindText(window,"Copie les coordonnées d’une position ou lance le trajet avec les boutons de sa ligne.")&&Get(savedRow).enums["set_isActivated"]==1,
-            "Compact status names the buttons of the position lines; the entry stays selected");
+        Check(listed.size()==9&&listed[1]==Notice(window)&&listed.back()==Paging(window)&&FindText(detail,"Canal : actuel")&&FindText(detail,"Enregistrer"),
+            "Compact: under the entries only their notice and paging; the channel and the save actions stay in the hidden form");
+        Check(NoHint(window)&&NoCounter(window)&&StatusText(window).empty()&&!Shown(Footer(window))&&Get(savedRow).enums["set_isActivated"]==1,
+            "Compact: no hint on the status line, which takes no room; the entry stays selected");
         const auto travelsBefore=travels;Click(LineButton(savedRow,TravelButton));Check(travels==travelsBefore+1&&travelled.x==-25,"Compact travel from the position's own line");
         menu=OpenMenu(window);Check(Get(menu.rows[4]).enums["isOn"]==0&&Get(menu.rows[5]).enums["isOn"]==1,"The mark follows the compact layout");
         Check(Pick(menu,5)&&owner.settings.notebookCompact&&latestWindow==window&&!Panel(menu.root),"The current layout's row only closes the menu");
         Check(toolsUi::ChooseLayout("notebook",1)&&owner.settings.notebookCompact&&latestWindow==window,"Choosing the current layout changes nothing");
         menu=OpenMenu(window);
         Check(Pick(menu,4)&&!owner.settings.notebookCompact&&latestWindow==window&&Panel(window),"« Version complète » from the menu restores the full layout in the same window");
-        auto slot=Get(channelRow).fields.at("parent"),editor=Get(useRow).fields.at("parent"),actions=Get(FindText(window,"Enregistrer")).fields.at("parent");
-        Check(Get(window).dimensions["width"]==730&&Get(window).dimensions["minWidth"]==630&&Get(Get(detail).fields.at("parent")).enums["display"]==0&&Get(add).enums["display"]==0,
-            "Full layout restored: wide window, editor and new-entry button shown");
-        Check(Get(slot).fields.at("parent")==editor&&Get(actions).fields.at("parent")==editor&&IndexIn(editor,slot)<IndexIn(editor,actions)&&Get(editor).children.back()==useRow&&FindText(detail,"Copier"),
-            "Full: the channel row is back above the save actions and the use actions at the end of the editor");
-        Check(FindText(window,"Choisis une entrée dans la liste de gauche.")!=nullptr,"Full status explains the layout");
+        auto channelRow=Get(FindText(window,"Canal : actuel")).fields.at("parent"),actions=Get(FindText(window,"Enregistrer")).fields.at("parent"),editor=Get(actions).fields.at("parent");
+        Check(Get(window).dimensions["width"]==730&&Get(window).dimensions["minWidth"]==630&&Get(window).dimensions["minHeight"]==300&&
+            Get(Get(detail).fields.at("parent")).enums["display"]==0&&Get(add).enums["display"]==0,"Full layout restored: wide window, shorter minimum height, editor and new-entry button shown");
+        Check(Get(channelRow).fields.at("parent")==editor&&IndexIn(editor,channelRow)+1==IndexIn(editor,actions)&&Get(editor).children.back()==actions&&
+            !FindText(window,"Copier")&&!FindText(window,"Envoyer")&&!FindText(window,"Préparer dans le chat"),"Full: the channel row right above the save actions, which end the form");
+        Check(NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),"Full: no hint on the status line either, which takes no room");
         Check(Get(window).dimensions["left"]==230&&Get(window).dimensions["top"]==140,"A window inside the screen keeps its position");
         Check(std::none_of(logs.begin(),logs.end(),[](const std::string& line){return line.starts_with("TOOL_PANEL_");}),"The notebook menu is populated and dispatched without error");
         // A pending delete confirmation does not survive a layout change.
@@ -229,23 +288,32 @@ int main(){
         Check(toolsUi::ChooseLayout("notebook",1),"Compact from the Notes tab");TickNotebookPanel();
         Check(TabOn(window,"Notes")&&!TabOn(window,"Positions")&&Get(noteRow).enums["set_isActivated"]==1&&Get(window).dimensions["left"]==230&&Get(window).dimensions["top"]==140,
             "Compact keeps the Notes tab, its entry and the dragged position");
+        // An empty tab says so inside its list, with how to create an entry in each layout.
+        ClickTab(window,"Messages");
+        Check(Shown(Notice(window))&&Get(Notice(window)).text==EmptyCompact&&NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),
+            "Compact: the notice of the empty tab names the full layout; the status line stays empty");
+        Check(toolsUi::ChooseLayout("notebook",0)&&Shown(Notice(window))&&Get(Notice(window)).text==EmptyFull,"Full: the notice names the new-entry button");
+        Check(toolsUi::ChooseLayout("notebook",1)&&Get(Notice(window)).text==EmptyCompact,"The notice follows the layout");
+        ClickTab(window,"Notes");Check(!Shown(Notice(window)),"A tab with entries has no notice");Click(noteRow);
         Check(toolsUi::ChooseLayout("notebook",0),"Full from the Notes tab");TickNotebookPanel();
         Check(TabOn(window,"Notes")&&Get(inputs[0]).text=="Plan"&&Get(noteRow).enums["set_isActivated"]==1,"Full keeps the Notes tab and its entry");
         // A compact window docked at the right and bottom edges stays inside the screen in the wider layout.
-        Check(toolsUi::ChooseLayout("notebook",1),"Compact before docking");Get(window).dimensions["left"]=1280-360;Get(window).dimensions["top"]=720-240;
-        Check(toolsUi::ChooseLayout("notebook",0)&&Get(window).dimensions["left"]==1280-730&&Get(window).dimensions["top"]==720-360,"The full layout is moved back inside the screen");
+        Check(toolsUi::ChooseLayout("notebook",1),"Compact before docking");Get(window).dimensions["left"]=1280-360;Get(window).dimensions["top"]=720-180;
+        Check(toolsUi::ChooseLayout("notebook",0)&&Get(window).dimensions["left"]==1280-730&&Get(window).dimensions["top"]==720-300,
+            "The full layout is moved back inside the screen by its width and its (lower) minimum height");
         // A window opened while the compact layout is saved is built compact.
         Check(toolsUi::ChooseLayout("notebook",1),"Compact again");Click(CloseButton(window));TickNotebookPanel();Check(!Panel(window),"Compact window closed");
         OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
-        Check(Panel(window)&&Get(window).dimensions["width"]==360&&Get(Get(FindText(window,"Copier")).fields.at("parent")).fields.at("parent")==Get(FindText(window,"Nouvelle entrée")).fields.at("parent"),
-            "A window opened in the compact layout is built compact");
+        Check(Panel(window)&&Get(window).dimensions["width"]==360&&Get(window).dimensions["minHeight"]==180&&Get(Get(FindText(window,"Nouvelle entrée")).fields.at("parent")).children.size()==9&&
+            NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),"A window opened in the compact layout is built compact, with no hint");
         // An unreadable notebook keeps its warning across layout and tab changes.
         RestoreNotebookPanel();owner.settings.notebookCompact=false;
         const auto backup=directory/"notebook-backup.json";std::filesystem::copy_file(path,backup,std::filesystem::copy_options::overwrite_existing);
         {std::ofstream corrupt(path,std::ios::binary|std::ios::trunc);corrupt<<"{";}
         OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
         const std::string unreadable="Carnet illisible. Le fichier est conservé ; il sera relu dès qu’il aura été corrigé.";
-        Check(FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"An unreadable notebook is reported at opening, saving disabled");
+        Check(FindText(window,unreadable)&&Shown(Footer(window))&&!Shown(Notice(window))&&!Get(FindText(window,"Enregistrer")).enabled,
+            "An unreadable notebook is reported at opening, saving disabled; its empty list claims no « Aucune entrée »");
         Check(toolsUi::ChooseLayout("notebook",1)&&latestWindow==window&&FindText(window,unreadable),"The warning survives the compact layout");
         Check(toolsUi::ChooseLayout("notebook",0)&&FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"The warning survives the return to the full layout");
         ClickTab(window,"Notes");Check(FindText(window,unreadable)!=nullptr,"The warning survives a tab change");
@@ -267,7 +335,7 @@ int main(){
         Check(Get(Get(zaap).fields.at("set_tooltip")).text=="Clic droit : Voyager, Afficher sur la carte ou Retirer de la carte.","A position's row tells its right-click menu");
         auto line=Get(zaap).fields.at("parent");auto pin=LineButton(zaap,PinButton);
         Check(Get(pin).type->name=="DofusButtonCustom"&&Get(pin).enums["set_icon"]==145&&Get(pin).enums["display"]==0&&Get(pin).enums["set_mainStyle"]==2&&Get(line).children.front()==zaap&&
-            Get(line).children.size()==4,"A flat flag button at the right of the position's name, before its copy and travel buttons");
+            Get(line).children.size()==6,"A flat flag button at the right of the position's name, before its other line buttons");
         const auto zaapId=notebook::Read(path).entries.front().id;
         Click(pin);
         Check(pinShows==1&&pinned.contains(zaapId)&&Get(pin).enums["set_mainStyle"]==0&&FindText(window,"Repère placé sur la carte en [-25,36] : grande carte et mini-carte."),
@@ -293,7 +361,8 @@ int main(){
         CheckNotebookPanel();notebook::Save(path,other);TickNotebookPanel();
         Check(!FindText(window,"[3,4]  Ajoutée ailleurs"),"Within the half second the file is not read again");
         Sleep(550);TickNotebookPanel();
-        Check(FindText(window,"[3,4]  Ajoutée ailleurs")&&FindText(window,"Carnet mis à jour : le fichier a changé.")&&FindText(window,"2 entrées"),"Half a second later the position saved elsewhere appears");
+        Check(FindText(window,"[3,4]  Ajoutée ailleurs")&&FindText(window,"Carnet mis à jour : le fichier a changé.")&&NoCounter(window)&&!Shown(Paging(window)),
+            "Half a second later the position saved elsewhere appears (no counter; two entries need no paging)");
         // A pinned position moves its flag when saved here or elsewhere.
         Click(pin);Click(zaap);Get(inputs[0]).text="Mon zaap déplacé";Get(inputs[1]).text="-24";Click(FindText(window,"Enregistrer"));
         Check(pinShows==3&&pinnedEntry.id==zaapId&&pinnedEntry.title=="Mon zaap déplacé"&&pinnedEntry.x==-24&&pinned.contains(zaapId)&&FindText(window,"Enregistré dans le carnet."),
@@ -330,6 +399,11 @@ int main(){
         notebook::Entry third;third.kind=notebook::Kind::Position;third.title="Pendant un verrou";third.x=5;third.y=6;third.world=1;notebook::Save(path,third);
         const auto held=CreateFileW(path.c_str(),GENERIC_READ,0,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);Check(held!=INVALID_HANDLE_VALUE,"Fixture exclusive handle");
         CheckNotebookPanel();Check(FindText(window,unreadable)&&!Get(FindText(window,"Enregistrer")).enabled,"A file held by another program is told, saving disabled");
+        // Meanwhile a feedback has its time on the status line, then the warning comes back and stays.
+        Click(LineButton(FindText(window,"[3,4]  Ajoutée ailleurs"),CopyButton));CheckNotebookPanel();
+        Check(StatusText(window)=="Copié dans le presse-papiers."&&copied=="[3,4]","A line button still works and is told while the file stays unreadable");
+        Sleep(5500);TickNotebookPanel();Check(StatusText(window)==unreadable&&Shown(Footer(window)),"Its time up (5.2 s for this line), the warning comes back");
+        CheckNotebookPanel();Check(StatusText(window)==unreadable,"The warning stays while the file is unreadable");
         CloseHandle(held);CheckNotebookPanel();
         Check(!FindText(window,unreadable)&&Get(FindText(window,"Enregistrer")).enabled&&FindText(window,"[5,6]  Pendant un verrou"),"Released, it is read again at the next check though unchanged");
         // A recreated file numbers from 1 again: another position taking a pinned id does not get its pin.
@@ -353,39 +427,50 @@ int main(){
         Check(tipRow&&Get(Get(tipRow).fields.at("set_tooltip")).text=="Clic droit : Voyager."&&Get(LineButton(tipRow,PinButton)).enums["display"]==1,
             "Without the game's flags the menu only travels and no pin button shows");
         RestoreNotebookPanel();pinsAvailable=true;
-        // r116: each position's line has its copy and travel buttons after its
-        // pin, in both layouts. They act on that line's position only, paging
-        // included: the selection, the form and an unsaved draft stay. Their
-        // options show or hide them at once; « Voyager » and « Copier » left the
-        // form for positions, « Copier » stays for notes and messages.
+        // r116, 1.17.1: each line has its small buttons after its row, in both
+        // layouts: a position's pin, copy and travel buttons, a note's copy
+        // button, a message's send, prepare and copy buttons. They act on that
+        // line's entry as saved, paging included: the selection, the form and an
+        // unsaved draft stay. Their options show or hide them at once; the form
+        // has no « Voyager », « Copier », « Envoyer » nor « Préparer dans le chat ».
         for(int i=1;i<=7;++i){notebook::Entry step;step.kind=notebook::Kind::Position;step.title="Étape "+std::to_string(i);step.x=10+i;step.y=-i;step.world=1;notebook::Save(path,step);}
+        {notebook::Entry planEntry;planEntry.kind=notebook::Kind::Note;planEntry.title="Plan";planEntry.body="Ligne un\nLigne deux";notebook::Save(path,planEntry);}
         {notebook::Entry noteEntry;noteEntry.kind=notebook::Kind::Note;noteEntry.title="Pense-bête";noteEntry.body="Acheter du pain";notebook::Save(path,noteEntry);}
         {notebook::Entry messageEntry;messageEntry.kind=notebook::Kind::Message;messageEntry.title="Salut";messageEntry.body="Bonjour à tous";notebook::Save(path,messageEntry);}
+        {notebook::Entry guildEntry;guildEntry.kind=notebook::Kind::Message;guildEntry.title="Guilde";guildEntry.body="Réunion ce soir";guildEntry.channel=4;notebook::Save(path,guildEntry);}
+        for(int i=3;i<=7;++i){notebook::Entry more;more.kind=notebook::Kind::Message;more.title="Message "+std::to_string(i);more.body="Texte "+std::to_string(i);more.channel=i==7?16:0;notebook::Save(path,more);}
         owner.settings.notebookCompact=false;OpenNotebookPanel();TickNotebookPanel();window=latestWindow;inputs=Inputs(window);
         auto firstRow=FindText(window,"[7,7]  Info-bulle"),secondRow=FindText(window,"[11,-1]  Étape 1"),thirdRow=FindText(window,"[12,-2]  Étape 2");
-        Check(Panel(window)&&firstRow&&secondRow&&thirdRow&&FindText(window,"8 entrées")&&!FindText(window,"Voyager"),"Eight positions on two pages, and no « Voyager » button");
+        auto paging=Paging(window);
+        Check(Panel(window)&&firstRow&&secondRow&&thirdRow&&NoCounter(window)&&NoHint(window)&&Shown(paging)&&!Shown(Notice(window))&&!FindText(window,"Voyager"),
+            "Eight positions on two pages: the paging row, no counter, no hint, no « Voyager » button");
+        Check(Get(paging).children.size()==3&&Get(paging).children.front()==FindTip(window,"Entrées précédentes")&&Get(paging).children.back()==FindTip(window,"Entrées suivantes")&&
+            Get(Get(paging).children.at(1)).dimensions["flexGrow"]==1&&!Get(Get(paging).children.front()).enabled&&Get(Get(paging).children.back()).enabled,
+            "The arrows at both ends of the paging row (previous disabled on the first page), a gap between them in place of the counter");
         auto positionList=Get(Get(firstRow).fields.at("parent")).fields.at("parent");
         Check(Get(Get(positionList).fields.at("parent")).dimensions["width"]==320&&Get(window).dimensions["width"]==730,
             "The list column has room for a name and its three buttons; the window grew as much, the editor keeps its width");
-        // Every line (after the new-entry button) shows, or hides, this button.
+        // Every line (after the new-entry button and the notice of an empty tab) shows, or hides, this button.
         const auto allLines=[&](LineButtonIndex index,bool shown){
-            for(size_t i=1;i<=6;++i)if(Shown(Get(Get(positionList).children.at(i)).children.at(index))!=shown)return false;
+            for(size_t i=2;i<2+6;++i)if(Shown(Get(Get(positionList).children.at(i)).children.at(index))!=shown)return false;
             return true;
         };
         for(auto entryRow:{firstRow,secondRow,thirdRow}){
             auto entryLine=Get(entryRow).fields.at("parent");
-            Check(Get(entryLine).children.size()==4&&Get(entryLine).children.front()==entryRow,"A position's line: its row, then the pin, copy and travel buttons");
-            for(auto button:{LineButton(entryRow,PinButton),LineButton(entryRow,CopyButton),LineButton(entryRow,TravelButton)})
+            Check(Get(entryLine).children.size()==6&&Get(entryLine).children.front()==entryRow,"A line: its row, then the pin, send, prepare, copy and travel buttons");
+            for(auto button:{LineButton(entryRow,PinButton),LineButton(entryRow,SendButton),LineButton(entryRow,PrepareButton),LineButton(entryRow,CopyButton),LineButton(entryRow,TravelButton)})
                 Check(Get(button).type->name=="DofusButtonCustom"&&Get(button).enums["set_size"]==0&&Get(button).enums["set_mainStyle"]==2&&Get(button).text.empty()&&
                     Get(button).dimensions["marginLeft"]==4&&Get(button).dimensions["marginRight"]==0&&Get(button).dimensions["marginBottom"]==0&&
-                    Get(button).dimensions["flexShrink"]==0&&Shown(button),"The copy and travel buttons are small, flat and icon only, like the pin");
+                    Get(button).dimensions["flexShrink"]==0,"The line buttons are small, flat and icon only, like the pin");
+            Check(Shown(LineButton(entryRow,PinButton))&&Shown(LineButton(entryRow,CopyButton))&&Shown(LineButton(entryRow,TravelButton))&&
+                !Shown(LineButton(entryRow,SendButton))&&!Shown(LineButton(entryRow,PrepareButton)),"A position's line shows its pin, copy and travel buttons");
             Check(Get(LineButton(entryRow,CopyButton)).enums["set_icon"]==99&&Get(LineButton(entryRow,TravelButton)).enums["set_icon"]==336&&
-                Get(Get(LineButton(entryRow,CopyButton)).fields.at("set_tooltip")).text=="Copier les coordonnées de cette position dans le presse-papiers."&&
-                Get(Get(LineButton(entryRow,TravelButton)).fields.at("set_tooltip")).text=="Lancer le trajet vers cette position : zaaps, bateaux puis /travel.",
+                Tip(LineButton(entryRow,CopyButton))=="Copier les coordonnées de cette position dans le presse-papiers."&&
+                Tip(LineButton(entryRow,TravelButton))=="Lancer le trajet vers cette position : zaaps, bateaux puis /travel.",
                 "The copy icon, then the zaap icon, each with its tooltip");
         }
-        Check(allLines(CopyButton,true)&&allLines(TravelButton,true)&&!Shown(FindText(window,"Copier")),"Positions: the buttons on every line, no « Copier » under the form");
-        const auto formCopies=copies;Click(FindText(window,"Copier"));Check(copies==formCopies,"Positions: the form's hidden « Copier » copies nothing");
+        Check(allLines(CopyButton,true)&&allLines(TravelButton,true)&&allLines(SendButton,false)&&allLines(PrepareButton,false),
+            "Positions: the copy and travel buttons on every line, no send nor prepare button");
         // A click acts on its own line: the selection, the form and an unsaved draft stay.
         Click(firstRow);Get(inputs[0]).text="Brouillon r116";
         const auto copiesBefore=copies,travelsBefore2=travels;
@@ -406,8 +491,9 @@ int main(){
         Check(Get(inputs[0]).text=="Brouillon r116"&&Get(firstRow).enums["set_isActivated"]==1&&FindText(window,"Modifications non enregistrées. Enregistre-les ou reclique pour les abandonner."),
             "After the copy button too, the row click asks again");
         // Page two: each button acts on the position its line shows.
-        auto paging=Get(FindText(window,"8 entrées")).fields.at("parent");Click(Get(paging).children.back());
-        Check(FindText(window,"[16,-6]  Étape 6")==firstRow&&FindText(window,"[17,-7]  Étape 7")==secondRow&&!Shown(Get(thirdRow).fields.at("parent")),"Page two: Étape 6 and 7 on the first two lines");
+        Click(Get(paging).children.back());
+        Check(FindText(window,"[16,-6]  Étape 6")==firstRow&&FindText(window,"[17,-7]  Étape 7")==secondRow&&!Shown(Get(thirdRow).fields.at("parent"))&&Shown(paging)&&
+            Get(Get(paging).children.front()).enabled&&!Get(Get(paging).children.back()).enabled,"Page two: Étape 6 and 7 on the first two lines, previous enabled and next disabled");
         Click(LineButton(secondRow,TravelButton));Click(LineButton(firstRow,CopyButton));
         Check(travelled.title=="Étape 7"&&travelled.x==17&&copied=="[16,-6]"&&FindText(window,"Copié dans le presse-papiers.")&&Get(inputs[0]).text=="Brouillon r116"&&
             Get(firstRow).enums["set_isActivated"]==0&&Get(secondRow).enums["set_isActivated"]==0,"Page two: each button acts on its own line; nothing gets selected");
@@ -420,7 +506,7 @@ int main(){
         // The options show or hide the buttons at once, each its own.
         owner.settings.notebookCopyButton=false;TickNotebookPanel();
         Check(allLines(CopyButton,false)&&allLines(TravelButton,true)&&Shown(LineButton(firstRow,PinButton)),"Copy option off: no copy button, at once; travel and pin stay");
-        Check(FindText(window,"Trajet indisponible pendant un combat.")!=nullptr,"Full layout: an option change leaves the status line as it was (it names no line button)");
+        Check(FindText(window,"Trajet indisponible pendant un combat.")!=nullptr,"An option change leaves the status line as it was (it names no line button)");
         const auto hiddenCopies=copies;Click(LineButton(firstRow,CopyButton));Check(copies==hiddenCopies,"A hidden copy button does nothing");
         owner.settings.notebookTravelButton=false;TickNotebookPanel();
         Check(allLines(CopyButton,false)&&allLines(TravelButton,false)&&Shown(LineButton(firstRow,PinButton)),"Travel option off: no travel button, at once");
@@ -431,51 +517,111 @@ int main(){
         {const auto staleCopies=copies,staleTravels=travels;owner.cached.reset(Make("OtherCache"));
             Click(LineButton(firstRow,CopyButton));Click(LineButton(firstRow,TravelButton));owner.cached.reset(Get(dependencies).fields["cached"]);
             Check(copies==staleCopies&&travels==staleTravels&&Panel(window),"A stale panel's line buttons do nothing");}
-        // Notes and messages: no line buttons; « Copier » stays under their form.
+        // Notes: the copy button alone, acting on its own line; the selection and the form stay.
         Get(inputs[0]).text="Info-bulle";ClickTab(window,"Notes");
-        Check(TabOn(window,"Notes")&&allLines(CopyButton,false)&&allLines(TravelButton,false)&&Shown(FindText(window,"Copier")),"Notes: no copy or travel button on the lines; « Copier » under the form");
-        Click(FindType(window,"ListElementBasic","Pense-bête"));Click(FindText(window,"Copier"));
-        Check(copied=="Acheter du pain"&&FindText(window,"Copié dans le presse-papiers."),"« Copier » copies the note's text");
-        ClickTab(window,"Messages");Click(FindType(window,"ListElementBasic","Salut"));Click(FindText(window,"Copier"));
-        Check(allLines(CopyButton,false)&&allLines(TravelButton,false)&&copied=="Bonjour à tous"&&Shown(FindText(window,"Envoyer"))&&Shown(FindText(window,"Préparer dans le chat")),
-            "Messages: no line buttons; Envoyer, Préparer dans le chat and Copier under the form");
+        auto planRow=FindType(window,"ListElementBasic","Plan"),penseRow=FindType(window,"ListElementBasic","Pense-bête");
+        Check(TabOn(window,"Notes")&&planRow&&penseRow&&allLines(CopyButton,true)&&allLines(TravelButton,false)&&allLines(SendButton,false)&&allLines(PrepareButton,false)&&
+            allLines(PinButton,false)&&!Shown(paging)&&NoHint(window)&&NoCounter(window)&&StatusText(window).empty(),
+            "Notes: the copy button alone on their lines; a single page, no paging, no hint");
+        Click(planRow);Get(inputs[0]).text="Brouillon de note";
+        const auto noteCopies=copies;Click(LineButton(penseRow,CopyButton));
+        Check(copies==noteCopies+1&&copied=="Acheter du pain"&&StatusText(window)=="Copié dans le presse-papiers."&&Shown(Footer(window))&&Get(inputs[0]).text=="Brouillon de note"&&
+            Get(planRow).enums["set_isActivated"]==1&&Get(penseRow).enums["set_isActivated"]==0,"A note's copy button copies its own text; the selection and the draft stay");
+        // Messages: send, prepare and copy, each on its own line's message as saved.
+        Get(inputs[0]).text="Plan";ClickTab(window,"Messages");
+        auto salutRow=FindType(window,"ListElementBasic","Salut"),guildRow=FindType(window,"ListElementBasic","Guilde");
+        Check(TabOn(window,"Messages")&&salutRow&&guildRow&&allLines(SendButton,true)&&allLines(PrepareButton,true)&&allLines(CopyButton,true)&&allLines(TravelButton,false)&&
+            allLines(PinButton,false)&&NoHint(window)&&StatusText(window).empty()&&Shown(paging),"Messages: the send, prepare and copy buttons on their lines, no hint; seven messages on two pages");
+        Check(Tip(LineButton(salutRow,SendButton))=="Envoyer ce message dans le chat (canal actuel)."&&Tip(LineButton(guildRow,SendButton))=="Envoyer ce message dans le chat (canal Guilde)."&&
+            Tip(LineButton(guildRow,CopyButton))=="Copier ce message dans le presse-papiers.","Each send button names the channel its message is saved with");
+        Click(salutRow);Get(inputs[3]).text="Brouillon de message";Click(FindText(window,"Canal : actuel"));
+        const auto sendsBefore=sends,preparesBefore=prepares,messageCopies=copies;
+        Click(LineButton(guildRow,SendButton));
+        Check(sends==sendsBefore+1&&sent=="Réunion ce soir"&&sentChannel==4&&StatusText(window)=="Message envoyé dans le chat (canal Guilde)."&&Get(inputs[3]).text=="Brouillon de message"&&
+            Get(salutRow).enums["set_isActivated"]==1&&Get(guildRow).enums["set_isActivated"]==0,"A message's send button sends its own text on its saved channel; the selection and the draft stay");
+        Click(LineButton(salutRow,SendButton));
+        Check(sends==sendsBefore+2&&sent=="Bonjour à tous"&&sentChannel==0&&Get(inputs[3]).text=="Brouillon de message"&&FindText(window,"Canal : Général"),
+            "The selected message is sent as saved too: neither the form's text nor its unsaved channel");
+        Click(LineButton(guildRow,PrepareButton));
+        Check(prepares==preparesBefore+1&&prepared=="Réunion ce soir"&&sends==sendsBefore+2&&StatusText(window)=="Ajouté au brouillon du chat. À toi de l’envoyer.",
+            "The prepare button places its own message in the chat's draft, without sending it");
+        Click(LineButton(guildRow,CopyButton));
+        Check(copies==messageCopies+1&&copied=="Réunion ce soir"&&StatusText(window)=="Copié dans le presse-papiers.","The copy button copies its own message");
+        // Page two: each button acts on the message its line shows.
+        Click(Get(paging).children.back());
+        Check(FindType(window,"ListElementBasic","Message 7")==salutRow&&!Shown(Get(guildRow).fields.at("parent"))&&Tip(LineButton(salutRow,SendButton))=="Envoyer ce message dans le chat (canal Groupe).",
+            "Messages page two: Message 7 on the first line, its send button naming its channel");
+        Click(LineButton(salutRow,SendButton));Click(LineButton(salutRow,PrepareButton));Click(LineButton(salutRow,CopyButton));
+        Check(sent=="Texte 7"&&sentChannel==16&&prepared=="Texte 7"&&copied=="Texte 7"&&Get(inputs[3]).text=="Brouillon de message"&&Get(salutRow).enums["set_isActivated"]==0,
+            "Page two: send, prepare and copy act on the message their line shows; nothing gets selected and the draft stays");
+        {const auto emptySends=sends,emptyPrepares=prepares;Click(LineButton(guildRow,SendButton));Click(LineButton(guildRow,PrepareButton));
+            Check(sends==emptySends&&prepares==emptyPrepares,"The send and prepare buttons of an empty line do nothing");}
+        Click(Get(paging).children.front());
+        Check(FindType(window,"ListElementBasic","Salut")==salutRow&&Get(salutRow).enums["set_isActivated"]==1&&Get(inputs[3]).text=="Brouillon de message",
+            "Back on page one, the selected message is still the one in the form");
+        // After a line button the next row click asks again; a status line goes after a few seconds and takes its room with it.
+        Click(guildRow);
+        const std::string prompt="Modifications non enregistrées. Enregistre-les ou reclique pour les abandonner.";
+        Check(Get(inputs[3]).text=="Brouillon de message"&&StatusText(window)==prompt&&Shown(Footer(window)),"A message draft asks before being dropped");
+        TickNotebookPanel();Check(StatusText(window)==prompt&&Shown(Footer(window)),"A tick within its time keeps the status line");
+        Sleep(7500);TickNotebookPanel(); // 7.2 s for this line: 4 s, and 40 ms a byte
+        Check(StatusText(window).empty()&&!Shown(Footer(window))&&Get(inputs[3]).text=="Brouillon de message"&&Get(salutRow).enums["set_isActivated"]==1,
+            "Its time up, the status line goes and takes no room; the draft and the selection stay");
+        Click(guildRow);
+        Check(Get(inputs[3]).text=="Brouillon de message"&&StatusText(window)==prompt,"Once the question is gone, the next click asks again instead of dropping the draft");
+        // A panel of a replaced game session: its message buttons do nothing.
+        {const auto staleSends=sends,stalePrepares=prepares,staleCopies=copies;owner.cached.reset(Make("OtherCache"));
+            Click(LineButton(guildRow,SendButton));Click(LineButton(guildRow,PrepareButton));Click(LineButton(guildRow,CopyButton));owner.cached.reset(Get(dependencies).fields["cached"]);
+            Check(sends==staleSends&&prepares==stalePrepares&&copies==staleCopies&&Panel(window),"A stale panel's message buttons do nothing");}
+        // Their options show or hide them at once: the send option the send and
+        // prepare buttons, the copy option the copy buttons of every tab.
+        owner.settings.notebookSendButtons=false;TickNotebookPanel();
+        Check(allLines(SendButton,false)&&allLines(PrepareButton,false)&&allLines(CopyButton,true),"Send option off: no send nor prepare button, at once; copy stays");
+        {const auto hiddenSends=sends,hiddenPrepares=prepares;Click(LineButton(guildRow,SendButton));Click(LineButton(guildRow,PrepareButton));
+            Check(sends==hiddenSends&&prepares==hiddenPrepares,"Hidden send and prepare buttons do nothing");}
+        owner.settings.notebookCopyButton=false;TickNotebookPanel();
+        Check(allLines(CopyButton,false)&&allLines(SendButton,false),"Copy option off too: a message's line has no button left");
+        {const auto hiddenMessageCopies=copies;Click(LineButton(guildRow,CopyButton));Check(copies==hiddenMessageCopies,"A hidden copy button does nothing");}
+        owner.settings.notebookSendButtons=owner.settings.notebookCopyButton=true;TickNotebookPanel();
+        Check(allLines(SendButton,true)&&allLines(PrepareButton,true)&&allLines(CopyButton,true),"Both options on again: the buttons are back without reopening the window");
+        Click(guildRow);Check(Get(inputs[3]).text=="Réunion ce soir"&&Get(guildRow).enums["set_isActivated"]==1,"The confirming click drops the draft and selects the entry");
         ClickTab(window,"Positions");
-        Check(allLines(CopyButton,true)&&allLines(TravelButton,true)&&!Shown(FindText(window,"Copier")),"Back to Positions: the line buttons, and no « Copier » under the form");
-        // The compact layout: the same buttons on the lines, named by its status.
+        Check(allLines(CopyButton,true)&&allLines(TravelButton,true)&&allLines(SendButton,false)&&allLines(PrepareButton,false)&&Shown(paging),
+            "Back to Positions: their copy and travel buttons, and the paging of their two pages");
+        // The compact layout: the same buttons on the lines, no hint, nothing under the list.
         Check(toolsUi::ChooseLayout("notebook",1)&&Get(window).dimensions["width"]==360,"Compact layout");
-        Check(allLines(CopyButton,true)&&allLines(TravelButton,true)&&!Shown(FindText(window,"Copier"))&&
-            FindText(window,"Copie les coordonnées d’une position ou lance le trajet avec les boutons de sa ligne."),"Compact: the buttons on every line, named by the status");
+        Check(allLines(CopyButton,true)&&allLines(TravelButton,true)&&NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),
+            "Compact: the buttons on every line, no hint, an empty status line taking no room");
         Click(LineButton(secondRow,CopyButton));Click(LineButton(thirdRow,TravelButton));
-        Check(copied=="[11,-1]"&&travelled.title=="Étape 2"&&FindText(window,"Trajet demandé vers [12,-2]."),"Compact: each button acts on its own line");
-        // The compact status follows the options at once, like the buttons it names; a tick without an option change keeps it.
-        TickNotebookPanel();Check(FindText(window,"Trajet demandé vers [12,-2].")!=nullptr,"Compact: a tick without an option change keeps the status line");
+        Check(copied=="[11,-1]"&&travelled.title=="Étape 2"&&StatusText(window)=="Trajet demandé vers [12,-2]."&&Shown(Footer(window)),"Compact: each button acts on its own line, told on the status line");
+        TickNotebookPanel();Check(StatusText(window)=="Trajet demandé vers [12,-2].","Compact: a tick within its time keeps the status line");
         owner.settings.notebookCopyButton=owner.settings.notebookTravelButton=false;TickNotebookPanel();
-        Check(allLines(CopyButton,false)&&allLines(TravelButton,false)&&FindText(window,"Clic droit sur une position pour lancer le trajet.")&&
-            !FindText(window,"Copie les coordonnées d’une position ou lance le trajet avec les boutons de sa ligne."),"Compact: both options off, the status no longer names the line buttons, at once");
-        owner.settings.notebookCopyButton=true;TickNotebookPanel();
-        Check(allLines(CopyButton,true)&&FindText(window,"Copie les coordonnées d’une position avec le bouton de sa ligne.")!=nullptr,"Compact: the copy option back on, the status names its button at once");
-        owner.settings.notebookTravelButton=true;TickNotebookPanel();
-        Check(allLines(TravelButton,true)&&FindText(window,"Copie les coordonnées d’une position ou lance le trajet avec les boutons de sa ligne.")!=nullptr,"Compact: both options on again, the status names both buttons at once");
-        owner.settings.notebookTravelButton=false;Check(toolsUi::ChooseLayout("notebook",0)&&toolsUi::ChooseLayout("notebook",1),"Layout round trip, travel button off");
-        Check(FindText(window,"Copie les coordonnées d’une position avec le bouton de sa ligne.")!=nullptr,"Compact status with the copy button alone");
-        owner.settings.notebookCopyButton=false;owner.settings.notebookTravelButton=true;
-        Check(toolsUi::ChooseLayout("notebook",0)&&toolsUi::ChooseLayout("notebook",1),"Layout round trip, copy button off");
-        Check(FindText(window,"Lance le trajet vers une position avec le bouton de sa ligne.")!=nullptr,"Compact status with the travel button alone");
-        owner.settings.notebookTravelButton=false;Check(toolsUi::ChooseLayout("notebook",0)&&toolsUi::ChooseLayout("notebook",1),"Layout round trip, both off");
-        Check(FindText(window,"Clic droit sur une position pour lancer le trajet.")!=nullptr,"Compact status without either button: the right-click menu");
-        owner.settings.notebookCopyButton=owner.settings.notebookTravelButton=true;
-        ClickTab(window,"Notes");Check(FindText(window,"Choisis une entrée, puis Copier.")!=nullptr,"Compact status of the notes");
-        ClickTab(window,"Messages");Check(FindText(window,"Choisis une entrée, puis Envoyer, Préparer dans le chat ou Copier.")!=nullptr,"Compact status of the messages");
+        Check(allLines(CopyButton,false)&&allLines(TravelButton,false)&&StatusText(window)=="Trajet demandé vers [12,-2]."&&NoHint(window),
+            "Compact: both options off, the buttons go at once; the status line names none");
+        owner.settings.notebookCopyButton=owner.settings.notebookTravelButton=true;TickNotebookPanel();
+        Check(allLines(CopyButton,true)&&allLines(TravelButton,true),"Compact: both options on again, the buttons are back at once");
+        ClickTab(window,"Notes");
+        Check(allLines(CopyButton,true)&&allLines(SendButton,false)&&allLines(TravelButton,false)&&NoHint(window)&&StatusText(window).empty(),"Compact notes: the copy button on their lines, no hint");
+        Click(LineButton(FindType(window,"ListElementBasic","Pense-bête"),CopyButton));Check(copied=="Acheter du pain","Compact: a note is copied from its line");
+        ClickTab(window,"Messages");
+        auto compactList=Get(FindText(window,"Nouvelle entrée")).fields.at("parent");
+        Check(allLines(SendButton,true)&&allLines(PrepareButton,true)&&allLines(CopyButton,true)&&NoHint(window)&&StatusText(window).empty()&&Get(compactList).children.size()==9&&
+            !FindText(compactList,"Canal : actuel")&&!FindText(compactList,"Envoyer")&&!FindText(compactList,"Préparer dans le chat")&&!FindText(compactList,"Copier"),
+            "Compact messages: send, prepare and copy on their lines; no channel nor use row under the list, no hint");
+        Click(LineButton(guildRow,SendButton));Click(LineButton(salutRow,PrepareButton));
+        Check(sent=="Réunion ce soir"&&sentChannel==4&&prepared=="Bonjour à tous"&&StatusText(window)=="Ajouté au brouillon du chat. À toi de l’envoyer.",
+            "Compact: a message is sent on its saved channel, or prepared, from its line");
         RestoreNotebookPanel();
-        // A window opened compact has them too; without them and without the game's menu, its status says where they are.
+        // A window opened compact has them too, and no hint even without them and without the game's menu.
         OpenNotebookPanel();TickNotebookPanel();window=latestWindow;firstRow=FindText(window,"[7,7]  Info-bulle");
-        Check(Panel(window)&&Get(window).dimensions["width"]==360&&firstRow&&Shown(LineButton(firstRow,CopyButton))&&Shown(LineButton(firstRow,TravelButton)),"A window opened compact has the line buttons");
+        Check(Panel(window)&&Get(window).dimensions["width"]==360&&firstRow&&Shown(LineButton(firstRow,CopyButton))&&Shown(LineButton(firstRow,TravelButton))&&NoHint(window)&&
+            StatusText(window).empty(),"A window opened compact has the line buttons, and no hint");
         RestoreNotebookPanel();menusAvailable=false;owner.settings.notebookCopyButton=owner.settings.notebookTravelButton=false;
         OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
-        Check(FindText(window,"Les boutons de copie et de voyage des positions sont désactivés dans les options du mod.")!=nullptr,"Neither button nor the game's menu: the status says where the buttons are");
+        Check(NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),"Neither button nor the game's menu: still no hint, the status line takes no room");
         RestoreNotebookPanel();menusAvailable=true;owner.settings.notebookCopyButton=owner.settings.notebookTravelButton=true;owner.settings.notebookCompact=false;
         toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
         std::filesystem::remove_all(directory);
-        std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text, map pin buttons, copy and travel buttons on the position lines, row menus, automatic reload and cleanup\n";return 0;
+        std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text, map pin buttons, line buttons of positions, notes and messages, no counter nor hints, short-lived status line, row menus, automatic reload and cleanup\n";return 0;
     }catch(const std::exception& error){std::cerr<<"FAIL: "<<error.what()<<'\n';for(const auto& message:logs)std::cerr<<message<<'\n';return 1;}
 }

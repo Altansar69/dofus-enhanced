@@ -6,9 +6,11 @@
 // emerald or silver) and at the size of customCursorSize (the Windows
 // pointer's at the game window's scale, half again, or twice). One detour on
 // UnityEngine.Cursor.SetCursor swaps them in within the game's own calls; the
-// game's icons (sword, bubble, tools, fight markers…) stay. Off by default;
-// unticked, or at Stop, the game's cursor is back at once and the textures are
-// destroyed.
+// game's icons (sword, bubble, tools, fight markers…) stay. They stay Windows
+// cursors (CursorMode.Auto) at every size: since 1.17.1, Unity's player loads
+// them at that size, where it shrank them to Windows' own before (one detour
+// on LoadImageW, custom-cursor-player.hpp). Off by default; unticked, or at
+// Stop, the game's cursor is back at once and the textures are destroyed.
 void InstallCustomCursor();                      // worker thread, before the hooks are enabled; never throws
 void CustomCursorFrame(unsigned long long now);  // every compositor frame, the login screens included (at most every 8 ms); never throws
 void RestoreCustomCursor();                      // main thread: first at Stop, then while the cleanup is pending; never throws

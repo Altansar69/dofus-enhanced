@@ -47,3 +47,4 @@ struct Module {
 extern Module* module;
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original);
 void AddNativeHook(uintptr_t rva, void* replacement, void** original);
+void AddSystemHook(void* target, void* replacement, void** original);

@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.17.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.17.1**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, aide à la capture d’âmes, trajets rapides (passage secret des
@@ -68,9 +68,11 @@ masqué).
 Un second clic ou **⋯ → Masquer le module** ferme le panneau.
 Le menu ⋯ des modules de la barre ne liste plus ce panneau : son bouton est le seul raccourci.
 Son entrée **Réduire les titres des modules** propose en revanche les quatre
-panneaux du mod (Pierre d’âme, Chasse au trésor, Carnet, Statistiques) à la
-suite des modules du jeu ; le choix est conservé entre les lancements et
-**Tout réduire** / **Tout agrandir** les suivent.
+panneaux du mod (Pierre d’âme, Chasse au trésor · DofusDB, pour le distinguer
+du module « Chasse au trésor » du jeu, Carnet personnel, Statistiques) juste
+après les modules du jeu, sans icône comme eux, au-dessus de **Tout réduire** /
+**Tout agrandir** ; le choix est conservé entre les lancements et **Tout
+réduire** / **Tout agrandir** les suivent aussi.
 **Options → Dofus Enhanced → Chasse au trésor → Bouton dans la barre du haut**
 (coché par défaut) affiche ce bouton. Décoché, le bouton disparaît et le
 panneau ne s’ouvre plus : recoche la case pour le retrouver. Un panneau déjà
@@ -106,37 +108,45 @@ disparaît et le carnet ne s’ouvre plus, faute d’autre raccourci : recoche l
 case pour le retrouver. Les entrées restent enregistrées, **Ajouter aux
 positions** continue de les compléter, et un carnet déjà ouvert le reste
 jusqu’à sa fermeture.
-La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat.
-Son menu ⋯ liste les deux dispositions comme des choix à puce du jeu, la
-disposition active cochée : **Version complète** (la grande fenêtre, seule à
-permettre de créer et modifier les entrées) et **Version compacte** (une
-fenêtre étroite avec les onglets, la liste des entrées, la pagination, les
-boutons de chaque position sur sa ligne et, sous la liste, Copier pour les
-notes, Envoyer, Préparer dans le chat, Copier et le canal pour les messages,
-sans formulaire). Le choix est enregistré et appliqué aussitôt
-à la fenêtre ouverte, qui garde l’onglet et l’entrée choisis et reste à sa
-place (ramenée dans l’écran si la version complète, plus large, en dépasserait).
+La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat,
+et se raccourcit davantage depuis la 1.17.1 : aucune aide ne reste affichée
+sous les listes. Son menu ⋯ liste les deux dispositions comme des choix à puce
+du jeu, la disposition active cochée : **Version complète** (la grande fenêtre,
+seule à permettre de créer et modifier les entrées) et **Version compacte**
+(une fenêtre étroite avec les onglets, la liste des entrées, la pagination et,
+sur la ligne de chaque entrée, ses petits boutons, sans formulaire). Le choix
+est enregistré et appliqué aussitôt à la fenêtre ouverte, qui garde l’onglet et
+l’entrée choisis et reste à sa place (ramenée dans l’écran si la version
+complète, plus large, en dépasserait).
 Le carnet n’utilise que des composants du jeu : onglets natifs **Positions**,
-**Notes** et **Messages**, la liste des entrées sans en-tête (entrée courante
-surlignée, pagination et compteur) et une section **Détail**
-(titre, coordonnées ou texte, boutons natifs **Enregistrer**, **Supprimer**,
-**Ma position**, puis, juste en dessous, **Copier** pour une note, **Envoyer**,
-**Préparer dans le chat** et **Copier** pour un message), et une ligne d’état.
+**Notes** et **Messages**, la liste des entrées sans en-tête ni compteur (entrée
+courante surlignée ; les flèches de pagination n’apparaissent qu’à partir de
+sept entrées) et une section **Détail** (titre, coordonnées ou texte, canal
+d’un message, boutons natifs **Enregistrer**, **Supprimer** et **Ma position**).
+Un onglet vide le dit dans sa liste, avec la façon de créer une entrée. La ligne
+d’état, sous les listes, n’apparaît que quelques secondes après une action ou
+un changement du fichier (« Copié dans le presse-papiers. »,
+« Trajet demandé vers [x,y]. », un enregistrement, une suppression, une
+erreur) et ne prend aucune place le reste du temps ; seul un carnet illisible y
+reste signalé jusqu’à sa correction.
 Le fichier du carnet est relu de lui-même quand il change (un autre client, une
 position ajoutée depuis une carte, une correction à la main) : la liste suit
 sans bouton à presser, et un brouillon en cours n’est jamais remplacé. Un
 fichier illisible est signalé et conservé ; il est relu dès qu’il est corrigé.
-Un brouillon modifié demande une confirmation avant d’être abandonné.
+Un brouillon modifié demande une confirmation avant d’être abandonné. Si la
+question disparaît avant ta réponse, le clic suivant la repose.
 Les onglets **Positions**, **Notes** et **Messages** permettent de créer, modifier
 et supprimer les entrées. Une position peut reprendre la carte actuelle ou des
 coordonnées saisies ; le monde se choisit dans une liste déroulante native
 alimentée par les mondes du jeu. Le trajet se lance d’un clic sur le bouton zaap
-de sa ligne. Un message s’envoie dans le chat
-par **Envoyer**, par la fonction d’envoi du jeu elle-même (celle de la touche
-Entrée), sur le canal choisi avec le bouton **Canal** : actuel (celui du chat),
-Général, Équipe, Guilde, Alliance, Groupe, Commerce ou Recrutement. Ce canal est
-enregistré avec le message. **Préparer dans le chat** place le texte dans le
-brouillon sans l’envoyer.
+de sa ligne. Un message s’envoie dans le chat avec le bouton d’envoi de sa
+ligne, par la fonction d’envoi du jeu elle-même (celle de la touche Entrée), sur
+le canal enregistré avec lui : actuel (celui du chat), Général, Équipe, Guilde,
+Alliance, Groupe, Commerce ou Recrutement. Ce canal se choisit dans le
+formulaire avec le bouton **Canal** et ne sert qu’une fois l’entrée
+enregistrée ; l’infobulle du bouton d’envoi nomme le canal utilisé. Le bouton
+suivant place le message dans le brouillon du chat sans l’envoyer. Ces boutons
+utilisent le message tel qu’il est enregistré.
 
 Dans l’onglet **Positions**, le petit bouton drapeau à droite de chaque nom place
 un repère sur cette position : le drapeau du jeu, au nom de l’entrée
@@ -147,18 +157,23 @@ supprimée ; il se retire aussi par le menu du drapeau sur la carte. Seul le
 repère du carnet est retiré, jamais les drapeaux posés par le joueur. Le bouton
 se masque dans **Options → Dofus Enhanced → Carnet**.
 
-Après le drapeau, deux autres petits boutons du jeu agissent sur la position de
-leur ligne, dans les deux versions du carnet : **copier** place ses coordonnées
-dans le presse-papiers (par exemple `[-25,36]`) et **zaap** lance le trajet du
-mod vers elle (zaaps, bateaux puis `/travel`, indisponible en combat). Ils ne
-changent ni l’entrée sélectionnée ni les modifications en cours, et remplacent
-les boutons **Voyager** et **Copier** que le formulaire des positions avait
-avant la 1.16.0. **Bouton de copie à côté des positions** et **Bouton de voyage
-à côté des positions** (cochés par défaut), dans les mêmes options : décoché,
-le bouton correspondant disparaît aussitôt, même carnet ouvert ; sans le bouton
-de copie, le carnet ne propose plus de copier les coordonnées d’une position.
-La version complète du carnet est un peu plus large (730 px) pour leur faire
-place.
+À droite de chaque entrée, de petits boutons du jeu agissent sur l’entrée de
+leur ligne, dans les deux versions du carnet, sans changer l’entrée
+sélectionnée ni les modifications en cours : pour une position, après le
+drapeau, **copier** place ses coordonnées dans le presse-papiers (par exemple
+`[-25,36]`) et **zaap** lance le trajet du mod vers elle (zaaps, bateaux puis
+`/travel`, indisponible en combat) ; pour une note, **copier** place son texte
+dans le presse-papiers ; pour un message, **envoyer**, **préparer dans le
+chat** et **copier**. Ils remplacent les boutons **Voyager** et **Copier** du
+formulaire des positions (avant la 1.16.0), **Copier** de celui des notes et
+**Envoyer**, **Préparer dans le chat** et **Copier** de celui des messages
+(avant la 1.17.1). **Bouton de copie à côté des entrées**, **Bouton de voyage
+à côté des positions** et **Boutons d’envoi à côté des messages** (cochés par
+défaut), dans les mêmes options : décoché, le bouton correspondant disparaît
+aussitôt, même carnet ouvert ; sans le bouton de copie, le carnet ne propose
+plus de copier ses entrées, et sans les boutons d’envoi, plus d’envoyer ni de
+préparer un message dans le chat. La version complète du carnet est un peu plus
+large (730 px) pour leur faire place.
 Un clic droit sur une position de la liste ouvre le menu du jeu : **Voyager**
 (le trajet du mod, comme le bouton zaap de la ligne) et **Afficher sur la
 carte** ou **Retirer de la carte**.
@@ -307,9 +322,15 @@ thème lisibles, celles du thème Standard sont utilisées.
 taille du pointeur de Windows et la mise à l’échelle de l’écran où se trouve le
 jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as
 agrandi le pointeur dans les paramètres d’accessibilité de Windows (Pointeur de
-la souris). « Grande » l’agrandit de moitié et « Très grande » la double, sans
-dépasser 128 pixels. Un changement d’écran ou d’échelle est pris en compte en
-une seconde environ.
+la souris). « Grande » l’agrandit de moitié (48 pixels à 100 %) et
+« Très grande » la double (64 pixels à 100 %), sans dépasser 128 pixels. À
+toutes les tailles, ce sont de vrais curseurs de Windows, comme la souris : ils
+suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les
+curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…)
+gardent leur taille habituelle. Un changement d’écran ou d’échelle est pris en
+compte en une seconde environ. Jusqu’à la 1.17.0, le jeu ramenait les curseurs
+du mod à la taille du pointeur de Windows : « Grande » et « Très grande » ne
+changeaient presque rien.
 
 Cocher la case, ou changer de couleur ou de taille, prend effet en une fraction
 de seconde : le mod dessine ses treize curseurs, un par image, pendant que le
@@ -317,10 +338,19 @@ curseur précédent reste affiché. Décochée, la souris de Windows et les curs
 habituels du jeu reviennent aussitôt et les images du mod sont supprimées.
 
 En cas de souci, `module.log` contient des lignes `CUSTOM_CURSOR_…` :
-`CUSTOM_CURSOR_READY` (installation et parties disponibles),
-`CUSTOM_CURSOR_ON` (taille, échelle, taille du pointeur de Windows et couleur),
-`CUSTOM_CURSOR_THEME` (couleurs du thème lues), `CUSTOM_CURSOR_SEEN` (les
-premiers curseurs demandés par le jeu et celui affiché) et `CUSTOM_CURSOR_OFF`.
+`CUSTOM_CURSOR_READY` (installation et parties disponibles ; `size=1` : le jeu
+affiche les curseurs du mod à leur taille), `CUSTOM_CURSOR_ON` et
+`CUSTOM_CURSOR_REDRAWN` (taille, échelle, taille du pointeur de Windows et
+couleur, puis `mode=hardware` : toujours des curseurs de Windows, avec
+`load=texture` s’ils sont affichés à leur taille ou `load=windows` s’ils
+restent à la taille du pointeur de Windows), `CUSTOM_CURSOR_LOADED` (le jeu a
+chargé un curseur du mod à sa taille, avec celle que Windows lui aurait
+donnée, par exemple `size=64 windows=32`), `CUSTOM_CURSOR_THEME` (couleurs du
+thème lues), `CUSTOM_CURSOR_SEEN` (les premiers curseurs demandés par le jeu et
+celui affiché) et `CUSTOM_CURSOR_OFF`. `CUSTOM_CURSOR_PART_UNAVAILABLE size` :
+ce jeu ne charge pas ses curseurs comme la version prise en charge ; les
+curseurs du mod restent, mais à la taille du pointeur de Windows, quelle que
+soit la « Taille du curseur ».
 `CUSTOM_CURSOR_DISABLED` : le curseur du mod n’a pas pu s’installer ; la souris
 de Windows et les curseurs habituels du jeu restent jusqu’au prochain lancement
 du jeu, même si tu coches la case. `CUSTOM_CURSOR_HOOK_ERROR` ou
@@ -687,23 +717,33 @@ du jeu). Avec **Déplacer et redimensionner l’affichage à la souris** (coché
 défaut), il se fait glisser au clic gauche et se pose où tu veux. Quand la
 souris survole le cadre, une petite poignée de six points apparaît dans son
 coin en bas à droite, le seul sans arrondi ; elle reste visible pendant que tu
-le déplaces ou le redimensionnes et disparaît quand la souris s’en va. Pris par
-ce coin, ou par son bord droit ou son bord bas, il s’agrandit ou se réduit d’un
-bloc, texte, marges et coins compris, de la moitié au triple de sa taille
-normale : son coin en haut à gauche reste en place, le coin ou le bord tiré
-suit la souris, et il ne sort jamais de l’écran. Le coin se prend sur au moins
-18 pixels de l’écran (davantage quand le cadre est agrandi) et chaque bord sur
-au moins 6, sauf sur un tout petit cadre (une seule ligne réduite, par
-exemple), où ils rétrécissent ; le reste du cadre sert toujours à le déplacer.
-Sa place et sa taille sont gardées, même après un redémarrage ou un changement
+le déplaces ou le redimensionnes et disparaît quand la souris s’en va. Le cadre
+se redimensionne comme une fenêtre : son bord droit règle sa largeur, son bord
+bas sa hauteur, et son coin en bas à droite les deux à la fois, librement. Sa
+largeur et sa hauteur vont chacune de la moitié au triple de leur taille
+normale ; son coin en haut à gauche reste en place, le bord ou le coin tiré
+suit la souris, et le cadre ne sort jamais de l’écran. Le texte garde ses
+proportions : il prend la plus grande taille qui tient dans le cadre (celle du
+côté le moins agrandi), calé en haut à gauche, sans jamais être coupé ; ses
+marges, ses coins arrondis et la poignée suivent la même taille, et le cadre
+ne rétrécit pas quand les chiffres changent. Au survol, le jeu affiche le
+curseur correspondant, comme sur ses propres fenêtres : une double flèche
+gauche-droite sur le bord droit, haut-bas sur le bord bas, en diagonale sur le
+coin en bas à droite, et le curseur de déplacement ailleurs (les curseurs du
+mod quand **Curseur Dofus** est coché) ; le curseur habituel revient dès que la
+souris quitte le cadre. Le coin se prend sur au moins 18 pixels de l’écran
+(davantage quand le texte est agrandi) et chaque bord sur au moins 6, sauf sur
+un tout petit cadre (une seule ligne réduite, par exemple), où ils
+rétrécissent ; le reste du cadre sert toujours à le déplacer. Sa place, sa
+largeur et sa hauteur sont gardées, même après un redémarrage ou un changement
 de résolution ; un simple clic ne change rien. Les clics sur le cadre ne vont
 alors pas au jeu. Décochée, le cadre reste verrouillé à sa place et à sa
-taille, sans poignée, et laisse passer les clics vers le jeu. Le cadre suit
-l’échelle de l’interface et ne capte jamais le clavier ; il passe au-dessus du
-HUD et des fenêtres du jeu, mais les menus, fenêtres de confirmation,
-infobulles et écrans de chargement restent au-dessus de lui, et il disparaît
-avec l’interface quand le jeu la masque. Les trois cases de mesure décochées,
-il disparaît aussitôt et plus rien n’est mesuré.
+taille, sans poignée ni curseur particulier, et laisse passer les clics vers
+le jeu. Le cadre suit l’échelle de l’interface et ne capte jamais le clavier ;
+il passe au-dessus du HUD et des fenêtres du jeu, mais les menus, fenêtres de
+confirmation, infobulles et écrans de chargement restent au-dessus de lui, et
+il disparaît avec l’interface quand le jeu la masque. Les trois cases de mesure
+décochées, il disparaît aussitôt et plus rien n’est mesuré.
 
 **Bouton dans la barre du haut** (coché par défaut) ajoute en haut à droite,
 après les autres boutons du mod, un bouton **Performances**, enfoncé tant que le
@@ -719,7 +759,8 @@ du jeu.
 À la mise à jour vers la 1.16.0, si **Afficher les FPS et la mémoire** était
 décochée, **Charge du GPU** et **Activité du disque** sont décochées aussi
 (avant, elles ne faisaient rien sans elle) : coche-les à nouveau pour les
-afficher seules.
+afficher seules. À la mise à jour vers la 1.17.1, la taille du cadre choisie
+avant devient sa largeur et sa hauteur ; sa place est gardée.
 
 ## Statistiques
 
