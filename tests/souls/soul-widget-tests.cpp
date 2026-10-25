@@ -116,6 +116,7 @@ bool Toggle(const char* key){
 }
 Module* module=nullptr;
 bool HandleSpousePartyWidgetToggle(managed::Obj) { return false; }
+bool HandlePartyTravelWidgetToggle(managed::Obj) { return false; }
 Module::Module(std::filesystem::path p):folder(p){}
 managed::Obj Module::FindService(const char* n)const{if(std::string(n)=="fou")return fake::tipService;fake::Check(std::string(n)=="frm","Only widget or tooltip service expected");return fake::service;}
 void Module::Change(Settings s,bool save){fake::Check(save,"Widget choice must persist");settings=s;++fake::changes;}

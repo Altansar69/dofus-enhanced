@@ -10,7 +10,44 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.18.2
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.19.0
+
+VERSION 1.19.0 : GROUPE, CURSEURS DU JEU, METAMOB, STATISTIQUES, JAUGES
+- Groupe : un petit bouton zaap en haut de la vignette de chaque autre
+  membre (ni toi, ni les compagnons) ; son infobulle donne sa dernière
+  position connue du jeu (coordonnées, zone, distance), un clic t’y emmène
+  par le trajet du mod ou, avec « Remplacer l’autopilote du jeu »
+  décochée, par l’autopilote du jeu. Grisé en combat, position inconnue,
+  déjà sur place ou sans carte. Option « Bouton de trajet sur les membres
+  du groupe » (Déplacements, cochée par défaut).
+- Conjoint : son bouton de téléportation passe en haut de sa vignette et
+  son cœur en bas à gauche, à côté de la barre de vie : ils ne cachent plus
+  la couronne du chef, la barre de vie ni les icônes de suivi.
+- Curseur : « Curseurs du jeu aussi » (cochée par défaut, sous « Curseur
+  Dofus ») dessine aussi les curseurs propres au jeu dans la couleur et la
+  taille du curseur : bulle des PNJ, engrenage, maison, cadenas, livre,
+  portail, outils de récolte, goutte de plongée, loupe, épée sur les
+  monstres, repères de combat et point d’interrogation. La croix et le
+  sablier du jeu deviennent les pastilles du mod ; un curseur inconnu
+  garde le dessin du jeu. Ils arrivent peu après les autres curseurs.
+- Metamob : une âme de salle de donjon compte pour chacun de ses boss de
+  la quête Ocre (Sphincter Cell, Rat Blanc et Rat Noir, les quatre
+  Tynrils, chaque Blop royal), en un message par combat ; les boss hors de
+  la quête (compagnons du Comte Harebourg, Shihan) sont ignorés. Les
+  captures passées ne sont pas rattrapées.
+- Chat et cartes : « Âme en sac » compte une âme de salle pour chaque boss
+  qu’elle contient, y compris ceux sans âme à eux ; les zones Ocre des
+  cartes aussi.
+- Statistiques : seuls les sorts de la classe de ton personnage lancés par
+  lui comptent ; le sort d’une autre classe lancé en ton nom (« Surtension »
+  d’une Bribe de Steamer) ou un sort déclenché ne compte plus.
+  « Court-circuit » compte pour un Steamer. Une fois par personnage, les
+  sorts d’une autre classe sont retirés avec leurs lancers.
+- Jauges verticales : décochée après avoir été étirée ou déplacée à la
+  verticale, la jauge retrouve exactement l’aspect horizontal du jeu (barre
+  en travers, icône et bouton à leur place) au lieu de se tasser au milieu.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.18.2 : CONJOINT
 - Groupe : le cœur et le bouton de téléportation du conjoint sont

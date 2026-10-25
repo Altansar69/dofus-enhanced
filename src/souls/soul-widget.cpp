@@ -1,6 +1,7 @@
 #include "souls/soul-widget.hpp"
 #include "core/module.hpp"
 #include "social/spouse-party-widget.hpp"
+#include "social/party-travel-widget.hpp"
 #include "ui/tools-ui.hpp"
 #include <algorithm>
 #include <cmath>
@@ -121,7 +122,7 @@ void RemoveControl(Ref& control,Ref& tip){
     control.reset();
 }
 void ToggleHook(Obj owner,Method method) {
-    if (HandleSpousePartyWidgetToggle(owner)) return;
+    if (HandleSpousePartyWidgetToggle(owner) || HandlePartyTravelWidgetToggle(owner)) return;
     for(const auto& c:shortcuts)if(owner==c.button.get()){
         try {
             if(Current()&&api.Value<bool>(api.Call(owner,"get_enabledInHierarchy"))){toolsUi::Toggle(c.key.c_str());Sync();}

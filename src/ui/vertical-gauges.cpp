@@ -51,6 +51,7 @@ constexpr const char* RowHelp = "Affiche cette jauge à la verticale : elle se r
     "Tire son bord haut ou bas pour changer sa longueur ; sa longueur et sa place à la verticale sont gardées pour la prochaine fois. "
     "Décoche pour la remettre à l’horizontale, à sa place et à sa taille d’avant.";
 constexpr int Horizontal = 0, Vertical = 1; // BaseProgressBar`2+GaugeOrientationEnum
+constexpr int StyleSheetChange = 0x10;      // VersionChangeType.StyleSheet: a full style update of the element
 constexpr int BottomHandle = 6, TopHandle = 7; // ResizeHandler
 constexpr int DragTop = 1, DragBottom = 2;     // ResizableWindow+DragPosition: no handle on the drag handle's own edge
 constexpr uint64_t RowAttachMs = 5000, RestoreRetryMs = 250, KeepAfterMs = 600, RecentMs = 1000;
@@ -136,6 +137,7 @@ struct Natives {
     Method setOrientation{}, getOrientation{}, setVertical{}, setHorizontal{}, setCorner{}, enableHandle{}, disableHandle{};
     Method appendCheckbox{}, removeItemAt{}, insertItem{}, menuItems{}, itemCallback{}, itemDisabled{}, itemData{}, menuData{}, removeMenu{};
     Method parent{}, panel{}, layout{}, name{}, getStyle{}, setLength{}, presetContainer{}, loadDimension{}, loadPosition{};
+    Method incrementVersion{};
     Method savePosition{}, saveDimension{};
     // Checked offsets: the gauge's type, the hub's gauges, a menu's root, a
     // window's content, its three resize flags, its lock, its top and bottom
@@ -159,8 +161,9 @@ struct Stored {
 // A vertical gauge.
 struct Record {
     Ref widget, hub, container, window, gauge, windowStyle;
+    std::array<Ref, PartCount> parts; // the elements the vertical layout changes (their full style update when put back)
     int type = 0;
-    std::wstring id;                 // its UI id (its container's name), the key of the game's saves for it
+    std::wstring id;                // its UI id (its container's name), the key of the game's saves for it
     std::array<bool, 3> resizable{}; // its window's vertical, horizontal and corner resizing, as the game had them
     // Its horizontal width, its length from it (or from `chosen`) on the
     // screen's height when it was last laid out (0: unknown).
@@ -536,6 +539,7 @@ void ShowHandles(Record& r) {
 }
 void Build(Record& r, const Elements& e) {
     Obj window = e.parts[Window].get();
+    for (size_t part = 0; part < PartCount; ++part) r.parts[part].reset(e.parts[part].get());
     r.resizable = {Read<bool>(window, n.vertical), Read<bool>(window, n.horizontal), Read<bool>(window, n.corner)};
     std::array<Ref, PartCount> styles;
     for (size_t part = 0; part < PartCount; ++part) styles[part].reset(StyleOf(e.parts[part].get()));
@@ -616,10 +620,11 @@ void Restore(Record& r) {
     for (size_t i = 0; i < flags.size(); ++i)
         if (Read<bool>(window, flags[i].first) != r.resizable[i]) { bool value = r.resizable[i]; api.Invoke(flags[i].second, window, {&value}); }
     if (Read<bool>(window, n.vertical)) ShowHandles(r);
-    if (api.Value<int>(api.Invoke(n.getOrientation, r.gauge.get())) != Horizontal) {
-        int horizontal = Horizontal;
-        api.Invoke(n.setOrientation, r.gauge.get(), {&horizontal});
-    }
+    // The game's horizontal bar, whatever its getter (folded with an unrelated
+    // getter) reads: set_gaugeOrientation swaps its class and rebuilds it, the
+    // same value included.
+    int horizontal = Horizontal;
+    api.Invoke(n.setOrientation, r.gauge.get(), {&horizontal});
     // The size to give back is its saved size in the current layout, when it
     // has one: the one the game's placements gave it meanwhile, had its resize
     // handles been on (another layout's, a fight's, since it turned vertical).
@@ -640,6 +645,19 @@ void Restore(Record& r) {
         Ref current(ReadStyle(owned->style.get(), owned->property));
         if (s.failed || Same(current.get(), owned->applied.get(), owned->property))
             WriteStyle(owned->style.get(), owned->property, owned->before.get());
+    }
+    // A value put back as « none » (keyword Null: the UXML's own, row for
+    // ctr_main, 68 px for the level, 240 px the window's minimum width…) is not
+    // the UXML's yet: InlineStyleAccess.RemoveInlineStyle takes the
+    // property from the style sheets' cached style (StyleCache, else
+    // InitialStyle: a column), never from the element's UXML inline rule
+    // (m_InlineRule), which only a full style update applies again. That
+    // update, as a class change asks for it: IncrementVersion(StyleSheet) on
+    // each element the layout changed.
+    for (const auto& part : r.parts) {
+        if (!part.get()) continue;
+        int styleSheet = StyleSheetChange;
+        api.Invoke(n.incrementVersion, part.get(), {&styleSheet});
     }
     if (!r.left.get() || !r.top.get()) return; // failed before anything of its place was written
     const Rect screen = LayoutOf(r.container.get());
@@ -709,8 +727,9 @@ void Keep(Record& r, bool now) {
     if (next == module->settings) return;
     try { module->Change(next); }
     catch (const std::exception& error) { Log(std::string("VERTICAL_GAUGES_SAVE_ERROR ") + error.what()); }
-    Log("VERTICAL_GAUGE_KEPT type=" + Hex(r.type) + " length=" + std::to_string(box.length) + " place=" + std::to_string(box.x) + "," +
-        std::to_string(box.y));
+    // length=width: none chosen (a drag only), as long as the gauge is wide at the horizontal.
+    Log("VERTICAL_GAUGE_KEPT type=" + Hex(r.type) + " length=" + (box.length > 0 ? std::to_string(box.length) : std::string("width")) +
+        " place=" + std::to_string(box.x) + "," + std::to_string(box.y));
 }
 // Back as the game built it, then forgotten; kept (and tried again) on a failure.
 bool Undo(size_t index) {
@@ -1104,6 +1123,7 @@ void Install() {
     n.panel = api.FindVerified(n.element, "get_panel", 0, 0x55F7170);
     n.layout = api.FindVerified(n.element, "get_layout", 0, 0x55F6930);
     n.name = api.FindVerified(n.element, "get_name", 0, 0x3158710);
+    n.incrementVersion = api.FindVerified(n.element, "IncrementVersion", 1, 0x55E5580);
     n.getStyle = api.FindVerified(n.element, "get_style", 0, 0x55F74A0);
     n.style = api.Class(UiImage, UiSpace, "InlineStyleAccess");
     for (size_t property = 0; property < PropertyCount; ++property) {

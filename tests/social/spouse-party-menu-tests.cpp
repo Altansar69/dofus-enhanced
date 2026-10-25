@@ -197,6 +197,32 @@ struct WidgetFixture : Fixture {
     void Show() { Tick(); Check(button && Get(portrait).items.size() == 6, "Visible button, badge and border on already-open party"); }
     void ClickButton() { Check(HandleSpousePartyWidgetToggle(button), "Owned native toggle dispatch"); }
 };
+float StyleValue(Obj o, const char* property) { float v = 0; std::memcpy(&v, Get(o).styles[property].data(), sizeof(v)); return v; }
+// 1.19.0: the owner saw the heart over the leader's crown (top right since
+// 1.18.2). The teleport button now sits in the free band at the top, the heart
+// in the bottom left corner: neither covers the crown, the sword, the life bar,
+// the follow arrow nor the auto icons' column, on a big or a small slot.
+void LayoutCases() {
+    WidgetFixture f; f.Show();
+    for (int compact = 0; compact < 2; ++compact) {
+        Get(f.root).numbers["small"] = compact; f.Tick();
+        const float slot = party_slot::Slot(compact == 1);
+        const auto heart = state.heart.get();
+        const party_slot::Box button{StyleValue(f.button, "left"), StyleValue(f.button, "top"), StyleValue(f.button, "width"), StyleValue(f.button, "height")};
+        const party_slot::Box badge{StyleValue(heart, "left"), slot - StyleValue(heart, "bottom") - StyleValue(heart, "height"),
+            StyleValue(heart, "width"), StyleValue(heart, "height")};
+        Check(button.width == (compact ? 14.0f : 26.0f) && badge.width == (compact ? 12.0f : 16.0f) && button.left > 0 && badge.left > 0,
+            "Spouse button and heart sized and placed for the slot");
+        Check(Get(f.button).styles["right"] == std::array<unsigned char, 16>{} && Get(heart).styles["right"] == std::array<unsigned char, 16>{} &&
+            Get(heart).styles["top"] == std::array<unsigned char, 16>{}, "No right or top anchor left from 1.18.2");
+        for (const auto& native : party_slot::NativeElements) {
+            const auto box = compact ? native.small : native.big;
+            Check(!party_slot::Overlap(button, box) && !party_slot::Overlap(badge, box), native.name);
+        }
+        Check(party_slot::Clear(button, compact == 1) && party_slot::Clear(badge, compact == 1) && !party_slot::Overlap(button, badge),
+            "Heart and teleport button clear of the crown, the sword and every other element of the game's slot");
+    }
+}
 void WidgetCases() {
     InstallSpousePartyWidget();
     { WidgetFixture f; f.Tick();
@@ -284,6 +310,7 @@ void WidgetCases() {
       if (reason == 2) Get(f.display).numbers["isArenaParty"] = 1;
       if (reason == 3) Get(f.root).fields["panel"] = nullptr;
       f.Tick(); Check(!f.button, "No widget on other players, guests, arena or detached party"); }
+    LayoutCases();
 }
 }
 namespace managed {

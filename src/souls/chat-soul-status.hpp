@@ -22,7 +22,8 @@ enum class SoulState { Unknown, Missing, Done, NotStarted };
 // Done: validated in L’éternelle moisson; Missing: still to validate;
 // NotStarted: the quest is neither under way nor finished.
 SoulState OcreProgress(int monsterId);
-// Done: a soul of this monster is in the bag; Missing: none is.
+// Done: a soul holding this monster is in the bag (a dungeon-room soul holds
+// every boss its effects 4058 list); Missing: none is.
 SoulState BagProgress(int monsterId);
 // Changes whenever a reader publishes another result or forgets one.
 uint64_t SoulStatusRevision();

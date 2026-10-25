@@ -52,8 +52,9 @@ static_assert(std::size(GlowFlags) == std::size(GlowCategoryToggles));
 // (ExtraToggles), each its own 0/1 line. A file without the notebook's copy and
 // travel buttons or the performance overlay's top-bar button (before 1.16.0),
 // without the send buttons of the notebook's messages (before 1.17.1), or
-// without the gauges' « Afficher à la verticale » row (before 1.18.0), keeps
-// their default: all shown.
+// without the gauges' « Afficher à la verticale » row (before 1.18.0), or
+// without the party members' travel button or « Curseurs du jeu aussi »
+// (before 1.19.0), keeps their default: all shown, the game's icons drawn.
 constexpr Flag ExtraFlags[] = {
     {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
     {"notebookPingButton", &Settings::notebookPingButton}, {"notebookCopyButton", &Settings::notebookCopyButton},
@@ -61,7 +62,8 @@ constexpr Flag ExtraFlags[] = {
     {"perfOverlay", &Settings::perfOverlay},
     {"perfOverlayGpu", &Settings::perfOverlayGpu}, {"perfOverlayDisk", &Settings::perfOverlayDisk},
     {"perfOverlayDrag", &Settings::perfOverlayDrag}, {"perfOverlayButton", &Settings::perfOverlayButton},
-    {"notebookSendButtons", &Settings::notebookSendButtons}, {"gaugeVerticalMenu", &Settings::gaugeVerticalMenu}};
+    {"notebookSendButtons", &Settings::notebookSendButtons}, {"gaugeVerticalMenu", &Settings::gaugeVerticalMenu},
+    {"partyTravelButton", &Settings::partyTravelButton}, {"customCursorGame", &Settings::customCursorGame}};
 static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
 }
 

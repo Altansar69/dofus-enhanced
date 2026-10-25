@@ -19,8 +19,9 @@
 //   obtained and dungeons completed;
 // - one hook on gau.bixl, the game's listener of the fight actions the server
 //   sends (one call per action, read before the game plays it): spells cast
-//   (counted at the next tick, a class's own spells only), deaths, damage
-//   dealt by element and the biggest hit.
+//   (counted at the next tick, the character's own class's spells only, as
+//   the game's fight log announces them), deaths, damage dealt by element and
+//   the biggest hit.
 // A report counts only when its fight started after this client saw the
 // character outside a fight while counting: never a fight that was already
 // running when the mod started or counting was switched on. The report's
@@ -53,7 +54,7 @@ struct Offsets {
     size_t dealt = 0, taken = 0, healed = 0;                             // dt
     size_t dungeonId = 0, bosses = 0;                                     // DungeonData
     size_t source = 0, body = 0, which = 0;                              // jsq
-    size_t castKind = 0, castSpell = 0, spellId = 0, dead = 0;           // jrw, jrq, jrz
+    size_t announced = 0, castKind = 0, castSpell = 0, spellId = 0, dead = 0; // jrw, jrq, jrz
     size_t present = 0, shield = 0, element = 0, target = 0, life = 0;   // jsd
 };
 struct Contract {
@@ -79,7 +80,8 @@ struct State {
     // The last counted report, until the server's statistics reach it.
     struct Pending { Ref report; int64_t character = 0; uint64_t since = 0; } pending;
     // Counted since the last report, for its log line; others: the spells cast
-    // in the character's name that are not its class's (never counted).
+    // in the character's name that are not its own class's, or that the game
+    // does not announce (never counted).
     unsigned casts = 0, others = 0, hits = 0, deaths = 0;
     // The spells the hook read since the last tick, counted there (Tally).
     struct Cast { int64_t character = 0; int32_t spell = 0; };
@@ -380,6 +382,12 @@ void Act(Obj message) {
         if (source != local || !Is(body, contract.cast) || Read<int32_t>(body, contract.at.castKind) != SpellCast) return;
         const Obj spell = Read<Obj>(body, contract.at.castSpell);
         if (!Is(spell, contract.spell)) return;
+        // Cast by the character, as the game's fight log announces it: jrw.eqwy
+        // is the server's flag that gau.bixd hands the log's « X lance Y » (dvw,
+        // which writes it only with SpellData.verboseCast too) and its weapon
+        // line (dus, written only with it). A cast the server does not announce
+        // is another spell's or an effect's doing, never the character's own.
+        if (Read<uint8_t>(body, contract.at.announced) == 0) { ++state.others; return; }
         // The spell's id (jrq.eqvk), the one gau.bixd gives SpellData.GetById,
         // SpellCastInFightManager.umn and the fight log's « X lance Y » (dvw,
         // then eei); jrq.eqvi is its level's id.
@@ -412,19 +420,24 @@ void ActionHook(Obj handler, Obj message, Method method) {
     try { Act(message); } catch (...) { Error("action"); }
     originalAction(handler, message, method);
 }
-// The spells the hook read since the last tick: only the character's class
-// spells count (stats::KindOf). The server also casts in the character's name
-// its equipment's effects, the Dofus Pourpre's « Pourpre Profond » each time
-// it is attacked, the Dofus Émeraude's « Vert Émeraude » at the end of its
-// turns…: 1.15.0 and 1.16.0 counted them, as its most cast spells. A spell
-// whose kind the game's data cannot tell is not counted either.
+// The spells the hook read since the last tick: only the spells of the
+// character's own class count (stats::ClassOf, the spells of its « Sorts »
+// tab). The server also casts in the character's name its equipment's
+// effects, the Dofus Pourpre's « Pourpre Profond » each time it is attacked,
+// the Dofus Émeraude's « Vert Émeraude » at the end of its turns… (1.15.0 and
+// 1.16.0 counted them, as its most cast spells), and other classes' spells:
+// a « Bribe de Steamer » casts the Steamer's « Surtension » in its bearer's
+// name (1.16.1 to 1.18.0 counted them). A spell whose class the game's data
+// cannot tell is not counted either. While the character's class is not known
+// (stats::ClassOfCharacter), any class's spell counts, as 1.16.1 did.
 void Tally() {
     if (state.spells.empty()) return;
     const auto spells = std::move(state.spells);
     state.spells.clear();
     try {
         for (const auto& cast : spells) {
-            if (stats::KindOf(cast.spell) != stats::SpellKind::Class) { ++state.others; continue; }
+            const auto spellClass = stats::ClassOf(cast.spell), own = stats::ClassOfCharacter(cast.character);
+            if (spellClass <= stats::NoClass || (own > 0 && spellClass != own)) { ++state.others; continue; }
             stats::Add(cast.character, Counter::SpellCasts);
             stats::AddTo(cast.character, Table::Spells, cast.spell);
             ++state.casts;
@@ -522,6 +535,7 @@ void InstallStatsFights() {
             next.at.which = RequireField(next.action, "eree", 0x30);
             const auto types = api.NestedClass(next.action, "jsp");
             next.cast = api.NestedClass(types, "jrw");
+            next.at.announced = RequireField(next.cast, "eqwy", 0x20);
             next.at.castSpell = RequireField(next.cast, "eqxm", 0x40);
             next.at.castKind = RequireField(next.cast, "eqxn", 0x48);
             next.spell = api.NestedClass(api.NestedClass(next.cast, "jrv"), "jrq");

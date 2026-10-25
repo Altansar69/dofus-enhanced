@@ -5,6 +5,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
@@ -332,7 +333,7 @@ void Deterministic() {
     for (const auto colour : Colours)
         for (const auto shape : Shapes) {
             const auto first = Draw(shape, colour, 48);
-            Draw(Shapes[(static_cast<int>(shape) + 5) % ShapeCount], C::Emerald, 128);
+            Draw(Shapes[(static_cast<int>(shape) + 5) % std::size(Shapes)], C::Emerald, 128);
             const auto second = Draw(shape, colour, 48);
             Check(first.rgba == second.rgba && first.hotX == second.hotX && first.hotY == second.hotY, "Same bytes: " + Name(shape, colour, 48));
         }
@@ -427,6 +428,236 @@ void Fast() {
 #endif
 }
 
+// ------------------------------------------------------- the game's icons (1.19.0)
+// No reference renderer draws them: their structure is checked here, and
+// their bytes pinned from this renderer's own output (FNV-1a 64 over the
+// RGBA bytes, MSVC x64 /O2) so that any change to them is deliberate:
+// `--icon-digests` prints the tables again after one.
+uint64_t Digest(const Image& image) {
+    uint64_t hash = 0xCBF29CE484222325ULL;
+    for (const uint8_t byte : image.rgba) hash = (hash ^ byte) * 0x100000001B3ULL;
+    for (const int value : {image.size, image.hotX, image.hotY}) hash = (hash ^ static_cast<uint32_t>(value)) * 0x100000001B3ULL;
+    return hash;
+}
+std::string IconName(Shape shape) {
+    static constexpr const char* Names[] = {"Gear", "Bubble", "Lock", "Sword", "Scythe", "Axe", "Hook", "Book", "House", "Pickaxe", "Shears",
+        "Teleport", "Diving", "Magnifier", "Question", "Ping", "Shield", "Heart", "Target", "Skull", "One", "Two", "Three"};
+    static_assert(std::size(Names) == IconCount);
+    static constexpr const char* Badges[] = {"", "+forbidden", "+busy"};
+    return std::string(Names[static_cast<int>(IconOf(shape))]) + Badges[static_cast<int>(BadgeOf(shape))];
+}
+// The icons' hotspots on the grid (whole units): the tool's point or the middle.
+struct GridPoint { int x, y; };
+constexpr GridPoint IconHot[] = {{16, 16}, {16, 16}, {16, 18}, {2, 2}, {6, 14}, {5, 10}, {10, 12}, {16, 16}, {16, 18}, {13, 7}, {16, 12},
+    {16, 16}, {16, 18}, {13, 13}, {16, 19}, {16, 28}, {16, 15}, {16, 16}, {16, 16}, {16, 16}, {16, 16}, {16, 16}, {16, 16}};
+static_assert(std::size(IconHot) == IconCount);
+// Every icon's digest in « Or » at 64 px, then each colour's combined digest
+// of all 69 icons at 32 and at 64 px (Colours order).
+constexpr uint64_t GoldIcons64[] = {
+    0x0073DD5ACDBC712DULL, // Gear
+    0x9CD0B5CF29155FA6ULL, // Bubble
+    0x0637A6A1FC96AA5AULL, // Lock
+    0x4D8A00B6AD642E53ULL, // Sword
+    0xE1B813DE2B8B1D48ULL, // Scythe
+    0xE70CB64825B3F42FULL, // Axe
+    0x4D66A96F990F9495ULL, // Hook
+    0x037F8B210A89D00CULL, // Book
+    0x6AC0D24BF7B49A05ULL, // House
+    0x3CB28361D5FE3AF8ULL, // Pickaxe
+    0xFEF71C994E9CA0D4ULL, // Shears
+    0x840CEB87DE2F2130ULL, // Teleport
+    0x8BBB029889C02DC2ULL, // Diving
+    0x35C0EA3975327A2AULL, // Magnifier
+    0x8759D8650AED50BEULL, // Question
+    0x76618909F5BEF3E6ULL, // Ping
+    0x92EC8F38567031A9ULL, // Shield
+    0x6ACC2B782B512A87ULL, // Heart
+    0xD35E1A24DFBEF52CULL, // Target
+    0xDB086E74A9D50AC9ULL, // Skull
+    0x1A6714E2330ACC72ULL, // One
+    0x620C781D0BD24AACULL, // Two
+    0x02B71C7C9852B520ULL, // Three
+    0x50F7CA8A44BEF7C3ULL, // Gear+forbidden
+    0x5C32BD772D453170ULL, // Bubble+forbidden
+    0xA64F43647350A7EDULL, // Lock+forbidden
+    0xE0E421F905CC67F8ULL, // Sword+forbidden
+    0x68E3A47743E9D1BBULL, // Scythe+forbidden
+    0x3A886AC0670E1683ULL, // Axe+forbidden
+    0x32A4A2A914950F79ULL, // Hook+forbidden
+    0x0302C1BD2907A573ULL, // Book+forbidden
+    0xDCAC5B45F93D8AA4ULL, // House+forbidden
+    0xAF55743A986B5089ULL, // Pickaxe+forbidden
+    0x93D8A723A7372AFEULL, // Shears+forbidden
+    0xE669820854BD6E2AULL, // Teleport+forbidden
+    0xF3B4AAE281F40CF9ULL, // Diving+forbidden
+    0x549E7FC9CAB085F8ULL, // Magnifier+forbidden
+    0x389B0B88B7A34947ULL, // Question+forbidden
+    0x39C5DB76DA6BF536ULL, // Ping+forbidden
+    0x5348119141BE69C2ULL, // Shield+forbidden
+    0xE5C9AF134481A1F4ULL, // Heart+forbidden
+    0x1EF6FD18631D31CAULL, // Target+forbidden
+    0x43B10E0F0608E283ULL, // Skull+forbidden
+    0xFFB8E15EA1D5EDF5ULL, // One+forbidden
+    0x344B6F9A17B1E878ULL, // Two+forbidden
+    0xF52B58E3E0579118ULL, // Three+forbidden
+    0x011662254AC77DAEULL, // Gear+busy
+    0x17536089A941C6C2ULL, // Bubble+busy
+    0x0D81409F83B7E88BULL, // Lock+busy
+    0x5DC956A242596E41ULL, // Sword+busy
+    0x0A9129762ED0540DULL, // Scythe+busy
+    0xB2F84F186E4B0440ULL, // Axe+busy
+    0xF431A3338ADFEDBFULL, // Hook+busy
+    0x8DB71F40F8F783A4ULL, // Book+busy
+    0x0308A79D122571ADULL, // House+busy
+    0x4A9562AB99B6B3B3ULL, // Pickaxe+busy
+    0x815438854E59F740ULL, // Shears+busy
+    0x3C7446EDEA8A6109ULL, // Teleport+busy
+    0x1F6F8B0E13E5DA45ULL, // Diving+busy
+    0xB9C15EF579F41DE4ULL, // Magnifier+busy
+    0xCA642B7FD0DAFDC7ULL, // Question+busy
+    0x6EC713F600A351E8ULL, // Ping+busy
+    0x8B608192F14D3669ULL, // Shield+busy
+    0x1564919DA6470AACULL, // Heart+busy
+    0xBEB42C6C5E652267ULL, // Target+busy
+    0xA1B2E3050FA91619ULL, // Skull+busy
+    0xBFC4AEDCBB2E3944ULL, // One+busy
+    0x9280C4EB8E4A0321ULL, // Two+busy
+    0x375CCBAE33E22E6DULL, // Three+busy
+};
+uint64_t Combined(Colour colour, int size) {
+    uint64_t hash = 0xCBF29CE484222325ULL;
+    for (int shape = CoreShapeCount; shape < ShapeCount; ++shape) {
+        const uint64_t digest = Digest(Draw(static_cast<Shape>(shape), colour, size));
+        for (int byte = 0; byte < 8; ++byte) hash = (hash ^ (digest >> (8 * byte) & 0xFF)) * 0x100000001B3ULL;
+    }
+    return hash;
+}
+int IconDigests() {
+    std::cout << "// GoldIcons64 (cursor-icon-digests.inc)\n";
+    for (int shape = CoreShapeCount; shape < ShapeCount; ++shape) {
+        char line[64];
+        std::snprintf(line, sizeof(line), "0x%016llXULL,", static_cast<unsigned long long>(Digest(Draw(static_cast<Shape>(shape), C::Gold, 64))));
+        std::cout << line << " // " << IconName(static_cast<Shape>(shape)) << '\n';
+    }
+    std::cout << "// Combined, {32, 64} per colour\n";
+    for (const auto colour : Colours) {
+        char line[96];
+        std::snprintf(line, sizeof(line), "{0x%016llXULL, 0x%016llXULL},", static_cast<unsigned long long>(Combined(colour, 32)),
+            static_cast<unsigned long long>(Combined(colour, 64)));
+        std::cout << line << " // " << ColourNames[static_cast<int>(colour)] << '\n';
+    }
+    return 0;
+}
+constexpr uint64_t CombinedIcons[][2] = {
+    {0xBF7FB47B23A9274AULL, 0xC1CC6E11BD3AE84BULL}, // Or
+    {0xE31325FA03C6F515ULL, 0x60584A5C8B5E5BBAULL}, // Thème
+    {0x4ECFDC1CA5A3979FULL, 0x83FCE1BD33CF41E7ULL}, // Émeraude
+    {0x6790B142A9494732ULL, 0xE79AF446281DF401ULL}, // Argent
+};
+void Icons() {
+    static_assert(std::size(GoldIcons64) == ShapeCount - CoreShapeCount && std::size(CombinedIcons) == std::size(Colours));
+    // The layout of the shapes: the thirteen, the icons, then with each badge.
+    Check(ShapeCount == 82 && static_cast<int>(IconShape(Icon::Gear)) == 13 && IconShape(Icon::Three, Badge::Busy) == static_cast<Shape>(81) &&
+        BadgeOf(IconShape(Icon::Heart, Badge::Forbidden)) == Badge::Forbidden && IconOf(IconShape(Icon::Heart, Badge::Busy)) == Icon::Heart,
+        "Icon shapes after the thirteen, in Icon order, then with each badge");
+    // Pinned bytes.
+    for (int shape = CoreShapeCount; shape < ShapeCount; ++shape)
+        Check(Digest(Draw(static_cast<Shape>(shape), C::Gold, 64)) == GoldIcons64[shape - CoreShapeCount],
+            "Pinned bytes: " + IconName(static_cast<Shape>(shape)) + " Or 64 px");
+    for (const auto colour : Colours)
+        for (int k = 0; k < 2; ++k)
+            Check(Combined(colour, k ? 64 : 32) == CombinedIcons[static_cast<int>(colour)][k],
+                std::string("Pinned bytes: every icon in ") + ColourNames[static_cast<int>(colour)] + (k ? " at 64 px" : " at 32 px"));
+    // At every size in « Or »: the hotspot on its grid point (whole units times
+    // size/32, rounded down) and on the icon (alpha 128 and more: its body or
+    // its outline), transparent black background, corners and border (nothing
+    // above the shadow's 64), and a badge keeps its icon's hotspot.
+    for (int size = MinSize; size <= MaxSize; ++size)
+        for (int shape = CoreShapeCount; shape < ShapeCount; ++shape) {
+            const auto image = Draw(static_cast<Shape>(shape), C::Gold, size);
+            const auto what = IconName(static_cast<Shape>(shape)) + " " + std::to_string(size) + " px";
+            const auto hot = IconHot[static_cast<int>(IconOf(static_cast<Shape>(shape)))];
+            Check(image.size == size && image.rgba.size() == static_cast<size_t>(size) * size * 4, "Size: " + what);
+            Check(image.hotX == hot.x * size / 32 && image.hotY == hot.y * size / 32, "Hotspot: " + what + " " + std::to_string(image.hotX) + "," +
+                std::to_string(image.hotY));
+            Check(At(image, image.hotX, image.hotY).a >= 128, "Hotspot on the icon: " + what);
+            int border = 0, opaque = 0;
+            for (int y = 0; y < size; ++y)
+                for (int x = 0; x < size; ++x) {
+                    const auto pixel = At(image, x, y);
+                    Check(pixel.a || (!pixel.r && !pixel.g && !pixel.b), "Transparent pixels are black: " + what);
+                    if (x == 0 || y == 0 || x == size - 1 || y == size - 1) border = std::max(border, pixel.a);
+                    opaque += pixel.a == 255;
+                }
+            Check(border <= 64, "Nothing opaque on the border (" + std::to_string(border) + "): " + what);
+            Check(!At(image, 0, 0).a && !At(image, size - 1, 0).a && !At(image, 0, size - 1).a && !At(image, size - 1, size - 1).a,
+                "Transparent corners: " + what);
+            Check(opaque * 10 >= size * size, "A tenth of the image opaque at least: " + what);
+        }
+    // Each colour's palette at 32 and 64 px: the same layout, the badges'
+    // red and sand, the outline's colour around the icon.
+    const auto has = [](const Image& image, uint32_t rgb) {
+        for (int y = 0; y < image.size; ++y)
+            for (int x = 0; x < image.size; ++x) {
+                const auto pixel = At(image, x, y);
+                if (pixel.a == 255 && static_cast<uint32_t>(pixel.r << 16 | pixel.g << 8 | pixel.b) == rgb) return true;
+            }
+        return false;
+    };
+    for (const auto colour : Colours) {
+        const auto palette = PaletteOf(colour, StandardAccent, StandardDark);
+        for (const int size : {32, 64})
+            for (int icon = 0; icon < IconCount; ++icon) {
+                const auto plain = Draw(IconShape(static_cast<Icon>(icon)), colour, size);
+                const auto forbidden = Draw(IconShape(static_cast<Icon>(icon), Badge::Forbidden), colour, size);
+                const auto busy = Draw(IconShape(static_cast<Icon>(icon), Badge::Busy), colour, size);
+                const auto what = IconName(IconShape(static_cast<Icon>(icon))) + " " + ColourNames[static_cast<int>(colour)] + " " + std::to_string(size) + " px";
+                Check(has(plain, palette.outline), "The outline's colour: " + what);
+                Check(has(forbidden, 0xE8404E) && !has(plain, 0xE8404E), "The forbidden badge's red: " + what);
+                Check(size < 48 || has(busy, 0xFFD336) || palette.mid == 0xFFD336, "The hourglass's sand: " + what);
+                Check(plain.hotX == forbidden.hotX && plain.hotY == forbidden.hotY && plain.hotX == busy.hotX && plain.hotY == busy.hotY,
+                    "A badge keeps its icon's hotspot: " + what);
+                Check(plain.rgba != forbidden.rgba && plain.rgba != busy.rgba && forbidden.rgba != busy.rgba, "Each badge shows: " + what);
+                // The badge sits in the bottom-right quarter: the top-left quarter's alpha unchanged.
+                bool same = true;
+                for (int y = 0; y < size / 2 && same; ++y)
+                    for (int x = 0; x < size / 2 && same; ++x)
+                        same = At(plain, x, y).a == At(forbidden, x, y).a && At(plain, x, y).a == At(busy, x, y).a;
+                Check(same, "The badge in its corner: " + what);
+            }
+        // Same bytes every time, whatever was drawn between.
+        for (int shape = CoreShapeCount; shape < ShapeCount; shape += 7) {
+            const auto first = Draw(static_cast<Shape>(shape), colour, 48);
+            Draw(static_cast<Shape>((shape + 11) % ShapeCount), C::Silver, 128);
+            Check(first.rgba == Draw(static_cast<Shape>(shape), colour, 48).rgba, "Same bytes: " + IconName(static_cast<Shape>(shape)));
+        }
+    }
+    // Each icon differs from every other.
+    std::vector<std::vector<uint8_t>> seen;
+    for (int icon = 0; icon < IconCount; ++icon) {
+        const auto image = Draw(IconShape(static_cast<Icon>(icon)), C::Gold, 32);
+        for (const auto& other : seen) Check(other != image.rgba, "Every icon its own: " + IconName(IconShape(static_cast<Icon>(icon))));
+        seen.push_back(image.rgba);
+    }
+    // Time: each icon under 20 ms at 128 px (best of three), as the cursors.
+    double slowest = 0, total32 = 0, total128 = 0;
+    for (int shape = CoreShapeCount; shape < ShapeCount; ++shape)
+        for (const int size : {32, 128}) {
+            double best = 1e9;
+            for (int run = 0; run < 3; ++run) {
+                const auto start = std::chrono::steady_clock::now();
+                Draw(static_cast<Shape>(shape), C::Gold, size);
+                best = std::min(best, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+            }
+            (size == 32 ? total32 : total128) += best;
+            if (size == 128) slowest = std::max(slowest, best);
+        }
+    std::cout << "INFO: the 69 icons in " << total32 << " ms at 32 px, " << total128 << " ms at 128 px (the slowest " << slowest << " ms)\n";
+#ifdef NDEBUG
+    Check(slowest < 20, "Each icon in under 20 ms at 128 px");
+#endif
+}
+
 // `--dump <file>`: every colour, cursor and size, each image after five int32
 // (colour, shape, size, hotspot x and y), its rows bottom-up as Render gives them.
 int Dump(const char* path) {
@@ -441,10 +672,35 @@ int Dump(const char* path) {
             }
     return out ? 0 : 1;
 }
+// `--sheet <file>`: every shape (the game's icons too) at 32 and 64 px in « Or »,
+// « Émeraude », « Argent » and four themes' palettes, for the preview sheets
+// made outside the repository: each image after its palette (seven 0xRRGGBB),
+// a palette index, the shape, the size and the hotspot (int32), rows bottom-up.
+int Sheet(const char* path) {
+    struct Look { Colour colour; uint32_t accent, dark; };
+    const Look looks[] = {{C::Gold, 0, 0}, {C::Emerald, 0, 0}, {C::Silver, 0, 0}, {C::Theme, StandardAccent, StandardDark},
+        {C::Theme, 0x4F9CFF, 0x292B33}, {C::Theme, 0xE04848, 0x2A1A1A}, {C::Theme, 0xB6B3E6, 0x292B33}};
+    std::ofstream out(path, std::ios::binary);
+    for (int index = 0; index < static_cast<int>(std::size(looks)); ++index) {
+        const auto palette = PaletteOf(looks[index].colour, looks[index].accent, looks[index].dark);
+        for (int shape = 0; shape < ShapeCount; ++shape)
+            for (const int size : {32, 64}) {
+                const auto image = Render(static_cast<Shape>(shape), palette, size);
+                const uint32_t colours[] = {palette.light, palette.mid, palette.deep, palette.outline, palette.gemLight, palette.gemMid, palette.gemDeep};
+                const int32_t header[] = {index, shape, image.size, image.hotX, image.hotY};
+                out.write(reinterpret_cast<const char*>(colours), sizeof(colours));
+                out.write(reinterpret_cast<const char*>(header), sizeof(header));
+                out.write(reinterpret_cast<const char*>(image.rgba.data()), static_cast<std::streamsize>(image.rgba.size()));
+            }
+    }
+    return out ? 0 : 1;
+}
 }
 
 int main(int argc, char** argv) {
     if (argc == 3 && std::string(argv[1]) == "--dump") return Dump(argv[2]);
+    if (argc == 3 && std::string(argv[1]) == "--sheet") return Sheet(argv[2]);
+    if (argc == 2 && std::string(argv[1]) == "--icon-digests") return IconDigests();
     try {
         Reference();
         Palettes();
@@ -455,11 +711,15 @@ int main(int argc, char** argv) {
         Mirrors();
         Badges();
         Fast();
+        Icons();
         std::cout << "PASS: cursor art (the 13 cursors in the four colours as the design's reference renderer draws them at 32 and 64 px "
                      "and in « Or » at 128 px, the design's hotspots at every size from 32 to 128 px, opaque and at the tip, transparent "
                      "black background and border, rows bottom-up, sizes clamped to 32..128 and unknown values drawn as the arrow in "
                      "« Or », the same bytes every time, mirrored resize arrows, red and sand badges, the fixed palettes and the theme's "
-                     "with the gem rule's bounds)\n";
+                     "with the gem rule's bounds; the game's 23 icons, plain and with each badge: their pinned bytes in the four "
+                     "colours at 32 and 64 px, their hotspots on the icon at every size from 32 to 128 px, transparent black background, "
+                     "corners and border, the outline, red and sand badges in their corner, the same bytes every time, each icon its own, "
+                     "under 20 ms each at 128 px)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

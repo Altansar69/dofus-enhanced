@@ -4,7 +4,8 @@
 #include <optional>
 #include <string>
 // Reads the game's own fight-end report (no hook): the local character's loot
-// lists one soul item per captured boss (item type 327) or archimonster (328).
+// lists one soul item per captured boss (item type 327) or archimonster (328);
+// a dungeon-room soul holds several bosses, each counted (one capture each).
 // Marketplace purchases, trades, bank and mail never produce such a report.
 void InstallCaptureDetect(std::function<void(metamob::Capture)> sink);
 void TickCaptureDetect();

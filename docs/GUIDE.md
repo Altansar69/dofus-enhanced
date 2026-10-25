@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.18.2**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.19.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -299,14 +299,21 @@ doubles flèches. Chacun a un contour sombre, une ombre douce et un relief
 l’interface sombre comme sur l’herbe. Le clic part de la pointe de la flèche,
 du bout de l’index du gant qui pointe, et du centre des autres curseurs.
 
-Les curseurs propres au jeu ne changent pas : épée et bulle sur les
-personnages, outils de récolte et d’atelier, repères de combat, point
-d’interrogation ; ils gardent leur croix ou leur sablier quand une action est
-impossible ou pas encore disponible. Le mod a aussi une flèche et un gant avec
-une pastille rouge « interdit » ou un sablier, mais ils ne s’affichent que
-dans les rares cas où le jeu demande cette croix ou ce sablier sur la flèche
-ou sur le gant. Si le jeu n’a pas l’image d’un de ses curseurs, la flèche du
-mod la remplace plutôt que celle de Windows. En combat, l’icône du sort,
+Depuis la 1.19.0, **Curseurs du jeu aussi** (coché par défaut, sous
+**Curseur Dofus**, sans effet sans lui) fait dessiner par le mod les curseurs
+propres au jeu, dans la couleur et la taille choisies : la bulle pour parler à
+un PNJ, l’engrenage des actions, la maison des portes et des habitations, le
+cadenas, le livre, le portail de téléportation, les outils de récolte (faux,
+hache, hameçon, pioche, ciseaux), la goutte de plongée, la loupe, l’épée sur
+les monstres, les repères de combat (épingle, cœur, crâne, épée, bouclier,
+cible, 1, 2, 3) et le point d’interrogation. Ils arrivent peu après les autres
+curseurs, dessinés un par image. Quand une action est impossible ou pas encore
+disponible, la croix ou le sablier du jeu devient la pastille rouge
+« interdit » ou le sablier du mod sur ce curseur. Un curseur que le mod ne
+connaît pas garde le dessin du jeu. Décoché, ces curseurs reprennent leur
+dessin habituel, avec leur taille habituelle ; les autres curseurs du mod
+restent. Si le jeu n’a pas l’image d’un de ses curseurs, la flèche du mod la
+remplace plutôt que celle de Windows. En combat, l’icône du sort,
 l’interdiction et les PA/PM que le jeu affiche à côté de la souris restent
 les siens.
 
@@ -335,7 +342,8 @@ la souris). « Grande » l’agrandit de moitié (48 pixels à 100 %) et
 toutes les tailles, ce sont de vrais curseurs de Windows, comme la souris : ils
 suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les
 curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…)
-gardent leur taille habituelle. Un changement d’écran ou d’échelle est pris en
+prennent cette taille avec **Curseurs du jeu aussi**, leur taille habituelle
+sans. Un changement d’écran ou d’échelle est pris en
 compte en une seconde environ. Jusqu’à la 1.17.0, le jeu ramenait les curseurs
 du mod à la taille du pointeur de Windows : « Grande » et « Très grande » ne
 changeaient presque rien.
@@ -585,6 +593,20 @@ du mod : zaaps, directs ou par le Havre-Sac, puis l’autopilote du jeu. Ctrl +
 double-clic, le menu d’un point de repère et `/travel` gardent l’autopilote du jeu.
 **Options → Dofus Enhanced → Déplacements → Remplacer l’autopilote du jeu**,
 décoché, rend le double-clic et cette entrée à l’autopilote du jeu.
+
+Dans le groupe, **Bouton de trajet sur les membres du groupe** (Déplacements,
+coché par défaut) ajoute un petit bouton zaap en haut de la vignette de chaque
+autre membre, ni ton personnage ni les compagnons. Son infobulle donne la
+dernière position de ce membre connue du jeu (coordonnées, zone, distance en
+cases), qui peut avoir changé depuis. Un clic t’y emmène : par le trajet du
+mod avec **Remplacer l’autopilote du jeu** cochée, sinon par l’autopilote du
+jeu. Le bouton est grisé pendant un combat, quand la position est inconnue,
+quand tu y es déjà ou quand le jeu ne connaît aucune carte à ces coordonnées.
+Ton conjoint garde son bouton de téléportation, en haut de sa vignette, tant
+que **Téléportation au conjoint** est cochée ; son cœur est en bas à gauche, à
+côté de la barre de vie. Ces boutons ne cachent ni la couronne du chef, ni la
+barre de vie, ni les icônes de suivi du jeu.
+
 Déjà sur la carte que le jeu vise pour ces coordonnées (hors Havre-Sac) : pas
 de trajet, « TP : tu es déjà sur [x,y]. ». La carte actuelle compte toujours
 comme départ, même coupée en zones ; un zaap sur une carte coupée en zones
@@ -624,7 +646,9 @@ du jeu, qui finit le trajet, garde ses propres chemins.
 
 **Options → Dofus Enhanced → Chat** affiche ou masque séparément, à côté des
 positions et des archimonstres ou boss de L’éternelle moisson partagés dans le
-chat, le bouton TP, « Âme en sac » et l’avancement Ocre. Tout est affiché par
+chat, le bouton TP, « Âme en sac » et l’avancement Ocre (une âme de salle de
+donjon compte pour chaque boss de la salle, y compris ceux sans âme à eux,
+dans le chat comme sur les zones Ocre des cartes). Tout est affiché par
 défaut ; sans TP, les coordonnées écrites [x,y] restent du texte. Avec une clé
 Metamob enregistrée, **Metamob dans le chat** ajoute après l’avancement Ocre la
 quantité de ce monstre dans ta quête Metamob : « Metamob : 2 », en rouge à 0,
@@ -700,9 +724,13 @@ contacter » de la bonne quête.
 La case vaut pour tous tes clients ouverts : cochée ou décochée dans l’un, elle
 suit dans les autres en deux secondes. Décocher abandonne aussi les captures en
 attente, sans rien envoyer. Le jeu doit être en français, en anglais ou en
-espagnol, les langues des noms Metamob. Une âme de salle de donjon (Tynrils,
-Gelées, Rats…) compte pour le boss dont c’est l’âme ; les autres boss de la salle
-se mettent à jour à la main sur Metamob.
+espagnol, les langues des noms Metamob. Depuis la 1.19.0, une âme de salle de
+donjon compte pour chacun de ses boss de la quête Ocre : Sphincter Cell, Rat
+Blanc et Rat Noir, les quatre Tynrils, chaque Blop royal avec sa quantité. Les
+boss hors de la quête Ocre (les compagnons du Comte Harebourg, Shihan) sont
+ignorés. Le chat le dit en un message par combat, par exemple « Metamob : +1
+« Sphincter Cell » (de 3 à 4), +1 « Rat Blanc » (de 0 à 1), +1 « Rat Noir »
+(de 2 à 3). ». Les captures d’avant la 1.19.0 ne sont pas rattrapées.
 
 Les clients ouverts sur ce PC écrivent un même monstre l’un après l’autre. Avec
 la même clé sur un autre PC (ou une autre session Windows), rien ne les
@@ -876,10 +904,16 @@ nom à gauche, sa valeur à droite, ce qu’elle compte au survol) :
   du personnage, pas ceux de ses invocations.
 - Sorts et éléments : sorts lancés, les cinq sorts les plus lancés avec leur nom
   dans le jeu, et la part de chaque élément dans les dégâts infligés. Seuls
-  comptent les sorts de ta classe : ni les coups d’arme, ni les effets que tes
-  équipements lancent en ton nom, comme « Pourpre Profond » du Dofus Pourpre
-  ou « Vert Émeraude » du Dofus Émeraude ; la 1.15.0 et la 1.16.0 comptaient
-  ces effets comme des sorts.
+  comptent les sorts de la classe de ton personnage lancés par lui, comme le
+  journal de combat les annonce : ni les coups d’arme, ni les effets que tes
+  équipements lancent en ton nom (« Pourpre Profond » du Dofus Pourpre, « Vert
+  Émeraude » du Dofus Émeraude), ni depuis la 1.19.0 le sort d’une autre classe
+  lancé en ton nom (« Surtension » d’une Bribe de Steamer) ou un sort
+  déclenché. « Court-circuit », variante Steamer d’« Ancrage », compte pour un
+  Steamer. Une fois par personnage, à la première connexion avec la 1.19.0 (ou
+  à l’ouverture de la fenêtre si le comptage est décoché), les sorts d’une
+  autre classe sont retirés avec leurs lancers ; un personnage qui a changé de
+  classe perd ceux de son ancienne classe.
 - Téléportations : zaaps, zaapis, prismes, potions de rappel, entrées dans un
   Havre-Sac, trajets du mod et téléportations par une anomalie.
 

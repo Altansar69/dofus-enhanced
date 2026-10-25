@@ -35,7 +35,8 @@ enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, C
 unsigned statsOpens = 0;
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
-    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra, NotebookSendExtra, GaugeVerticalExtra };
+    PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra, NotebookSendExtra, GaugeVerticalExtra, PartyTravelExtra,
+    CursorGameExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows and Capture d’âme's top-bar button.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
@@ -621,15 +622,16 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
     for (const auto& source : ui.animationSources) appearance.push_back(source.get());
     appearance.push_back(ui.glowSource.get());
     for (const auto& source : ui.glowCategorySources) appearance.push_back(source.get());
-    appearance.insert(appearance.end(), {ui.customCursorSource.get(), ui.customCursorColorSource.get(), ui.customCursorSizeSource.get(),
-        ui.extraSources[GaugeVerticalExtra].get()});
+    appearance.insert(appearance.end(), {ui.customCursorSource.get(), ui.extraSources[CursorGameExtra].get(), ui.customCursorColorSource.get(),
+        ui.customCursorSizeSource.get(), ui.extraSources[GaugeVerticalExtra].get()});
     std::vector<Obj> rest{
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.extraSources[MiniMapBarExtra].get(), ui.miniCenterSource.get(),
         ui.extraSources[MiniMapZoneNameExtra].get(), ui.mapCoordsSource.get(), ui.miniMapCoordsSource.get(),
         ui.archiZonesSource.get(), ui.archiZonesMiniSource.get(), ui.mapMenuSource.get(),
         ui.extraSources[NotebookPingExtra].get(), ui.extraSources[NotebookCopyExtra].get(), ui.extraSources[NotebookTravelExtra].get(),
         ui.extraSources[NotebookSendExtra].get(), ui.extraSources[MapAddPositionExtra].get(), ui.notebookButtonSource.get(), ui.treasureButtonSource.get(),
-        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.travelPlannerSource.get(), ui.templeSource.get(),
+        ui.transitionsSource.get(), ui.preloadSource.get(), ui.spouseSource.get(), ui.extraSources[PartyTravelExtra].get(),
+        ui.travelPlannerSource.get(), ui.templeSource.get(),
         ui.soulSource.get(), ui.soulAutoSource.get(), ui.soulButtonSource.get(), ui.metamobSyncSource.get(),
         ui.chatTravelSource.get(), ui.chatSoulSource.get(), ui.chatOcreSource.get(), ui.chatMetamobSource.get(), ui.chatCoordsSource.get(),
         ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
@@ -676,8 +678,10 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
     return {
         appearance, animations, glow,
         // « Curseur » (1.17.0): the mod's cursors, off by default, then « Or »
-        // and the Windows pointer's size.
+        // and the Windows pointer's size; 1.19.0: « Curseurs du jeu aussi », on
+        // by default, under « Curseur Dofus ».
         {"Curseur", {CheckRow(ui.customCursorOption, ui.customCursorSource, "Curseur Dofus", false),
+            CheckRow(ui.extraOptions[CursorGameExtra], ui.extraSources[CursorGameExtra], "Curseurs du jeu aussi", true),
             ChoiceRow(ui.customCursorColorOption, ui.customCursorColorSource, "Couleur du curseur", 0),
             ChoiceRow(ui.customCursorSizeOption, ui.customCursorSizeSource, "Taille du curseur", 0)}},
         // « Jauges » (1.18.0): the gauges' « Afficher à la verticale » row, on by default.
@@ -703,6 +707,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         {"Déplacements", {CheckRow(ui.transitionsOption, ui.transitionsSource, "Transitions rapides entre cartes", true),
             CheckRow(ui.preloadOption, ui.preloadSource, "Précharger la prochaine carte (expérimental)", true),
             CheckRow(ui.spouseOption, ui.spouseSource, "Téléportation au conjoint", true),
+            CheckRow(ui.extraOptions[PartyTravelExtra], ui.extraSources[PartyTravelExtra], "Bouton de trajet sur les membres du groupe", true),
             CheckRow(ui.travelPlannerOption, ui.travelPlannerSource, "Remplacer l’autopilote du jeu", true),
             CheckRow(ui.templeOption, ui.templeSource, "Passage secret et temple des Roublards", true)}},
         {"Pierre d’âme", {CheckRow(ui.soulOption, ui.soulSource, "Alerte pierre d’âme", true),
@@ -727,7 +732,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.18.2 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.19.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -834,8 +839,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.18.2" && std::string(ModVersion) == "r122" &&
-        ModRevision == 122,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.19.0" && std::string(ModVersion) == "r123" &&
+        ModRevision == 123,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -882,14 +887,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.18.2") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.19.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r122") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r123") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 71 && optionModels == 71 + 3,
-        "The UI must create seventy-one private sources and seventy-four rows");
+    Check(sourceModels == 73 && optionModels == 73 + 3,
+        "The UI must create seventy-three private sources and seventy-six rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1371,6 +1376,7 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == CursorSection) {
         settings.customCursor = defaults.customCursor;
         settings.customCursorColor = defaults.customCursorColor; settings.customCursorSize = defaults.customCursorSize;
+        settings.*ExtraToggles[CursorGameExtra] = defaults.*ExtraToggles[CursorGameExtra];
     } else if (index == GaugeSection) {
         settings.*ExtraToggles[GaugeVerticalExtra] = defaults.*ExtraToggles[GaugeVerticalExtra];
     } else if (index == MapsSection) {
@@ -1389,6 +1395,7 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
     } else if (index == TravelSection) {
         settings.fastMapTransitions = defaults.fastMapTransitions; settings.preloadNextMap = defaults.preloadNextMap; settings.spouseTeleport = defaults.spouseTeleport;
         settings.mapTravelPlanner = defaults.mapTravelPlanner; settings.travelRoublardTemple = defaults.travelRoublardTemple;
+        settings.*ExtraToggles[PartyTravelExtra] = defaults.*ExtraToggles[PartyTravelExtra];
     } else if (index == SoulSection) {
         settings.soulReminder = defaults.soulReminder; settings.soulAutoEquip = defaults.soulAutoEquip;
         settings.soulButton = defaults.soulButton;
@@ -1448,13 +1455,14 @@ void SectionResetOwnsItsRows() {
 // setting, follows an outside change and goes back to its default with the
 // section's reset.
 void CursorSectionRows() {
-    const std::string boxDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
+    const std::string boxDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Avec « Curseurs du jeu aussi », les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) sont dessinés par le mod eux aussi. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
     // 1.18.1: « Défaut (<thème>) », each game theme, then the mod's three colours.
     const std::string colourDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Défaut » reprend les couleurs du thème choisi dans les options du jeu (Thème), dont le nom s’affiche entre parenthèses, et les suit quand tu en changes. Chaque thème du jeu (Standard, Bonta, Brakmar…) est aussi proposé seul : le curseur garde alors ses couleurs, quel que soit le thème de l’interface. Avec un thème, le curseur prend sa couleur d’accent, éclaircie si elle est trop sombre, sur un contour tiré de son fond sombre ; jaune-vert avec le thème Standard. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. Réglée sur « Défaut » par défaut.";
     // 1.17.1: the three sizes are Windows cursors at their real size.
-    const std::string sizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié (48 pixels à 100 %) et « Très grande » la double (64 pixels à 100 %), sans dépasser 128 pixels. À toutes les tailles, ce sont des curseurs de Windows, comme la souris : ils suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) gardent leur taille habituelle. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
+    const std::string sizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié (48 pixels à 100 %) et « Très grande » la double (64 pixels à 100 %), sans dépasser 128 pixels. À toutes les tailles, ce sont des curseurs de Windows, comme la souris : ils suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) prennent cette taille avec « Curseurs du jeu aussi », leur taille habituelle sans. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
     Fixture f;
     f.state.settings.customCursor = true; f.state.settings.customCursorColor = 3; f.state.settings.customCursorSize = 2;
+    f.state.settings.customCursorGame = false;
     Get(f.theme).integer = 4; // the game shows Brakmar
     initHook(f.page, false, true, SectionId(CursorSection), nullptr);
     CheckLayout(f);
@@ -1462,9 +1470,17 @@ void CursorSectionRows() {
     const auto parent = f.Categories().back();
     Check(Name(Section(parent, CursorSection)) == "Curseur" && Name(Section(parent, CursorSection - 1)) == "Surbrillance" &&
         Name(Section(parent, CursorSection + 1)) == "Jauges" && Rows(Section(parent, CursorSection)) ==
-        std::vector<Obj>({ui.customCursorOption.get(), ui.customCursorColorOption.get(), ui.customCursorSizeOption.get()}),
-        "« Curseur », between « Surbrillance » and « Jauges »: the checkbox, the colour, the size");
+        std::vector<Obj>({ui.customCursorOption.get(), ui.extraOptions[CursorGameExtra].get(), ui.customCursorColorOption.get(),
+            ui.customCursorSizeOption.get()}),
+        "« Curseur », between « Surbrillance » and « Jauges »: the checkbox, « Curseurs du jeu aussi », the colour, the size");
     auto& box = Get(ui.customCursorSource.get());
+    // 1.19.0: « Curseurs du jeu aussi », ticked by default, under « Curseur Dofus ».
+    auto& gameBox = Get(ui.extraSources[CursorGameExtra].get());
+    const std::string gameDescription = "Avec « Curseur Dofus », les curseurs propres au jeu sont eux aussi dessinés par le mod, dans la couleur et la taille choisies : la bulle pour parler à un PNJ, l’engrenage des actions, la maison des portes et des habitations, le cadenas, le livre, le portail de téléportation, les outils de récolte (faux, hache, hameçon, pioche, ciseaux), la goutte de plongée, la loupe, l’épée sur les monstres, les repères de combat (cœur, crâne, épée, bouclier, cible, 1, 2, 3, épingle) et le point d’interrogation. Quand une action est indisponible, sa croix ou son sablier devient un badge sur le curseur. Un curseur que le mod ne connaît pas garde le dessin du jeu. Décochée, ces curseurs reprennent leur dessin habituel ; les autres curseurs du mod restent. Sans effet tant que « Curseur Dofus » est décoché. Activé par défaut.";
+    Check(Get(ui.extraOptions[CursorGameExtra].get()).klass->name == "BoolOption" && gameBox.klass->name == "BoolSource" &&
+        !gameBox.boolean && gameBox.defaultBoolean && Description(ui.extraOptions[CursorGameExtra].get()) == gameDescription &&
+        gameDescription.find('\'') == std::string::npos,
+        "« Curseurs du jeu aussi »: a native checkbox showing the saved choice, ticked as its reset default, saying what it does");
     auto& colour = Get(ui.customCursorColorSource.get());
     auto& size = Get(ui.customCursorSizeSource.get());
     Check(Get(ui.customCursorOption.get()).klass->name == "BoolOption" && box.klass->name == "BoolSource" && box.boolean && !box.defaultBoolean,
@@ -1502,6 +1518,12 @@ void CursorSectionRows() {
         expected.customCursor = value;
         Check(f.state.settings == expected && changes == ++commits, "« Curseur Dofus » commits only itself, once");
     }
+    for (bool value : {true, false, true}) {
+        gameBox.boolean = value;
+        ui.Tick();
+        expected.customCursorGame = value;
+        Check(f.state.settings == expected && changes == ++commits, "« Curseurs du jeu aussi » commits only itself, once");
+    }
     for (int value : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}) {
         colour.integer = value;
         ui.Tick();
@@ -1516,15 +1538,17 @@ void CursorSectionRows() {
     }
     // An outside change shows in each row.
     f.state.settings.customCursor = true; f.state.settings.customCursorColor = 1; f.state.settings.customCursorSize = 1;
+    f.state.settings.customCursorGame = false;
     ui.Sync();
-    Check(box.boolean && colour.integer == 1 && size.integer == 1, "Outside changes show in the rows");
+    Check(box.boolean && colour.integer == 1 && size.integer == 1 && !gameBox.boolean, "Outside changes show in the rows");
     // The section's reset: off, « Défaut », the Windows size; nothing else.
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
     expected = WithSectionDefaults(f.state.settings, CursorSection);
     api.Call(Section(displayedParent, CursorSection), "Reset");
     ui.Tick();
     Check(f.state.settings == expected && !f.state.settings.customCursor && f.state.settings.customCursorColor == 0 &&
-        f.state.settings.customCursorSize == 0, "The section's reset: off, « Défaut », the Windows size, nothing else");
+        f.state.settings.customCursorSize == 0 && f.state.settings.customCursorGame,
+        "The section's reset: off, the game's icons ticked, « Défaut », the Windows size, nothing else");
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
     Check(!ui.customCursorSource.get() && !ui.customCursorOption.get() && !ui.customCursorColorSource.get() && !ui.customCursorColorOption.get() &&
@@ -1764,6 +1788,53 @@ void NotebookSectionRows() {
     ui.Tick();
     expected.notebookCopyButton = expected.notebookTravelButton = expected.notebookSendButtons = true;
     Check(f.state.settings == expected, "The Carnet reset ticks the three boxes again");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
+}
+
+// « Bouton de trajet sur les membres du groupe » (1.19.0): in « Déplacements »,
+// right under « Téléportation au conjoint », ticked by default; it says where the
+// button is, who gets it, both routes and when it is greyed, commits only its own
+// setting, follows an outside change and is ticked again by the section's reset.
+void PartyTravelRow() {
+    Fixture f;
+    f.state.settings.partyTravelButton = false;
+    initHook(f.page, false, true, SectionId(TravelSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    const auto parent = f.Categories().back();
+    const auto option = ui.extraOptions[PartyTravelExtra].get();
+    Check(Name(Section(parent, TravelSection)) == "Déplacements" && Rows(Section(parent, TravelSection)) == std::vector<Obj>({ui.transitionsOption.get(),
+        ui.preloadOption.get(), ui.spouseOption.get(), option, ui.travelPlannerOption.get(), ui.templeOption.get()}),
+        "Déplacements: the members' travel button right under the spouse's teleport");
+    const auto& source = Get(ui.extraSources[PartyTravelExtra].get());
+    Check(Get(option).klass->name == "BoolOption" && Label(option) == "Bouton de trajet sur les membres du groupe" &&
+        Get(option).refs.at("source") == ui.extraSources[PartyTravelExtra].get() && !source.boolean && source.defaultBoolean,
+        "A native checkbox showing the saved choice, ticked as its reset default");
+    const auto description = Description(option);
+    for (const char* term : {"un petit bouton zaap en haut de la case de chaque autre membre du groupe", "ni ton personnage ni les compagnons",
+            "« Téléportation au conjoint »", "ses coordonnées et sa zone", "« Remplacer l’autopilote du jeu » cochée, par le trajet du mod",
+            "décochée, par l’autopilote du jeu, comme « Voyager jusqu’à cette position »", "grisé pendant un combat", "position du membre est inconnue",
+            "Rien ne part sans ton clic."})
+        Check(description.find(term) != std::string::npos, std::string("The travel row says: ") + term);
+    Check(description.ends_with(" Activé par défaut.") && description.find('\'') == std::string::npos, "Its default last, typographic apostrophes");
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (bool value : {true, false, true}) {
+        Get(ui.extraSources[PartyTravelExtra].get()).boolean = value;
+        ui.Tick();
+        expected.partyTravelButton = value;
+        Check(f.state.settings == expected && changes == ++commits, "A click changes only the travel button's setting, once");
+    }
+    f.state.settings.partyTravelButton = false;
+    ui.Sync();
+    Check(!Get(ui.extraSources[PartyTravelExtra].get()).boolean, "An outside change shows in the box");
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    expected = f.state.settings;
+    api.Call(Section(displayedParent, TravelSection), "Reset");
+    ui.Tick();
+    expected = WithSectionDefaults(expected, TravelSection);
+    Check(f.state.settings == expected && f.state.settings.partyTravelButton, "The Déplacements reset ticks it again");
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
 }
@@ -2967,6 +3038,7 @@ int main() {
         run(fake::MapMenuSettingsRow);
         run(fake::ResourceMapMasterPreservesSelection);
         run(fake::NotebookSectionRows);
+        run(fake::PartyTravelRow);
         run(fake::TopBarButtonRows);
         run(fake::AutoLoadFailureIsRecoverable);
         run(fake::DeferredAndAccountGate);

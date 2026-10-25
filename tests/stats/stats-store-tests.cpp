@@ -1,6 +1,7 @@
 // « Statistiques »: the store and its file (round trip, two clients merging
 // under the file's lock, resets made by another client, a corrupt, partial,
-// missing or later file, bounds, 1.15.0 to 1.16.0's spells converted), then
+// missing or later file, bounds, 1.15.0 to 1.16.0's spells converted, 1.16.1
+// to 1.18.0's checked against the character's class), then
 // the module's side (stats.cpp: counting only while statsEnabled is on and the
 // module runs, a write at a change of character, after a minute and at Stop,
 // the played character and the names of the game's data, the dungeons' from
@@ -49,14 +50,18 @@ std::vector<uintptr_t> verified;
 // service whose base information (esg.dpzj) is not there yet.
 bool runtimeMissing = false, noService = false, noBase = false;
 int64_t characterId = 0;
+// The played character's class (z.dbrp, BreedEnum; 0: not told).
+int32_t characterClass = 0;
 std::string characterName;
 std::map<int64_t, std::string> spells, dungeons;
 std::map<int, std::string> worlds;
 unsigned nameReads = 0;
 // The spells with a SpellVariantData (a class's own: get_spellVariant reads
-// counted), the spells' data root missing (SpellData.GetById throws), or
-// get_spellVariant at another address than the pinned one.
+// counted), its breedId (an Iop's, 8, unless told otherwise), the spells'
+// data root missing (SpellData.GetById throws), or get_spellVariant at
+// another address than the pinned one.
 std::set<int64_t> classSpells;
+std::map<int64_t, int32_t> spellClasses;
 bool spellsMissing = false, variantMoved = false;
 unsigned variantReads = 0;
 // The dungeons' list GetObjects makes (a new one at each call, counted): no
@@ -68,8 +73,8 @@ std::string listType = "List`1";
 unsigned listCalls = 0;
 // The fields RequireField checks, at the pinned snapshot's offsets; List`1's
 // as Unity 6000.3 lays a list of references (List<DungeonData>).
-const FieldData Fields[] = {{"esg", "dpzj", 0x128}, {"z", "dbrm", 0x18}, {"DungeonData", "id", 0x10},
-    {"List`1", "_items", 0x10}, {"List`1", "_size", 0x18}};
+const FieldData Fields[] = {{"esg", "dpzj", 0x128}, {"z", "dbrm", 0x18}, {"z", "dbrp", 0x30}, {"SpellVariantData", "breedId", 0x14},
+    {"DungeonData", "id", 0x10}, {"List`1", "_items", 0x10}, {"List`1", "_size", 0x18}};
 const FieldData MovedSize{"List`1", "_size", 0x1C};
 // The calls stats.cpp verifies, exactly as in the pinned snapshot.
 const MethodData Contracts[] = {
@@ -206,7 +211,12 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) cons
     if (call.name == "get_spellVariant") {
         fake::Check(self && fake::Get(self).type == "SpellData" && args.size() == 0, "get_spellVariant on a SpellData");
         ++fake::variantReads;
-        return fake::classSpells.contains(fake::Get(self).number) ? fake::Make("SpellVariantData") : nullptr;
+        const auto spell = fake::Get(self).number;
+        if (!fake::classSpells.contains(spell)) return nullptr;
+        const auto variant = fake::Make("SpellVariantData");
+        const auto told = fake::spellClasses.find(spell);
+        fake::Set<int32_t>(variant, 0x14, told != fake::spellClasses.end() ? told->second : 8);
+        return variant;
     }
     if (call.name == "get_dungeonsDataRoot") return fake::noRoot ? nullptr : fake::Make("DungeonsDataRoot");
     if (call.name == "GetObjects") {
@@ -244,6 +254,7 @@ managed::Obj Module::FindService(const char* name) const {
     if (!fake::noBase) {
         const auto base = fake::Make("z");
         fake::Get(base).fields["dbrm"] = fake::Make("String", fake::characterName);
+        fake::Set<int32_t>(base, 0x30, fake::characterClass);
         fake::Get(service).fields["dpzj"] = base;
     }
     return service;
@@ -846,6 +857,94 @@ void OldSpells() {
         !file["characters"][0]["counters"].contains("spellCasts") && store.Show(101).Count(Counter::SpellCasts) == 28, "The others' converted with it");
 }
 
+// 1.16.1 to 1.18.0 counted any class's spell cast in the character's name.
+// A sheet is checked once its character's class (Played) and whose class's
+// each of its spells is (Classify) are known: the other classes' spells
+// dropped with their casts, the sheet marked ("spellsChecked"), never checked
+// again; nothing else changes; a character not played here waits as it is.
+nlohmann::json ClassFile() {
+    using nlohmann::json;
+    return {{"schema", 1}, {"resets", 0}, {"characters", json::array({
+        OldSheet(101, "Altansar", {{"xp", 500}, {"classSpellCasts", 32}}, {{"biggestHit", 900}},
+            {{"classSpells", {{"13107", 15}, {"13110", 9}, {"13868", 5}, {"13872", 3}}}, {"elements", {{"2", 700}}}}),
+        OldSheet(202, "Bouftou", {{"maps", 3}, {"classSpellCasts", 4}}, json::object(), {{"classSpells", {{"13872", 4}}}})})}};
+}
+void CheckedClass() {
+    using nlohmann::json;
+    // One sheet alone: the casts never below zero, an unknown spell waits, a checked sheet never again.
+    stats::Sheet sheet;
+    sheet.tables[static_cast<size_t>(Table::Spells)] = {{13107, 4}, {13868, 6}};
+    sheet.counters[static_cast<size_t>(Counter::SpellCasts)] = 5;
+    const std::unordered_map<int, int> told{{13107, 8}, {13868, 15}};
+    Check(!stats::Checkable(sheet, 0, told) && !stats::Checkable(sheet, 8, {{13107, 8}}) && !stats::Check(sheet, 8, {{13107, 8}}) && !sheet.checked,
+        "Not checked while its character's class or one of its spells' is unknown");
+    Check(stats::Check(sheet, 8, told) && sheet.checked && Entries(sheet, Table::Spells) == std::map<int, int64_t>{{13107, 4}} &&
+        Count(sheet, Counter::SpellCasts) == 0, "Another class's spell dropped, its casts never below zero");
+    sheet.tables[static_cast<size_t>(Table::Spells)][13868] = 2;
+    Check(!stats::Checkable(sheet, 8, told) && !stats::Check(sheet, 8, told) && Entries(sheet, Table::Spells).size() == 2, "Checked once");
+
+    const auto path = File("class-spells");
+    const auto original = ClassFile();
+    Put(path, original.dump(1));
+    const auto bytes = Bytes(path);
+    Store store, other;
+    store.Open(path);
+    other.Open(path);
+    Check(store.Show(101).Count(Counter::SpellCasts) == 32 && store.Show(101).Entries(Table::Spells).size() == 4 && store.Unsorted(100).empty() &&
+        !store.Pending(), "Shown as it is, nothing to ask while no character's class is known");
+    store.Played(0, 8);
+    store.Played(101, 0);
+    Check(store.Unsorted(100).empty(), "No class for character 0 or class 0");
+    store.Played(101, 8);
+    Check(store.Unsorted(100) == std::vector<int>{13107, 13110, 13868, 13872} && !store.Pending(), "The played character's spells, to ask");
+    store.Classify(13107, 8);
+    store.Classify(13110, 8);
+    store.Classify(13868, 15);
+    Check(!store.Converting() && store.Unsorted(100) == std::vector<int>{13872} && store.Flush(50) == Result::Nothing && Bytes(path) == bytes,
+        "Nothing written while one of its spells is unknown");
+    store.Classify(13872, 15);
+    Check(store.Pending() && store.Converting() && store.Flush(50) == Result::Written, "Checked by a write");
+    auto file = json::parse(Bytes(path));
+    Check(file["characters"][0]["tables"]["classSpells"] == json({{"13107", 15}, {"13110", 9}}) &&
+        file["characters"][0]["counters"]["classSpellCasts"] == 24 && file["characters"][0]["spellsChecked"] == true,
+        "The Iop keeps Bond and Épée Divine with their 24 casts; the Steamer's Surtension and Court-circuit go");
+    Check(file["characters"][1] == original["characters"][1], "A character not played here waits as it is");
+    auto rest = file;
+    rest["characters"][0].erase("spellsChecked");
+    Check(WithoutSpells(rest) == WithoutSpells(original), "Nothing else changed");
+    const auto checked = Bytes(path);
+    Check(!store.Pending() && store.Flush(50) == Result::Nothing && Bytes(path) == checked && store.Show(101).Count(Counter::SpellCasts) == 24 &&
+        store.Show(101).Entries(Table::Spells) == std::vector<std::pair<int, int64_t>>{{13107, 15}, {13110, 9}}, "Checked once, and shown");
+    // Another client that read the file before, told the same: nothing checked twice.
+    other.Played(101, 8);
+    for (const int spell : {13107, 13110}) other.Classify(spell, 8);
+    for (const int spell : {13868, 13872}) other.Classify(spell, 15);
+    Check(other.Pending() && other.Flush(50) == Result::Nothing && Bytes(path) == checked && other.Show(101).Count(Counter::SpellCasts) == 24,
+        "Another client's write after the check checks nothing twice");
+    // Checked: never again, whatever is added later (an older client, a class changed since).
+    file["characters"][0]["tables"]["classSpells"]["13868"] = 1;
+    file["characters"][0]["counters"]["classSpellCasts"] = 25;
+    Put(path, file.dump(1));
+    store.Refresh();
+    store.Played(101, 15);
+    Check(!store.Pending() && store.Unsorted(100).empty() && store.Show(101).Count(Counter::SpellCasts) == 25, "A checked sheet is never checked again");
+    // The Steamer played here: Court-circuit is its own, kept, the sheet marked.
+    store.Played(202, 15);
+    Check(store.Pending() && store.Flush(50) == Result::Written, "The Steamer checked");
+    file = json::parse(Bytes(path));
+    Check(file["characters"][1]["tables"]["classSpells"] == json({{"13872", 4}}) && file["characters"][1]["counters"]["classSpellCasts"] == 4 &&
+        file["characters"][1]["spellsChecked"] == true && file["characters"][0]["tables"]["classSpells"]["13868"] == 1,
+        "Its Court-circuit kept; the other sheet left alone");
+    // A sheet first written now, from counts of the character's own class: marked once its spells are told.
+    store.Played(303, 8);
+    store.AddTo(303, Table::Spells, 13107, 2, Day3);
+    store.Add(303, Counter::SpellCasts, 2, Day3);
+    Check(store.Flush(50) == Result::Written && store.Converting() && store.Flush(50) == Result::Written, "Written, then marked");
+    file = json::parse(Bytes(path));
+    Check(file["characters"][2]["tables"]["classSpells"] == json({{"13107", 2}}) && file["characters"][2]["counters"]["classSpellCasts"] == 2 &&
+        file["characters"][2]["spellsChecked"] == true && !store.Pending(), "Its own spells kept");
+}
+
 // The module's side, on the fake runtime.
 struct Client {
     Module state{L"stats-test"};
@@ -1097,7 +1196,7 @@ void ModuleConvertsOldSpells() {
     for (const auto& line : fake::logs) Check(line.find("_DISABLED") == std::string::npos, "No part disabled on the pinned client: " + line);
     TickStats();
     Check(Bytes(path) == bytes && stats::Shown(false).Entries(Table::Spells).empty() && stats::Shown(false).Count(Counter::Xp) == 500 &&
-        stats::KindOf(13107) == stats::SpellKind::Unknown, "The game's spells not loaded: nothing converted or shown, the kind unknown");
+        stats::ClassOf(13107) == stats::UnknownClass, "The game's spells not loaded: nothing converted or shown, the kind unknown");
     fake::spellsMissing = false;
     TickStats();
     Check(Bytes(path) == bytes, "Asked again only a second later");
@@ -1112,8 +1211,8 @@ void ModuleConvertsOldSpells() {
         std::count_if(fake::logs.begin(), fake::logs.end(), [](const std::string& line) { return line.rfind("STATS_SPELL_KIND_ERROR", 0) == 0; }) == 1,
         "One line for the spells sorted, one (a minute at most) while the game could not tell");
     Check(WithoutSpells(nlohmann::json::parse(Bytes(path))) == WithoutSpells(OldFile()), "Nothing else changed");
-    Check(stats::KindOf(13107) == stats::SpellKind::Class && stats::KindOf(8395) == stats::SpellKind::Other &&
-        stats::KindOf(8393) == stats::SpellKind::Other && stats::KindOf(424242) == stats::SpellKind::Other && fake::variantReads == reads + 4,
+    Check(stats::ClassOf(13107) == 8 && stats::ClassOf(8395) == stats::NoClass &&
+        stats::ClassOf(8393) == stats::NoClass && stats::ClassOf(424242) == stats::NoClass && fake::variantReads == reads + 4,
         "A class's spell, the Dofus' effects, a spell the game does not know: answered from the cache");
     Check(stats::KeyName(Table::Spells, 13107) == "Bond" && stats::KeyName(Table::Spells, 8395) == "Pourpre Profond", "Their names, from the game's data");
     // An older client still running adds to the old keys: converted within seconds.
@@ -1153,10 +1252,50 @@ void ModuleConvertsOldSpells() {
     stats::state.nextSort = 0;
     TickStats();
     Check(std::count(fake::logs.begin(), fake::logs.end(), "STATS_SPELL_KINDS_DISABLED Verified method unavailable: SpellData.get_spellVariant") == 1 &&
-        Bytes(path) == bytes && stats::KindOf(13107) == stats::SpellKind::Unknown && stats::KeyName(Table::Spells, 13107) == "Bond",
+        Bytes(path) == bytes && stats::ClassOf(13107) == stats::UnknownClass && stats::KeyName(Table::Spells, 13107) == "Bond",
         "Without its contract: off alone, logged once");
     fake::spells.clear();
     fake::classSpells.clear();
+}
+
+// The played character's class from esg.dpzj.dbrp, its spells' from their
+// SpellVariantData.breedId: a sheet counted by 1.16.1 to 1.18.0 is checked at
+// once, the other classes' spells dropped with their casts.
+void ModuleChecksClass() {
+    const auto folder = Folder("module-class");
+    const auto path = folder / L"DofusMiniatures-stats.json";
+    Put(path, ClassFile().dump(1));
+    Client client(folder);
+    fake::characterId = 101;
+    fake::characterName = "Altansar";
+    fake::characterClass = 8;
+    fake::spells = {{13107, "Bond"}, {13110, "Épée Divine"}, {13868, "Surtension"}, {13872, "Court-circuit"}};
+    fake::classSpells = {13107, 13110, 13868, 13872};
+    fake::spellClasses = {{13868, 15}, {13872, 15}};
+    fake::logs.clear();
+    Install();
+    for (const auto& line : fake::logs) Check(line.find("_DISABLED") == std::string::npos, "No part disabled on the pinned client: " + line);
+    TickStats();
+    auto file = nlohmann::json::parse(Bytes(path));
+    const auto mine = stats::Shown(false);
+    Check(stats::ClassOfCharacter(101) == 8 && stats::ClassOfCharacter(202) == 0 && stats::ClassOf(13872) == 15 && stats::ClassOf(13107) == 8,
+        "The character's class and its spells' from the game");
+    Check(mine.Count(Counter::SpellCasts) == 24 && mine.Entries(Table::Spells) == std::vector<std::pair<int, int64_t>>{{13107, 15}, {13110, 9}} &&
+        file["characters"][0]["spellsChecked"] == true && !file["characters"][1].contains("spellsChecked"),
+        "Checked at once: the Iop's own spells kept, the Steamer's dropped; the other character waits");
+    // The class not told (z.dbrp 0, or outside BreedEnum's classes): nothing checked.
+    Put(path, ClassFile().dump(1));
+    for (const int32_t unknown : {0, -1, 65}) {
+        fake::characterClass = unknown;
+        Install();
+        TickStats();
+        Check(stats::ClassOfCharacter(101) == 0 && stats::Shown(false).Count(Counter::SpellCasts) == 32 &&
+            !nlohmann::json::parse(Bytes(path))["characters"][0].contains("spellsChecked"), "No class, no check");
+    }
+    fake::characterClass = 0;
+    fake::spells.clear();
+    fake::classSpells.clear();
+    fake::spellClasses.clear();
 }
 
 // Without the game's contracts: still counting, the character unknown, no names; never a throw.
@@ -1203,10 +1342,12 @@ int main() {
         Bounds();
         UnknownFieldsKept();
         OldSpells();
+        CheckedClass();
         ModuleSide();
         DungeonNames();
         ModuleFollowsOtherResets();
         ModuleConvertsOldSpells();
+        ModuleChecksClass();
         ModuleWithoutRuntime();
         stats::UseGame(nullptr);
         fs::remove_all(root, ignored);
@@ -1215,10 +1356,12 @@ int main() {
                      "the longest session within the time played; corrupt, partial, oversized and missing files kept aside "
                      "or recovered from the backup; a later revision's file never rewritten; a busy lock retried; 512 spells and 256 characters; unknown fields kept; "
                      "1.16.0's spells never shown, converted once told whose each is: a class's kept with its casts, the Dofus' effects dropped, nothing else "
-                     "changed, once whichever client writes, an older client's later ones too, an unknown one waiting, a reset erasing them) "
+                     "changed, once whichever client writes, an older client's later ones too, an unknown one waiting, a reset erasing them; 1.18.0's checked "
+                     "once against the played character's class: another class's spells dropped with their casts, the sheet marked, never again) "
                      "and module side (counting only while statsEnabled is on and the module runs, until Stop's flush; the played character from esg; a write after a minute, "
                      "at a change of character and at Stop; another client's reset applied at the next read of the file; this character's and every character's "
-                     "totals; resets; spell, dungeon, world and element names; whose spell a spell is (its SpellVariantData), asked once, the old spells "
+                     "totals; resets; spell, dungeon, world and element names; the character's class (z.dbrp); whose class's spell a spell is (its "
+                     "SpellVariantData.breedId), asked once, the old spells "
                      "converted at once (unticked: while the window is open), waiting while the game's spells are not loaded; each contract with its guard) and dungeon names "
                      "(1.15.0's MetadataRoot`1.GetObjectById refused as the client refuses it; every dungeon from GetObjects, the one of an id named "
                      "once; no data root or an empty list asked again; another class skipped; an unreadable list turns them off, logged once)\n";

@@ -1,5 +1,6 @@
 #include "social/spouse-party-widget.hpp"
 #include "social/spouse-party-menu.hpp"
+#include "social/party-slot-layout.hpp"
 #include "core/module.hpp"
 #include <array>
 
@@ -105,7 +106,14 @@ void Refresh(const std::string& distance, bool online) {
     Ref small(api.string_new("Small"));
     const int size = api.Value<bool>(api.Call(state.root.get(), "ClassListContains", {small.get()})) ? 14 : 26;
     if (size != state.size) {
-        Size(state.button.get(), float(size)); Size(state.heart.get(), size == 14 ? 12.0f : 16.0f); state.size = size;
+        // party-slot-layout.hpp: the button in the free top band between the
+        // follow arrow and the leader's crown, the heart in the bottom left
+        // corner right of the life bar; nothing of the game's slot covered.
+        const bool compact = size == 14;
+        Size(state.button.get(), party_slot::ButtonSize(compact)); Size(state.heart.get(), party_slot::HeartSize(compact));
+        Pixels(state.button.get(), "left", party_slot::ButtonLeft(compact)); Pixels(state.button.get(), "top", party_slot::ButtonTop);
+        Pixels(state.heart.get(), "left", party_slot::HeartLeft(compact)); Pixels(state.heart.get(), "bottom", party_slot::HeartBottom(compact));
+        state.size = size;
     }
 }
 void Create(Obj hub, Obj display, Obj slot, Obj member, Obj root, Obj portrait) {
@@ -123,15 +131,16 @@ void Create(Obj hub, Obj display, Obj slot, Obj member, Obj root, Obj portrait) 
     api.Call(portrait, "Add", {state.border.get()});
     state.heart.reset(api.New(iconClass)); Name(state.heart.get(), "dofus_miniatures_spouse_heart");
     int heart = 166; api.Call(state.heart.get(), "set_icon", {&heart}); api.Call(state.heart.get(), "set_color", {const_cast<float*>(pink.data())});
-    Ignore(state.heart.get()); Style(state.heart.get(), "position", 1); Pixels(state.heart.get(), "right", 3); Pixels(state.heart.get(), "top", 3);
+    // Placed (left and top or bottom) with its size by Refresh: party-slot-layout.hpp.
+    Ignore(state.heart.get()); Style(state.heart.get(), "position", 1);
     api.Call(portrait, "Add", {state.heart.get()});
     state.button.reset(api.New(toggleClass)); Name(state.button.get(), "dofus_miniatures_spouse_teleport");
-    // Same native secondary component as party auto-follow/join/ready. Keep it
-    // in the opposite lower corner: a fourth item would overflow the native column.
+    // Same native secondary component as party auto-follow/join/ready, out of
+    // their column on the right edge (a fourth item would overflow it).
     int icon = 304, style = 2, medium = 1;
     api.Call(state.button.get(), "set_iconValue", {&icon}); api.Call(state.button.get(), "set_mainStyle", {&style});
     api.Call(state.button.get(), "set_toggleSize", {&medium});
-    Style(state.button.get(), "position", 1); Pixels(state.button.get(), "right", 3); Pixels(state.button.get(), "bottom", 3);
+    Style(state.button.get(), "position", 1);
     api.Call(portrait, "Add", {state.button.get()});
     state.reported = false; Log("SPOUSE_PARTY_WIDGET_READY native-toggle=secondary icon=teleport badge=heart");
 }

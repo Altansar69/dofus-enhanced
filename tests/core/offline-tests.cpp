@@ -313,7 +313,7 @@ int main() {
             defaults.perfOverlayCorner == 0 && !defaults.perfOverlayGpu && !defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
             defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1 && Settings{} == defaults,
             "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden (no part ticked) in the top left corner");
-        static_assert(std::size(ExtraToggles) == 13); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons) and 1.18.0's (the gauges' vertical row)
+        static_assert(std::size(ExtraToggles) == 15); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons), 1.18.0's (the gauges' vertical row) and 1.19.0's (the party members' travel button, « Curseurs du jeu aussi »)
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
             // Every combination of the first five, many times; the others follow inverted bits.
@@ -716,6 +716,40 @@ int main() {
                         "gaugeVertical=\ngaugeVertical= 1\ngaugeVertical=99999999999\ngaugeVerticalMenu=2\ngaugeVerticalMenu=-1\ngaugeVerticalMenu=oui\n"; }
                     Require(Settings::Read(path) == gauges, "A malformed or unknown gauge value keeps the saved choice");
                 }
+            // 1.19.0 « Bouton de trajet sur les membres du groupe »: shown by
+            // default, its own 0/1 line, kept by a file written before 1.19.0,
+            // a malformed value ignored, the last valid line winning.
+            Require(defaults.partyTravelButton && ExtraToggles[13] == &Settings::partyTravelButton, "The party members' travel button is shown by default");
+            for (bool shown : {false, true}) {
+                auto party = defaults; party.partyTravelButton = shown; party.Save(path);
+                Require(Settings::Read(path) == party && FileText(path).find(std::string("\npartyTravelButton=") + (shown ? "1" : "0")) != std::string::npos,
+                    "The party members' travel button persists on its own line");
+                { std::ofstream bad(path, std::ios::app); bad << "partyTravelButton=2\npartyTravelButton=-1\npartyTravelButton=oui\npartyTravelButton=\n"; }
+                Require(Settings::Read(path) == party, "A malformed travel button value keeps the saved choice");
+            }
+            { std::ofstream twice(path, std::ios::trunc); twice << "partyTravelButton=1\npartyTravelButton=0\n"; }
+            Require(!Settings::Read(path).partyTravelButton, "The last valid travel button line wins");
+            { std::ofstream older(path, std::ios::trunc); older << "spouseTeleport=0\ngaugeVerticalMenu=0\n"; }
+            Require(Settings::Read(path).partyTravelButton && !Settings::Read(path).spouseTeleport, "A file written before 1.19.0 shows the button and keeps the rest");
+            // 1.19.0 « Curseurs du jeu aussi »: ticked by default, its own 0/1
+            // line, kept by a file written before 1.19.0 (ticked, the cursor
+            // choices as saved), a malformed value ignored, the last valid line winning.
+            Require(defaults.customCursorGame && ExtraToggles[14] == &Settings::customCursorGame, "The game's icons are drawn by default");
+            for (bool drawn : {false, true}) {
+                auto game = defaults; game.customCursor = true; game.customCursorGame = drawn; game.customCursorColor = 13; game.Save(path);
+                Require(Settings::Read(path) == game && FileText(path).find(std::string("\ncustomCursorGame=") + (drawn ? "1" : "0")) != std::string::npos,
+                    "« Curseurs du jeu aussi » persists on its own line");
+                { std::ofstream bad(path, std::ios::app); bad << "customCursorGame=2\ncustomCursorGame=-1\ncustomCursorGame=oui\ncustomCursorGame=\n"; }
+                Require(Settings::Read(path) == game, "A malformed « Curseurs du jeu aussi » value keeps the saved choice");
+            }
+            { std::ofstream twice(path, std::ios::trunc); twice << "customCursorGame=1\ncustomCursorGame=0\n"; }
+            Require(!Settings::Read(path).customCursorGame, "The last valid « Curseurs du jeu aussi » line wins");
+            { std::ofstream older(path, std::ios::trunc); older << "customCursor=1\ncustomCursorPalette=13\ncustomCursorSize=2\n"; }
+            {
+                const auto before = Settings::Read(path);
+                Require(before.customCursorGame && before.customCursor && before.customCursorColor == 13 && before.customCursorSize == 2,
+                    "A file written before 1.19.0 draws the game's icons and keeps the cursor's choices");
+            }
             { std::ofstream older(path, std::ios::trunc); older << "customCursor=1\nnotebookSendButtons=0\n"; }
             const auto older = Settings::Read(path);
             Require(older.gaugeVertical == 0 && older.gaugeVerticalMenu && older.customCursor && !older.notebookSendButtons,

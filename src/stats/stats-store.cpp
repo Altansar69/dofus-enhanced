@@ -14,7 +14,9 @@ constexpr int64_t Largest = std::numeric_limits<int64_t>::max();
 // The file's keys. Never rename them: older clients read the same file. Only
 // the spells' changed, in 1.16.1 (stats-store.hpp): "classSpellCasts" and
 // "classSpells" count a class's own spells; "spellCasts" and "spells", 1.15.0
-// to 1.16.0's, every spell cast in the character's name, are converted.
+// to 1.16.0's, every spell cast in the character's name, are converted. Since
+// 1.19.0, "spellsChecked" marks a sheet whose spells were checked against its
+// character's class (stats-store.hpp).
 constexpr const char* CounterNames[] = {
     "playMs", "cellsRoleplay", "cellsFight", "maps", "dimensions", "xp", "levels", "kamasEarned", "kamasSpent",
     "harvests", "crafts", "quests", "achievements", "captures", "fightsPve", "fightsPvp", "fightsKolizeum",
@@ -25,6 +27,7 @@ constexpr const char* RecordNames[] = {"biggestHit", "longestSessionMs"};
 constexpr const char* TableNames[] = {"classSpells", "elements", "dungeons", "dimensions"};
 constexpr const char* LegacyCasts = "spellCasts";
 constexpr const char* LegacySpells = "spells";
+constexpr const char* CheckedKey = "spellsChecked";
 constexpr auto SpellsIndex = static_cast<size_t>(Table::Spells), CastsIndex = static_cast<size_t>(Counter::SpellCasts);
 static_assert(std::size(CounterNames) == CounterCount && std::size(RecordNames) == RecordCount &&
     std::size(TableNames) == TableCount && std::size(TableLimits) == TableCount);
@@ -108,6 +111,7 @@ Sheet ParseSheet(const Json& item) {
     values("counters", CounterNames, sheet.counters);
     values("records", RecordNames, sheet.records);
     if (const auto counters = item.find("counters"); counters != item.end()) sheet.legacyCasts = counters->contains(LegacyCasts);
+    if (const auto checked = item.find(CheckedKey); checked != item.end()) sheet.checked = checked->is_boolean() && checked->get<bool>();
     if (const auto tables = item.find("tables"); tables != item.end()) {
         if (!tables->is_object()) throw Corrupt("statistics file: invalid tables");
         for (size_t i = 0; i < TableCount; ++i)
@@ -127,6 +131,8 @@ Json SheetJson(const Sheet& sheet) {
     item["resets"] = sheet.resets;
     if (sheet.resetAt > 0) item["resetAt"] = sheet.resetAt;
     else item.erase("resetAt");
+    if (sheet.checked) item[CheckedKey] = true;
+    else item.erase(CheckedKey);
     const auto values = [&](const char* field, const auto& names, const auto& from) {
         Json object = item.contains(field) && item[field].is_object() ? item[field] : Json::object();
         for (size_t i = 0; i < std::size(names); ++i) {
@@ -331,11 +337,12 @@ void Merge(Sheet& into, const Sheet& counted) {
     for (const auto& [key, amount] : counted.legacy) into.legacy[key] = Sum(into.legacy[key], amount);
     Bound(into.legacy, TableLimits[SpellsIndex]);
     into.legacyCasts = into.legacyCasts || counted.legacyCasts;
+    into.checked = into.checked || counted.checked;
     if (counted.first > 0) Dates(into, counted.first);
     if (counted.last > 0) Dates(into, counted.last);
     if (!counted.name.empty()) into.name = counted.name;
 }
-bool Convert(Sheet& sheet, const std::unordered_map<int, bool>& kinds) {
+bool Convert(Sheet& sheet, const std::unordered_map<int, int>& kinds) {
     bool changed = std::exchange(sheet.legacyCasts, false);
     auto& spells = sheet.tables[SpellsIndex];
     auto& casts = sheet.counters[CastsIndex];
@@ -344,7 +351,7 @@ bool Convert(Sheet& sheet, const std::unordered_map<int, bool>& kinds) {
         if (kind == kinds.end()) { ++entry; continue; }
         // 1.15.0 to 1.16.0 added each cast to its spell and to the casts
         // counter alike: the casts of the spells kept are their entries.
-        if (kind->second) {
+        if (kind->second > NoClass) {
             spells[entry->first] = Sum(spells[entry->first], entry->second);
             casts = Sum(casts, entry->second);
         }
@@ -353,6 +360,23 @@ bool Convert(Sheet& sheet, const std::unordered_map<int, bool>& kinds) {
     }
     Bound(spells, TableLimits[SpellsIndex]);
     return changed;
+}
+bool Checkable(const Sheet& sheet, int characterClass, const std::unordered_map<int, int>& kinds) {
+    if (sheet.checked || characterClass <= NoClass) return false;
+    const auto& spells = sheet.tables[SpellsIndex];
+    return std::all_of(spells.begin(), spells.end(), [&](const auto& entry) { return kinds.contains(entry.first); });
+}
+bool Check(Sheet& sheet, int characterClass, const std::unordered_map<int, int>& kinds) {
+    if (!Checkable(sheet, characterClass, kinds)) return false;
+    auto& spells = sheet.tables[SpellsIndex];
+    auto& casts = sheet.counters[CastsIndex];
+    for (auto entry = spells.begin(); entry != spells.end();) {
+        if (kinds.at(entry->first) == characterClass) { ++entry; continue; }
+        casts = std::max<int64_t>(0, casts - entry->second);
+        entry = spells.erase(entry);
+    }
+    sheet.checked = true;
+    return true;
 }
 void Within(Sheet& sheet) {
     auto& longest = sheet.records[static_cast<size_t>(Record::LongestSessionMs)];
@@ -395,6 +419,7 @@ void Store::Open(const std::filesystem::path& file) {
     seen = {};
     counted.clear();
     kinds.clear();
+    classes.clear();
     frozen = false;
     stamp = {};
     try {
@@ -489,8 +514,13 @@ std::vector<int> Store::Unsorted(size_t most) const {
     try {
         std::lock_guard guard(mutex);
         std::set<int> unknown;
-        for (const auto& sheet : saved.sheets)
+        for (const auto& sheet : saved.sheets) {
             for (const auto& entry : sheet.legacy) if (!kinds.contains(entry.first)) unknown.insert(entry.first);
+            // A sheet to check: its spells, once its character's class is known.
+            const auto played = classes.find(sheet.id);
+            if (sheet.checked || played == classes.end()) continue;
+            for (const auto& entry : sheet.tables[SpellsIndex]) if (!kinds.contains(entry.first)) unknown.insert(entry.first);
+        }
         for (const int spell : unknown) {
             if (spells.size() >= most) break;
             spells.push_back(spell);
@@ -498,23 +528,43 @@ std::vector<int> Store::Unsorted(size_t most) const {
     } catch (...) {}
     return spells;
 }
-void Store::Classify(int spell, bool own) {
+void Store::Classify(int spell, int spellClass) {
     try {
         std::lock_guard guard(mutex);
         // More than the game's spells: never full in practice, never unbounded.
         if (kinds.size() >= MaxKinds && !kinds.contains(spell)) return;
-        kinds[spell] = own;
+        kinds[spell] = std::max(spellClass, NoClass);
     } catch (...) {}
 }
-// Old spells of this book a write would convert now: their kind is known.
+void Store::Played(int64_t id, int characterClass) {
+    if (id <= 0 || characterClass <= NoClass) return;
+    try {
+        std::lock_guard guard(mutex);
+        // The characters played in this client: a few, never more than the file's.
+        if (classes.size() >= MaxCharacters && !classes.contains(id)) return;
+        classes[id] = characterClass;
+    } catch (...) {}
+}
+// The class of a character played in this client; 0 when unknown.
+int Store::PlayedClass(int64_t id) const {
+    const auto played = classes.find(id);
+    return played != classes.end() ? played->second : NoClass;
+}
+// Old spells of this book a write would convert now (their kind is known), or
+// a sheet it would check now (Checkable).
 bool Store::Convertible(const Book& book) const {
-    for (const auto& sheet : book.sheets)
+    for (const auto& sheet : book.sheets) {
         for (const auto& entry : sheet.legacy) if (kinds.contains(entry.first)) return true;
+        if (Checkable(sheet, PlayedClass(sheet.id), kinds)) return true;
+    }
     return false;
 }
 bool Store::ConvertAll(Book& book) const {
     bool changed = false;
-    for (auto& sheet : book.sheets) changed = stats::Convert(sheet, kinds) || changed;
+    for (auto& sheet : book.sheets) {
+        changed = stats::Convert(sheet, kinds) || changed;
+        changed = stats::Check(sheet, PlayedClass(sheet.id), kinds) || changed;
+    }
     return changed;
 }
 bool Store::Frozen() const {

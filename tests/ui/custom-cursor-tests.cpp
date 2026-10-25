@@ -528,6 +528,9 @@ void Fresh(bool install = true) {
     module = new Module("fake");
     module->ready = true;
     module->servicesReady = true;
+    // The 1.17.0 tests: the thirteen cursors only; GameIcons ticks « Curseurs
+    // du jeu aussi » (its default) itself.
+    module->settings.customCursorGame = false;
     if (install) InstallCustomCursor();
 }
 void Frame(uint64_t step = 8) { nowMs += step; CustomCursorFrame(nowMs); }
@@ -542,9 +545,10 @@ std::vector<Obj> Made() {
 size_t TextureHandles() {
     return static_cast<size_t>(std::count_if(handles.begin(), handles.end(), [](const auto& h) { return Get(h.second).klass->name == "UnityEngine.Texture2D"; }));
 }
-std::array<Obj, cursorArt::ShapeCount> CurrentSet() {
-    std::array<Obj, cursorArt::ShapeCount> set{};
-    for (size_t i = 0; i < set.size(); ++i) set[i] = customCursor::s.current.shapes[i].texture.get();
+// The textures of the set in use, in Shape order, as far as it is drawn.
+std::vector<Obj> CurrentSet() {
+    std::vector<Obj> set;
+    for (size_t i = 0; i < customCursor::s.current.built; ++i) set.push_back(customCursor::s.current.shapes[i].texture.get());
     return set;
 }
 Obj Ours(Shape shape) { return customCursor::s.current.shapes[static_cast<size_t>(shape)].texture.get(); }
@@ -572,15 +576,15 @@ void Activate(int colour = Settings::CursorGold, int size = 0) {
     module->settings.customCursor = true;
     module->settings.customCursorColor = colour;
     module->settings.customCursorSize = size;
-    for (int frame = 0; frame < cursorArt::ShapeCount; ++frame) {
+    for (int frame = 0; frame < cursorArt::CoreShapeCount; ++frame) {
         Check(!customCursor::s.active, "Nothing stands in before the set is complete");
         Frame();
     }
-    Check(customCursor::s.active && customCursor::s.current.Complete(), "Thirteen frames draw the set, then it is in use");
+    Check(customCursor::s.active && customCursor::s.current.Ready(), "Thirteen frames draw the set, then it is in use");
 }
 // A set's textures, each as Render draws its shape: RGBA32 without mipmaps,
 // never unloaded, pixels loaded, applied readable.
-void CheckSet(const std::array<Obj, cursorArt::ShapeCount>& set, int size, cursorArt::Colour colour, uint32_t accent, uint32_t dark,
+void CheckSet(const std::vector<Obj>& set, int size, cursorArt::Colour colour, uint32_t accent, uint32_t dark,
     const std::string& message) {
     for (size_t i = 0; i < set.size(); ++i) {
         const auto& texture = Get(set[i]);
@@ -836,12 +840,12 @@ void EnableBuildsAcrossFrames() {
     Fresh();
     module->settings.customCursor = true;
     module->settings.customCursorColor = Settings::CursorGold;
-    for (int shape = 0; shape < cursorArt::ShapeCount; ++shape) {
+    for (int shape = 0; shape < cursorArt::CoreShapeCount; ++shape) {
         GameAsks(Map, cursorType::None, 0, false);
         ExpectSent(nullptr, {}, 0, "While the set is drawn: the game's cursor");
         Frame();
         Check(Made().size() == static_cast<size_t>(shape) + 1, "One texture a frame");
-        Check(updates == (shape + 1 == cursorArt::ShapeCount ? 1 : 0), "One refresh, once the set is complete");
+        Check(updates == (shape + 1 == cursorArt::CoreShapeCount ? 1 : 0), "One refresh, once the set is complete");
     }
     Check(customCursor::s.active, "The set in use");
     ExpectOurs(Shape::Arrow, "The refresh: the mod's arrow for the game's None, at its hotspot, CursorMode.Auto");
@@ -1622,6 +1626,229 @@ void SeenLog() {
 }
 }
 
+namespace fake {
+// ------------------------------------------------- « Curseurs du jeu aussi »
+using cursorArt::Badge;
+using cursorArt::Icon;
+using cursorArt::IconShape;
+// Every CursorType icon the game uses and the mod's icon for it.
+struct IconType { int64_t type; Icon icon; const char* name; };
+const IconType IconTypes[] = {
+    {cursorType::Gear, Icon::Gear, "Gear"}, {cursorType::Bubble, Icon::Bubble, "Bubble"}, {cursorType::Lock, Icon::Lock, "Lock"},
+    {cursorType::Sword, Icon::Sword, "Sword"}, {cursorType::Scythe, Icon::Scythe, "Scythe"}, {cursorType::Axe, Icon::Axe, "Axe"},
+    {cursorType::Hook, Icon::Hook, "Hook"}, {cursorType::Book, Icon::Book, "Book"}, {cursorType::House, Icon::House, "House"},
+    {cursorType::Pickaxe, Icon::Pickaxe, "Pickaxe"}, {cursorType::Shears, Icon::Shears, "Shears"},
+    {cursorType::Teleport, Icon::Teleport, "Teleport"}, {cursorType::Ping, Icon::Ping, "Ping"},
+    {cursorType::PingSword, Icon::Sword, "PingSword"}, {cursorType::Shield, Icon::Shield, "Shield"},
+    {cursorType::Heart, Icon::Heart, "Heart"}, {cursorType::Target, Icon::Target, "Target"}, {cursorType::Skull, Icon::Skull, "Skull"},
+    {cursorType::One, Icon::One, "One"}, {cursorType::Two, Icon::Two, "Two"}, {cursorType::Three, Icon::Three, "Three"},
+    {cursorType::Diving, Icon::Diving, "Diving"}, {cursorType::DivingSkill, Icon::Diving, "Plonger (1 << 31 widened)"},
+    {cursorType::Magnifier, Icon::Magnifier, "Magnifier"}, {cursorType::NotFound, Icon::Question, "NotFound"}};
+// The game's states and the badge each gives (Disabled first, as the arrow's).
+struct StateBadge { int32_t state; Badge badge; Shape arrow; };
+const StateBadge States[] = {{0, Badge::None, Shape::Arrow}, {customCursor::StateDisabled, Badge::Forbidden, Shape::ArrowForbidden},
+    {customCursor::StateWait, Badge::Busy, Shape::ArrowBusy},
+    {customCursor::StateDisabled | customCursor::StateWait, Badge::Forbidden, Shape::ArrowForbidden}};
+Request GameRequest(int32_t layer, int64_t type, int32_t state, bool texture) {
+    Request r;
+    r.origin = Origin::ApplyCursor; r.layer = layer; r.type = type; r.state = state; r.textureNull = !texture;
+    return r;
+}
+// The policy for every icon type and state, the option on and off; the
+// overlays asked as types; Invalid and unknown types kept; the rest as before.
+void PolicyIcons() {
+    const Hover none, drag{true, false, false};
+    std::set<Icon> reached;
+    for (const auto& entry : IconTypes)
+        for (const auto& [state, badge, arrow] : States)
+            for (const int32_t layer : {Map, Interactive, Frustum, UiLayer}) {
+                const std::string what = std::string(entry.name) + " state " + std::to_string(state) + " layer " + std::to_string(layer);
+                Check(Choose(GameRequest(layer, entry.type, state, true), none, true) == IconShape(entry.icon, badge), "On, the mod's icon: " + what);
+                Check(Choose(GameRequest(layer, entry.type, state, false), none, true) == IconShape(entry.icon, badge),
+                    "On, without the game's texture: the mod's icon still: " + what);
+                Check(Choose(GameRequest(layer, entry.type, state, true), none, false) == std::nullopt, "Off, the game's: " + what);
+                Check(Choose(GameRequest(layer, entry.type, state, false), none, false) == arrow, "Off, no texture: the arrow's: " + what);
+                Check(Choose(GameRequest(layer, entry.type, state, true), drag, true) == Shape::Closed, "Dragging: the closed hand: " + what);
+                Check(customCursor::IconOfType(entry.type) == entry.icon, "IconOfType: " + what);
+                reached.insert(entry.icon);
+            }
+    Check(reached.size() == cursorArt::IconCount, "Every icon of the mod stands for a type of the game");
+    Check(cursorType::DivingSkill == static_cast<int64_t>(0xFFFFFFFF80000000ULL), "Plonger: 1 << 31 widened with its sign");
+    // The game's overlays asked as types: the arrow's badges, whatever the state.
+    for (const auto& [state, badge, arrow] : States) {
+        Check(Choose(GameRequest(Interactive, cursorType::Disabled, state, true), none, true) == Shape::ArrowForbidden &&
+            Choose(GameRequest(Interactive, cursorType::Hourglass, state, true), none, true) == Shape::ArrowBusy,
+            "Disabled and Hourglass asked as types: the arrow's badges");
+        Check(Choose(GameRequest(Interactive, cursorType::Disabled, state, true), none, false) == std::nullopt &&
+            Choose(GameRequest(Interactive, cursorType::Hourglass, state, true), none, false) == std::nullopt, "Off: the game's overlays");
+        // Invalid, unknown and future types: the game's texture, the arrow without one.
+        for (const int64_t type : {cursorType::Invalid, int64_t{0x12345}, int64_t{0x200000000}, int64_t{0x4000000000000000},
+                 int64_t{-3}, int64_t{0x1800}})
+            for (const bool on : {false, true}) {
+                Check(Choose(GameRequest(Interactive, type, state, true), none, on) == std::nullopt, "An unknown type stays the game's");
+                Check(Choose(GameRequest(Interactive, type, state, false), none, on) == arrow, "An unknown type without texture: the arrow");
+                Check(!customCursor::IconOfType(type), "No icon for an unknown type");
+            }
+    }
+    // The mod's own cursors as before, the option on or off.
+    for (const bool on : {false, true}) {
+        Check(Choose(GameRequest(UiLayer, cursorType::Link, 0, true), none, on) == Shape::Hand &&
+            Choose(GameRequest(Frustum, cursorType::Link, customCursor::StateWait, true), none, on) == Shape::HandBusy &&
+            Choose(GameRequest(Map, cursorType::None, 0, false), none, on) == Shape::Arrow &&
+            Choose(GameRequest(UiLayer, cursorType::Forbidden, 0, true), none, on) == Shape::ArrowForbidden &&
+            Choose(GameRequest(UiLayer, cursorType::ResizeNS, 0, true), none, on) == Shape::ResizeNS, "The thirteen cursors as before");
+        Request uss;
+        uss.textureNull = false;
+        Check(Choose(uss, none, on) == std::nullopt, "Another caller's texture stays its own");
+    }
+    // The shapes' layout: the icons after the thirteen, then with each badge.
+    Check(static_cast<int>(IconShape(Icon::Gear)) == 13 && static_cast<int>(IconShape(Icon::Three, Badge::Busy)) == cursorArt::ShapeCount - 1 &&
+        cursorArt::ShapeCount == 82 && !cursorArt::IsIcon(Shape::HandBusy) && cursorArt::IsIcon(IconShape(Icon::Gear)) &&
+        !cursorArt::IsIcon(static_cast<Shape>(cursorArt::ShapeCount)), "Shape order: the thirteen, the icons, with the forbidden badge, with the hourglass");
+    for (int shape = cursorArt::CoreShapeCount; shape < cursorArt::ShapeCount; ++shape)
+        Check(IconShape(cursorArt::IconOf(static_cast<Shape>(shape)), cursorArt::BadgeOf(static_cast<Shape>(shape))) == static_cast<Shape>(shape),
+            "IconOf and BadgeOf give the shape back");
+    Check(customCursor::ShapeName(IconShape(Icon::Bubble)) == "bubble" && customCursor::ShapeName(IconShape(Icon::Gear, Badge::Busy)) == "gearBusy" &&
+        customCursor::ShapeName(IconShape(Icon::Sword, Badge::Forbidden)) == "swordForbidden" && customCursor::ShapeName(Shape::HandBusy) == "handBusy",
+        "Each shape named in the log");
+}
+// The icons' frames: the set in use with its thirteen cursors first, then one
+// icon a frame; complete, the game's cursor applied again. Each type and state
+// then the mod's; unticked, the game's icon back first, then the icons
+// destroyed (the thirteen stay); a new look keeps the icons in use until the
+// next set is complete; « Curseur Dofus » unticked and Stop restore everything.
+void GameIcons() {
+    constexpr int Icons = cursorArt::ShapeCount - cursorArt::CoreShapeCount;
+    Check(Settings{}.customCursorGame, "« Curseurs du jeu aussi » ticked by default");
+    Fresh();
+    module->settings.customCursorGame = true;
+    Activate();
+    Check(customCursor::s.current.built == 13 && Made().size() == 13 && updates == 1, "In use with its thirteen cursors first");
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Bubble);
+    ExpectGame(cursorType::Bubble, "An icon not drawn yet: the game's");
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Bubble, 0, false);
+    ExpectOurs(Shape::Arrow, "An icon not drawn yet, without the game's texture: the mod's arrow");
+    GameAsks(Interactive, cursorType::Bubble);
+    for (int k = 0; k < Icons; ++k) {
+        Check(updates == 1 && LoggedPrefix("CUSTOM_CURSOR_GAME_ICONS on") == 0, "No refresh before the icons are complete");
+        Frame();
+        Check(Made().size() == static_cast<size_t>(14 + k), "One icon a frame");
+    }
+    Check(customCursor::s.current.built == static_cast<size_t>(cursorArt::ShapeCount) && updates == 2 &&
+        Logged("CUSTOM_CURSOR_GAME_ICONS on shapes=82 size=32"), "The icons complete: logged, the game's cursor applied again");
+    ExpectOurs(IconShape(Icon::Bubble), "The refresh: the mod's bubble in place of the game's");
+    CheckSet(CurrentSet(), 32, cursorArt::Colour::Gold, 0, 0, "Gold at 32 px, the icons too");
+    Check(TextureHandles() == 82, "Eighty-two textures, each held once");
+    Frames(50);
+    Check(Made().size() == 82 && updates == 2, "Nothing drawn again while nothing changes");
+    // Every type and state through the detour.
+    for (const auto& entry : IconTypes)
+        for (const auto& [state, badge, arrow] : States) {
+            nowMs += 300;
+            GameAsks(Interactive, entry.type, state);
+            ExpectOurs(IconShape(entry.icon, badge), std::string("The mod's icon for ") + entry.name);
+        }
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Disabled);
+    ExpectOurs(Shape::ArrowForbidden, "The game's cross asked alone: the arrow's badge");
+    for (const int64_t type : {cursorType::Invalid, int64_t{0x12345}, int64_t{0x200000000}}) {
+        nowMs += 300;
+        GameAsks(Interactive, type);
+        ExpectGame(type, "An unknown type: the game's own");
+    }
+    nowMs += 300;
+    GameAsks(UiLayer, cursorType::Link);
+    ExpectOurs(Shape::Hand, "The hand as before");
+    // Unticked: the game's sword back first, then the 69 icons destroyed.
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Sword, customCursor::StateDisabled);
+    ExpectOurs(IconShape(Icon::Sword, Badge::Forbidden), "The mod's sword with its badge");
+    const auto full = CurrentSet();
+    events.clear();
+    module->settings.customCursorGame = false;
+    Frame();
+    ExpectGame(cursorType::Sword, "Unticked: the game's sword at once");
+    std::vector<std::string> expected{"update"};
+    expected.insert(expected.end(), Icons, "destroy");
+    Check(events == expected && Logged("CUSTOM_CURSOR_GAME_ICONS off") && customCursor::s.active && customCursor::s.current.built == 13 &&
+        TextureHandles() == 13, "The game's cursor applied again first, then the icons destroyed; the thirteen stay");
+    for (size_t i = 0; i < full.size(); ++i) Check(Get(full[i]).destroyed == (i >= 13), "Only the icons destroyed");
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Gear, customCursor::StateWait);
+    ExpectGame(cursorType::Gear, "Unticked: the game's tool");
+    nowMs += 300;
+    GameAsks(UiLayer, cursorType::Link);
+    ExpectOurs(Shape::Hand, "Unticked: the mod's hand still");
+    Frames(30);
+    Check(Made().size() == 82, "Unticked: nothing drawn");
+    // Ticked again: drawn again, applied once complete.
+    module->settings.customCursorGame = true;
+    Frames(Icons);
+    Check(customCursor::s.current.built == 82 && Made().size() == 82 + 69 && LoggedPrefix("CUSTOM_CURSOR_GAME_ICONS on") == 2, "Ticked again: drawn again");
+    // Another look: the icons in use until the next set is complete, then all at once.
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Heart);
+    const Obj goldHeart = Ours(IconShape(Icon::Heart));
+    ExpectOurs(IconShape(Icon::Heart), "The gold heart");
+    module->settings.customCursorColor = Settings::CursorEmerald;
+    Frames(cursorArt::ShapeCount - 1);
+    Check(customCursor::s.current.look.colour == Settings::CursorGold && Ours(IconShape(Icon::Heart)) == goldHeart && !Get(goldHeart).destroyed,
+        "While the next set is drawn, the icons in use stay");
+    Frame();
+    Check(customCursor::s.current.look.colour == Settings::CursorEmerald && customCursor::s.current.built == 82 && Get(goldHeart).destroyed,
+        "The next set complete: in use, the old one destroyed");
+    ExpectOurs(IconShape(Icon::Heart), "Applied again: the emerald heart");
+    CheckSet(CurrentSet(), 32, cursorArt::Colour::Emerald, 0, 0, "Émeraude at 32 px, the icons too");
+    // « Curseur Dofus » unticked: every cursor the game's again, every texture destroyed.
+    module->settings.customCursor = false;
+    Frame();
+    ExpectGame(cursorType::Heart, "Unticked: the game's heart");
+    Check(TextureHandles() == 0 && !customCursor::s.active && !CustomCursorCleanupPending(), "Nothing of the mod left");
+    for (const auto texture : Made()) Check(Get(texture).destroyed, "Every texture destroyed");
+    Frames(100);
+    Check(TextureHandles() == 0, "Without « Curseur Dofus », the option alone draws nothing");
+    // Unticked while the icons are drawn: the ones made destroyed.
+    Fresh();
+    module->settings.customCursorGame = true;
+    Activate();
+    Frames(10);
+    events.clear();
+    module->settings.customCursorGame = false;
+    Frame();
+    Check(customCursor::s.current.built == 13 && TextureHandles() == 13 && std::count(events.begin(), events.end(), "destroy") == 10,
+        "Unticked midway: the ten icons made destroyed");
+    // Stop with every icon: the game's cursor back, every texture destroyed.
+    Fresh();
+    module->settings.customCursorGame = true;
+    Activate(Settings::CursorDefault, 2);
+    Frames(Icons);
+    nowMs += 300;
+    GameAsks(Frustum, cursorType::Three);
+    ExpectOurs(IconShape(Icon::Three), "The mod's marker at 64 px", 64);
+    Check(LoadedAt(Ours(IconShape(Icon::Three)), 64), "The player loads the icon at its own size");
+    module->stopped = true;
+    RestoreCustomCursor();
+    ExpectGame(cursorType::Three, "Stop: the game's marker");
+    Check(handles.empty() && !CustomCursorCleanupPending() && Made().size() == 82, "Stop: no reference left");
+    for (const auto texture : Made()) Check(Get(texture).destroyed, "Stop: every texture destroyed");
+    // A lost icon: the whole set drawn again.
+    Fresh();
+    module->settings.customCursorGame = true;
+    Activate();
+    Frames(Icons);
+    SetNative(Ours(IconShape(Icon::Gear)), false);
+    nowMs += 300;
+    GameAsks(Interactive, cursorType::Gear);
+    ExpectGame(cursorType::Gear, "A destroyed icon of the mod: the game's");
+    Frame(1000);
+    Check(Logged("CUSTOM_CURSOR_LOST a texture of the mod was destroyed; drawing them again") && !customCursor::s.active, "The lost icon checked");
+    Frames(13 + Icons);
+    Check(customCursor::s.active && customCursor::s.current.built == 82, "Drawn again, the icons too");
+}
+}
+
 int main() {
     try {
         fake::Object probe;
@@ -1649,6 +1876,8 @@ int main() {
         fake::LostTexture();
         fake::RefreshFailure();
         fake::SeenLog();
+        fake::PolicyIcons();
+        fake::GameIcons();
         fake::Fresh(false);
         delete module;
         module = nullptr;
@@ -1664,7 +1893,10 @@ int main() {
             "size; a switch applied in one call), the mode and the loads logged, unticking and Stop (the game's cursor back first, every "
             "texture destroyed, every reference released), failed destroys retried then abandoned (at once by a Stop before the "
             "services, even within the retry wait), errors in the detour (forwarded, "
-            "then off) and in the frames, a lost texture, a failed refresh, the requests logged. No game process accessed.\n";
+            "then off) and in the frames, a lost texture, a failed refresh, the requests logged; « Curseurs du jeu aussi » (every "
+            "icon type of the game in every state, on and off, the overlays asked as types, unknown types kept, the icons drawn one a "
+            "frame after the thirteen then applied, unticked and ticked again, a new look keeping the icons in use, Stop and a lost "
+            "icon). No game process accessed.\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << "\n";

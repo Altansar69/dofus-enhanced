@@ -79,12 +79,15 @@ struct Look {
     uint32_t accent = 0, dark = 0;
     bool operator==(const Look&) const = default;
 };
+// A set: the thirteen cursors first, then (« Curseurs du jeu aussi ») the
+// game's icons, built in Shape order one a frame.
+constexpr size_t CoreShapes = cursorArt::CoreShapeCount, AllShapes = cursorArt::ShapeCount;
 struct Set {
     Look look;
     std::array<Drawn, cursorArt::ShapeCount> shapes;
     size_t built = 0; // uploaded, in Shape order
     bool loadLogged = false; // CUSTOM_CURSOR_LOADED written for this set
-    bool Complete() const { return built == shapes.size(); }
+    bool Ready() const { return built >= CoreShapes; } // the thirteen cursors, enough to stand in
 };
 // A call going on to Unity: the texture, its hotspot and the mode; for a
 // cursor of the mod, the size it is drawn at (0 otherwise).
@@ -97,6 +100,7 @@ struct State {
     bool active = false;    // the mod's cursors stand in: the option on, a complete set
     bool faulted = false;   // an error in the detour, or repeated frame errors: off until unticked
     bool forceNext = false; // a refresh: its call is never skipped
+    bool gameIcons = false; // « Curseurs du jeu aussi », as the last frame read it: the game's icons the mod's (once drawn)
     Set current, building;  // in use; the next one, one shape a frame
     std::vector<Ref> doomed; // textures to destroy, once the game took another cursor
     unsigned cleanupFailures = 0;
@@ -262,11 +266,16 @@ std::string Rgb(uint32_t value) {
     std::snprintf(text, sizeof(text), "#%06X", static_cast<unsigned>(value));
     return text;
 }
-const char* ShapeName(Shape shape) {
+std::string ShapeName(Shape shape) {
     static constexpr const char* Names[] = {"arrow", "hand", "beam", "open", "closed", "resizeEW", "resizeNS", "resizeNWSE",
         "resizeNESW", "arrowForbidden", "handForbidden", "arrowBusy", "handBusy"};
-    static_assert(std::size(Names) == cursorArt::ShapeCount, "A name per shape");
-    return Names[static_cast<size_t>(shape)];
+    static constexpr const char* Icons[] = {"gear", "bubble", "lock", "sword", "scythe", "axe", "hook", "book", "house", "pickaxe",
+        "shears", "teleport", "diving", "magnifier", "question", "ping", "shield", "heart", "target", "skull", "one", "two", "three"};
+    static constexpr const char* Badges[] = {"", "Forbidden", "Busy"};
+    static_assert(std::size(Names) == cursorArt::CoreShapeCount && std::size(Icons) == cursorArt::IconCount, "A name per shape");
+    if (cursorArt::IsIcon(shape))
+        return std::string(Icons[static_cast<size_t>(cursorArt::IconOf(shape))]) + Badges[static_cast<size_t>(cursorArt::BadgeOf(shape))];
+    return static_cast<size_t>(shape) < std::size(Names) ? Names[static_cast<size_t>(shape)] : "unknown";
 }
 // The first SeenLimit distinct requests: what the game asks for, where, and
 // what stood in (settles in game which types the game sends, and whether its
@@ -278,7 +287,7 @@ void Note(const Request& request, uintptr_t caller, const std::optional<Shape>& 
         " layer=" + std::to_string(request.layer) +
         " type=" + (request.type < 0 ? std::to_string(request.type) : Hex(static_cast<uint64_t>(request.type))) +
         " state=" + std::to_string(request.state) + " texture=" + (request.textureNull ? "none" : "game") +
-        " cursor=" + (shape ? ShapeName(*shape) : "game"));
+        " cursor=" + (shape ? ShapeName(*shape) : std::string("game")));
 }
 
 // ---------------------------------------------------------------- contracts
@@ -443,11 +452,14 @@ void Remember(const Call& call, uint64_t now, bool ours) {
 }
 // While the mod's cursors are on: what goes on to Unity, the mod's cursor in
 // place of the game's (Choose) or the call unchanged; false skips it (the same
-// cursor of the mod sent within DedupeMs).
+// cursor of the mod sent within DedupeMs). A game's icon not drawn yet keeps
+// the game's texture until the frame that completes them applies it again.
 bool Decide(Obj texture, uintptr_t caller, Call& call) {
     const Request request = Classify(texture, caller);
     const Hover hover = ReadHover(AsksArrow(request), AsksMove(request));
-    const auto shape = Choose(request, hover);
+    auto shape = Choose(request, hover, s.gameIcons);
+    if (shape && cursorArt::IsIcon(*shape) && !Alive(s.current.shapes[static_cast<size_t>(*shape)].texture.get()))
+        shape = Choose(request, hover, false); // not drawn yet: as without the option (the arrow for a missing texture)
     s.applied = hover;
     s.askedArrow = AsksArrow(request);
     s.askedMove = AsksMove(request);
@@ -620,21 +632,31 @@ cursorArt::Colour ArtColour(int choice) {
 cursorArt::Palette PaletteFor(const Look& look) {
     return cursorArt::PaletteOf(ArtColour(look.colour), look.accent, look.dark);
 }
-// One shape more of the set for `look`. Complete, the set is in use at once
-// and the one before destroyed once the game took the new cursor.
-void Build(const Look& look, uint64_t now) {
-    if (!(s.building.look == look)) {
-        Doom(s.building);
-        s.building.look = look;
-    }
-    const size_t index = s.building.built;
+// The set's next shape, drawn for its look and uploaded: one a frame.
+void DrawNext(Set& set) {
+    const Look& look = set.look;
+    const size_t index = set.built;
+    if (index >= set.shapes.size()) return;
     const auto image = cursorArt::Render(static_cast<Shape>(index), PaletteFor(look), look.size);
     const auto pixels = static_cast<size_t>(look.size) * static_cast<size_t>(look.size);
     if (image.size != look.size || image.rgba.size() != pixels * 4 || image.hotX < 0 || image.hotY < 0 || image.hotX >= image.size ||
         image.hotY >= image.size)
         throw std::runtime_error("Cursor image malformed");
-    s.building.shapes[index] = {Upload(image), {static_cast<float>(image.hotX), static_cast<float>(image.hotY)}};
-    if (++s.building.built < s.building.shapes.size()) return;
+    set.shapes[index] = {Upload(image), {static_cast<float>(image.hotX), static_cast<float>(image.hotY)}};
+    ++set.built;
+}
+// One shape more of the set for `look`, up to `want` shapes (the thirteen
+// cursors, or the game's icons too). The set is in use at once with its
+// thirteen cursors when none is (its icons follow, one a frame: Extend), with
+// all it wants when it replaces another (the icons in use never go missing);
+// the one before destroyed once the game took the new cursor.
+void Build(const Look& look, size_t want, uint64_t now) {
+    if (!(s.building.look == look)) {
+        Doom(s.building);
+        s.building.look = look;
+    }
+    if (s.building.built < want) DrawNext(s.building);
+    if (s.building.built < (s.active ? std::max(want, CoreShapes) : CoreShapes)) return;
     Set previous = std::move(s.current);
     s.current = std::move(s.building);
     s.building = Set{};
@@ -651,11 +673,29 @@ void Build(const Look& look, uint64_t now) {
     Doom(previous);
     DestroyDoomed(now, false);
 }
+// « Curseurs du jeu aussi » ticked, the set in use: its icons one a frame,
+// then the game's cursor applied again (an icon it shows becomes the mod's).
+void Extend() {
+    DrawNext(s.current);
+    if (s.current.built < AllShapes) return;
+    Log("CUSTOM_CURSOR_GAME_ICONS on shapes=" + std::to_string(s.current.built) + " size=" + std::to_string(s.current.look.size));
+    Refresh();
+}
+// Unticked: the game's own icon back first (s.gameIcons already off), then the
+// mod's icons destroyed; the thirteen cursors stay.
+void Trim(uint64_t now) {
+    if (s.active) Refresh();
+    for (size_t index = CoreShapes; index < s.current.shapes.size(); ++index)
+        if (s.current.shapes[index].texture.get()) s.doomed.push_back(std::move(s.current.shapes[index].texture));
+    s.current.built = CoreShapes;
+    Log("CUSTOM_CURSOR_GAME_ICONS off");
+    DestroyDoomed(now, false);
+}
 // A texture of the set in use destroyed by something else: the game's cursor
 // until the set is drawn again.
 void CheckTextures() {
-    for (const auto& drawn : s.current.shapes)
-        if (!Alive(drawn.texture.get())) {
+    for (size_t index = 0; index < s.current.built; ++index)
+        if (!Alive(s.current.shapes[index].texture.get())) {
             Log("CUSTOM_CURSOR_LOST a texture of the mod was destroyed; drawing them again");
             const bool wasActive = s.active;
             s.active = false;
@@ -836,7 +876,7 @@ void Tick(uint64_t now) {
         s.nextSize = now + SizeMs;
         s.dpi = sys.dpi();
         s.base = sys.pointerBase();
-        if (s.current.Complete()) CheckTextures();
+        if (s.current.Ready()) CheckTextures();
     }
     Look look;
     look.colour = Settings::ValidCustomCursorColor(settings.customCursorColor) ? settings.customCursorColor : Settings::CursorDefault;
@@ -846,8 +886,16 @@ void Tick(uint64_t now) {
         look.accent = s.accent;
         look.dark = s.dark;
     }
-    if (!(s.current.Complete() && s.current.look == look)) Build(look, now);
-    else if (s.building.built) Doom(s.building); // back to the look in use
+    // « Curseurs du jeu aussi » (1.19.0): the game's icons too, once drawn.
+    s.gameIcons = settings.customCursorGame;
+    const size_t want = s.gameIcons ? AllShapes : CoreShapes;
+    if (!(s.current.Ready() && s.current.look == look)) {
+        Build(look, want, now);
+    } else {
+        if (s.building.built) Doom(s.building); // back to the look in use
+        if (s.current.built < want) Extend();
+        else if (s.current.built > want) Trim(now);
+    }
     if (s.active) Poll();
     DestroyDoomed(now, false);
 }

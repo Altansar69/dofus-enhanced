@@ -13,7 +13,7 @@ enum class Progress { Unknown, Missing, Done, NotStarted };
 struct State {
     Module* owner = nullptr;
     Ref cached, compositor, service, inventory, content, iterator, quests;
-    Klass itemClass = nullptr, maskClass = nullptr, integerClass = nullptr, questClass = nullptr, progressClass = nullptr;
+    Klass itemClass = nullptr, maskClass = nullptr, integerClass = nullptr, dataClass = nullptr, questClass = nullptr, progressClass = nullptr;
     std::set<int> owned, scanning;
     std::map<int, Progress> progress;
     std::string questReason;
@@ -69,11 +69,36 @@ void Install() {
     api.FindVerified(state.itemClass,"nag",0,0x2AACF80);
     api.FindVerified(state.itemClass,"mzb",0,0x2AAC720);
     api.FindVerified(state.itemClass,"myt",0,0x2AAC3B0);
+    api.FindVerified(state.itemClass,"myx",0,0x2AAC6B0); // Its ItemData, as capture-detect reads it.
+    state.dataClass = api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.Item","ItemData");
     state.questClass = api.Class("Core.dll","","fdi");
     state.progressClass = api.Class("Core.dll","","fcz");
     api.FindVerified(state.questClass,"bczk",0,0x9566A0); // Completed quest IDs, short.
     api.FindVerified(state.questClass,"bczg",0,0x74B820); // Current per-quest progress.
     state.installed = true;
+}
+// A boss soul (type 327) holds every monster its static effects 4058 list: a
+// dungeon-room soul lists every boss of its room, such as 33753 "Âmes
+// capturées : Sphincter Cell, Rat Blanc & Rat Noir" = 943, 940, 939, or 33746
+// Tynrils = 1087, 1072, 1085, 1086 (three of them have no soul of their own).
+// Unreadable effects keep the table's own monster alone, as before.
+void ReadRoom(Obj item) {
+    try {
+        Ref data(api.Call(item,"myx"));
+        if (!data.get()) return;
+        if (!Instance(data.get(),state.dataClass)) throw std::runtime_error("Unsupported soul item data");
+        Ref effects(api.Field(data.get(),"possibleEffects"));
+        if (!effects.get()) return;
+        std::set<int> listed;
+        for (int i = 0, count = Count(effects.get(),128); i < count; ++i) {
+            Ref effect(api.Call(effects.get(),"get_Item",{&i}));
+            // 4058 = CharacterSoulMonster, its value the monster ID.
+            if (!effect.get() || Field<uint16_t>(effect.get(),"actionId") != 4058 ||
+                !api.class_is_assignable_from(state.integerClass,api.object_get_class(effect.get()))) continue;
+            if (const int monster = Field<int>(effect.get(),"value"); monster > 0) listed.insert(monster);
+        }
+        state.scanning.insert(listed.begin(),listed.end());
+    } catch (const std::exception& e) { Error("room",e); }
 }
 void ReadItem(Obj mask) {
     if (!Instance(mask,state.maskClass)) throw std::runtime_error("Invalid chat inventory entry");
@@ -84,8 +109,11 @@ void ReadItem(Obj mask) {
     const int id = api.Value<int>(api.Call(item.get(),"myn"));
     const auto found = std::lower_bound(SoulItems.begin(),SoulItems.end(),id,
         [](const SoulItem& row,int wanted) { return row.item < wanted; });
-    if (found != SoulItems.end() && found->item == id) { state.scanning.insert(found->monster); return; }
+    const bool known = found != SoulItems.end() && found->item == id;
+    if (known) state.scanning.insert(found->monster);
     const auto type = api.Value<uint32_t>(api.Call(item.get(),"mzb"));
+    if (type == 327) { ReadRoom(item.get()); return; }
+    if (known) return;
     if (type != 85 && type != 220) return; // Legacy full soul stones, ordinary/heroic.
     Ref effects(api.Call(item.get(),"myt"));
     if (!effects.get()) throw std::runtime_error("Full soul stone effects unavailable");

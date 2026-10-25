@@ -239,6 +239,15 @@ const std::string KeyInvalid = "Metamob : clé invalide (lettres, chiffres et sy
 std::string Added(const Row& row, int before, int after) {
     return "Metamob : +" + std::to_string(after - before) + " « " + row.name + " » (de " + std::to_string(before) + " à " + std::to_string(after) + ").";
 }
+// The writes one cycle confirms, told together (r123: a dungeon-room soul's bosses).
+struct Part { const Row& row; int before, after; };
+std::string Added(const std::vector<Part>& parts) {
+    std::string text = "Metamob : ";
+    for (size_t i = 0; i < parts.size(); ++i)
+        text += std::string(i ? ", " : "") + "+" + std::to_string(parts[i].after - parts[i].before) + " « " + parts[i].row.name + " » (de " +
+            std::to_string(parts[i].before) + " à " + std::to_string(parts[i].after) + ")";
+    return text + ".";
+}
 std::string NoKey(const std::string& name) {
     return "Metamob : capture de « " + name + " » non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
 }
@@ -563,8 +572,100 @@ void Grouping() {
     EnqueueCapture(Captured(Abrakroc, 2));
     EnqueueCapture(Captured(Larva));
     Tick(2000);
-    Said({Added(Abrakroc, 0, 2), Added(Larva, 1, 2)}, "Grouped per monster");
+    Said({Added({{Abrakroc, 0, 2}, {Larva, 1, 2}})}, "Grouped per monster, told in one notice");
     Finish("grouping");
+}
+
+// r123, the owner's report: a dungeon-room soul holds several bosses (Sphincter
+// Cell and both rats, four Tynrils, the royal Blops). Capture detection queues
+// one capture per boss; each is read and written on its own (the absolute write
+// stays per monster) and the fight's writes are told in one notice. Metamob ids
+// of the test catalog's generated bosses, renamed.
+void RoomCaptures() {
+    auto rows = Catalog();
+    const auto renamed = [&](int64_t id, const std::string& name) -> Row {
+        for (auto& row : rows) if (row.id == id) { row.name = name; return row; }
+        throw std::runtime_error("No such test row");
+    };
+    const Row Sphincter = renamed(331, "Sphincter Cell"), RatBlanc = renamed(332, "Rat Blanc"), RatNoir = renamed(333, "Rat Noir"),
+        Ahuri = renamed(334, "Tynril Ahuri"), Consterne = renamed(335, "Tynril Consterné"), Deconcerte = renamed(336, "Tynril Déconcerté"),
+        Perfide = renamed(337, "Tynril Perfide"), Multicolore = renamed(338, "Blop Multicolore Royal"), Coco = renamed(339, "Blop Coco Royal"),
+        Griotte = renamed(340, "Blop Griotte Royal");
+    Begin(Folder("room"), true);
+    // Sphincter Cell's soul: +1 Sphincter Cell, +1 Rat Blanc, +1 Rat Noir, in one notice.
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug, rows);
+    ExpectStep(Slug, Sphincter, 3); ExpectWrite(Slug, Sphincter, 4, Written(Sphincter, 4));
+    ExpectStep(Slug, RatBlanc, 0); ExpectWrite(Slug, RatBlanc, 1, Written(RatBlanc, 1));
+    ExpectStep(Slug, RatNoir, 2); ExpectWrite(Slug, RatNoir, 3, Written(RatNoir, 3));
+    for (const auto* row : {&Sphincter, &RatBlanc, &RatNoir}) EnqueueCapture(Captured(*row));
+    Tick();
+    Tick(2000);
+    Said({"Metamob : +1 « Sphincter Cell » (de 3 à 4), +1 « Rat Blanc » (de 0 à 1), +1 « Rat Noir » (de 2 à 3)."},
+        "Sphincter Cell's room: three bosses, one notice");
+    Check(Logged("METAMOB_SYNC done=3 pending=0") && LoggedCount("METAMOB_HTTP method=PATCH") == 3, "One absolute write per boss");
+    {
+        std::lock_guard<std::mutex> guard(scriptLock);
+        for (size_t i = 1; i < calls.size(); ++i) Check(calls[i].at - calls[i - 1].at >= 1100, "The 1.1 s spacing holds between the bosses");
+    }
+    // Four Tynrils at once; Metamob's rate limit after the first write: the rest
+    // resumes after Retry-After, the written one never again.
+    ExpectStep(Slug, Ahuri, 0); ExpectWrite(Slug, Ahuri, 1, Written(Ahuri, 1));
+    ExpectStep(Slug, Consterne, 1); ExpectWrite(Slug, Consterne, 2, Status(429, "30"));
+    for (const auto* row : {&Ahuri, &Consterne, &Deconcerte, &Perfide}) EnqueueCapture(Captured(*row));
+    Tick(2000);
+    Said({Added(Ahuri, 0, 1)}, "Written before the rate limit: told at once");
+    Check(Logged("METAMOB_RATE_LIMIT seconds=30") && Logged("METAMOB_SYNC done=1 pending=3"), "Three Tynrils wait");
+    const auto at = LastAt();
+    TickAt(at + 29999);
+    Check(notices.empty(), "Nothing before Retry-After");
+    ExpectStep(Slug, Consterne, 1); ExpectWrite(Slug, Consterne, 2, Written(Consterne, 2));
+    ExpectStep(Slug, Deconcerte, 0); ExpectWrite(Slug, Deconcerte, 1, Written(Deconcerte, 1));
+    ExpectStep(Slug, Perfide, 4); ExpectWrite(Slug, Perfide, 5, Written(Perfide, 5));
+    TickAt(at + 30000);
+    Said({Added({{Consterne, 1, 2}, {Deconcerte, 0, 1}, {Perfide, 4, 5}})}, "The other three Tynrils, read again then written once");
+    // Several Blops: the room soul twice (2 each) and a Blop Coco Royal's own soul: Coco +3.
+    ExpectStep(Slug, Multicolore, 0); ExpectWrite(Slug, Multicolore, 2, Written(Multicolore, 2));
+    ExpectStep(Slug, Coco, 1); ExpectWrite(Slug, Coco, 4, Written(Coco, 4));
+    ExpectStep(Slug, Griotte, 0); ExpectWrite(Slug, Griotte, 2, Written(Griotte, 2));
+    EnqueueCapture(Captured(Multicolore, 2)); EnqueueCapture(Captured(Coco, 2)); EnqueueCapture(Captured(Griotte, 2));
+    EnqueueCapture(Captured(Coco, 1));
+    Tick(2000);
+    Said({Added({{Multicolore, 0, 2}, {Coco, 1, 4}, {Griotte, 0, 2}})}, "Blops with their quantities, one write per Blop");
+    // A boss outside the user's quest between two: told on its own, the writes around it too.
+    ExpectStep(Slug, Sphincter, 4); ExpectWrite(Slug, Sphincter, 5, Written(Sphincter, 5));
+    ExpectStep(Slug, RatNoir, 3); ExpectWrite(Slug, RatNoir, 4, Written(RatNoir, 4));
+    auto klime = Captured(Sphincter);
+    klime.monsterId = 3384; klime.name = "Klime";
+    EnqueueCapture(Captured(Sphincter)); EnqueueCapture(klime); EnqueueCapture(Captured(RatNoir));
+    Tick(2000);
+    Said({Added(Sphincter, 4, 5), Unmatched("Klime"), Added(RatNoir, 3, 4)}, "The unmatched boss keeps the notices in order");
+    Finish("room captures");
+
+    // Restart: captures not sent yet are dropped at the Stop (logged), never sent
+    // twice after it: the module's new start sends nothing of them.
+    Begin(Folder("room-restart"), true);
+    for (const auto* row : {&Sphincter, &RatBlanc, &RatNoir}) EnqueueCapture(Captured(*row));
+    Tick(500);
+    RestoreSync();
+    Check(Logged("METAMOB_SYNC_STOP pending=3"), "The Stop logs what was not sent");
+    InstallSync(Folder("room-restart"), Scripted, Noted, View());
+    Tick(5000); Tick(5000);
+    Check(Sent() == 0 && notices.empty(), "Nothing of them is sent after the restart");
+    Finish("room restart");
+
+    // Without a key: the room's bosses in one notice.
+    Begin(Folder("room-nokey"), false);
+    for (const auto* row : {&Sphincter, &RatBlanc, &RatNoir}) EnqueueCapture(Captured(*row));
+    EnqueueCapture(Captured(RatBlanc));
+    Tick();
+    Said({"Metamob : captures de « Sphincter Cell », « Rat Blanc » et « Rat Noir » non synchronisées : aucune clé enregistrée "
+          "(Options › Dofus Enhanced › Pierre d’âme)."}, "No key: one notice for the room");
+    EnqueueCapture(Captured(Ahuri));
+    Tick();
+    Said({NoKey("Tynril Ahuri")}, "A single capture keeps its own text");
+    Check(Sent() == 0, "Nothing sent without a key");
+    Finish("room without key");
 }
 
 void Cap() {
@@ -664,7 +765,7 @@ void AuthPause() {
     Tick();
     Said({SavedUser}, "The new key");
     Tick();
-    Said({Added(Tofu, 2, 3), Added(Mob, 0, 1)}, "Kept captures sent with the new key");
+    Said({Added({{Tofu, 2, 3}, {Mob, 0, 1}})}, "Kept captures sent with the new key");
     // Refused again; then another game client saves a new key: found at the next check.
     Expect("GET", StepPath(Slug, Larva.step), Status(403));
     EnqueueCapture(Captured(Larva));
@@ -1007,7 +1108,7 @@ void UnknownOutcome() {
     ExpectStep(Slug, Abrakroc, 1);
     ExpectWrite(Slug, Abrakroc, 2, Written(Abrakroc, 2));
     TickAt(at + 30000);
-    Said({Added(Abrakroc, 0, 1), Added(Abrakroc, 1, 2)}, "The new capture goes on top of the settled write");
+    Said({Added({{Abrakroc, 0, 1}, {Abrakroc, 1, 2}})}, "The new capture goes on top of the settled write");
     // A transport that throws on a write: maybe received, so read back at once.
     ExpectStep(Slug, Bouftou, 5);
     Expect("PATCH", "/quests/" + Slug + "/monsters/305", Response{}, "{\"quantity\":6}", true);
@@ -1354,6 +1455,7 @@ void Robustness() {
     });
     ForgetKey(KeyPath(settings));
     EnqueueCapture(Captured(Tofu));
+    TickSync(syncOn); // two pumps: two notices (one pump's captures are told together)
     EnqueueCapture(Captured(Mob));
     TickSync(syncOn);
     Said({NoKey("Mob l'Éponge")}, "The next notice after a failing one");
@@ -1376,11 +1478,17 @@ void Budget() {
     for (const auto& row : fillers) { ExpectStep(Slug, row, 1); ExpectWrite(Slug, row, 2, Written(row, 2)); }
     for (const auto& row : fillers) EnqueueCapture(Captured(row));
     Tick(2000);
-    const auto first = notices.size();
-    Check(first > 0 && first < fillers.size() && Sent() <= 32, "One cycle stops after about 30 requests");
+    // Each cycle's writes in one notice (r123).
+    Check(notices.size() == 1 && Sent() <= 32 && Sent() < 3 + 2 * fillers.size(), "One cycle stops after about 30 requests");
     Tick();
-    Check(notices.size() == fillers.size(), "The next tick goes on at once");
-    for (size_t i = 0; i < fillers.size(); ++i) Check(notices[i] == Added(fillers[i], 1, 2), "Each capture written once, in order");
+    Check(notices.size() == 2, "The next tick goes on at once");
+    std::vector<Part> parts;
+    for (const auto& row : fillers) parts.push_back({row, 1, 2});
+    bool split = false;
+    for (size_t first = 1; first < parts.size(); ++first)
+        split = split || (notices[0] == Added(std::vector<Part>(parts.begin(), parts.begin() + first)) &&
+            notices[1] == Added(std::vector<Part>(parts.begin() + first, parts.end())));
+    Check(split, "Each capture written once, in order");
     notices.clear();
     Finish("budget");
 }
@@ -3193,6 +3301,7 @@ int main() {
         CaptureWhileKeyChecked();
         HappyPath();
         Grouping();
+        RoomCaptures();
         Cap();
         NotInQuest();
         ChoosingQuests();
@@ -3252,7 +3361,7 @@ int main() {
         Threaded();
         NoPrivateData();
         std::filesystem::remove_all(root);
-        std::cout << "PASS: Metamob capture sync: key check and storage, debounce and grouping, quest choice, re-read before every "
+        std::cout << "PASS: Metamob capture sync: key check and storage, debounce and grouping, a dungeon-room soul's bosses (one write each, one notice per cycle, resumed after Retry-After, dropped at a Stop, no key told once), quest choice, re-read before every "
             "absolute write, 30 cap, unmatched names, 401 pause and its 10 min retry (a read-only key told once), proxy 401/403 pages, "
             "404 rediscovery, Retry-After, "
             "backoff, unknown outcomes settled under the sender lock and announced to sibling clients (only that monster waits), "

@@ -1,6 +1,7 @@
 #include "stats/stats.hpp"
 #include "stats/stats-store.hpp"
 #include "core/module.hpp"
+#include <algorithm>
 #include <ctime>
 #include <unordered_map>
 
@@ -9,9 +10,10 @@
 // at most and at once when counting stops (a logout, a reconnection, the
 // character selection, the box unticked; at a change of character, at Stop and
 // for a reset too), and the game's data the statistics window shows (the
-// played character, the spells', dungeons' and worlds' names) or the spells
-// need (whose spell each is, KindOf: for the fights' tracker, and to convert
-// 1.15.0 to 1.16.0's spells, see stats-store.hpp).
+// played character and its class, the spells', dungeons' and worlds' names)
+// or the spells need (whose class's spell each is, ClassOf: for the fights'
+// tracker, to convert 1.15.0 to 1.16.0's spells and to check 1.16.1 to
+// 1.18.0's, see stats-store.hpp).
 namespace stats {
 namespace {
 using namespace managed;
@@ -28,7 +30,10 @@ constexpr ULONGLONG ReadMs = 1000, WantedMs = 3000, RefreshMs = 5000, LogMs = 60
 // How long the main thread waits for another client's lock: a pump, Stop, a reset.
 constexpr unsigned TickLockMs = 50, StopLockMs = 1000, ClearLockMs = 300;
 constexpr size_t MaxNames = 1024, MaxGameNameBytes = 128, MaxKinds = 4096;
-// The old spells of the file (1.15.0 to 1.16.0's) whose kind the game is asked,
+// BreedEnum's classes (1 Feca to 21 Bellaphone in 3.7.12.12; negative: not a
+// character): a value outside is no class.
+constexpr int32_t MaxClass = 64;
+// The spells of the file whose class the game is asked (stats-store.hpp, Unsorted),
 // at most SortedPerTick once a second while counting or while the window is open.
 constexpr ULONGLONG SortMs = 1000;
 constexpr size_t SortedPerTick = 128;
@@ -53,13 +58,14 @@ bool Printable(const std::string& text) {
     return true;
 }
 
-// The game's side: the played character (esg, the fng service), the names of
-// the spells, dungeons and worlds in its data, and whose spell a spell is.
+// The game's side: the played character (esg, the fng service) and its class,
+// the names of the spells, dungeons and worlds in its data, and whose class's
+// spell a spell is.
 // Each part disables only itself when its contract does not match this client.
 class Native final : public Game {
 public:
     void Install() {
-        characterReady = spellsReady = kindsReady = dungeonsReady = worldsReady = false;
+        characterReady = classReady = spellsReady = kindsReady = dungeonsReady = worldsReady = false;
         listClass = nullptr;
         names.clear();
         kinds.clear();
@@ -73,6 +79,13 @@ public:
             characterReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_CHARACTER_DISABLED ") + error.what()); }
         try {
+            // z.dbrp (BreedEnum): the character's class, as both z constructors
+            // store it from the server's character information.
+            if (!characterReady) throw std::runtime_error("No character");
+            classField = RequireField(info, "dbrp", 0x30);
+            classReady = true;
+        } catch (const std::exception& error) { Log(std::string("STATS_CHARACTER_CLASS_DISABLED ") + error.what()); }
+        try {
             spellData = api.Class(DataCenter, "Core.DataCenter.Metadata.Spell", "SpellData");
             spellById = api.FindVerified(spellData, "GetById", 1, 0x7CCE20);
             spellName = api.FindVerified(spellData, "get_name", 0, 0x7CD300);
@@ -80,12 +93,17 @@ public:
         } catch (const std::exception& error) { Log(std::string("STATS_SPELL_NAMES_DISABLED ") + error.what()); }
         try {
             // Only a class's own spells have a SpellVariantData: the class's
-            // spell pairs (862 spells in 3.7.12.12's data). The spells an
-            // equipment casts in its bearer's name have none (the Dofus' own,
-            // spell type 732: « Pourpre Profond », « Vert Émeraude »…).
+            // spell pairs (862 spells in 3.7.12.12's data), whose breedId is
+            // the class (each BreedData.breedSpellsId lists one spell of each
+            // of its own pairs: the « Sorts » tab). The spells an equipment
+            // casts in its bearer's name have none (the Dofus' own, spell type
+            // 732: « Pourpre Profond », « Vert Émeraude »…), nor those a spell
+            // triggers (Court-circuit 13872, the Steamer's variant of Ancrage,
+            // triggers « Court-circuit » 29594, type 627 « Déclenchés Steamer »).
             if (!spellsReady) throw std::runtime_error("No spell data");
             spellVariant = api.FindVerified(spellData, "get_spellVariant", 0, 0x7CD6B0);
             variantData = api.Class(DataCenter, "Core.DataCenter.Metadata.Spell", "SpellVariantData");
+            variantClass = RequireField(variantData, "breedId", 0x14);
             kindsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_SPELL_KINDS_DISABLED ") + error.what()); }
         try {
@@ -117,7 +135,8 @@ public:
             worldsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_WORLD_NAMES_DISABLED ") + error.what()); }
     }
-    int64_t Character(std::string& name) override {
+    int64_t Character(std::string& name, int& characterClass) override {
+        characterClass = 0;
         if (!characterReady || !module) return 0;
         Ref service(module->FindService("fng"));
         if (!Is(service.get(), character)) return 0;
@@ -128,6 +147,10 @@ public:
         if (Is(base.get(), info)) {
             auto text = api.String(api.Field(base.get(), "dbrm"));
             if (Printable(text)) name = std::move(text);
+            if (classReady) {
+                const auto breed = Read<int32_t>(base.get(), classField);
+                if (breed > 0 && breed <= MaxClass) characterClass = breed;
+            }
         }
         return id > 0 ? id : 0;
     }
@@ -164,18 +187,22 @@ public:
         return name;
     }
     // The spell's id as the fight's cast message gives it to SpellData.GetById
-    // (stats-fights.cpp): its SpellData has a SpellVariantData, or not.
-    SpellKind Kind(int spell) override {
-        if (!kindsReady) return SpellKind::Unknown;
+    // (stats-fights.cpp): its SpellData has a SpellVariantData (its breedId the
+    // class), or not.
+    int Class(int spell) override {
+        if (!kindsReady) return UnknownClass;
         if (const auto known = kinds.find(spell); known != kinds.end()) return known->second;
         // GetById throws while the game's spells are not loaded (no data root):
         // nothing kept, asked again. A spell the game does not know is no class's.
         int64_t id = spell;
         Ref data(api.Invoke(spellById, nullptr, {&id}));
-        auto kind = SpellKind::Other;
+        int kind = NoClass;
         if (Is(data.get(), spellData)) {
             Ref variant(api.Invoke(spellVariant, data.get()));
-            if (Is(variant.get(), variantData)) kind = SpellKind::Class;
+            if (Is(variant.get(), variantData)) {
+                const auto breed = Read<int32_t>(variant.get(), variantClass);
+                if (breed > 0 && breed <= MaxClass) kind = breed;
+            }
         }
         if (kinds.size() >= MaxKinds) kinds.clear();
         kinds.emplace(spell, kind);
@@ -222,10 +249,10 @@ private:
     }
     Klass character{}, info{}, spellData{}, variantData{}, dungeonData{}, worldData{}, listClass{};
     Method localId{}, spellById{}, spellName{}, spellVariant{}, dungeonsRoot{}, dungeonList{}, dungeonName{}, worldById{}, worldName{};
-    size_t dungeonId = 0;  // DungeonData.id
-    bool characterReady = false, spellsReady = false, kindsReady = false, dungeonsReady = false, worldsReady = false;
+    size_t dungeonId = 0, classField = 0, variantClass = 0;  // DungeonData.id, z.dbrp, SpellVariantData.breedId
+    bool characterReady = false, classReady = false, spellsReady = false, kindsReady = false, dungeonsReady = false, worldsReady = false;
     std::unordered_map<uint64_t, std::string> names;
-    std::unordered_map<int, SpellKind> kinds;
+    std::unordered_map<int, int> kinds;
 };
 
 Native native;
@@ -234,6 +261,7 @@ Store store;
 struct State {
     bool installed = false, finished = false, changed = false;  // changed: write at once
     int64_t character = 0;  // the played character, the last time it was read
+    int characterClass = 0;  // its class, 0 while the game has not told it
     std::string name;
     ULONGLONG nextRead = 0, nextWrite = 0, nextTry = 0, wantedUntil = 0, nextRefresh = 0, nextLog = 0, nextSort = 0;
 } state;
@@ -259,15 +287,22 @@ void Note(const std::string& line, ULONGLONG now) {
 void ReadCharacter(ULONGLONG now) {
     state.nextRead = now + ReadMs;
     std::string name;
+    int characterClass = 0;
     int64_t id = 0;
-    try { id = game ? game->Character(name) : 0; }
+    try { id = game ? game->Character(name, characterClass) : 0; }
     catch (...) { id = 0; Note("STATS_CHARACTER_ERROR", now); }
     if (id <= 0) return;  // loading or between characters: the last one stays shown
     if (id != state.character) {
         // Another character in this client: its predecessor's counts are written at once.
         if (state.character > 0) state.changed = true;
         state.character = id;
+        state.characterClass = 0;
         state.name.clear();
+    }
+    if (characterClass > 0) {
+        // Its sheet's spells are checked against it (stats-store.hpp).
+        state.characterClass = characterClass;
+        store.Played(id, characterClass);
     }
     if (name.empty()) return;
     state.name = name;
@@ -286,20 +321,21 @@ void Write(ULONGLONG now, unsigned lockWaitMs) {
     Note(std::string("STATS_WRITE_DEFERRED ") + Describe(result), now);
 }
 // 1.15.0 to 1.16.0's spells in the file (stats-store.hpp), there at the start
-// or added since by an older client: the game tells whose each is, a few at a
-// time while counting or while the window is open (in game: its data is
-// loaded), then they are converted by a write at once, the box unticked too.
+// or added since by an older client, and the spells of the played character's
+// sheet still to check: the game tells whose class's each is, a few at a time
+// while counting or while the window is open (in game: its data is loaded),
+// then they are converted or checked by a write at once, the box unticked too.
 // One it cannot tell yet is asked again a second later, the others wait for it.
 void Sort(ULONGLONG now) {
     if (now < state.nextSort) return;
     state.nextSort = now + SortMs;
     size_t sorted = 0, own = 0;
     for (const int spell : store.Unsorted(SortedPerTick)) {
-        const auto kind = KindOf(spell);
-        if (kind == SpellKind::Unknown) break;
-        store.Classify(spell, kind == SpellKind::Class);
+        const auto kind = ClassOf(spell);
+        if (kind == UnknownClass) break;
+        store.Classify(spell, kind);
         ++sorted;
-        if (kind == SpellKind::Class) ++own;
+        if (kind > NoClass) ++own;
     }
     if (sorted > 0) {
         try { Log("STATS_OLD_SPELLS sorted=" + std::to_string(sorted) + " class=" + std::to_string(own)); } catch (...) {}
@@ -361,9 +397,12 @@ std::string KeyName(Table table, int key) {
     }
     try { return game ? game->KeyName(table, key) : std::string{}; } catch (...) { return {}; }
 }
-SpellKind KindOf(int spell) {
-    try { return game ? game->Kind(spell) : SpellKind::Unknown; }
-    catch (...) { Note("STATS_SPELL_KIND_ERROR", GetTickCount64()); return SpellKind::Unknown; }
+int ClassOf(int spell) {
+    try { return game ? std::max(game->Class(spell), UnknownClass) : UnknownClass; }
+    catch (...) { Note("STATS_SPELL_KIND_ERROR", GetTickCount64()); return UnknownClass; }
+}
+int ClassOfCharacter(int64_t character) {
+    return character > 0 && character == state.character ? state.characterClass : 0;
 }
 }
 

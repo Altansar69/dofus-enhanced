@@ -118,19 +118,20 @@ std::string CharacterName(Obj info) {
         return Printable(name, MaxCharacterName) ? name : std::string{};
     } catch (...) { Error("name"); return {}; }
 }
-// The monster a soul holds: its static effect 4058 (live game data), else the
-// table generated from the pinned client's MonsterData.souls. 0: unknown.
-// A dungeon-room soul lists every boss of its room (11 type-327 souls in
-// 3.7.12.12, such as 33746 "Âmes capturées : Tynrils" = 1087, 1072, 1085, 1086)
-// yet belongs to one of them: the table's monster when listed, else the first
-// effect (its dropMonsterIds in all 11). Only that monster counts, never the
-// room's other bosses: they often belong to other Ocre steps.
-int MonsterId(Obj item, int gid) {
+// The monsters a soul holds, its own monster first; empty: unknown. They come
+// from its static effects 4058 (live game data), else from the table generated
+// from the pinned client's MonsterData.souls (its own monster only). A
+// dungeon-room soul holds every boss of its room: 11 type-327 souls in
+// 3.7.12.12, such as 33753 "Âmes capturées : Sphincter Cell, Rat Blanc & Rat
+// Noir" = 943, 940, 939, or 33746 "Âmes capturées : Tynrils" = 1087, 1072,
+// 1085, 1086 (three of these Tynrils have no soul of their own). Its own
+// monster is the table's when listed, else the first effect (its
+// dropMonsterIds in all 11); the others follow in the effects' order, each once.
+std::vector<int> Contents(Obj item, int gid) {
     const auto row = std::lower_bound(chat_souls::SoulItems.begin(), chat_souls::SoulItems.end(), gid,
         [](const chat_souls::SoulItem& entry, int wanted) { return entry.item < wanted; });
     const int table = row != chat_souls::SoulItems.end() && row->item == gid ? row->monster : 0;
-    int first = 0;
-    bool several = false, listed = false;
+    std::vector<int> listed;
     try {
         Ref data(api.Invoke(contract.data, item));
         Ref effects(Is(data.get(), contract.itemData) ? api.Field(data.get(), "possibleEffects") : nullptr);
@@ -139,14 +140,14 @@ int MonsterId(Obj item, int gid) {
             if (!effect.get() || Field<uint16_t>(effect.get(), "actionId") != SoulMonster ||
                 !api.class_is_assignable_from(contract.integerEffect, api.object_get_class(effect.get()))) continue;
             const int monster = Field<int>(effect.get(), "value");
-            if (monster <= 0) continue;
-            if (!first) first = monster;
-            else if (monster != first) several = true;
-            listed = listed || monster == table;
+            if (monster > 0 && std::find(listed.begin(), listed.end(), monster) == listed.end()) listed.push_back(monster);
         }
-    } catch (...) { first = 0; several = listed = false; Error("effects"); }
-    if (several && listed) return table; // a room soul: the table names its own monster
-    return first ? first : table;        // else the live (first) effect wins over the table
+    } catch (...) { listed.clear(); Error("effects"); }
+    if (listed.empty()) return table ? std::vector<int>{table} : std::vector<int>{};
+    // A room soul: the table names its own monster; else the live (first) effect wins over the table.
+    if (const auto own = std::find(listed.begin(), listed.end(), table); listed.size() > 1 && own != listed.end())
+        std::rotate(listed.begin(), own, own + 1);
+    return listed;
 }
 void Add(std::vector<Soul>& souls, Obj item, uint32_t type) {
     const int gid = api.Value<int>(api.Invoke(contract.genericId, item));
@@ -162,40 +163,65 @@ void Add(std::vector<Soul>& souls, Obj item, uint32_t type) {
     }
     souls.push_back(Soul{gid, type, quantity, valid, Ref(item)});
 }
+// Queues one monster a soul holds, as many times as the soul's quantity;
+// nullptr when queued, else why not. The soul's own monster needs the soul's
+// kind (a boss soul a boss, an archimonster soul an archimonster). Another
+// monster of a room soul counts only when it is an Ocre goal (the monsters the
+// Metamob Ocre quest lists), as the boss or archimonster it is: Comte
+// Harebourg's rooms also hold Frigost bosses outside the quest.
+const char* Queue(int id, bool own, const Soul& soul, const std::string& characterName, int64_t localId) {
+    if (!own && !chat_souls::IsOcreGoal(id)) return "outside";
+    int64_t key = id;
+    Ref monster(api.Invoke(contract.byId, nullptr, {&key}));
+    if (!Is(monster.get(), contract.monster)) return "monster";
+    bool boss = soul.type == BossSoul;
+    if (own) {
+        if (!api.Value<bool>(api.Invoke(boss ? contract.isBoss : contract.isArch, monster.get()))) return "kind";
+    } else if (!(boss = api.Value<bool>(api.Invoke(contract.isBoss, monster.get()))) &&
+               !api.Value<bool>(api.Invoke(contract.isArch, monster.get()))) return "kind";
+    Ref text(api.Invoke(contract.name, monster.get()));
+    auto name = api.String(text.get());
+    if (!Printable(name, MaxMonsterName)) return "name";
+    Log("CAPTURE_SOUL monster=" + std::to_string(id) + " kind=" + (boss ? "boss" : "arch") + " qty=" + std::to_string(soul.quantity));
+    metamob::Capture capture;
+    capture.characterId = localId;
+    capture.characterName = characterName;
+    capture.monsterId = id;
+    capture.name = std::move(name);
+    capture.type = boss ? metamob::TypeBoss : metamob::TypeArchimonster;
+    capture.quantity = soul.quantity;
+    if (!deliver) { Error("sink"); return nullptr; }
+    try { deliver(std::move(capture)); } catch (...) { Error("sink"); }
+    return nullptr;
+}
+// Every monster the soul holds counts, once per soul unit: Sphincter Cell's
+// room soul is +1 Sphincter Cell, +1 Rat Blanc and +1 Rat Noir. Each monster is
+// read and queued on its own: one that cannot be counted never blocks another.
 void Emit(const Soul& soul, const std::string& characterName, int64_t localId) {
     const char* skipped = "error";
+    std::vector<int> monsters;
     try {
-        const bool boss = soul.type == BossSoul;
         if (!soul.valid || soul.quantity < 1 || soul.quantity > metamob::MaxQuantity) skipped = "quantity";
-        else if (const int id = MonsterId(soul.item.get(), soul.gid); !id) skipped = "unknown";
-        else {
-            int64_t key = id;
-            Ref monster(api.Invoke(contract.byId, nullptr, {&key}));
-            if (!Is(monster.get(), contract.monster)) skipped = "monster";
-            // A boss soul must hold a boss, an archimonster soul an archimonster.
-            else if (!api.Value<bool>(api.Invoke(boss ? contract.isBoss : contract.isArch, monster.get()))) skipped = "kind";
-            else {
-                Ref text(api.Invoke(contract.name, monster.get()));
-                auto name = api.String(text.get());
-                if (!Printable(name, MaxMonsterName)) skipped = "name";
-                else {
-                    Log("CAPTURE_SOUL monster=" + std::to_string(id) + " kind=" + (boss ? "boss" : "arch") +
-                        " qty=" + std::to_string(soul.quantity));
-                    metamob::Capture capture;
-                    capture.characterId = localId;
-                    capture.characterName = characterName;
-                    capture.monsterId = id;
-                    capture.name = std::move(name);
-                    capture.type = boss ? metamob::TypeBoss : metamob::TypeArchimonster;
-                    capture.quantity = soul.quantity;
-                    if (!deliver) { Error("sink"); return; }
-                    try { deliver(std::move(capture)); } catch (...) { Error("sink"); }
-                    return;
-                }
-            }
-        }
+        else if (monsters = Contents(soul.item.get(), soul.gid); monsters.empty()) skipped = "unknown";
+        else skipped = nullptr;
     } catch (...) { skipped = "error"; }
-    try { Log("CAPTURE_SOUL_SKIPPED gid=" + std::to_string(soul.gid) + " reason=" + skipped); } catch (...) {}
+    if (skipped) {
+        try { Log("CAPTURE_SOUL_SKIPPED gid=" + std::to_string(soul.gid) + " reason=" + skipped); } catch (...) {}
+        return;
+    }
+    try {
+        if (monsters.size() > 1) Log("CAPTURE_ROOM_SOUL gid=" + std::to_string(soul.gid) + " monsters=" + std::to_string(monsters.size()));
+    } catch (...) {}
+    for (size_t i = 0; i < monsters.size(); ++i) {
+        const char* reason = "error";
+        try { reason = Queue(monsters[i], i == 0, soul, characterName, localId); } catch (...) { reason = "error"; }
+        if (!reason) continue;
+        try {
+            // The soul's own monster as before; another monster of its room with its id.
+            Log("CAPTURE_SOUL_SKIPPED gid=" + std::to_string(soul.gid) + (i ? " monster=" + std::to_string(monsters[i]) : std::string()) +
+                " reason=" + reason);
+        } catch (...) {}
+    }
 }
 void Process(Obj report, Obj info, int64_t localId) {
     std::vector<Soul> souls;

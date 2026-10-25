@@ -19,6 +19,7 @@
 #include "souls/soul-group-menu.hpp"
 #include "social/spouse-party-menu.hpp"
 #include "social/spouse-party-widget.hpp"
+#include "social/party-travel-widget.hpp"
 #include "appearance/startup-options.hpp"
 #include "treasure/treasure-launch.hpp"
 #include "treasure/treasure-hunt.hpp"
@@ -322,6 +323,7 @@ void Module::Pump(Obj source) {
     startupStage("soul-group-menu", [] { TickSoulGroupMenu(); });
     startupStage("spouse-party-menu", [] { TickSpousePartyMenu(); });
     startupStage("spouse-party-widget", [] { TickSpousePartyWidget(); });
+    startupStage("party-travel-widget", [] { TickPartyTravelWidget(); });
     startupStage("chat-links", [] { TickChatTpLinks(); });
     startupStage("chat-travel", [] { TickChatTravel(); });
     startupStage("capture-detect", [] { TickCaptureDetect(); });
@@ -372,6 +374,7 @@ void Module::Stop() {
     RestoreSoulGroupMenu();
     RestoreSpousePartyMenu();
     RestoreSpousePartyWidget();
+    RestorePartyTravelWidget();
     resourceMap::RestoreRender();
     resourceMap::RestoreUi();
     RestoreMonsterGlow();
@@ -411,7 +414,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !PartyTravelWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -466,9 +469,10 @@ static void UpdateHook(Obj self, Method method) {
             if (SoulWidgetCleanupPending()) RestoreSoulWidget();
             if (ChatTpLinksCleanupPending()) RestoreChatTpLinks();
             if (SpousePartyWidgetCleanupPending()) RestoreSpousePartyWidget();
+            if (PartyTravelWidgetCleanupPending()) RestorePartyTravelWidget();
             if (CustomCursorCleanupPending()) RestoreCustomCursor();
             if (VerticalGaugesCleanupPending()) RestoreVerticalGauges();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !PartyTravelWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -542,6 +546,7 @@ static DWORD WINAPI Worker(void*) {
         InstallSoulGroupMenu();
         InstallSpousePartyMenu();
         InstallSpousePartyWidget();
+        InstallPartyTravelWidget(); // never throws: PARTY_TRAVEL_WIDGET_UNAVAILABLE disables only the members' travel button
         InstallChatTravel();
         // Metamob capture sync: optional, the rest of the mod runs without it. Its
         // chat part reads monsters and the character through capture detection.

@@ -39,12 +39,30 @@ constexpr char KeyInvalid[] = "Metamob : clé invalide (lettres, chiffres et sym
 std::string Quoted(const std::string& name) { return "« " + name + " »"; }
 std::string Number(int value) { return std::to_string(value); }
 std::string SavedText(const std::string& user) { return "Metamob : clé enregistrée pour le compte " + Quoted(user) + "."; }
-std::string AddedText(const std::string& name, int before, int after) {
-    return "Metamob : +" + Number(after - before) + " " + Quoted(name) + " (de " + Number(before) + " à " + Number(after) + ").";
+// One write confirmed: « +1 « Rat Noir » (de 2 à 3) ». The writes a cycle
+// confirms one after the other (a dungeon-room soul: its boss and the bosses of
+// its room) are told in one notice: « Metamob : +1 « Sphincter Cell » (de 3 à
+// 4), +1 « Rat Blanc » (de 0 à 1), +1 « Rat Noir » (de 2 à 3). »
+std::string AddedPart(const std::string& name, int before, int after) {
+    return "+" + Number(after - before) + " " + Quoted(name) + " (de " + Number(before) + " à " + Number(after) + ")";
 }
-std::string NoKeyText(const std::string& name) {
-    return "Metamob : capture de " + Quoted(name) + " non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
+std::string AddedText(const std::vector<std::string>& parts) {
+    std::string text = "Metamob : ";
+    for (size_t i = 0; i < parts.size(); ++i) text += (i ? ", " : "") + parts[i];
+    return text + ".";
 }
+// « « A » », « « A » et « B » », « « A », « B » et « C » ».
+std::string Names(const std::vector<std::string>& names) {
+    std::string text;
+    for (size_t i = 0; i < names.size(); ++i) text += (i == 0 ? "" : i + 1 == names.size() ? " et " : ", ") + Quoted(names[i]);
+    return text;
+}
+std::string NoKeyText(const std::vector<std::string>& names) {
+    return names.size() == 1 ?
+        "Metamob : capture de " + Names(names) + " non synchronisée : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme)." :
+        "Metamob : captures de " + Names(names) + " non synchronisées : aucune clé enregistrée (Options › Dofus Enhanced › Pierre d’âme).";
+}
+std::string NoKeyText(const std::string& name) { return NoKeyText(std::vector<std::string>{name}); }
 std::string UnmatchedText(const std::string& name) { return "Metamob : " + Quoted(name) + " introuvable dans ta quête Ocre, rien n’a été modifié."; }
 std::string CappedText(const std::string& name) {
     return "Metamob : " + Quoted(name) + " est déjà à " + Number(MaxQuantity) + ", la quantité maximale.";
@@ -276,9 +294,22 @@ struct Job {
     std::vector<std::string> notices; // taken by TickSync, posted on the game thread
     std::optional<Known> found;       // the stored key's status learnt last, taken by TickSync like the notices
     std::vector<Written> written;     // the sync's confirmed writes, taken by TickSync like the notices
+    // Confirmed writes not told yet (AddedPart): told in one notice before any
+    // other notice of the job, else when it ends (Work). Under the lock.
+    std::vector<std::string> added;
+    void Told() {
+        if (added.empty()) return;
+        if (notices.size() < MaxNotices) notices.push_back(AddedText(added));
+        added.clear();
+    }
     void Post(std::string text) {
         std::lock_guard<std::mutex> guard(lock);
+        Told();
         if (notices.size() < MaxNotices) notices.push_back(std::move(text));
+    }
+    void Added(std::string part) {
+        std::lock_guard<std::mutex> guard(lock);
+        added.push_back(std::move(part));
     }
     void Confirmed(Written write) {
         std::lock_guard<std::mutex> guard(lock);
@@ -486,7 +517,7 @@ Flight Take(Session& s) {
 void Confirm(Session& s) {
     s.book.refused = false; // the key writes again: a later refusal is told again
     const auto flight = Take(s);
-    s.job.Post(AddedText(flight.shown, flight.base, flight.target));
+    s.job.Added(AddedPart(flight.shown, flight.base, flight.target)); // told with the cycle's other writes
     if (flight.base + flight.group.count > flight.target) s.job.Post(CappedText(flight.shown)); // the rest stays uncounted
     s.job.Confirmed({flight.slug, flight.id, flight.target}); // the chat part shows it at once
     s.done += flight.target - flight.base;
@@ -920,6 +951,7 @@ void Work(Job& job) noexcept {
     try {
         std::lock_guard<std::mutex> guard(job.lock);
         if (job.cancelled.load()) Empty(job.book);
+        job.Told(); // the writes confirmed last, in one notice
         job.done.store(true);
     } catch (...) { job.done.store(true); }
 }
@@ -965,6 +997,9 @@ struct State {
     Known known;
     bool check = false;     // a check the key row asked for, not given to a worker yet
     std::vector<std::string> outbox;
+    // Captures refused for want of a key, not told yet (shown names, each once):
+    // a dungeon-room soul's bosses in one notice, before any other one.
+    std::vector<std::string> noKey;
     uint64_t lastCapture = 0, nextError = 0;
     int jobUnits = 0;
     std::shared_ptr<Job> job;
@@ -999,7 +1034,15 @@ void Cancel() noexcept {
     if (activeJob->done.load()) activeJob.reset(); // still running: kept, never two workers at a time
 }
 
-void Post(std::string text) { if (state.outbox.size() < MaxNotices) state.outbox.push_back(std::move(text)); }
+void NoKeyTold() {
+    if (state.noKey.empty()) return;
+    if (state.outbox.size() < MaxNotices) state.outbox.push_back(NoKeyText(state.noKey));
+    state.noKey.clear();
+}
+void Post(std::string text) {
+    NoKeyTold();
+    if (state.outbox.size() < MaxNotices) state.outbox.push_back(std::move(text));
+}
 int Pending() { return Units(state.book) + Count(state.inbox) + state.jobUnits; }
 // « Oui » confirmed, until the worker that deletes the key file (first of all)
 // has been taken back: no key for the key row meanwhile, then the key file as
@@ -1325,6 +1368,7 @@ void TickSync(bool enabled) {
         Follow();
         if (!state.job) Start(enabled);
         Collect(); // a job run inline has already finished
+        NoKeyTold();
         const auto notices = std::move(state.outbox);
         state.outbox.clear();
         for (const auto& text : notices) {
@@ -1357,7 +1401,10 @@ void EnqueueCapture(Capture capture) {
         // A key being verified counts: if it is refused, the cycle says there is no key.
         const bool keyComing = state.submit.has_value() || (state.job && state.job->submitting);
         if (!keyComing && !HasKey(state.keyPath)) {
-            Post(NoKeyText(Shown(capture.name)));
+            // Told at the next pump, with the other bosses of the same soul.
+            auto shown = Shown(capture.name);
+            if (std::find(state.noKey.begin(), state.noKey.end(), shown) == state.noKey.end() && state.noKey.size() < MaxNotices)
+                state.noKey.push_back(std::move(shown));
             Log("METAMOB_NO_KEY monster=" + std::to_string(capture.monsterId));
             return;
         }

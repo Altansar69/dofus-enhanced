@@ -6,7 +6,9 @@
 // current theme, one of its eleven themes, gold, emerald or silver) and at the size of customCursorSize (the Windows
 // pointer's at the game window's scale, half again, or twice). One detour on
 // UnityEngine.Cursor.SetCursor swaps them in within the game's own calls; the
-// game's icons (sword, bubble, tools, fight markers…) stay. They stay Windows
+// game's icons (sword, bubble, tools, fight markers…) too since 1.19.0 with
+// customCursorGame (« Curseurs du jeu aussi », on by default), drawn one a
+// frame after the thirteen cursors; unknown types stay the game's. They stay Windows
 // cursors (CursorMode.Auto) at every size: since 1.17.1, Unity's player loads
 // them at that size, where it shrank them to Windows' own before (one detour
 // on LoadImageW, custom-cursor-player.hpp). Off by default; unticked, or at

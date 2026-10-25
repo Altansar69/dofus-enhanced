@@ -39,7 +39,7 @@ add_library(DofusMiniatures SHARED
   src/glow/monster-glow-render.cpp src/glow/monster-glow-world.cpp src/glow/monster-glow-interactives.cpp
   src/travel/chat-tp-links.cpp src/travel/chat-travel.cpp src/souls/soul-group-menu.cpp
   src/travel/chat-route.cpp src/travel/map-travel.cpp
-  src/social/spouse-party-menu.cpp src/social/spouse-party-widget.cpp
+  src/social/spouse-party-menu.cpp src/social/spouse-party-widget.cpp src/social/party-travel-widget.cpp
   src/metamob/metamob-data.cpp src/metamob/metamob-secret.cpp src/metamob/metamob-http.cpp
   src/metamob/metamob-sync.cpp src/souls/capture-detect.cpp
   src/maps/archi-zones.cpp src/metamob/calendar-kralove.cpp
@@ -235,3 +235,5 @@ dofus_test(JobsXpPanelTests tests/jobs/jobs-xp-panel-tests.cpp src/jobs/jobs-xp-
 
 # Spouse in the party menu.
 dofus_test(SpousePartyMenuTests tests/social/spouse-party-menu-tests.cpp src/social/spouse-party-menu.cpp)
+# Travel button on the other party members (1.19.0).
+dofus_test(PartyTravelWidgetTests tests/social/party-travel-widget-tests.cpp)

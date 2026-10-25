@@ -27,8 +27,18 @@ Obj Box(int64_t n) { auto o=Make("Box");Get(o).scalar=n;return o; }
 void Set(Obj o,const char* field,int64_t n) { Get(o).fields[field]=Box(n); }
 Obj Item(int id,int type=327,int quantity=1,int position=63) {
     auto item=Make("mc"),mask=Make("ItemMasks");Get(mask).fields["item"]=item;
-    Set(item,"myn",id);Set(item,"mzb",type);Set(item,"myo",quantity);Set(item,"nag",position);return mask;
+    Set(item,"myn",id);Set(item,"mzb",type);Set(item,"myo",quantity);Set(item,"nag",position);
+    auto data=Make("ItemData");Get(data).fields["possibleEffects"]=Make("List");Get(item).fields["myx"]=data;return mask;
 }
+Obj SoulEffect(int action,int monster) { auto effect=Make("EffectInstanceDice");Set(effect,"actionId",action);Set(effect,"value",monster);return effect; }
+// A dungeon-room soul: its ItemData lists every boss of the room (effects 4058).
+Obj RoomSoul(int id,std::vector<int> monsters,int quantity=1,int position=63) {
+    auto mask=Item(id,327,quantity,position);auto item=Get(mask).fields["item"];
+    auto& effects=Get(Get(Get(item).fields["myx"]).fields["possibleEffects"]).items;
+    for(int monster:monsters)effects.push_back(SoulEffect(4058,monster));
+    return mask;
+}
+Node& DataOf(Obj mask) { return Get(Get(Get(mask).fields["item"]).fields["myx"]); }
 Obj FullStone(int monster) {
     auto mask=Item(7010,85);auto item=Get(mask).fields["item"],effects=Make("List"),effect=Make("EffectInstanceDice");
     Set(effect,"actionId",623);Set(effect,"value",monster);Get(effects).items={effect};Get(item).fields["myt"]=effects;return mask;
@@ -200,6 +210,28 @@ int main() {
             ChatSoulDetail(147,ChatSoulPart::Ocre).find("banque")==std::string::npos&&
             ChatSoulDetail(147,ChatSoulPart::Ocre).find("reste à valider")!=std::string::npos,
             "Inventory and quest details must be distinct and limited to the hovered state");
+        // Dungeon-room souls: every boss their effects 4058 list is in the bag,
+        // including the Tynrils that have no soul of their own.
+        Items({RoomSoul(33753,{943,940,939}),RoomSoul(33746,{1087,1072,1085,1086}),RoomSoul(33730,{1188,1184,1185,1186,1187})});
+        PumpFresh();FinishScan();
+        for(const int monster:{943,940,939,1087,1072,1085,1086,1188,1184,1185,1186,1187})
+            Check(Has(monster,"Âme en sac")&&BagProgress(monster)==SoulState::Done,"Every monster a room soul lists must be in the bag");
+        Check(CombinedCaption(1072,true).find("<color=#8DDB91>Âme en sac</color>")!=std::string::npos,"Tynril Consterné is owned through the Tynrils soul");
+        Check(Has(147,"Pas en sac")&&Has(430,"Pas en sac"),"A room soul never counts a monster it does not list");
+        Items({RoomSoul(33746,{1087,1072,1085,1086},0),RoomSoul(33753,{943,940,939},1,1),RoomSoul(33730,{1188,1184,1185,1186,1187},1,31)});
+        PumpFresh();FinishScan();
+        Check(Has(1072,"Pas en sac")&&Has(1087,"Pas en sac")&&Has(940,"Pas en sac")&&Has(943,"Pas en sac"),
+            "Room souls follow the quantity and inventory-position rules");
+        Check(Has(1185,"Âme en sac")&&Has(1188,"Âme en sac"),"A room soul in the other supported position counts");
+        auto mixed=RoomSoul(33746,{1087});
+        Get(DataOf(mixed).fields["possibleEffects"]).items.push_back(SoulEffect(1,1072));
+        Get(DataOf(mixed).fields["possibleEffects"]).items.push_back(SoulEffect(4058,0));
+        auto broken=RoomSoul(33753,{943,940,939});DataOf(broken).type=TypeOf("OtherData");
+        chat_souls::state.nextLog=0;const auto roomLogs=logs.size();
+        Items({mixed,broken});PumpFresh();FinishScan();
+        Check(Has(1087,"Âme en sac")&&Has(1072,"Pas en sac"),"Only valid effects 4058 name a room soul's monsters");
+        Check(Has(943,"Âme en sac")&&Has(940,"Pas en sac")&&Has(939,"Pas en sac"),"Unreadable room data keeps the soul's own monster");
+        Check(logs.size()==roomLogs+1&&logs.back().starts_with("CHAT_SOUL_STATUS room"),"Unreadable room data is logged once");
 
         Items({OtherEffectItem(),FullStone(2468),Item(33684,327,1,1),Item(33682,327,1,31)});PumpFresh();FinishScan();
         Check(Has(2468,"Âme en sac")&&Has(147,"Pas en sac")&&Has(928,"Âme en sac"),"Legacy effects, quantity and supported inventory positions must be respected");
@@ -253,7 +285,7 @@ int main() {
         owner.stopped=true;ChatTick(true,true);RestoreChatSoulStatus();
         Check(handles.size()==baseline && disposed>0,"Cleanup must release all reader roots and iterators");
         owner.cached.reset();owner.compositor.reset();Check(handles.empty(),"Fixture GC roots leaked");module=nullptr;
-        std::cout<<"PASS: read-only soul inventory, exact identity, legacy effects, independent Ocre states, per-status readers, bounded scanning, mutation and session cleanup\n";
+        std::cout<<"PASS: read-only soul inventory, exact identity, legacy effects, independent Ocre states, dungeon-room souls, per-status readers, bounded scanning, mutation and session cleanup\n";
         std::cout<<"PASS: readers shared by the chat and the maps (union of needs, one read step per pump, no client resets another, map states and revision)\n";
         return 0;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}

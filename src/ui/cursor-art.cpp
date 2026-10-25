@@ -91,7 +91,7 @@ double Segment(double x, double y, const Point& a, const Point& b) {
     const Point offset = Offset(x, y, a, b);
     return Length(offset.x, offset.y);
 }
-enum class Kind : uint8_t { Polygon, Capsule, RoundRect, Circle, Ring, Ellipse };
+enum class Kind : uint8_t { Polygon, Capsule, RoundRect, Circle, Ring, Ellipse, Arc };
 constexpr int MaxVertices = 7;
 // One shape, exact but for the ellipse, and its box. An ellipse's distance can
 // fall short of the true one by its axes' ratio: `reach` widens its box's margins.
@@ -104,6 +104,7 @@ struct Primitive {
     double width = 0;      // ring: half its width; capsule: the radius of the circle around `cut` it is clipped to
     Point cut;
     double rx = 0, ry = 0, cos = 1, sin = 0;  // ellipse
+    double start = 0, sweep = 0;              // arc: its first angle and its sweep, in radians (b and cut: its ends)
     double x0 = 0, y0 = 0, x1 = 0, y1 = 0, reach = 1;
 };
 constexpr double Radians = 3.14159265358979323846 / 180.0;
@@ -156,8 +157,26 @@ Primitive Ellipse(Point centre, double rx, double ry, double degrees = 0.0) {
     ellipse.cos = std::cos(degrees * Radians), ellipse.sin = std::sin(degrees * Radians);
     return ellipse;
 }
+// 1.19.0: a stroke of half width `width` along the circle of `radius`, from
+// `from` degrees clockwise (y goes down) over `sweep` degrees, its ends round.
+// Exact: off its sector, the nearest point is one of its ends.
+Primitive Arc(Point centre, double radius, double width, double from, double sweep) {
+    Primitive arc = Ring(centre, radius, width);
+    arc.kind = Kind::Arc, arc.start = from * Radians, arc.sweep = sweep * Radians;
+    arc.b = {centre.x + radius * std::cos(arc.start), centre.y + radius * std::sin(arc.start)};
+    arc.cut = {centre.x + radius * std::cos(arc.start + arc.sweep), centre.y + radius * std::sin(arc.start + arc.sweep)};
+    return arc;
+}
 double Distance(const Primitive& shape, double x, double y) {
     switch (shape.kind) {
+    case Kind::Arc: {
+        constexpr double Turn = 2 * 3.14159265358979323846;
+        const double dx = x - shape.a.x, dy = y - shape.a.y;
+        double angle = std::fmod(std::atan2(dy, dx) - shape.start, Turn);
+        if (angle < 0) angle += Turn;
+        if (angle <= shape.sweep) return std::abs(Length(dx, dy) - shape.radius) - shape.width;
+        return std::min(Length(x - shape.b.x, y - shape.b.y), Length(x - shape.cut.x, y - shape.cut.y)) - shape.width;
+    }
     case Kind::Polygon: {
         // The nearest edge's length; only the edges whose squared length is
         // within rounding of the smallest can be it, so only they are measured.
@@ -201,8 +220,9 @@ enum class Fill : uint8_t { Body, LightBody, DeepBody, Gem, Spec, White, Red, Da
 // A part: the union of its primitives, turned and scaled about the grid's
 // centre for the diagonal resize arrows, with its fill and the width of the
 // outline-coloured seam drawn under it.
+constexpr int MaxTerms = 9; // the gear: its disc and eight teeth
 struct Part {
-    std::array<Primitive, 3> terms{};
+    std::array<Primitive, MaxTerms> terms{};
     int count = 0;
     Fill fill = Fill::Body;
     double seam = 0;
@@ -254,6 +274,7 @@ struct Design {
         Part& part = parts[count++];
         part.fill = fill, part.seam = seam;
         for (const auto& term : terms) {
+            if (part.count == MaxTerms) break;
             part.terms[part.count] = term;
             part.x0 = part.count ? std::min(part.x0, term.x0) : term.x0, part.y0 = part.count ? std::min(part.y0, term.y0) : term.y0;
             part.x1 = part.count ? std::max(part.x1, term.x1) : term.x1, part.y1 = part.count ? std::max(part.y1, term.y1) : term.y1;
@@ -350,8 +371,255 @@ void Busy(Design& design) {
     design.Add(Fill::Sand, 0, {Polygon(SandPile)});
     design.Add(Fill::Body, 0, {RoundRect(19.8, 18.3, 26.2, 19.5, 0.5), RoundRect(19.8, 26.5, 26.2, 27.7, 0.5)});
 }
+
+// ---------------------------------------------------------------- the game's icons (1.19.0)
+// The same conventions: a body in the palette's gradient, darker or lighter
+// parts with an outline-coloured seam, the gem, a glint, the outline and the
+// shadow around the whole; the shapes keep 2.5 units from the grid's edges.
+// The hotspot is the tool's point (the sword's tip, the pin's point, the
+// lens's centre…) or the icon's middle.
+Point Polar(Point centre, double radius, double degrees) {
+    return {centre.x + radius * std::cos(degrees * Radians), centre.y + radius * std::sin(degrees * Radians)};
+}
+// A glint: a small white ellipse over a body or a gem.
+void Glint(Design& design, Point at, double rx, double ry, double degrees) {
+    design.Add(Fill::Spec, 0, {Ellipse(at, rx, ry, degrees)});
+}
+// « action »: a gear of eight teeth, its hub an emerald.
+void Gear(Design& design) {
+    constexpr Point C{16.0, 16.0};
+    Part& body = design.Add(Fill::Body, 0, {Circle(C, 8.4)});
+    for (int k = 0; k < 8; ++k) {
+        const double degrees = 22.5 + 45.0 * k;
+        const Primitive tooth = Capsule(Polar(C, 7.6, degrees), Polar(C, 11.0, degrees), 2.15);
+        body.terms[body.count++] = tooth;
+        body.x0 = std::min(body.x0, tooth.x0), body.y0 = std::min(body.y0, tooth.y0);
+        body.x1 = std::max(body.x1, tooth.x1), body.y1 = std::max(body.y1, tooth.y1);
+    }
+    design.Add(Fill::DeepBody, 0.6, {Ring(C, 5.1, 0.55)});
+    design.Add(Fill::Gem, 0.6, {Circle(C, 3.3)});
+    Glint(design, {14.9, 14.7}, 0.75, 1.1, -35);
+    design.hot = C;
+}
+// « parler »: a speech bubble, its tail to the bottom left, three dots.
+constexpr Point BubbleTail[] = {{5.0, 27.5}, {10.0, 19.0}, {16.0, 21.5}};
+void Bubble(Design& design) {
+    design.Add(Fill::Body, 0, {Ellipse({17.0, 13.5}, 12.0, 9.0), Polygon(BubbleTail)});
+    design.Add(Fill::Dark, 0, {Circle({11.6, 13.5}, 1.75), Circle({17.0, 13.5}, 1.75), Circle({22.4, 13.5}, 1.75)});
+    Glint(design, {10.0, 8.6}, 0.8, 1.6, 55);
+    design.hot = {16.0, 16.0};
+}
+// « ouvrir »: a padlock, its shackle lighter, its keyhole dark.
+constexpr Point Keyhole[] = {{14.9, 20.4}, {17.1, 20.4}, {17.8, 25.0}, {14.2, 25.0}};
+void Lock(Design& design) {
+    design.Add(Fill::LightBody, 0, {Arc({16.0, 12.0}, 5.3, 1.5, 180, 180), Capsule({10.7, 12.0}, {10.7, 16.0}, 1.5),
+        Capsule({21.3, 12.0}, {21.3, 16.0}, 1.5)});
+    design.Add(Fill::Body, 0.75, {RoundRect(7.0, 14.5, 25.0, 28.0, 2.6)});
+    design.Add(Fill::Dark, 0, {Circle({16.0, 19.8}, 2.0), Polygon(Keyhole)});
+    Glint(design, {9.6, 17.0}, 0.6, 1.3, 0);
+    design.hot = {16.0, 18.0};
+}
+// The sword, its tip at the top left as the arrow's.
+constexpr Point Blade[] = {{2.0, 2.0}, {6.8, 3.3}, {19.8, 16.3}, {16.3, 19.8}, {3.3, 6.8}};
+void Sword(Design& design) {
+    design.Add(Fill::LightBody, 0, {Polygon(Blade)});
+    design.Add(Fill::DeepBody, 0.6, {Capsule({19.0, 19.0}, {24.4, 24.4}, 1.6)});
+    design.Add(Fill::Body, 0.7, {Capsule({13.2, 22.8}, {22.8, 13.2}, 1.9)});
+    design.Add(Fill::Gem, 0.55, {Circle({26.0, 26.0}, 2.4)});
+    Glint(design, {25.3, 25.2}, 0.55, 0.8, -45);
+    design.hot = {2.0, 2.0};
+}
+// « faucher »: a scythe, its blade's tip at the top left.
+void Scythe(Design& design) {
+    design.Add(Fill::DeepBody, 0, {Capsule({22.0, 5.0}, {13.6, 27.4}, 1.4)});
+    design.Add(Fill::LightBody, 0.7, {Arc({17.5, 17.5}, 12.0, 1.7, 197, 88)});
+    design.Add(Fill::Gem, 0.55, {Circle({21.6, 6.2}, 1.9)});
+    design.hot = {6.0, 14.0};
+}
+// « couper »: an axe, its edge at the left.
+constexpr Point AxeHead[] = {{7.2, 3.4}, {12.5, 5.6}, {21.8, 6.4}, {22.4, 11.8}, {13.0, 12.8}, {6.0, 16.4}, {4.6, 9.8}};
+void Axe(Design& design) {
+    design.Add(Fill::DeepBody, 0, {Capsule({20.0, 4.6}, {11.6, 27.2}, 1.5)});
+    design.Add(Fill::Body, 0.7, {Polygon(AxeHead)});
+    design.Add(Fill::LightBody, 0, {Capsule({6.4, 5.0}, {5.4, 14.6}, 0.9)});
+    design.Add(Fill::Gem, 0.5, {Circle({19.7, 9.2}, 1.5)});
+    design.hot = {5.0, 10.0};
+}
+// « pêcher »: a fish hook, its barbed point at the left.
+constexpr Point HookPoint[] = {{10.0, 10.8}, {13.0, 15.8}, {7.0, 15.8}};
+void Hook(Design& design) {
+    design.Add(Fill::Body, 0, {Capsule({19.5, 7.5}, {19.5, 19.0}, 1.6), Arc({14.75, 19.0}, 4.75, 1.6, 0, 180),
+        Capsule({10.0, 19.0}, {10.0, 14.5}, 1.6), Polygon(HookPoint), Ring({19.5, 5.6}, 2.1, 0.85)});
+    design.Add(Fill::Gem, 0.5, {Circle({19.5, 13.0}, 1.3)});
+    design.hot = {10.0, 12.0};
+}
+// « lire »: an open book.
+constexpr Point Cover[] = {{2.5, 10.5}, {16.0, 13.0}, {29.5, 10.5}, {29.5, 25.0}, {16.0, 27.5}, {2.5, 25.0}};
+constexpr Point LeftPage[] = {{4.0, 7.5}, {15.4, 10.0}, {15.4, 24.6}, {4.0, 22.2}};
+constexpr Point RightPage[] = {{16.6, 10.0}, {28.0, 7.5}, {28.0, 22.2}, {16.6, 24.6}};
+void Book(Design& design) {
+    design.Add(Fill::DeepBody, 0, {Polygon(Cover)});
+    design.Add(Fill::LightBody, 0.5, {Polygon(LeftPage), Polygon(RightPage)});
+    design.Add(Fill::Dark, 0, {Capsule({6.6, 12.0}, {13.0, 13.4}, 0.45), Capsule({6.6, 15.4}, {13.0, 16.8}, 0.45),
+        Capsule({6.6, 18.8}, {13.0, 20.2}, 0.45), Capsule({19.0, 13.4}, {25.4, 12.0}, 0.45), Capsule({19.0, 16.8}, {25.4, 15.4}, 0.45),
+        Capsule({19.0, 20.2}, {25.4, 18.8}, 0.45)});
+    design.Add(Fill::Gem, 0.5, {RoundRect(15.0, 23.6, 17.0, 29.4, 0.6)});
+    design.hot = {16.0, 16.0};
+}
+// « entrer »: a house, its door dark.
+constexpr Point Roof[] = {{2.6, 15.6}, {16.0, 4.0}, {29.4, 15.6}, {26.4, 17.6}, {16.0, 8.6}, {5.6, 17.6}};
+void House(Design& design) {
+    design.Add(Fill::DeepBody, 0, {RoundRect(20.2, 5.0, 23.6, 12.0, 0.6)});
+    design.Add(Fill::Body, 0.6, {RoundRect(7.0, 13.0, 25.0, 28.0, 1.2), Polygon(Roof)});
+    design.Add(Fill::Dark, 0, {RoundRect(13.0, 18.6, 19.0, 28.0, 2.6)});
+    design.Add(Fill::Gem, 0, {Circle({17.3, 23.6}, 0.8)});
+    design.hot = {16.0, 18.0};
+}
+// « miner »: a pickaxe, its head a crescent, its point at the top.
+void Pickaxe(Design& design) {
+    design.Add(Fill::DeepBody, 0, {Capsule({8.5, 27.8}, {21.0, 10.5}, 1.5)});
+    design.Add(Fill::LightBody, 0.7, {Arc({14.5, 19.4}, 12.5, 1.75, 262, 88)});
+    design.Add(Fill::Gem, 0.55, {Circle({20.6, 11.1}, 1.8)});
+    design.hot = {13.0, 7.0};
+}
+// « cueillir »: shears, the blades up, the rings down.
+constexpr Point BladeLeft[] = {{4.2, 3.4}, {17.6, 12.4}, {15.4, 14.8}}, BladeRight[] = {{27.8, 3.4}, {16.6, 14.8}, {14.4, 12.4}};
+void Shears(Design& design) {
+    design.Add(Fill::LightBody, 0, {Polygon(BladeLeft), Polygon(BladeRight)});
+    design.Add(Fill::Body, 0.6, {Capsule({16.0, 13.6}, {19.8, 20.2}, 1.35), Ring({21.4, 23.6}, 3.3, 1.15)});
+    design.Add(Fill::Body, 0.6, {Capsule({16.0, 13.6}, {12.2, 20.2}, 1.35), Ring({10.6, 23.6}, 3.3, 1.15)});
+    design.Add(Fill::Gem, 0.5, {Circle({16.0, 13.6}, 1.5)});
+    design.hot = {16.0, 12.0};
+}
+// « téléporter »: a portal, its swirl lighter.
+void Teleport(Design& design) {
+    constexpr Point C{16.0, 16.0};
+    design.Add(Fill::Body, 0, {Ring(C, 10.2, 1.8)});
+    design.Add(Fill::LightBody, 0, {Arc(C, 6.6, 1.3, 200, 250), Arc(C, 3.2, 1.1, 20, 250)});
+    design.Add(Fill::Gem, 0.5, {Circle(C, 1.5)});
+    design.hot = C;
+}
+// « plonger »: a drop, an arrow down in it.
+constexpr Point DropTop[] = {{9.4, 16.2}, {16.0, 2.8}, {22.6, 16.2}}, DownHead[] = {{12.2, 20.0}, {19.8, 20.0}, {16.0, 24.8}};
+void Diving(Design& design) {
+    design.Add(Fill::Body, 0, {Circle({16.0, 19.5}, 7.6), Polygon(DropTop)});
+    design.Add(Fill::Dark, 0, {Capsule({16.0, 13.8}, {16.0, 21.0}, 1.0), Polygon(DownHead)});
+    Glint(design, {12.0, 18.0}, 0.8, 1.9, 20);
+    design.hot = {16.0, 18.0};
+}
+// « inspecter »: a magnifier, its lens an emerald; the hotspot at its centre.
+void Magnifier(Design& design) {
+    design.Add(Fill::DeepBody, 0.75, {Capsule({18.4, 18.4}, {26.4, 26.4}, 2.3)});
+    design.Add(Fill::Gem, 0, {Circle({13.0, 13.0}, 6.4)});
+    design.Add(Fill::Body, 0, {Ring({13.0, 13.0}, 7.4, 1.5)});
+    Glint(design, {10.4, 10.2}, 1.0, 2.0, -40);
+    design.hot = {13.0, 13.0};
+}
+// NotFound: a question mark.
+void Question(Design& design) {
+    design.Add(Fill::Body, 0, {Arc({16.0, 10.8}, 5.2, 2.2, 160, 250), Capsule(Polar({16.0, 10.8}, 5.2, 50), {16.0, 18.4}, 2.2),
+        Capsule({16.0, 18.4}, {16.0, 19.6}, 2.2), Circle({16.0, 26.0}, 2.5)});
+    design.hot = {16.0, 19.0};
+}
+// The fight's ping: a map pin, its point the hotspot.
+constexpr Point PinPoint[] = {{9.0, 15.0}, {23.0, 15.0}, {16.0, 28.6}};
+void Ping(Design& design) {
+    design.Add(Fill::Body, 0, {Circle({16.0, 11.5}, 8.2), Polygon(PinPoint)});
+    design.Add(Fill::Gem, 0.6, {Circle({16.0, 11.5}, 3.5)});
+    Glint(design, {14.8, 10.2}, 0.7, 1.0, -35);
+    design.hot = {16.0, 28.0};
+}
+// The shield marker: a heater shield, a cross on it, a gem at its heart.
+constexpr Point ShieldBody[] = {{5.0, 4.5}, {27.0, 4.5}, {27.0, 14.5}, {23.0, 22.2}, {16.0, 28.4}, {9.0, 22.2}, {5.0, 14.5}};
+void Shield(Design& design) {
+    design.Add(Fill::Body, 0, {Polygon(ShieldBody)});
+    design.Add(Fill::DeepBody, 0.5, {RoundRect(14.7, 7.6, 17.3, 24.4, 0.6), RoundRect(8.2, 12.2, 23.8, 14.8, 0.6)});
+    design.Add(Fill::Gem, 0.55, {Circle({16.0, 13.5}, 2.4)});
+    design.hot = {16.0, 15.0};
+}
+// The heart marker.
+constexpr Point HeartPoint[] = {{6.4, 15.4}, {16.0, 11.4}, {25.6, 15.4}, {16.0, 27.0}};
+void Heart(Design& design) {
+    design.Add(Fill::Body, 0, {Circle({11.2, 11.8}, 5.8), Circle({20.8, 11.8}, 5.8), Polygon(HeartPoint)});
+    Glint(design, {9.8, 9.6}, 1.0, 1.8, -40);
+    design.hot = {16.0, 16.0};
+}
+// The target marker: two rings and four ticks, a gem at the centre.
+void Target(Design& design) {
+    constexpr Point C{16.0, 16.0};
+    design.Add(Fill::Body, 0, {Ring(C, 8.6, 1.3), Ring(C, 4.3, 1.1), Capsule({16.0, 3.6}, {16.0, 8.0}, 1.15),
+        Capsule({16.0, 24.0}, {16.0, 28.4}, 1.15), Capsule({3.6, 16.0}, {8.0, 16.0}, 1.15), Capsule({24.0, 16.0}, {28.4, 16.0}, 1.15)});
+    design.Add(Fill::Gem, 0.5, {Circle(C, 1.7)});
+    design.hot = C;
+}
+// The skull marker: a light skull, its eyes, nose and teeth dark.
+constexpr Point Nose[] = {{16.0, 16.8}, {17.6, 19.8}, {14.4, 19.8}};
+void Skull(Design& design) {
+    design.Add(Fill::LightBody, 0, {Circle({16.0, 13.0}, 9.4), RoundRect(10.2, 16.5, 21.8, 26.8, 2.8)});
+    design.Add(Fill::Dark, 0, {Circle({12.2, 13.6}, 2.8), Circle({19.8, 13.6}, 2.8), Polygon(Nose)});
+    design.Add(Fill::Dark, 0, {Capsule({13.6, 22.4}, {13.6, 26.0}, 0.55), Capsule({16.0, 22.4}, {16.0, 26.0}, 0.55),
+        Capsule({18.4, 22.4}, {18.4, 26.0}, 0.55)});
+    design.hot = {16.0, 16.0};
+}
+// The numbered markers: a token, its figure dark.
+void Token(Design& design) {
+    design.Add(Fill::Body, 0, {Circle({16.0, 16.0}, 11.8)});
+    design.Add(Fill::DeepBody, 0.5, {Ring({16.0, 16.0}, 10.2, 0.45)});
+    design.hot = {16.0, 16.0};
+}
+void Number(Design& design, int figure) {
+    Token(design);
+    switch (figure) {
+    case 1:
+        design.Add(Fill::Dark, 0, {Capsule({16.8, 9.0}, {16.8, 22.6}, 1.8), Capsule({16.8, 9.0}, {12.6, 12.4}, 1.6),
+            Capsule({12.4, 23.0}, {21.0, 23.0}, 1.5)});
+        break;
+    case 2:
+        design.Add(Fill::Dark, 0, {Arc({16.0, 12.4}, 4.3, 1.75, 180, 215), Capsule(Polar({16.0, 12.4}, 4.3, 35), {11.6, 22.8}, 1.75),
+            Capsule({11.6, 22.8}, {20.6, 22.8}, 1.75)});
+        break;
+    default:
+        design.Add(Fill::Dark, 0, {Arc({16.0, 12.1}, 3.7, 1.7, 200, 250), Arc({16.0, 19.65}, 3.85, 1.7, 270, 250)});
+        break;
+    }
+}
+void IconDesign(Design& design, Icon icon) {
+    switch (icon) {
+    case Icon::Gear: Gear(design); break;
+    case Icon::Bubble: Bubble(design); break;
+    case Icon::Lock: Lock(design); break;
+    case Icon::Sword: Sword(design); break;
+    case Icon::Scythe: Scythe(design); break;
+    case Icon::Axe: Axe(design); break;
+    case Icon::Hook: Hook(design); break;
+    case Icon::Book: Book(design); break;
+    case Icon::House: House(design); break;
+    case Icon::Pickaxe: Pickaxe(design); break;
+    case Icon::Shears: Shears(design); break;
+    case Icon::Teleport: Teleport(design); break;
+    case Icon::Diving: Diving(design); break;
+    case Icon::Magnifier: Magnifier(design); break;
+    case Icon::Question: Question(design); break;
+    case Icon::Ping: Ping(design); break;
+    case Icon::Shield: Shield(design); break;
+    case Icon::Heart: Heart(design); break;
+    case Icon::Target: Target(design); break;
+    case Icon::Skull: Skull(design); break;
+    case Icon::One: Number(design, 1); break;
+    case Icon::Two: Number(design, 2); break;
+    default: Number(design, 3); break;
+    }
+}
 Design DesignOf(Shape shape) {
     Design design;
+    if (IsIcon(shape)) {
+        IconDesign(design, IconOf(shape));
+        const int iconParts = design.count;
+        if (BadgeOf(shape) == Badge::Forbidden) Forbidden(design);
+        if (BadgeOf(shape) == Badge::Busy) Busy(design);
+        design.silhouette = design.count > iconParts ? iconParts + 1 : iconParts;
+        return design;
+    }
     switch (shape) {
     case Shape::Hand: case Shape::HandForbidden: case Shape::HandBusy: PointingHand(design); break;
     case Shape::Beam: Beam(design); break;

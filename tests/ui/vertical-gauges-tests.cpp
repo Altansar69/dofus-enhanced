@@ -49,6 +49,13 @@ struct Object : Raw {
     std::string name, text, property, help;
     std::wstring wide;                                            // a string's characters, as il2cpp_string_chars gives them
     std::array<bool, 8> handles{};                                // a window's resize handles shown, by ResizeHandler
+    // Its UXML inline rule (InlineStyleAccess.m_InlineRule: the style="…" of
+    // the UXML), and the properties whose code-set value was removed since its
+    // last full style update: those resolve from the style sheets' cached style
+    // (StyleCache, else InitialStyle), not from that rule (RemoveInlineStyle
+    // 0x55CDFC0), until IncrementVersion(StyleSheet) or a class change.
+    std::map<std::string, std::array<unsigned char, 12>> uxml;
+    std::set<std::string> stale;
     // Its parent as get_parent reads it (m_LogicalParent) and the element whose
     // children it is (m_PhysicalParent: a window's content element for the
     // window's own children).
@@ -292,6 +299,17 @@ Gauge MakeGauge(int type, Obj owner = nullptr) {
     g.omegaValue = Element("DofusLabel", "lbl_omegaValue"); Add(g.omegaBox, g.omegaValue);
     g.button = Element("DofusButtonCustom", "btn_settings"); Add(g.main, g.button);
     g.inner = Element("DofusVisualElement", "window_inner"); Add(g.window, g.inner, g.content);
+    // The UXML's inline rule (widgetProgressGauge's inline sheet).
+    const auto row = [] { std::array<unsigned char, 12> bytes{}; const int value = 2; std::memcpy(bytes.data(), &value, 4); return bytes; };
+    Get(g.window).uxml = {{"width", LengthStyle(566)}, {"height", LengthStyle(34)}, {"minWidth", LengthStyle(240)}, {"minHeight", LengthStyle(34)},
+        {"left", LengthStyle(546)}, {"top", LengthStyle(860)}, {"flexDirection", row()}};
+    Get(g.main).uxml = {{"flexDirection", row()}, {"paddingLeft", LengthStyle(12)}, {"minWidth", LengthStyle(240)}, {"width", LengthStyle(100, 1)},
+        {"height", LengthStyle(100, 1)}};
+    Get(g.box).uxml = {{"flexDirection", row()}};
+    Get(g.bar).uxml = {{"marginLeft", LengthStyle(4)}};
+    Get(g.level).uxml = {{"width", LengthStyle(68)}};
+    Get(g.omega).uxml = {{"width", LengthStyle(68)}};
+    Get(g.button).uxml = {{"height", LengthStyle(100, 1)}};
     Put<Obj>(g.window, 0x310, g.content);
     Put<bool>(g.window, 0x354, true); Put<bool>(g.window, 0x355, false); Put<bool>(g.window, 0x356, true);
     Put<int>(g.window, 0x350, 5); // drag-position="Custom"
@@ -486,6 +504,31 @@ struct Snapshot {
     int orientation = 0;
     bool operator==(const Snapshot&) const = default;
 };
+// A property as the element resolves it: its code-set value, else its UXML
+// inline rule's unless removed since its last full style update, else the
+// style sheets' (none for these elements: InitialStyle, a column, lengths auto).
+std::array<unsigned char, 12> Computed(Obj e, const std::string& property) {
+    const auto& o = Get(e);
+    if (const auto set = o.styles.find(property); set != o.styles.end()) return set->second;
+    if (const auto rule = o.uxml.find(property); rule != o.uxml.end() && !o.stale.contains(property)) return rule->second;
+    std::array<unsigned char, 12> initial{};
+    if (!IsEnumStyle(property)) { const int autoKeyword = 2; std::memcpy(initial.data() + 8, &autoKeyword, 4); }
+    return initial;
+}
+using Resolution = std::map<std::pair<Obj, std::string>, std::array<unsigned char, 12>>;
+Resolution Resolved(const Gauge& g) {
+    Resolution resolved;
+    for (auto e : g.Elements())
+        for (const char* property : {"width", "height", "minWidth", "minHeight", "maxHeight", "flexDirection", "paddingLeft", "paddingTop",
+                 "paddingBottom", "marginLeft", "marginTop", "left", "top"})
+            resolved[{e, property}] = Computed(e, property);
+    return resolved;
+}
+std::string Differences(const Resolution& a, const Resolution& b) {
+    std::string text;
+    for (const auto& [key, bytes] : a) if (b.at(key) != bytes) text += " " + Get(key.first).name + "." + key.second;
+    return text;
+}
 // What differs between two snapshots, for a failed check.
 std::string Diff(const Snapshot& a, const Snapshot& b) {
     std::string text;
@@ -733,8 +776,13 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         int keyword = 0;
         std::memcpy(&keyword, bytes.data() + (IsEnumStyle(property) ? 4 : 8), 4);
         // Keyword Null removes the code-set value: the UXML's rule applies again.
-        if (keyword == 1) target.styles.erase(property);
-        else target.styles[property] = bytes;
+        if (keyword == 1) { if (target.styles.erase(property)) target.stale.insert(property); }
+        else { target.styles[property] = bytes; target.stale.erase(property); }
+        return nullptr;
+    }
+    if (m == "IncrementVersion") {
+        // VisualElement.IncrementVersion: a StyleSheet change asks the panel for a full style update.
+        if (*static_cast<int*>(args.at(0)) & 0x10) o.stale.clear();
         return nullptr;
     }
     if (m == "get_parent") return o.parent;
@@ -1022,6 +1070,7 @@ void InstallResolvesEveryContract() {
         {"DofusContextualMenuRoot", "RemoveMenu", 1, 0x16D2AB0},
         {"VisualElement", "get_parent", 0, 0x55F7180}, {"VisualElement", "get_panel", 0, 0x55F7170}, {"VisualElement", "get_layout", 0, 0x55F6930},
         {"VisualElement", "get_name", 0, 0x3158710}, {"VisualElement", "get_style", 0, 0x55F74A0},
+        {"VisualElement", "IncrementVersion", 1, 0x55E5580},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_width", 0, 0x55D2740}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_width", 1, 0x55D63F0},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_height", 0, 0x55D1540}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_height", 1, 0x55D3D60},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x55D1850}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x55D4410},
@@ -1925,6 +1974,44 @@ void DraggedWhileVertical() {
     Tick(); LayoutPass();
     Check(at(1192, 124), "Ticked again: at its own place");
 }
+// The owner's 1.18.1 report: the pods' gauge made 313 px long and moved
+// while vertical, then unticked: « la barre devient toute petite au milieu,
+// l'icône au milieu aussi, les 3 petits points … au milieu ». Every element
+// must resolve each style as the game built it (ctr_main a row again, its
+// paddings, the level 68 px wide…): the values the vertical layout removed
+// come back from the UXML's inline rule only after a full style update. And
+// the bar horizontal, its code-set values, its size and place the game's.
+// Ticked and unticked again, and without any resize, the same.
+void ResolvedAsTheGameBuiltIt() {
+    Fixture f;
+    savedWidths["GaugePods"] = 726.67f;
+    savedHeights["GaugePods"] = 34.44f;
+    savedPositions["GaugePods"] = {744.5f, 563.5f, false, false};
+    const auto g = MakeGauge(0x10);
+    LayoutPass(); GameReplace(g); LayoutPass();
+    const auto horizontal = Take(g);
+    const auto resolved = Resolved(g);
+    for (int round = 0; round < 3; ++round) {
+        module->settings.gaugeVertical = 0x10;
+        Tick(); LayoutPass();
+        Check(Computed(g.main, "flexDirection")[0] == 0 && Get(g.bar).orientation == 1, "Vertical: ctr_main a column");
+        if (round == 0) {
+            GamePullEdge(g, BottomHandle, 313 - Get(g.window).height);
+            LayoutPass(); Frame();
+            GameDrag(g, 100, -50);
+            LayoutPass(); Frame();
+            for (int i = 0; i < 6; ++i) Tick();
+            Check(module->settings.gaugeVerticalBoxes[4].length == 313 && Pixels(g.window, "height") == 313, "313 px long, moved, kept");
+        }
+        module->settings.gaugeVertical = 0;
+        Tick(); LayoutPass();
+        Check(Resolved(g) == resolved, "Unticked (round " + std::to_string(round) + "): every style resolved as the game built it, not:" +
+            Differences(resolved, Resolved(g)));
+        Check(Take(g) == horizontal && Get(g.bar).orientation == 0 && Records() == 0, "Its code-set values, bar and handles as the game built them:" +
+            Diff(horizontal, Take(g)));
+    }
+    Check(Logged("VERTICAL_GAUGE_KEPT type=0x10 length=313 place=") == 1, "The chosen length logged once");
+}
 // The rules: a gauge's own type, the settings' mask, the length, the place on the screen.
 void Policy() {
     using verticalGauges::KeepOnScreen;
@@ -1991,6 +2078,7 @@ int main() {
         run(BackWhereTheGameHadIt);
         run(ResizedWhileVertical);
         run(DraggedWhileVertical);
+        run(ResolvedAsTheGameBuiltIt);
         run(BackWhereTheGameKeepsIt);
         run(Policy);
         std::cout << "PASS: « Afficher à la verticale »: every contract verified at its pinned RVA, a missing one turning only this feature off "

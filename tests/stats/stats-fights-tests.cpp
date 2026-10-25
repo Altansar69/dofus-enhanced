@@ -61,11 +61,16 @@ bool failHook = false;
 std::map<std::pair<int64_t, int>, int64_t> counters, records;
 std::map<std::tuple<int64_t, int, int>, int64_t> tables;
 bool counting = true, storeThrows = false, named = false;
-// The game's data as stats::KindOf tells it (stats.cpp): a class's own spells
-// (13107 Bond, 13110 Épée Divine: an Iop's), every other one an equipment's or unknown
-// (8395 « Pourpre Profond », the Dofus Pourpre's; 8393 « Vert Émeraude », the
-// Dofus Émeraude's), or nothing yet. Never asked from inside the hook.
-std::set<int> classSpells{3456, 201, 77, 13107, 13110};
+// The game's data as stats::ClassOf tells it (stats.cpp): a class's own spells
+// (13107 Bond, 13110 Épée Divine: an Iop's, class 8; 13872 Court-circuit and
+// 13868 Surtension: a Steamer's, class 15), every other one an equipment's or
+// unknown (8395 « Pourpre Profond », the Dofus Pourpre's; 8393 « Vert
+// Émeraude », the Dofus Émeraude's; 29594, the « Court-circuit » that
+// Court-circuit triggers), or nothing yet. Never asked from inside the hook.
+// The played character's class as stats::ClassOfCharacter tells it: an Iop
+// (8), or 0 while the game has not told it.
+std::map<int, int> classSpells{{3456, 8}, {201, 8}, {77, 8}, {13107, 8}, {13110, 8}, {13872, 15}, {13868, 15}};
+int characterClass = 8;
 bool kindsUnknown = false, inHook = false;
 unsigned kindCalls = 0;
 // The hooked listener and the game's own handler behind it.
@@ -207,10 +212,11 @@ Obj Action(int64_t source, int32_t which, Obj body, const std::string& klass = "
     return message;
 }
 // A cast (jrw) of a spell (case 2, jrq: its level's id eqvi at 0x18, the
-// spell's id eqvk at 0x1C) or of a weapon (case 9, its id boxed).
-Obj Cast(int32_t spell, int32_t kind = 2, int32_t level = 9100) {
+// spell's id eqvk at 0x1C) or of a weapon (case 9, its id boxed), announced
+// in the fight log (eqwy at 0x20) or not.
+Obj Cast(int32_t spell, int32_t kind = 2, int32_t level = 9100, bool announced = true) {
     auto cast = Make("jrw"), data = Make("jrq");
-    Set<int64_t>(cast, 0x28, -7); Set<int32_t>(cast, 0x38, 1);
+    Set<uint8_t>(cast, 0x20, announced ? 1 : 0); Set<int64_t>(cast, 0x28, -7); Set<int32_t>(cast, 0x38, 1);
     Set<Obj>(cast, 0x40, kind == 2 ? data : Box<int32_t>(spell)); Set<int32_t>(cast, 0x48, kind);
     Set<int32_t>(data, 0x18, level); Set<int32_t>(data, 0x1C, spell);
     return cast;
@@ -323,12 +329,17 @@ void AddTo(int64_t character, Table table, int key, int64_t amount) {
 }
 void Name(int64_t, const std::string&) { fake::named = true; }
 bool Counting() { return fake::counting; }
-SpellKind KindOf(int spell) {
+int ClassOf(int spell) {
     // The pump asks the game's data, never the hook (raw reads only there).
     fake::Check(!fake::inHook, "A spell's kind is never asked from inside the hook");
     ++fake::kindCalls;
-    if (fake::kindsUnknown) return SpellKind::Unknown;
-    return fake::classSpells.contains(spell) ? SpellKind::Class : SpellKind::Other;
+    if (fake::kindsUnknown) return UnknownClass;
+    const auto found = fake::classSpells.find(spell);
+    return found != fake::classSpells.end() ? found->second : NoClass;
+}
+int ClassOfCharacter(int64_t character) {
+    fake::Check(!fake::inHook, "The character's class is never asked from inside the hook");
+    return character == 1001 ? fake::characterClass : 0;
 }
 }
 
@@ -401,7 +412,7 @@ void InstallContract() {
     Check(layouts == std::set<std::string>{"esg.dpzj", "z.dbrl", "exf.drih", "fxc.dwan", "fxc.<dwaq>k__BackingField", "fzf.dwqq",
         "fyz.<dwon>k__BackingField", "fyz.dwoo", "fyz.dwop", "fyz.dwoq", "fyz.dwou", "fyz.dwpa", "fze.dwpw", "fze.dwpy", "fze.dwqb",
         "fze.dwqd", "fzg.dwqv", "dt.dcbc", "dt.dcbd", "dt.dcbg", "esg.dqab", "WorldPoint.m_mapId", "DungeonData.id",
-        "DungeonData.bosses", "jsq.ercs", "jsq.ered", "jsq.eree", "jrw.eqxm", "jrw.eqxn", "jrq.eqvk", "jrz.eqyd", "jsd.eqyu", "jsd.eqyz",
+        "DungeonData.bosses", "jsq.ercs", "jsq.ered", "jsq.eree", "jrw.eqwy", "jrw.eqxm", "jrw.eqxn", "jrq.eqvk", "jrz.eqyd", "jsd.eqyu", "jsd.eqyz",
         "jsd.eqzd", "jsd.eqzf", "jsd.eqzh"}, "Every field read has its pinned offset checked by name, never the fight's experience");
     Check(guarded == std::set<uintptr_t>{0x2AAC720, 0x861E70, 0x7BC7C0, 0x7C26B0, 0x1EA0910},
           "Exactly the item accessors, the dungeon lookups and gau.bixl, each behind a signature guard");
@@ -745,6 +756,42 @@ void Spells() {
     RestoreStatsFights(); Tick(2);
     Check(Entry(1001, Table::Spells, 13107) == 1 && Counted(1001, Counter::SpellCasts) == 257, "Casts not counted yet are dropped with counting");
 }
+// Only the character's own class's spells, cast as the fight log announces
+// them (jrw.eqwy): an Iop's « Bribe de Steamer » casts the Steamer's
+// « Surtension » (13868) in its name, a Steamer spell such as Court-circuit
+// (13872) is another class's for an Iop, and a cast the server does not
+// announce (a spell's or an effect's doing) is never the character's own.
+void OwnClass() {
+    Fresh(); World world; Tick();
+    Send(Action(1001, 2, Cast(13107)));                 // Bond: the Iop's own
+    Send(Action(1001, 2, Cast(13868)));                 // Surtension: a Steamer's
+    Send(Action(1001, 2, Cast(13872)));                 // Court-circuit: a Steamer's
+    Send(Action(1001, 2, Cast(29594)));                 // what Court-circuit triggers: no class's
+    Send(Action(1001, 2, Cast(13110, 2, 9100, false))); // the Iop's own, not announced
+    Tick();
+    Check(Counted(1001, Counter::SpellCasts) == 1 && Entry(1001, Table::Spells, 13107) == 1 && Entry(1001, Table::Spells, 13868) == 0 &&
+          Entry(1001, Table::Spells, 13872) == 0 && Entry(1001, Table::Spells, 29594) == 0 && Entry(1001, Table::Spells, 13110) == 0,
+          "Only the Iop's own spells, announced: never a Steamer's, nor a triggered or unannounced cast");
+    Fight(world, Report(4, {Fighter(1001)}));
+    Check(Last("STATS_FIGHT type=") == "STATS_FIGHT type=4 kind=pve win=1 ms=90000 turns=6 monsters=0 souls=0 dungeon=0 casts=1 others=4 hits=0 deaths=0",
+          "The other classes' spells and the unannounced casts are in the line's others");
+    // A Steamer's Court-circuit is its own.
+    characterClass = 15;
+    Send(Action(1001, 2, Cast(13872)));
+    Send(Action(1001, 2, Cast(13107)));
+    Tick();
+    Check(Entry(1001, Table::Spells, 13872) == 1 && Entry(1001, Table::Spells, 13107) == 1 && Counted(1001, Counter::SpellCasts) == 2,
+          "For a Steamer, Court-circuit is its own spell, an Iop's is not");
+    // The character's class not told yet: any class's spell, as 1.16.1, still announced only.
+    characterClass = 0;
+    Send(Action(1001, 2, Cast(13868)));
+    Send(Action(1001, 2, Cast(8395)));
+    Send(Action(1001, 2, Cast(13107, 2, 9100, false)));
+    Tick();
+    characterClass = 8;
+    Check(Entry(1001, Table::Spells, 13868) == 1 && Entry(1001, Table::Spells, 8395) == 0 && Entry(1001, Table::Spells, 13107) == 1 &&
+          Counted(1001, Counter::SpellCasts) == 3, "An unknown class counts any class's announced spell, never an equipment's");
+}
 void Failures() {
     // A failing read: one fixed line, never thrown; the report counts once reads work.
     for (const char* name : {"FindService:fsl", "FindService:fsl:int", "FindService:fng", "FindService:fng:int"}) {
@@ -849,6 +896,7 @@ int main() {
         Dungeons();
         Actions();
         Spells();
+        OwnClass();
         Failures();
         ModuleStates();
         SessionAndRestore();
@@ -860,8 +908,9 @@ int main() {
                      "kinds (JcM, JcJ with challenges, Kolizéum) and victories, time and turns, monsters defeated, server statistics once, souls, "
                      "dungeons by boss, "
                      "hooked fight actions (spells, deaths, elements, biggest hit, main thread only, game handler always called), "
-                     "spells by their id (jrq.eqvk, never its level's id) counted at the next tick, a class's own only (never the Dofus Pourpre's "
-                     "or Émeraude's effects, nor a spell of unknown kind), "
+                     "spells by their id (jrq.eqvk, never its level's id) counted at the next tick, the character's own class's only, as the fight "
+                     "log announces them (never the Dofus Pourpre's or Émeraude's effects, another class's spell such as a Steamer's "
+                     "Court-circuit for an Iop, a triggered or unannounced cast, nor a spell of unknown kind), "
                      "contained failures, pinned contract, fixed-code logs\n";
         return 0;
     } catch (const std::exception& error) {

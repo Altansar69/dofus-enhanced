@@ -372,7 +372,7 @@ void MonsterIdentity() {
     Check(Monsters() == std::vector<int64_t>{2999, 147, 799, 797, 3416, 2270}, "Monster from the soul's effect 4058, else from the soul table");
     Check(captured[0].name == "Tofumanchou l’Empereur" && captured[1].name == "Abrakroc l'édenté", "French names passed through unchanged");
     // Real 3.7.12.12 dungeon-room souls list every boss of their room, their own
-    // first (the table's): only that one counts. A soul unknown to both: never guessed.
+    // first (the table's): each one counts, its own first. A soul unknown to both: never guessed.
     for (const auto& [id, name] : std::vector<std::pair<int64_t, std::string>>{{1087, "Tynril Ahuri"}, {1072, "Tynril Consterné"},
             {1085, "Tynril Déconcerté"}, {1086, "Tynril Perfide"}, {943, "Sphincter Cell"}, {940, "Rat Blanc"}, {939, "Rat Noir"},
             {827, "Minotot"}, {121, "Minotoror"}, {36001, "Gardien"}, {36002, "Garde"}})
@@ -383,22 +383,28 @@ void MonsterIdentity() {
         Item(33756, 327, 1, {Effect(4057, 0), Effect(4058, 827), Effect(4058, 121)}),
         Item(39999, 328, 1)})}));
     Tick();
-    Check(Monsters() == std::vector<int64_t>{2999, 147, 799, 797, 3416, 2270, 1087, 943, 827} &&
-          Logged("CAPTURE_SOUL monster=1087 kind=boss qty=1") && Lines("CAPTURE_SOUL_SKIPPED") == 1 &&
-          Logged("CAPTURE_SOUL_SKIPPED gid=39999 reason=unknown"), "A room soul counts its own monster only; an unknown soul is skipped");
-    // Whatever the order: the table's monster when listed, else the first effect.
+    Check(Monsters() == std::vector<int64_t>{2999, 147, 799, 797, 3416, 2270, 1087, 1072, 1085, 1086, 943, 940, 939, 827, 121} &&
+          Logged("CAPTURE_SOUL monster=1087 kind=boss qty=1") && Logged("CAPTURE_SOUL monster=1072 kind=boss qty=1") &&
+          Logged("CAPTURE_ROOM_SOUL gid=33746 monsters=4") && Logged("CAPTURE_ROOM_SOUL gid=33753 monsters=3") &&
+          Lines("CAPTURE_SOUL_SKIPPED") == 1 && Logged("CAPTURE_SOUL_SKIPPED gid=39999 reason=unknown"),
+          "A room soul counts each of its bosses, its own first; an unknown soul is skipped");
+    // Whatever the order: the table's monster when listed, else the first effect;
+    // the others of its room after it, only when they are Ocre goals.
     world.Show(Report({Fighter(1001, {
         Item(33756, 327, 1, {Effect(4058, 121), Effect(4058, 827)}),          // the table's monster listed second
         Item(33760, 327, 1, {Effect(4058, 36002), Effect(4058, 36001)}),      // the table's (3234) not listed: the first
         Item(36010, 327, 1, {Effect(4058, 36001), Effect(4058, 36002)})})})); // not in the table: the first
     Tick();
-    Check(Monsters() == std::vector<int64_t>{2999, 147, 799, 797, 3416, 2270, 1087, 943, 827, 827, 36002, 36001} &&
-          Lines("CAPTURE_SOUL_SKIPPED") == 1, "A room soul holds the table's monster when listed, else its first effect's");
+    Check(Monsters() == std::vector<int64_t>{2999, 147, 799, 797, 3416, 2270, 1087, 1072, 1085, 1086, 943, 940, 939, 827, 121,
+          827, 121, 36002, 36001} && Lines("CAPTURE_SOUL_SKIPPED") == 3 &&
+          Logged("CAPTURE_SOUL_SKIPPED gid=33760 monster=36001 reason=outside") &&
+          Logged("CAPTURE_SOUL_SKIPPED gid=36010 monster=36002 reason=outside"),
+          "A room soul holds the table's monster when listed, else its first effect's");
     for (const char* member : {"possibleEffects", "actionId", "myx"}) {
         fail = member; world.Show(Report({Fighter(1001, {Item(33684, 327, 1, {Effect(4058, 147)})})})); Tick(); fail.clear();
         Check(captured.back().monsterId == 147 && Logged("CAPTURE_DETECT_ERROR stage=effects"), "An unreadable effect falls back to the table");
     }
-    Check(captured.size() == 15 && Lines("CAPTURE_DETECT_ERROR stage=effects") == 1, "The effect error is logged at most every 10 s");
+    Check(captured.size() == 22 && Lines("CAPTURE_DETECT_ERROR stage=effects") == 1, "The effect error is logged at most every 10 s");
 }
 void KindChecks() {
     Fresh(); World world; Tick();
@@ -460,6 +466,81 @@ void Quantities() {
         Item(33748, 327, 2, {Effect(4057, 0), Effect(4058, 3416), Effect(4058, 3391)})})})); Tick();
     Check(captured.size() == 5 && captured[3].monsterId == 3416 && captured[3].quantity == 1 && captured[4].monsterId == 3416 &&
           captured[4].quantity == 2, "One capture per soul item");
+    Check(Logged("CAPTURE_SOUL_SKIPPED gid=33747 monster=3384 reason=outside") &&
+          Logged("CAPTURE_SOUL_SKIPPED gid=33748 monster=3391 reason=outside"), "Their Frigost bosses are outside the Ocre quest");
+}
+// The owner's report (1.19.0): a dungeon-room soul holds several bosses and
+// each one counts (« Sphincter Cell, but also Rat Noir and Rat Blanc »). The
+// gids and their effects 4058, in the client's order, are the real 3.7.12.12
+// room souls (r59 items: "Âmes capturées : Sphincter Cell, Rat Blanc & Rat
+// Noir", "Âmes capturées : Tynrils", "Âmes capturées : Blop Multicolore Royal &
+// Blops Royaux", "Âmes capturées : Gelées Royales", "Comte Harebourg & Klime",
+// "Hanshi & Shihan").
+Obj Room(int gid, std::vector<int> ids, int quantity = 1) {
+    std::vector<Obj> effects{Effect(4057, 0)};
+    for (const int id : ids) effects.push_back(Effect(4058, id));
+    return Item(gid, 327, quantity, std::move(effects));
+}
+std::vector<std::string> Names() { std::vector<std::string> names; for (const auto& capture : captured) names.push_back(capture.name); return names; }
+std::vector<int> Counts() { std::vector<int> counts; for (const auto& capture : captured) counts.push_back(capture.quantity); return counts; }
+void RoomSouls() {
+    Fresh(); World world; Tick();
+    for (const auto& [id, name] : std::vector<std::pair<int64_t, std::string>>{{943, "Sphincter Cell"}, {940, "Rat Blanc"},
+            {939, "Rat Noir"}, {1087, "Tynril Ahuri"}, {1072, "Tynril Consterné"}, {1085, "Tynril Déconcerté"}, {1086, "Tynril Perfide"},
+            {1188, "Blop Multicolore Royal"}, {1184, "Blop Coco Royal"}, {1185, "Blop Griotte Royal"}, {1186, "Blop Indigo Royal"},
+            {1187, "Blop Reinette Royal"}, {3384, "Klime"}, {6212, "Hanshi"}, {6204, "Shihan"}, {430, "Gelée Royale Citron"}})
+        Monster(id, name, true, false);
+    // Sphincter Cell's room: the boss and both rats, one capture each.
+    world.Show(Report({Fighter(1001, {Room(33753, {943, 940, 939})})})); Tick();
+    Check(Monsters() == std::vector<int64_t>{943, 940, 939} && Names() == std::vector<std::string>{"Sphincter Cell", "Rat Blanc", "Rat Noir"} &&
+          Counts() == std::vector<int>{1, 1, 1} && std::all_of(captured.begin(), captured.end(), [](const metamob::Capture& capture) {
+              return capture.type == metamob::TypeBoss && capture.characterId == 1001 && capture.characterName == "Testeur"; }),
+          "Sphincter Cell's soul: +1 Sphincter Cell, +1 Rat Blanc, +1 Rat Noir");
+    Check(logs == std::vector<std::string>{"CAPTURE_REPORT entries=1 local=1 loot=1 souls=1 winner=1", "CAPTURE_ROOM_SOUL gid=33753 monsters=3",
+        "CAPTURE_SOUL monster=943 kind=boss qty=1", "CAPTURE_SOUL monster=940 kind=boss qty=1", "CAPTURE_SOUL monster=939 kind=boss qty=1"},
+        "One room line, then one line per boss");
+    // Four Tynrils at once (three of them have no soul of their own).
+    captured.clear();
+    world.Show(Report({Fighter(1001, {Room(33746, {1087, 1072, 1085, 1086})})})); Tick();
+    Check(Monsters() == std::vector<int64_t>{1087, 1072, 1085, 1086} && Counts() == std::vector<int>{1, 1, 1, 1}, "Four Tynrils: +1 each");
+    // Several Blops: the royal room soul twice and a Blop Coco Royal's own soul in the same loot.
+    captured.clear();
+    world.Show(Report({Fighter(1001, {Room(33730, {1188, 1184, 1185, 1186, 1187}, 2), Room(33697, {1184})})})); Tick();
+    Check(Monsters() == std::vector<int64_t>{1188, 1184, 1185, 1186, 1187, 1184} && Counts() == std::vector<int>{2, 2, 2, 2, 2, 1},
+          "Every Blop of the room soul with its quantity, and the other soul's Blop too (the sync adds them up)");
+    Check(Logged("CAPTURE_ROOM_SOUL gid=33730 monsters=5") && Logged("CAPTURE_SOUL monster=1184 kind=boss qty=2") &&
+          Logged("CAPTURE_SOUL monster=1184 kind=boss qty=1"), "Logged per soul");
+    // Bosses outside the Ocre quest (and so outside Metamob's): never queued; the soul's own monster as before.
+    captured.clear();
+    world.Show(Report({Fighter(1001, {Room(33747, {3416, 3384}), Room(33744, {6212, 6204})})})); Tick();
+    Check(Monsters() == std::vector<int64_t>{3416, 6212} && Logged("CAPTURE_SOUL_SKIPPED gid=33747 monster=3384 reason=outside") &&
+          Logged("CAPTURE_SOUL_SKIPPED gid=33744 monster=6204 reason=outside"), "Klime and Shihan are outside the quest");
+    // Each boss of a room is read on its own: one that cannot be counted never blocks the others.
+    captured.clear(); Monster(58, "Bouftou", false, false); Monster(86, std::string("Nom\x01") + "cassé", true, false);
+    world.Show(Report({Fighter(1001, {Room(33812, {430, 58, 86, 85, 1086})})})); Tick();
+    Check(Monsters() == std::vector<int64_t>{430, 1086} && Logged("CAPTURE_SOUL_SKIPPED gid=33812 monster=58 reason=kind") &&
+          Logged("CAPTURE_SOUL_SKIPPED gid=33812 monster=86 reason=name") && Logged("CAPTURE_SOUL_SKIPPED gid=33812 monster=85 reason=monster"),
+          "Neither boss nor archimonster, an unusable name, unknown to MonsterData: that boss only is skipped");
+    captured.clear(); fail = "get_name";
+    world.Show(Report({Fighter(1001, {Room(33753, {943, 940, 939})})})); Tick(); fail.clear();
+    Check(captured.empty() && Logged("CAPTURE_SOUL_SKIPPED gid=33753 reason=error") &&
+          Logged("CAPTURE_SOUL_SKIPPED gid=33753 monster=940 reason=error") && Logged("CAPTURE_SOUL_SKIPPED gid=33753 monster=939 reason=error"),
+          "A failing read skips each boss with a fixed line, never thrown");
+    // Duplicates: a boss listed twice counts once; a report shown again, an ally's room soul, never.
+    captured.clear();
+    const auto twice = Report({Fighter(2002, {Room(33753, {943, 940, 939})}), Fighter(1001, {Room(33753, {943, 940, 940, 939, 943})})});
+    world.Show(twice); Tick();
+    Check(Monsters() == std::vector<int64_t>{943, 940, 939} && Logged("CAPTURE_ROOM_SOUL gid=33753 monsters=3"),
+          "Each boss once per soul, this character's soul only");
+    world.Show(Report({Fighter(1001, {Room(33746, {1087, 1072, 1085, 1086})})})); Tick();
+    world.Show(twice); Tick(3);
+    Check(captured.size() == 7, "A report shown again is never counted twice");
+    // Restart (Module::Stop, then a new start): the report shown then is the
+    // baseline, so a room soul already counted is never counted again.
+    RestoreCaptureDetect(); Tick(3);
+    Check(captured.size() == 7, "After a restart the room soul shown is not counted again");
+    world.Show(Report({Fighter(1001, {Room(33753, {943, 940, 939})})})); Tick();
+    Check(captured.size() == 10 && Monsters().back() == 939, "The next room soul after the restart counts");
 }
 void Bounds() {
     Fresh(); World world; Tick();
@@ -627,7 +708,8 @@ void ChatLookups() {
 void FixedCodeLogs() {
     earlier.insert(earlier.end(), logs.begin(), logs.end());
     const std::regex format(R"(^(CAPTURE_REPORT entries=\d+ local=\d+ loot=\d+ souls=\d+ winner=[01])"
-        R"(|CAPTURE_SOUL monster=\d+ kind=(boss|arch) qty=\d+|CAPTURE_SOUL_SKIPPED gid=\d+ reason=(quantity|unknown|monster|kind|name|error))"
+        R"(|CAPTURE_SOUL monster=\d+ kind=(boss|arch) qty=\d+|CAPTURE_ROOM_SOUL gid=\d+ monsters=\d+)"
+        R"(|CAPTURE_SOUL_SKIPPED gid=\d+( monster=\d+)? reason=(quantity|unknown|monster|kind|name|error|outside))"
         R"(|CAPTURE_DETECT_ERROR stage=(read|report|effects|name|sink|lookup)|CAPTURE_DETECT_DISABLED stage=(fight|monster)|CAPTURE_FIGHT_CHANGED)$)");
     Check(earlier.size() > 50, "The scenarios produced logs");
     for (const auto& line : earlier) {
@@ -654,6 +736,7 @@ int main() {
         KindChecks();
         DisabledSync();
         Quantities();
+        RoomSouls();
         Bounds();
         Failures();
         ReportOwner();
@@ -666,7 +749,7 @@ int main() {
         owner.compositor.reset(); owner.fight.reset(); module = nullptr;
         Check(handles.empty(), "Capture detection leaked GC references");
         std::cout << "PASS: fight-report baseline and identity, local character only, 327/328 souls, effect 4058 then table, "
-                     "dungeon-room souls, boss/archimonster check, sync off, quantity bounds, contained failures, fixed-code logs; "
+                     "dungeon-room souls (each Ocre boss of the room counted once per soul unit, others skipped), boss/archimonster check, sync off, quantity bounds, contained failures, fixed-code logs; "
                      "chat monster reads (client name, boss/archimonster/other type, once per id, bounded) and the character's name\n";
         return 0;
     } catch (const std::exception& error) {

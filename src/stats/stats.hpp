@@ -24,7 +24,7 @@ enum class Counter : int {
     WinsPve, WinsPvp, WinsKolizeum,
     FightMs, FightTurns,
     DamageDealt, DamageTaken, Heals, Kills, Deaths, Dungeons,
-    SpellCasts,                                    // the character's class spells cast (KindOf), never weapons
+    SpellCasts,                                    // the character's own class spells cast (ClassOf), never weapons
     TeleportZaap, TeleportZaapi, TeleportPrism, TeleportOther, RecallPotions, HavenBag, ModTrips,
     Count
 };
@@ -32,7 +32,7 @@ enum class Counter : int {
 enum class Record : int { BiggestHit, LongestSessionMs, Count };
 // Per-key tables; the statistics window shows their largest entries.
 enum class Table : int {
-    Spells,      // spell id -> casts, the character's class spells only (KindOf)
+    Spells,      // spell id -> casts, the character's own class spells only (ClassOf)
     Elements,    // element (0 neutral, 1 earth, 2 fire, 3 water, 4 air) -> damage dealt
     Dungeons,    // dungeon id -> times completed
     Dimensions,  // world id -> arrivals
@@ -48,14 +48,19 @@ void AddTo(int64_t character, Table table, int key, int64_t amount = 1);
 // The character's name, shown with the totals of every character.
 void Name(int64_t character, const std::string& name);
 bool Counting();
-// Whose spell a spell id is, in the game's data: one of a class's own spells
-// (one of its class's spell pairs, SpellVariantData), or another spell the
-// server casts in a character's name, such as an equipment's effect (the
-// Dofus Pourpre's « Pourpre Profond », the Dofus Émeraude's « Vert
-// Émeraude »). Unknown while the game's data cannot tell. Module::Pump only
-// (the game is asked once per spell); never throws.
-enum class SpellKind { Unknown, Class, Other };
-SpellKind KindOf(int spell);
+// Whose spell a spell id is, in the game's data: the class (its breed id, as
+// BreedData and BreedEnum number them: 15 the Steamer) whose spell pairs
+// (SpellVariantData) hold it, both spells of each pair, the class's « Sorts »
+// tab; NoClass for any other spell the server casts in a character's name,
+// such as an equipment's effect (the Dofus Pourpre's « Pourpre Profond », the
+// Dofus Émeraude's « Vert Émeraude ») or a spell another one triggers
+// (Court-circuit's « Déclenché » one); UnknownClass while the game's data
+// cannot tell. Module::Pump only (the game is asked once per spell); never throws.
+constexpr int UnknownClass = -1, NoClass = 0;
+int ClassOf(int spell);
+// The class (breed id) of this character when it is the one played in this
+// client and the game told it; 0 otherwise. Never throws.
+int ClassOfCharacter(int64_t character);
 }
 
 // The store's side for the statistics window (« Statistiques », stats-window.hpp),

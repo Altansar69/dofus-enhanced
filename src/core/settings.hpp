@@ -28,6 +28,9 @@ struct Settings {
     bool preloadNextMap = true;
     bool soulAutoEquip = true;
     bool spouseTeleport = true;
+    // Déplacements (1.19.0) : le bouton de trajet sur la case de chaque autre
+    // membre du groupe (une case d'ExtraToggles), lu à chaque tick.
+    bool partyTravelButton = true;
     bool resourceMapEnabled = true;
     bool resourceMiniMapEnabled = true;
     bool miniMapCenterButton = true;
@@ -48,6 +51,9 @@ struct Settings {
     // valeur de 1.17.x et 1.18.0 (0 Or, 1 thème du jeu, 2 Émeraude, 3 Argent).
     int customCursorColor = 0;
     int customCursorSize = 0; // 0 comme la souris de Windows, 1 grande (×1,5), 2 très grande (×2)
+    // « Curseurs du jeu aussi » (1.19.0, une case d'ExtraToggles) : avec « Curseur
+    // Dofus », les icônes du jeu (bulle, outils, épée, repères…) dessinées par le mod.
+    bool customCursorGame = true;
     // Jauges (1.18.0) : les jauges affichées à la verticale (case « Afficher à
     // la verticale » du menu … de chaque jauge), un bit fqd+GaugesType chacune
     // (GaugeVerticalBits) ; la case elle-même dans ces menus, une case
@@ -236,9 +242,10 @@ inline constexpr bool Settings::* GlowCategoryToggles[] = {
 // The checkboxes added in 1.13.0, 1.14.0, 1.16.0 (the notebook's copy and
 // travel buttons, the performance overlay's top-bar button), 1.17.1 (the
 // send buttons of the notebook's messages) and 1.18.0 (the gauges' « Afficher
-// à la verticale » row), in the order of OptionsUi's extra rows.
+// à la verticale » row) and 1.19.0 (the party members' travel button, « Curseurs
+// du jeu aussi »), in the order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName,
     &Settings::notebookPingButton, &Settings::notebookCopyButton, &Settings::notebookTravelButton, &Settings::mapAddPosition, &Settings::perfOverlay,
     &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton,
-    &Settings::notebookSendButtons, &Settings::gaugeVerticalMenu};
+    &Settings::notebookSendButtons, &Settings::gaugeVerticalMenu, &Settings::partyTravelButton, &Settings::customCursorGame};

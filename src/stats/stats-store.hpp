@@ -27,6 +27,18 @@
 // counter, in the same write under the lock. The old counts are thus
 // converted exactly once, whichever client writes first; one whose kind is
 // not known yet waits under its old key, never shown.
+//
+// The character's own class (1.19.0). 1.16.1 to 1.18.0 counted any class's
+// spell cast in the character's name, another class's too: the Steamer's
+// « Surtension » that a « Bribe de Steamer » casts in its bearer's name, for
+// instance. Only the character's own class's spells count now
+// (stats-fights.cpp). The sheets counted before are checked once, in the
+// first write after this client knows the sheet's character's class (Played:
+// the character played here) and whose spell each of its "classSpells" is
+// (Classify): the other classes' spells are dropped with their casts, then
+// "spellsChecked" marks the sheet, never checked again (a character that
+// changes class later keeps its former spells). Until then, the sheet is shown
+// as it is.
 #include "stats/stats.hpp"
 #include <nlohmann/json.hpp>
 #include <filesystem>
@@ -56,6 +68,8 @@ struct Sheet {
     // name) still to convert, and whether their casts counter ("spellCasts") is there.
     std::map<int, int64_t> legacy;
     bool legacyCasts = false;
+    // Its spells were checked against its character's class ("spellsChecked", Check).
+    bool checked = false;
     // The sheet as read from the file: fields of a later revision are written back unchanged.
     nlohmann::json raw = nlohmann::json::object();
     bool Empty() const;
@@ -82,11 +96,20 @@ std::string Serialize(const Book& book);
 // Adds what was counted: sums, maxima, the earliest first and latest last
 // dates, the newest name. Saturating; tables stay within their limits.
 void Merge(Sheet& into, const Sheet& counted);
-// Converts a sheet's old spells whose kind is known (spell id -> a class's own
-// spell): a class's spell joins the spells with its casts, any other is
-// dropped, an unknown one waits; the old casts counter goes (it counted the
-// dropped ones too). Nothing else changes. True when the sheet changed.
-bool Convert(Sheet& sheet, const std::unordered_map<int, bool>& kinds);
+// Converts a sheet's old spells whose kind is known (spell id -> its class,
+// stats::ClassOf; NoClass for none): a class's spell joins the spells with its
+// casts, any other is dropped, an unknown one waits; the old casts counter
+// goes (it counted the dropped ones too). Nothing else changes. True when the
+// sheet changed.
+bool Convert(Sheet& sheet, const std::unordered_map<int, int>& kinds);
+// Whether Check can check this sheet now: not checked yet, its character's
+// class known (above 0) and the class of each of its spells too.
+bool Checkable(const Sheet& sheet, int characterClass, const std::unordered_map<int, int>& kinds);
+// Checks a Checkable sheet once: the spells of another class than its
+// character's (or of none) are dropped, their casts taken from the casts
+// counter (1.16.1 to 1.18.0 added each cast to both alike), and the sheet is
+// marked checked. Nothing else changes. True when the sheet changed.
+bool Check(Sheet& sheet, int characterClass, const std::unordered_map<int, int>& kinds);
 // A session is never longer than the time played counted: one that went on
 // through a reset of its sheet (here or in another client) counts from it.
 void Within(Sheet& sheet);
@@ -113,15 +136,19 @@ public:
     void Raise(int64_t id, Record record, int64_t value, int64_t now);
     void AddTo(int64_t id, Table table, int key, int64_t amount, int64_t now);
     void Name(int64_t id, const std::string& name);
-    // Unwritten counts, or old spells in the file whose kind is known now
-    // (Converting: a write converts them).
+    // Unwritten counts, or old spells in the file whose kind is known now, or
+    // a sheet to check (Converting: a write converts or checks them).
     bool Pending() const;
     bool Converting() const;
-    // The old spells of the file as last read whose kind is not known yet (at
-    // most this many, smallest ids first), and what the game's data says of
-    // one: a class's own spell or not. Never throws.
+    // The spells of the file as last read whose class is not known yet (at
+    // most this many, smallest ids first): the old ones, and those of a sheet
+    // to check whose character's class is known. What the game's data says of
+    // one: its class (stats::ClassOf), NoClass for none. Never throws.
     std::vector<int> Unsorted(size_t most) const;
-    void Classify(int spell, bool own);
+    void Classify(int spell, int spellClass);
+    // The class of a character played in this client (stats::ClassOfCharacter),
+    // for its sheet's check. Ignored for character 0 or a class below 1. Never throws.
+    void Played(int64_t id, int characterClass);
     // Adds the unwritten counts to the file under its lock, waiting for it at
     // most lockWaitMs, and converts its old spells whose kind is known (only
     // that when nothing is counted). Busy, Failed or Newer keep them for the
@@ -149,6 +176,7 @@ private:
     bool Current(const Book& book, const Sheet& unwritten) const;
     void Keep(std::vector<Sheet>& kept);
     void Saw(const Book& book);
+    int PlayedClass(int64_t id) const;
     bool Convertible(const Book& book) const;
     bool ConvertAll(Book& book) const;
     mutable std::mutex mutex;
@@ -156,7 +184,8 @@ private:
     Book saved;
     std::vector<Sheet> counted;
     Seen seen;
-    std::unordered_map<int, bool> kinds;  // spell id -> a class's own spell (Classify)
+    std::unordered_map<int, int> kinds;         // spell id -> its class, NoClass for none (Classify)
+    std::unordered_map<int64_t, int> classes;  // character id -> its class (Played)
     bool frozen = false;
     FileStamp stamp;  // the file as last read or written
 };
@@ -165,12 +194,13 @@ private:
 // scripted one in tests. Main thread.
 struct Game {
     virtual ~Game() = default;
-    // The character played in this client and its name; 0 while unknown.
-    virtual int64_t Character(std::string& name) = 0;
+    // The character played in this client, its name and its class (breed id,
+    // 0 while unknown); 0 while unknown.
+    virtual int64_t Character(std::string& name, int& characterClass) = 0;
     // A spell's, dungeon's or world's name in the game's data; empty when unknown.
     virtual std::string KeyName(Table table, int key) = 0;
-    // Whose spell this is in the game's data (stats.hpp, KindOf); may throw.
-    virtual SpellKind Kind(int spell) = 0;
+    // Whose spell this is in the game's data (stats.hpp, ClassOf); may throw.
+    virtual int Class(int spell) = 0;
 };
 void UseGame(Game* game);  // nullptr: the native client
 Store& ModuleStore();      // the store of stats.hpp's functions (tests)
