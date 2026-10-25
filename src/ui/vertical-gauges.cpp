@@ -186,6 +186,9 @@ struct Record {
     std::vector<Owned> styles;       // the window's width first, its height second
     bool settlePending = false, undo = false, dirty = false;
     uint64_t changed = 0;            // when the player last changed its length or place (kept KeepAfterMs later)
+    // Its length and place in the settings when it was laid out or last kept:
+    // other ones there (a saved layout applied, 1.20.0) lay it out again.
+    Settings::GaugeVerticalBox basis{};
 };
 // The row of the menu shown: at most one, the game's DisplayMenu closes every other menu first.
 struct Row {
@@ -557,6 +560,7 @@ void Build(Record& r, const Elements& e) {
     try { r.saved = StoredPlace(r); } catch (const std::exception&) { r.saved = {}; } // none known: its own place
     r.width = HorizontalWidth(r);
     const auto& kept = module->settings.gaugeVerticalBoxes[Bit(r.type)];
+    r.basis = kept;
     r.chosen = static_cast<float>(kept.length);
     r.length = Length(r.chosen > 0 ? r.chosen : r.width, r.screenHeight);
     Box horizontal{};
@@ -724,6 +728,7 @@ void Keep(Record& r, bool now) {
     box.length = r.chosen > 0 ? KeptLength(r.chosen) : 0;
     box.x = KeptPlace(r.fx, 1);
     box.y = KeptPlace(r.fy, 1);
+    r.basis = box;
     if (next == module->settings) return;
     try { module->Change(next); }
     catch (const std::exception& error) { Log(std::string("VERTICAL_GAUGES_SAVE_ERROR ") + error.what()); }
@@ -1029,6 +1034,13 @@ void Tick() {
             Log("VERTICAL_GAUGE_GONE type=" + Hex(r.type));
             s.records.erase(s.records.begin() + static_cast<std::ptrdiff_t>(i));
             continue;
+        }
+        // Another length or place in the settings than its own, the player's
+        // own change not pending (a saved layout applied, 1.20.0): put back,
+        // then laid out again below with them.
+        if (!r.undo && !r.dirty && !(module->settings.gaugeVerticalBoxes[Bit(r.type)] == r.basis)) {
+            Log("VERTICAL_GAUGE_RELAYOUT type=" + Hex(r.type));
+            r.undo = true;
         }
         if (r.undo || !(mask & r.type)) {
             if (!Undo(i)) ++i;

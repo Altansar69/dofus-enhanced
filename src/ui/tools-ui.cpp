@@ -192,6 +192,8 @@ std::vector<Shortcut> Shortcuts(){
     return result;
 }
 bool Visible(const char* key){return Find(key).visible();}
+Obj Window(const char* key){return Find(key).window.get();}
+void ApplyHeaderSizes(){if(!Ready())return;for(size_t i=0;i<std::size(HeaderPanels);++i)ApplySize(PanelWindow(i),Small(i));RefreshChoices();}
 bool Toggle(const char* key){return Ready()&&Find(key).toggle();}
 void Install(){if(installed)return;
     auto scroll=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","ScrollView");

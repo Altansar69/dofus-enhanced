@@ -60,6 +60,10 @@ struct Settings {
     // d'ExtraToggles : décochée, toutes les jauges à l'horizontale, leurs choix gardés.
     int gaugeVertical = 0;
     bool gaugeVerticalMenu = true; // Jauges : la case « Afficher à la verticale » dans le menu … des jauges
+    // Affichages enregistrés (1.20.0, une case d'ExtraToggles) : les fenêtres du
+    // mod gardées avec chaque affichage enregistré du jeu et remises comme elles
+    // étaient quand il est appliqué (preset-windows.cpp), lu à chaque tick.
+    bool presetModWindows = true;
     // Jauges (1.18.1) : la longueur et la place de chaque jauge à la verticale
     // choisies à la souris, une par bit de fqd+GaugesType (à l'index du bit).
     // length : en pixels de l'interface, 0 pour sa largeur à l'horizontale ;
@@ -243,9 +247,11 @@ inline constexpr bool Settings::* GlowCategoryToggles[] = {
 // travel buttons, the performance overlay's top-bar button), 1.17.1 (the
 // send buttons of the notebook's messages) and 1.18.0 (the gauges' « Afficher
 // à la verticale » row) and 1.19.0 (the party members' travel button, « Curseurs
-// du jeu aussi »), in the order of OptionsUi's extra rows.
+// du jeu aussi ») and 1.20.0 (the mod's windows kept in the game's saved
+// layouts), in the order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName,
     &Settings::notebookPingButton, &Settings::notebookCopyButton, &Settings::notebookTravelButton, &Settings::mapAddPosition, &Settings::perfOverlay,
     &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton,
-    &Settings::notebookSendButtons, &Settings::gaugeVerticalMenu, &Settings::partyTravelButton, &Settings::customCursorGame};
+    &Settings::notebookSendButtons, &Settings::gaugeVerticalMenu, &Settings::partyTravelButton, &Settings::customCursorGame,
+    &Settings::presetModWindows};

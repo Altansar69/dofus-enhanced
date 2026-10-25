@@ -40,6 +40,7 @@
 #include "ui/perf-overlay.hpp"
 #include "ui/custom-cursor.hpp"
 #include "ui/vertical-gauges.hpp"
+#include "ui/preset-windows.hpp"
 #include <MinHook.h>
 #include <fstream>
 #include <mutex>
@@ -267,7 +268,7 @@ void Module::Pump(Obj source) {
         // comes back with the binding, the panels with their button.
         // The notebook stays: its entries are the player's, not the character's,
         // and a draft being typed must survive an automatic reconnection.
-        RestorePerfOverlay(); RestoreTreasurePanel(); RestoreStatsWindow();
+        RestorePerfOverlay(); RestoreTreasurePanel(); RestoreStatsWindow(); RestorePresetWindows();
         TickStats(); // the statistics counted until now are written at once
         return;
     }
@@ -317,6 +318,8 @@ void Module::Pump(Obj source) {
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
     startupStage("notebook-panel", [] { TickNotebookPanel(); });
     startupStage("stats-window", [] { TickStatsWindow(); });
+    // After the panels: a window a layout opens is placed the pump its panel builds it.
+    startupStage("preset-windows", [] { TickPresetWindows(); });
     startupStage("jobs-xp", [] { TickJobsXp(); });
     startupStage("archi-zones", [] { TickArchiZones(); });
     startupStage("calendar-kralove", [] { TickCalendarKralove(); });
@@ -381,6 +384,7 @@ void Module::Stop() {
     RestoreTreasurePanel();
     RestoreNotebookPanel();
     RestoreStatsWindow();
+    RestorePresetWindows();
     toolsUi::Restore();
     RestoreJobsXp();
     RestoreArchiZones();
@@ -538,6 +542,7 @@ static DWORD WINAPI Worker(void*) {
         treasure::InstallHunt();
         InstallNotebookPanel();
         InstallStatsWindow();
+        InstallPresetWindows(); // never throws: PRESET_WINDOWS_UNAVAILABLE leaves the game's layouts as they are
         InstallJobsXp();
         InstallArchiZones();
         InstallCalendarKralove();

@@ -10,7 +10,30 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.19.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.20.0
+
+VERSION 1.20.0 : AFFICHAGES ENREGISTRÉS
+- Affichages enregistrés : un affichage que tu enregistres dans le jeu,
+  nouveau ou par-dessus un ancien, garde aussi les fenêtres du mod telles
+  qu’elles sont : statistiques, carnet (et sa version compacte) et chasse
+  au trésor, ouverts ou fermés, à leur place et à leur taille ; la taille
+  de leur titre et de celui de la pierre d’âme ; Capture d’âme ;
+  l’affichage des performances (affiché, mesures, place, taille) ; les
+  jauges à la verticale, avec leur longueur et leur place.
+- L’appliquer remet ces fenêtres ainsi. L’affichage de combat aussi : au
+  début d’un combat, les fenêtres du mod prennent son état gardé, et
+  reviennent à la fin comme avant le combat.
+- Un carnet en cours de modification n’est jamais fermé. Un affichage
+  supprimé ou renommé dans le jeu est suivi.
+- Le mod garde ses fenêtres dans DofusMiniatures-layouts.json, à côté des
+  préférences partagées, jamais dans les affichages du jeu. La place de la
+  pierre d’âme fait déjà partie de l’affichage du jeu.
+- Option « Garder les fenêtres du mod dans les affichages enregistrés »,
+  dans le nouveau bloc « Affichages enregistrés » (cochée par défaut).
+- Un affichage enregistré avant la 1.20.0 laisse les fenêtres du mod comme
+  elles sont : enregistre-le à nouveau pour qu’il les garde.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.19.0 : GROUPE, CURSEURS DU JEU, METAMOB, STATISTIQUES, JAUGES
 - Groupe : un petit bouton zaap en haut de la vignette de chaque autre

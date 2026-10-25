@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.19.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.20.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -54,9 +54,10 @@ Pour vérifier les mises à jour sans charger quoi que ce soit dans le jeu :
 
 Les diagnostics sont dans `autoload.log`, puis `module.log` après chargement.
 L’onglet des options s’appelle **Dofus Enhanced**, en blocs par sujet :
-Apparence, Animations, Surbrillance, Curseur, Jauges, Cartes, Carnet, Chasse au
-trésor, Déplacements, Pierre d’âme (avec Metamob), Chat, Calendrier,
-Performances, Statistiques, Chargement et mises à jour et À propos. La version
+Apparence, Animations, Surbrillance, Curseur, Jauges, Affichages enregistrés,
+Cartes, Carnet, Chasse au trésor, Déplacements, Pierre d’âme (avec Metamob),
+Chat, Calendrier, Performances, Statistiques, Chargement et mises à jour et À
+propos. La version
 chargée (x.y.z)
 figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
 **Ouvrir GitHub** vers le dépôt.
@@ -430,6 +431,52 @@ hauteur de l’écran peut dépasser en haut pendant au plus 0,2 seconde.
 jauges » (cochée par défaut) : décochée, la case disparaît des menus et toutes
 les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé et
 revient quand tu la recoches.
+
+Depuis la 1.20.0, un affichage enregistré du jeu peut aussi garder les jauges
+à la verticale, avec leur longueur et leur place (voir **Affichages
+enregistrés**).
+
+## Affichages enregistrés
+
+Le jeu enregistre tes affichages : la place de ses fenêtres, que tu remets
+d’un clic, et l’affichage de combat, qu’il prend seul au début d’un combat.
+Depuis la 1.20.0, **Garder les fenêtres du mod dans les affichages
+enregistrés** (Options → Dofus Enhanced → Affichages enregistrés, cochée par
+défaut) fait garder à chaque affichage que tu enregistres, nouveau ou
+par-dessus un ancien, les fenêtres du mod telles qu’elles sont :
+
+- la fenêtre des statistiques, le carnet (et sa version compacte) et le
+  panneau de chasse au trésor, ouverts ou fermés, à leur place et à leur
+  taille ;
+- la taille de leur titre et de celui de la pierre d’âme (**Réduire les
+  titres des modules**) ;
+- **Capture d’âme** ;
+- l’affichage des performances : affiché ou masqué, ses mesures, sa place et
+  sa taille ;
+- les jauges à la verticale, avec leur longueur et leur place.
+
+Quand tu appliques cet affichage, le mod remet ses fenêtres ainsi : il les
+ouvre ou les ferme, puis place chacune dès qu’elle est construite. Leur place
+est gardée en proportion de l’écran : elle suit un changement de résolution,
+et la fenêtre reste entièrement à l’écran. La place de la pierre d’âme fait
+déjà partie de l’affichage du jeu.
+
+L’affichage de combat aussi : au début d’un combat, les fenêtres du mod
+prennent l’état gardé avec lui ; à la fin, elles reviennent comme avant le
+combat, comme le jeu revient à l’affichage d’avant. Ce qu’un affichage
+appliqué pendant le combat a changé revient aussi à la fin.
+
+Un carnet en cours de modification n’est jamais fermé et garde sa version :
+tes modifications non enregistrées ne sont pas perdues. Un affichage
+enregistré avant la 1.20.0, ou avec la case décochée, laisse les fenêtres du
+mod comme elles sont : enregistre-le à nouveau pour qu’il les garde.
+
+Le mod ne modifie jamais les affichages du jeu. Il garde ses fenêtres dans
+`DofusMiniatures-layouts.json`, à côté des préférences partagées, pour tous
+les personnages de ce PC, comme le jeu ses affichages. Un affichage supprimé
+dans le jeu y est oublié ; renommé, il garde ses fenêtres. Décochée, la case
+laisse les fenêtres du mod de côté : enregistrer ou appliquer un affichage ne
+les touche plus.
 
 ## Ressources sur les cartes
 

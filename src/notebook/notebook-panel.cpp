@@ -779,6 +779,7 @@ void InstallNotebookPanel(){
     installed=true;
 }
 void OpenNotebookPanel(){if(!installed||!Session())return;wanted=true;if(Current())api.Call(state.window.get(),"BringToFront");}
+bool NotebookPanelEditing(){return installed&&wanted&&state.window.get()&&Current()&&Dirty();}
 void RestoreNotebookPanel() {
     wanted=false;
     try {notebook::ReleaseRowMenus();}catch(const std::exception& error){Log(std::string("NOTEBOOK_ROW_MENU_CLEANUP_ERROR ")+error.what());}

@@ -16,7 +16,7 @@ namespace {
 constexpr int ModCategory = 0x4D4F44;
 // Native sections of the mod's category (see Attach), in display order: ids
 // ModCategory + 1 to ModCategory + ModSections.
-constexpr int ModSections = 16;
+constexpr int ModSections = 17;
 constexpr int GameCategory = 0;
 constexpr const char* Config = "Core.UILogic.Config";
 constexpr const char* Elements = "Core.UILogic.Config.OptionElement";
@@ -47,9 +47,10 @@ constexpr const char* AnimationDescriptions[] = {
     "En combat, un combattant vaincu disparaît sans jouer son animation de mort. Sans effet quand Déplacements instantanés ou Sans attentes visuelles est coché : sa mort reste alors celle du jeu, qui retire ensuite le combattant. Expérimental. Désactivé par défaut.",
     "En combat, la marche, les poussées, les lancers de personnage porté et les sauts arrivent aussitôt à destination, cases intermédiaires comprises. Un trajet inhabituel garde son animation. Expérimental. Désactivé par défaut.",
     "En combat, le jeu n’attend plus certaines fins d’animation : décalage entre les cibles d’un sort, pauses des scripts de sorts, animation en cours avant un déplacement ou un changement d’apparence, animations évitées par les cases ci-dessus. Les délais du serveur et certaines attentes restent inchangés. Expérimental. Désactivé par défaut."};
-// The checkboxes added in 1.13.0, 1.14.0, 1.16.0, 1.17.1, 1.18.0 and 1.19.0, in the order of Settings' ExtraToggles.
+// The checkboxes added in 1.13.0, 1.14.0, 1.16.0, 1.17.1, 1.18.0, 1.19.0 and 1.20.0, in the order of Settings' ExtraToggles.
 enum ExtraRow : size_t { MiniMapBarRow, MiniMapZoneNameRow, NotebookPingRow, NotebookCopyRow, NotebookTravelRow, MapAddPositionRow,
-    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow, PerfButtonRow, NotebookSendRow, GaugeVerticalRow, PartyTravelRow, CursorGameRow };
+    PerfOverlayRow, PerfGpuRow, PerfDiskRow, PerfDragRow, PerfButtonRow, NotebookSendRow, GaugeVerticalRow, PartyTravelRow, CursorGameRow,
+    PresetWindowsRow };
 constexpr CheckRow ExtraRows[] = {
     {"Barre des ressources sur la mini-carte", "Affiche sur la mini-carte la barre des six métiers qui ouvre le choix des ressources. Décochée, la barre et sa liste disparaissent, mais les repères des ressources choisies restent affichés si « Ressources sur la mini-carte » est cochée ; le choix se fait alors depuis la grande carte. Activé par défaut."},
     {"Nom de la zone au survol de la mini-carte", "Sur la mini-carte, l’infobulle de la case survolée affiche le nom de sa zone au-dessus de ses coordonnées. Activé par défaut."},
@@ -71,7 +72,10 @@ constexpr CheckRow ExtraRows[] = {
     {"Bouton de trajet sur les membres du groupe", "Ajoute un petit bouton zaap en haut de la case de chaque autre membre du groupe, ni ton personnage ni les compagnons ; ton conjoint garde son bouton de téléportation tant que « Téléportation au conjoint » est cochée. Son infobulle donne la dernière position de ce membre connue du jeu : ses coordonnées et sa zone. Un clic t’y emmène : avec « Remplacer l’autopilote du jeu » cochée, par le trajet du mod (zaaps, directs ou Havre-Sac, puis l’autopilote du jeu) ; décochée, par l’autopilote du jeu, comme « Voyager jusqu’à cette position ». Le bouton est grisé pendant un combat, quand la position du membre est inconnue, quand tu y es déjà ou quand le jeu ne connaît aucune carte à ces coordonnées. Rien ne part sans ton clic. Activé par défaut."},
     // « Curseur » (1.19.0): the game's own icons drawn by the mod too
     // (custom-cursor.cpp), under « Curseur Dofus ».
-    {"Curseurs du jeu aussi", "Avec « Curseur Dofus », les curseurs propres au jeu sont eux aussi dessinés par le mod, dans la couleur et la taille choisies : la bulle pour parler à un PNJ, l’engrenage des actions, la maison des portes et des habitations, le cadenas, le livre, le portail de téléportation, les outils de récolte (faux, hache, hameçon, pioche, ciseaux), la goutte de plongée, la loupe, l’épée sur les monstres, les repères de combat (cœur, crâne, épée, bouclier, cible, 1, 2, 3, épingle) et le point d’interrogation. Quand une action est indisponible, sa croix ou son sablier devient un badge sur le curseur. Un curseur que le mod ne connaît pas garde le dessin du jeu. Décochée, ces curseurs reprennent leur dessin habituel ; les autres curseurs du mod restent. Sans effet tant que « Curseur Dofus » est décoché. Activé par défaut."}};
+    {"Curseurs du jeu aussi", "Avec « Curseur Dofus », les curseurs propres au jeu sont eux aussi dessinés par le mod, dans la couleur et la taille choisies : la bulle pour parler à un PNJ, l’engrenage des actions, la maison des portes et des habitations, le cadenas, le livre, le portail de téléportation, les outils de récolte (faux, hache, hameçon, pioche, ciseaux), la goutte de plongée, la loupe, l’épée sur les monstres, les repères de combat (cœur, crâne, épée, bouclier, cible, 1, 2, 3, épingle) et le point d’interrogation. Quand une action est indisponible, sa croix ou son sablier devient un badge sur le curseur. Un curseur que le mod ne connaît pas garde le dessin du jeu. Décochée, ces curseurs reprennent leur dessin habituel ; les autres curseurs du mod restent. Sans effet tant que « Curseur Dofus » est décoché. Activé par défaut."},
+    // « Affichages enregistrés » (1.20.0): the mod's windows kept with the
+    // game's saved layouts and put back when one is applied (preset-windows.cpp).
+    {"Garder les fenêtres du mod dans les affichages enregistrés", "Quand tu enregistres un affichage du jeu, le mod garde avec lui ses propres fenêtres telles qu’elles sont : la fenêtre des statistiques, le carnet (et sa version compacte) et la chasse au trésor, ouvertes ou fermées, à leur place et à leur taille ; la taille de leur titre et de celui de la pierre d’âme ; Capture d’âme ; l’affichage des performances (affiché ou masqué, ses mesures, sa place et sa taille) ; les jauges à la verticale, avec leur longueur et leur place. Quand tu appliques cet affichage, le mod les remet ainsi. L’affichage de combat aussi : au début d’un combat, les fenêtres du mod prennent celles gardées avec lui, et reviennent à la fin comme avant le combat. Un affichage enregistré avant cette version, ou avec cette case décochée, laisse les fenêtres du mod comme elles sont ; enregistre-le à nouveau pour qu’il les garde. Un carnet en cours de modification reste ouvert. Le mod ne modifie jamais les affichages du jeu : il garde ses fenêtres dans son propre fichier, et les oublie quand tu supprimes l’affichage. Décochée, enregistrer ou appliquer un affichage ne touche plus aux fenêtres du mod. Activé par défaut."}};
 // « Dimension avec les coordonnées » on the big map, the mini-map and in the
 // chat: the same three choices, each id the saved mode (Settings'
 // coordsWorld*Mode), « Oui, sauf dans le Monde des Douze » by default.
@@ -1161,6 +1165,8 @@ bool OptionsUi::Attach(Obj page) {
         {"Curseur", {customCursorOption.get(), extra(CursorGameRow), customCursorColorOption.get(), customCursorSizeOption.get()}},
         // « Jauges » (1.18.0): the « Afficher à la verticale » row of the gauges' menus.
         {"Jauges", {extra(GaugeVerticalRow)}},
+        // « Affichages enregistrés » (1.20.0): the mod's windows in the game's saved layouts.
+        {"Affichages enregistrés", {extra(PresetWindowsRow)}},
         {"Cartes", {resourcesOption.get(), resourcesMiniOption.get(), extra(MiniMapBarRow), miniCenterOption.get(), extra(MiniMapZoneNameRow),
             mapCoordsOption.get(), miniMapCoordsOption.get(), archiZonesOption.get(), archiZonesMiniOption.get(), mapMenuOption.get()}},
         {"Carnet", {extra(NotebookPingRow), extra(NotebookCopyRow), extra(NotebookTravelRow), extra(NotebookSendRow), extra(MapAddPositionRow),

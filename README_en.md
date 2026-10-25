@@ -17,7 +17,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 
 ## ✨ Features
 
-**A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence (appearance), Animations, Surbrillance (highlight), Curseur (cursor), Jauges (gauges), Cartes (maps), Carnet (notebook), Chasse au trésor (treasure hunt), Déplacements (travel), Pierre d’âme (soul stone), Chat, Calendrier (calendar), Performances (performance), Statistiques (statistics), Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
+**A “Dofus Enhanced” tab in the game’s own options**, split into blocks like the other options: Apparence (appearance), Animations, Surbrillance (highlight), Curseur (cursor), Jauges (gauges), Affichages enregistrés (saved layouts), Cartes (maps), Carnet (notebook), Chasse au trésor (treasure hunt), Déplacements (travel), Pierre d’âme (soul stone), Chat, Calendrier (calendar), Performances (performance), Statistiques (statistics), Chargement et mises à jour (loading and updates), À propos (about). Almost everything is switched on, off or tuned there.
 
 ### Appearance
 - **Miniatures, Créatures (creatures) or Normal**, chosen separately in and out of combat. Miniatures shrinks to 60% of the original size, never below 50% of a player’s height for monsters and summons.
@@ -40,6 +40,9 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 ### Gauges
 - **Afficher à la verticale** (show vertically): a checkbox in the ⋯ menu (the three small dots) of each of the game’s gauges (character experience, guild experience, honour points, pods, energy points, each profession’s experience) turns it vertical. The game’s own bar fills from the bottom up, the icon above and the level below; the gauge keeps its place and moves as before; its length changes by pulling its top or bottom edge. The mod keeps its vertical length and place, and it becomes exactly the game’s gauge again, at its previous place and size, when you untick it. Each gauge keeps its choice, for all your characters.
 - **Affichage vertical dans le menu … des jauges** (vertical display in the gauges’ … menu, ticked by default): unticked, the checkbox leaves the menus and every gauge goes back to horizontal, their choices kept.
+
+### Saved layouts
+- **Garder les fenêtres du mod dans les affichages enregistrés** (keep the mod’s windows in saved layouts, ticked by default): a layout you save in the game also keeps the mod’s windows (statistics, notebook, treasure hunt, performance overlay, vertical gauges, Capture d’âme), open or closed, at their place and size; applying it puts them back, the fight layout included. The mod keeps them in its own file, never in the game’s layouts.
 
 ### Maps
 - **Resources on the world map and the minimap**: 86 gathering resources, including 16 ores, picked per profession, with the recorded quantity on each map cell (DofusDB data). On the world map they are picked in the **Ressources** tab, a real map mode like **Anomalies**. These are known gathering spots, not their real-time availability.

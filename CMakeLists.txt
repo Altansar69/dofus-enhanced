@@ -51,7 +51,8 @@ add_library(DofusMiniatures SHARED
   src/stats/stats-store.cpp
   src/stats/stats-format.cpp src/stats/stats-window.cpp
   src/ui/cursor-art.cpp src/ui/custom-cursor.cpp
-  src/ui/vertical-gauges.cpp src/ui/game-theme.cpp)
+  src/ui/vertical-gauges.cpp src/ui/game-theme.cpp
+  src/ui/preset-windows-store.cpp src/ui/preset-windows.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -122,6 +123,11 @@ dofus_test(CustomCursorTests tests/ui/custom-cursor-tests.cpp src/ui/cursor-art.
 # 1.18.0 « Afficher à la verticale »: the gauges' menu row and their vertical
 # layout on a fake IL2CPP runtime (the test includes vertical-gauges.cpp).
 dofus_test(VerticalGaugesTests tests/ui/vertical-gauges-tests.cpp)
+# 1.20.0 « Garder les fenêtres du mod dans les affichages enregistrés »: the
+# file kept beside the game's layouts, then the layouts' hooks, the windows
+# saved and put back, the fight layout, on a fake IL2CPP runtime.
+dofus_test(PresetWindowsStoreTests tests/ui/preset-windows-store-tests.cpp src/ui/preset-windows-store.cpp)
+dofus_test(PresetWindowsTests tests/ui/preset-windows-tests.cpp src/ui/preset-windows.cpp src/ui/preset-windows-store.cpp)
 
 # Appearance: miniatures, creatures, sizes and display shortcuts.
 dofus_test(FeaturesTests tests/appearance/features-tests.cpp src/appearance/features.cpp src/appearance/size-measurements.cpp)

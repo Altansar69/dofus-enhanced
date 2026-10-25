@@ -23,11 +23,12 @@
 namespace fake {
 using namespace managed;
 constexpr int ModId = 0x4D4F44;
-// The sixteen native sections of the mod, in display order: section i has the
+// The seventeen native sections of the mod, in display order: section i has the
 // id ModId + 1 + i, and Restore maps the parent and every section back to « Jeu ».
 // « Chasse au trésor » (1.16.1) holds its panel's top-bar button alone;
-// « Curseur » (1.17.0) follows « Surbrillance », « Jauges » (1.18.0) « Curseur ».
-enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, CursorSection, GaugeSection, MapsSection, NotebookSection, TreasureSection,
+// « Curseur » (1.17.0) follows « Surbrillance », « Jauges » (1.18.0) « Curseur »,
+// « Affichages enregistrés » (1.20.0) « Jauges ».
+enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, CursorSection, GaugeSection, PresetSection, MapsSection, NotebookSection, TreasureSection,
     TravelSection, SoulSection, ChatSection, CalendarSection, PerformanceSection, StatsSection, LoadingSection, AboutSection, SectionCount };
 // « Statistiques »: the counting checkbox, « Voir mes statistiques » (an owned
 // text button opening the window: OpenStatsWindow below counts the opens) and
@@ -36,7 +37,7 @@ unsigned statsOpens = 0;
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
     PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra, NotebookSendExtra, GaugeVerticalExtra, PartyTravelExtra,
-    CursorGameExtra };
+    CursorGameExtra, PresetWindowsExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows and Capture d’âme's top-bar button.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
@@ -623,7 +624,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
     appearance.push_back(ui.glowSource.get());
     for (const auto& source : ui.glowCategorySources) appearance.push_back(source.get());
     appearance.insert(appearance.end(), {ui.customCursorSource.get(), ui.extraSources[CursorGameExtra].get(), ui.customCursorColorSource.get(),
-        ui.customCursorSizeSource.get(), ui.extraSources[GaugeVerticalExtra].get()});
+        ui.customCursorSizeSource.get(), ui.extraSources[GaugeVerticalExtra].get(), ui.extraSources[PresetWindowsExtra].get()});
     std::vector<Obj> rest{
         ui.resourcesSource.get(), ui.resourcesMiniSource.get(), ui.extraSources[MiniMapBarExtra].get(), ui.miniCenterSource.get(),
         ui.extraSources[MiniMapZoneNameExtra].get(), ui.mapCoordsSource.get(), ui.miniMapCoordsSource.get(),
@@ -686,6 +687,9 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             ChoiceRow(ui.customCursorSizeOption, ui.customCursorSizeSource, "Taille du curseur", 0)}},
         // « Jauges » (1.18.0): the gauges' « Afficher à la verticale » row, on by default.
         {"Jauges", {CheckRow(ui.extraOptions[GaugeVerticalExtra], ui.extraSources[GaugeVerticalExtra], "Affichage vertical dans le menu … des jauges", true)}},
+        // « Affichages enregistrés » (1.20.0): the mod's windows in the game's saved layouts, on by default.
+        {"Affichages enregistrés", {CheckRow(ui.extraOptions[PresetWindowsExtra], ui.extraSources[PresetWindowsExtra],
+            "Garder les fenêtres du mod dans les affichages enregistrés", true)}},
         {"Cartes", {CheckRow(ui.resourcesOption, ui.resourcesSource, "Ressources sur la grande carte", true),
             CheckRow(ui.resourcesMiniOption, ui.resourcesMiniSource, "Ressources sur la mini-carte", true),
             CheckRow(ui.extraOptions[MiniMapBarExtra], ui.extraSources[MiniMapBarExtra], "Barre des ressources sur la mini-carte", true),
@@ -732,7 +736,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.19.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.20.0 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -839,12 +843,12 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.19.0" && std::string(ModVersion) == "r123" &&
-        ModRevision == 123,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.20.0" && std::string(ModVersion) == "r124" &&
+        ModRevision == 124,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
-        "Mod must hold its sixteen native sections, from Apparence and Animations to À propos, and no row of its own");
+        "Mod must hold its seventeen native sections, from Apparence and Animations to À propos, and no row of its own");
     std::vector<Obj> shownSources;
     for (size_t i = 0; i != SectionCount; ++i) {
         const auto section = Section(parent, i);
@@ -887,14 +891,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.19.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.20.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r123") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r124") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 73 && optionModels == 73 + 3,
-        "The UI must create seventy-three private sources and seventy-six rows");
+    Check(sourceModels == 74 && optionModels == 74 + 3,
+        "The UI must create seventy-four private sources and seventy-seven rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1379,6 +1383,8 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.*ExtraToggles[CursorGameExtra] = defaults.*ExtraToggles[CursorGameExtra];
     } else if (index == GaugeSection) {
         settings.*ExtraToggles[GaugeVerticalExtra] = defaults.*ExtraToggles[GaugeVerticalExtra];
+    } else if (index == PresetSection) {
+        settings.*ExtraToggles[PresetWindowsExtra] = defaults.*ExtraToggles[PresetWindowsExtra];
     } else if (index == MapsSection) {
         settings.resourceMapEnabled = defaults.resourceMapEnabled; settings.resourceMiniMapEnabled = defaults.resourceMiniMapEnabled;
         settings.miniMapCenterButton = defaults.miniMapCenterButton;
@@ -1678,8 +1684,8 @@ void GaugeSectionRows() {
     const auto option = ui.extraOptions[GaugeVerticalExtra].get();
     auto& source = Get(ui.extraSources[GaugeVerticalExtra].get());
     Check(Name(Section(parent, GaugeSection)) == "Jauges" && Name(Section(parent, GaugeSection - 1)) == "Curseur" &&
-        Name(Section(parent, GaugeSection + 1)) == "Cartes" && Rows(Section(parent, GaugeSection)) == std::vector<Obj>({option}),
-        "« Jauges », between « Curseur » and « Cartes », holds its one row");
+        Name(Section(parent, GaugeSection + 1)) == "Affichages enregistrés" && Rows(Section(parent, GaugeSection)) == std::vector<Obj>({option}),
+        "« Jauges », between « Curseur » and « Affichages enregistrés », holds its one row");
     Check(Get(option).klass->name == "BoolOption" && Label(option) == "Affichage vertical dans le menu … des jauges" &&
         Get(option).refs.at("source") == ui.extraSources[GaugeVerticalExtra].get() && source.klass->name == "BoolSource" &&
         !source.boolean && source.defaultBoolean, "A native checkbox showing the saved switch, ticked as its reset default");
@@ -1711,6 +1717,57 @@ void GaugeSectionRows() {
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
     Check(!ui.extraSources[GaugeVerticalExtra].get() && !ui.extraOptions[GaugeVerticalExtra].get(), "Restore releases the row");
+}
+
+// « Affichages enregistrés » (1.20.0), right after « Jauges »: one checkbox, the
+// mod's windows kept with the game's saved layouts and put back when one is
+// applied, ticked by default. It says what is kept, when it is put back (the
+// fight layout too), what an older layout does, that the game's layouts are
+// never changed, what unticking it does and its default; it commits only
+// itself, follows an outside change, and the section's reset ticks it again.
+void PresetSectionRows() {
+    Fixture f;
+    f.state.settings.presetModWindows = false;
+    initHook(f.page, false, true, SectionId(PresetSection), nullptr);
+    CheckLayout(f);
+    auto& ui = f.Ui();
+    const auto parent = f.Categories().back();
+    const auto option = ui.extraOptions[PresetWindowsExtra].get();
+    auto& source = Get(ui.extraSources[PresetWindowsExtra].get());
+    Check(Name(Section(parent, PresetSection)) == "Affichages enregistrés" && Name(Section(parent, PresetSection - 1)) == "Jauges" &&
+        Name(Section(parent, PresetSection + 1)) == "Cartes" && Rows(Section(parent, PresetSection)) == std::vector<Obj>({option}),
+        "« Affichages enregistrés », between « Jauges » and « Cartes », holds its one row");
+    Check(Get(option).klass->name == "BoolOption" && Label(option) == "Garder les fenêtres du mod dans les affichages enregistrés" &&
+        Get(option).refs.at("source") == ui.extraSources[PresetWindowsExtra].get() && source.klass->name == "BoolSource" &&
+        !source.boolean && source.defaultBoolean, "A native checkbox showing the saved choice, ticked as its reset default");
+    const auto description = Description(option);
+    for (const char* term : {"Quand tu enregistres un affichage du jeu", "la fenêtre des statistiques, le carnet (et sa version compacte) et la chasse au trésor",
+            "ouvertes ou fermées, à leur place et à leur taille", "Capture d’âme", "l’affichage des performances", "les jauges à la verticale",
+            "Quand tu appliques cet affichage, le mod les remet ainsi.", "L’affichage de combat aussi", "Un affichage enregistré avant cette version",
+            "Un carnet en cours de modification reste ouvert.", "Le mod ne modifie jamais les affichages du jeu", "les oublie quand tu supprimes l’affichage",
+            "Décochée, enregistrer ou appliquer un affichage ne touche plus aux fenêtres du mod."})
+        Check(description.find(term) != std::string::npos, std::string("The row says: ") + term);
+    Check(description.ends_with(" Activé par défaut.") && description.find('\'') == std::string::npos && description.find("⋯") == std::string::npos,
+        "Its default last, typographic apostrophes, no glyph the game's fonts lack");
+    auto expected = f.state.settings;
+    unsigned commits = 0;
+    for (bool value : {true, false, true}) {
+        source.boolean = value;
+        ui.Tick();
+        expected.presetModWindows = value;
+        Check(f.state.settings == expected && changes == ++commits, "A click changes only its own setting, once");
+    }
+    f.state.settings.presetModWindows = false;
+    ui.Sync();
+    Check(!source.boolean, "An outside change shows in the box");
+    const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
+    expected = WithSectionDefaults(f.state.settings, PresetSection);
+    api.Call(Section(displayedParent, PresetSection), "Reset");
+    ui.Tick();
+    Check(f.state.settings == expected && f.state.settings.presetModWindows, "The section's reset ticks it again, nothing else");
+    f.NativePreferencesUnchanged();
+    f.StopAndRestore();
+    Check(!ui.extraSources[PresetWindowsExtra].get() && !ui.extraOptions[PresetWindowsExtra].get(), "Restore releases the row");
 }
 
 // « Carnet » (1.16.0, 1.17.1): the line buttons, after the pin button and
@@ -3030,6 +3087,7 @@ int main() {
         run(fake::CursorSectionRows);
         run(fake::CursorThemeLabel);
         run(fake::GaugeSectionRows);
+        run(fake::PresetSectionRows);
         run(fake::ReducedMiniaturesDescription);
         run(fake::NativeResetAndFilteredSearchOwnership);
         run(fake::SectionResetOwnsItsRows);
@@ -3059,7 +3117,7 @@ int main() {
         run(fake::PerformanceSectionRows);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: sixteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, « Défaut (<thème>) » following the game's theme, its eleven themes and three colours, its three sizes, invalid choices reverted), « Jauges » after « Curseur » (the gauges' vertical row on by default, its reset keeping each gauge's choice), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
+        std::cout << "PASS: seventeen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, « Défaut (<thème>) » following the game's theme, its eleven themes and three colours, its three sizes, invalid choices reverted), « Jauges » after « Curseur » (the gauges' vertical row on by default, its reset keeping each gauge's choice), « Affichages enregistrés » after « Jauges » (the mod's windows kept in the game's saved layouts, on by default), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

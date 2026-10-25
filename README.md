@@ -17,7 +17,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 
 ## ✨ Fonctionnalités
 
-**Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence, Animations, Surbrillance, Curseur, Jauges, Cartes, Carnet, Chasse au trésor, Déplacements, Pierre d’âme, Chat, Calendrier, Performances, Statistiques, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
+**Un onglet « Dofus Enhanced » dans les options du jeu**, en blocs comme les autres options : Apparence, Animations, Surbrillance, Curseur, Jauges, Affichages enregistrés, Cartes, Carnet, Chasse au trésor, Déplacements, Pierre d’âme, Chat, Calendrier, Performances, Statistiques, Chargement et mises à jour, À propos. Presque tout s’active, se désactive ou se règle là.
 
 ### Apparence
 - **Miniatures, Créatures ou Normal**, au choix en combat et hors combat, séparément. Miniatures réduit à 60 % de la taille d’origine, sans descendre sous 50 % de la hauteur d’un joueur pour les monstres et les invocations.
@@ -40,6 +40,9 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 ### Jauges
 - **Afficher à la verticale** : une case dans le menu ⋯ (les trois petits points) de chaque jauge du jeu (expérience du personnage, expérience de guilde, points d’honneur, pods, points d’énergie, expérience de chaque métier) la passe à la verticale. La barre du jeu se remplit de bas en haut, l’icône au-dessus, le niveau en dessous ; la jauge garde sa place et se déplace comme avant ; sa longueur se change en tirant son bord haut ou bas. Le mod garde sa longueur et sa place à la verticale, et elle redevient exactement celle du jeu, à sa place et à sa taille d’avant, quand tu décoches. Chaque jauge garde son choix, pour tous tes personnages.
 - **Affichage vertical dans le menu … des jauges** (cochée par défaut) : décochée, la case disparaît des menus et toutes les jauges reviennent à l’horizontale, leurs choix gardés.
+
+### Affichages enregistrés
+- **Garder les fenêtres du mod dans les affichages enregistrés** (cochée par défaut) : un affichage que tu enregistres dans le jeu garde aussi les fenêtres du mod (statistiques, carnet, chasse au trésor, affichage des performances, jauges verticales, Capture d’âme), ouvertes ou fermées, à leur place et à leur taille ; l’appliquer les remet ainsi, l’affichage de combat compris. Le mod les garde dans son propre fichier, jamais dans les affichages du jeu.
 
 ### Cartes
 - **Ressources sur la grande carte et la mini-carte** : 86 ressources de récolte, dont 16 minerais, à choisir par métier, avec la quantité recensée sur chaque case (données DofusDB). Sur la grande carte, elles se choisissent dans l’onglet **Ressources**, un vrai mode de la carte comme **Anomalies**. Ce sont les points de récolte connus, pas leur disponibilité en temps réel.

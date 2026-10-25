@@ -54,7 +54,8 @@ static_assert(std::size(GlowFlags) == std::size(GlowCategoryToggles));
 // without the send buttons of the notebook's messages (before 1.17.1), or
 // without the gauges' « Afficher à la verticale » row (before 1.18.0), or
 // without the party members' travel button or « Curseurs du jeu aussi »
-// (before 1.19.0), keeps their default: all shown, the game's icons drawn.
+// (before 1.19.0), or without the mod's windows in the saved layouts (before
+// 1.20.0), keeps their default: all shown, the game's icons drawn, the windows kept.
 constexpr Flag ExtraFlags[] = {
     {"resourceMiniMapBar", &Settings::resourceMiniMapBar}, {"miniMapZoneName", &Settings::miniMapZoneName},
     {"notebookPingButton", &Settings::notebookPingButton}, {"notebookCopyButton", &Settings::notebookCopyButton},
@@ -63,7 +64,8 @@ constexpr Flag ExtraFlags[] = {
     {"perfOverlayGpu", &Settings::perfOverlayGpu}, {"perfOverlayDisk", &Settings::perfOverlayDisk},
     {"perfOverlayDrag", &Settings::perfOverlayDrag}, {"perfOverlayButton", &Settings::perfOverlayButton},
     {"notebookSendButtons", &Settings::notebookSendButtons}, {"gaugeVerticalMenu", &Settings::gaugeVerticalMenu},
-    {"partyTravelButton", &Settings::partyTravelButton}, {"customCursorGame", &Settings::customCursorGame}};
+    {"partyTravelButton", &Settings::partyTravelButton}, {"customCursorGame", &Settings::customCursorGame},
+    {"presetModWindows", &Settings::presetModWindows}};
 static_assert(std::size(ExtraFlags) == std::size(ExtraToggles));
 }
 

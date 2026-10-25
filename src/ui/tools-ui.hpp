@@ -19,6 +19,13 @@ struct Shortcut {std::string key,title;int icon=0;};
 std::vector<Shortcut> Shortcuts();
 bool Visible(const char* key);
 bool Toggle(const char* key);
+// The panel's native window while it is built (between its AttachHeader and
+// DetachHeader), null otherwise: its place and size go with the game's
+// layouts (preset-windows.cpp).
+managed::Obj Window(const char* key);
+// Every panel's header (the soul panel's too) as its « Réduire les titres des
+// modules » setting is now, after the settings themselves changed.
+void ApplyHeaderSizes();
 void AttachHeader(const char* key, managed::Obj window);
 void DetachHeader(const char* key);
 // A scrolling body inside a mod window. A resizable window keeps no size caps:

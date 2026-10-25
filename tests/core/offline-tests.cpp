@@ -313,7 +313,7 @@ int main() {
             defaults.perfOverlayCorner == 0 && !defaults.perfOverlayGpu && !defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
             defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1 && Settings{} == defaults,
             "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden (no part ticked) in the top left corner");
-        static_assert(std::size(ExtraToggles) == 15); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons), 1.18.0's (the gauges' vertical row) and 1.19.0's (the party members' travel button, « Curseurs du jeu aussi »)
+        static_assert(std::size(ExtraToggles) == 16); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons), 1.18.0's (the gauges' vertical row), 1.19.0's (the party members' travel button, « Curseurs du jeu aussi ») and 1.20.0's (the mod's windows in the saved layouts)
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
             // Every combination of the first five, many times; the others follow inverted bits.
@@ -750,6 +750,22 @@ int main() {
                 Require(before.customCursorGame && before.customCursor && before.customCursorColor == 13 && before.customCursorSize == 2,
                     "A file written before 1.19.0 draws the game's icons and keeps the cursor's choices");
             }
+            // 1.20.0 « Garder les fenêtres du mod dans les affichages enregistrés »:
+            // ticked by default, its own 0/1 line, kept by a file written before
+            // 1.20.0 (ticked), a malformed value ignored, the last valid line winning.
+            Require(defaults.presetModWindows && ExtraToggles[15] == &Settings::presetModWindows, "The mod's windows are kept in the saved layouts by default");
+            for (bool kept : {false, true}) {
+                auto layouts = defaults; layouts.presetModWindows = kept; layouts.Save(path);
+                Require(Settings::Read(path) == layouts && FileText(path).find(std::string("\npresetModWindows=") + (kept ? "1" : "0")) != std::string::npos,
+                    "« Garder les fenêtres du mod dans les affichages enregistrés » persists on its own line");
+                { std::ofstream bad(path, std::ios::app); bad << "presetModWindows=2\npresetModWindows=-1\npresetModWindows=oui\npresetModWindows=\n"; }
+                Require(Settings::Read(path) == layouts, "A malformed value keeps the saved choice");
+            }
+            { std::ofstream twice(path, std::ios::trunc); twice << "presetModWindows=1\npresetModWindows=0\n"; }
+            Require(!Settings::Read(path).presetModWindows, "The last valid line wins");
+            { std::ofstream older(path, std::ios::trunc); older << "customCursorGame=0\nsmallHeaderStats=1\n"; }
+            Require(Settings::Read(path).presetModWindows && !Settings::Read(path).customCursorGame && Settings::Read(path).smallHeaderStats,
+                "A file written before 1.20.0 keeps the mod's windows in the layouts and the rest as saved");
             { std::ofstream older(path, std::ios::trunc); older << "customCursor=1\nnotebookSendButtons=0\n"; }
             const auto older = Settings::Read(path);
             Require(older.gaugeVertical == 0 && older.gaugeVerticalMenu && older.customCursor && !older.notebookSendButtons,

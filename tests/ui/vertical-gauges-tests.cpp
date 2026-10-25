@@ -1308,6 +1308,25 @@ void LengthFromItsHorizontalWidth() {
         CheckVertical(g, c.length, c.what);
     }
 }
+// 1.20.0: another length or place in the settings than the one it was laid
+// out with (a saved layout applied, preset-windows.cpp) lays it out again with
+// them at the next pump; the same ones leave it as it is.
+void FollowsAnAppliedLayout() {
+    Fixture f;
+    module->settings.gaugeVertical = 0x10;
+    const auto g = MakeGauge(0x10);
+    Get(g.window).uxmlWidth = 640;
+    LayoutPass();
+    Tick(); LayoutPass();
+    CheckVertical(g, 640, "Laid out as wide as at the horizontal");
+    Tick(); Tick();
+    Check(!LoggedLine("VERTICAL_GAUGE_RELAYOUT type=0x10"), "The same boxes: left as it is");
+    module->settings.gaugeVerticalBoxes[4] = {600, -1, -1};
+    Tick(); LayoutPass();
+    Check(LoggedLine("VERTICAL_GAUGE_RELAYOUT type=0x10") && LoggedLine("VERTICAL_GAUGE_ON type=0x10 length=600") && Records() == 1,
+        "Another length: put back, then laid out again at once");
+    CheckVertical(g, 600, "The layout's length");
+}
 // Its top-left corner stays, moved only as much as it needs to lie on the
 // screen; a hidden gauge waits to be shown. Unticked, it comes back where the
 // game had it, kept on the screen horizontally too.
@@ -2076,6 +2095,7 @@ int main() {
         run(FollowsTheScreensHeight);
         run(EdgePlacesAreKept);
         run(BackWhereTheGameHadIt);
+        run(FollowsAnAppliedLayout);
         run(ResizedWhileVertical);
         run(DraggedWhileVertical);
         run(ResolvedAsTheGameBuiltIt);
