@@ -6,6 +6,7 @@
 #include "ui/native-click.hpp"
 #include "ui/game-theme.hpp"
 #include "stats/stats-window.hpp"
+#include "ui/mod-folder.hpp"
 #include <algorithm>
 #include <exception>
 #include <string>
@@ -143,6 +144,10 @@ using TextButtonFn = void(*)(Obj, Obj, Method);
 TextButtonFn originalTextButton = nullptr, originalTextButtonInit = nullptr;
 Method textButtonModelGetter = nullptr, openUrl = nullptr, setPassword = nullptr, setEnabled = nullptr;
 constexpr const char* ProjectUrl = "https://github.com/Altansar69/dofus-enhanced";
+// « À propos » › « Dossier du mod » (1.20.1): an owned text-button row (see
+// TextButtonHook) that opens the running module's folder (ui/mod-folder.hpp).
+constexpr const char* ModFolderTitle = "Dossier du mod";
+constexpr const char* ModFolderButton = "Ouvrir";
 // Metamob rows. The key never goes to Settings, a log, a notice or an exception.
 constexpr int IconSave = 148, IconTrash = 316; // FigmaIcons.floppy, trash
 constexpr int KeyMaxLength = 256;
@@ -552,11 +557,19 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         prepared.statsOpenMarker));
     prepared.statsButtonOption.reset(MakeBoolOption(prepared.statsButtonSource.get(), current.get(), tooltip.get(), StatsButtonTitle,
         StatsButtonDescription));
-    // Section « À propos », alone: credits, an owned text button (see TextButtonHook).
+    // Section « À propos »: credits, then « Dossier du mod », owned text buttons (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
         " (Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
     prepared.creditsOption.reset(MakeTextButtonOption(tooltip.get(), creditsTitle.c_str(), creditsText.c_str(), "Ouvrir GitHub", 0, prepared.creditsMarker));
+    // Then « Dossier du mod »: the folder of this version, named as installed.
+    const std::string modFolderText = std::string("Ouvre dans l’Explorateur de Windows le dossier de cette version du mod, "
+        "DofusMiniatures-3.7.11.11-") + ModVersion + " : ses fichiers (DofusMiniatures.dll, ModuleLoader.exe…) et son journal "
+        "module.log, à joindre à un signalement en cas de problème. Les réglages partagés par toutes les versions du mod "
+        "(DofusMiniatures-3.7.11.11-settings.ini) et tes statistiques sont dans le dossier au-dessus, à côté des dossiers des "
+        "autres versions. Le bouton ne modifie ni ne supprime aucun fichier.";
+    prepared.modFolderOption.reset(MakeTextButtonOption(tooltip.get(), ModFolderTitle, modFolderText.c_str(), ModFolderButton, 0,
+        prepared.modFolderMarker));
     // « Pierre d’âme », after the soul rows: the Metamob sync preference, then the key row, an owned
     // text button (see BindKeyField). The key itself stays in the capture sync, reached through ui.metamob only.
     prepared.metamobSyncOption.reset(MakeBoolOption(prepared.metamobSyncSource.get(), current.get(), tooltip.get(), "Synchroniser les captures avec Metamob",
@@ -566,6 +579,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         "Enregistrer", IconSave, prepared.metamobKeyMarker));
     ui.creditsOption = std::move(prepared.creditsOption);
     ui.creditsMarker = std::move(prepared.creditsMarker);
+    ui.modFolderOption = std::move(prepared.modFolderOption);
+    ui.modFolderMarker = std::move(prepared.modFolderMarker);
     ui.metamobSyncSource = std::move(prepared.metamobSyncSource);
     ui.metamobSyncOption = std::move(prepared.metamobSyncOption);
     ui.metamobKeyOption = std::move(prepared.metamobKeyOption);
@@ -1019,7 +1034,7 @@ void TextButtonHook(Obj self, Obj element, Method method) {
         Ref option(api.Invoke(textButtonModelGetter, self));
         // Native search/display uses MemberwiseClone: the unique description
         // reference identifies our rows even when the model is cloned. The
-        // credits, Metamob and statistics markers are set and released together.
+        // credits, mod folder, Metamob and statistics markers are set and released together.
         if (ui && ui->creditsMarker.get() && option.get()) description = api.Call(option.get(), "get_description");
         if (description && description == ui->creditsMarker.get()) {
             if (Active()) { Ref url(api.string_new(ProjectUrl)); api.Invoke(openUrl, nullptr, {url.get()}); }
@@ -1032,6 +1047,8 @@ void TextButtonHook(Obj self, Obj element, Method method) {
     }
     // The Metamob key row: its own handling, which never throws, never the native action.
     if (description && description == ui->metamobKeyMarker.get()) { if (Active()) SaveKeyClick(*ui, self); return; }
+    // « Dossier du mod »: opens the module's folder in Explorer, never the native action.
+    if (description && description == ui->modFolderMarker.get()) { if (Active()) OpenModFolder(module->folder); return; }
     // « Voir mes statistiques »: opens the statistics window, never the native action.
     if (description && description == ui->statsOpenMarker.get()) { if (Active()) OpenStatsWindow(); return; }
     originalTextButton(self, element, method);
@@ -1181,7 +1198,7 @@ bool OptionsUi::Attach(Obj page) {
         {"Performances", {extra(PerfOverlayRow), extra(PerfGpuRow), extra(PerfDiskRow), extra(PerfDragRow), extra(PerfButtonRow)}},
         {"Statistiques", {statsOption.get(), statsOpenOption.get(), statsButtonOption.get()}},
         {"Chargement et mises à jour", {autoLoadOption.get(), githubOption.get()}},
-        {"À propos", {creditsOption.get()}}};
+        {"À propos", {creditsOption.get(), modFolderOption.get()}}};
     static_assert(std::size(layout) == ModSections, "Restore maps every section id back to the game category");
     auto sections = api.Field(category.get(), "subcategories");
     int id = ModCategory;
@@ -1382,6 +1399,7 @@ void OptionsUi::Restore() {
     chatCoordsSource.reset(); chatCoordsOption.reset();
     mapCoordsSource.reset(); mapCoordsOption.reset(); miniMapCoordsSource.reset(); miniMapCoordsOption.reset();
     creditsOption.reset(); creditsMarker.reset();
+    modFolderOption.reset(); modFolderMarker.reset();
     metamobSyncSource.reset(); metamobSyncOption.reset();
     metamobKeyOption.reset(); metamobKeyMarker.reset();
     statsSource.reset(); statsOption.reset(); statsOpenOption.reset(); statsOpenMarker.reset();

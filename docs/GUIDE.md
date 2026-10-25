@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.20.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.20.1**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -61,6 +61,15 @@ propos. La version
 chargée (x.y.z)
 figure dans le dernier bloc, **À propos**, avec l’auteur Altansar et un bouton
 **Ouvrir GitHub** vers le dépôt.
+
+Depuis la 1.20.1, la ligne **Dossier du mod** du même bloc a un bouton
+**Ouvrir** : il ouvre dans l’Explorateur de Windows le dossier de la version
+chargée, `DofusMiniatures-3.7.11.11-rN`, avec ses fichiers
+(`DofusMiniatures.dll`, `ModuleLoader.exe`…) et son journal `module.log`, à
+joindre à un signalement. Les réglages partagés par toutes les versions
+(`DofusMiniatures-3.7.11.11-settings.ini`) et tes statistiques sont dans le
+dossier au-dessus, à côté des dossiers des autres versions. Le bouton ne
+modifie ni ne supprime aucun fichier.
 
 ## Chasse au trésor
 
@@ -412,7 +421,14 @@ Cochée, la jauge passe à la verticale :
 
 Décochée, la jauge redevient **exactement** celle du jeu (ses réglages, ses
 bords de redimensionnement), à sa place et à sa taille d’avant, gardée
-entièrement à l’écran.
+entièrement à l’écran. Depuis la 1.20.1, elle retrouve aussi son aspect
+d’origine même après avoir été déplacée ou allongée à la verticale : barre sur
+toute la longueur, icône, niveau et bouton ⋯ à leur place. Le mod remet
+lui-même les valeurs de la jauge du jeu au lieu d’attendre que le jeu les
+recalcule. Chaque retour à l’horizontale écrit dans `module.log` une ligne
+`VERTICAL_GAUGE_RESTORED … diff=…` : `diff=none` veut dire que tout est
+revenu. Si la jauge a encore l’air fausse, envoie cette ligne avec ton
+signalement.
 
 Le choix de chaque jauge est enregistré dans les réglages du mod, pas dans la
 disposition du jeu, et vaut pour tous tes personnages. Une jauge masquée puis

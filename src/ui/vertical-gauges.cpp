@@ -54,7 +54,7 @@ constexpr int Horizontal = 0, Vertical = 1; // BaseProgressBar`2+GaugeOrientatio
 constexpr int StyleSheetChange = 0x10;      // VersionChangeType.StyleSheet: a full style update of the element
 constexpr int BottomHandle = 6, TopHandle = 7; // ResizeHandler
 constexpr int DragTop = 1, DragBottom = 2;     // ResizableWindow+DragPosition: no handle on the drag handle's own edge
-constexpr uint64_t RowAttachMs = 5000, RestoreRetryMs = 250, KeepAfterMs = 600, RecentMs = 1000;
+constexpr uint64_t RowAttachMs = 5000, RestoreRetryMs = 250, KeepAfterMs = 600, RecentMs = 1000, DiagnoseAfterMs = 400;
 constexpr unsigned MaxFailures = 3, MaxRestoreAttempts = 20;
 
 // The widget's elements the vertical layout changes, by WidgetProgressGaugeBinding's
@@ -128,6 +128,45 @@ constexpr Written Layout[] = {
     {Button, MarginLeft, Unit::Pixel, 0},              // 4 px
     {Button, MarginTop, Unit::Pixel, 2}};
 static_assert(std::size(Layout) == 27 && Layout[0].part == Window && Layout[0].property == Width && Layout[1].property == Height);
+constexpr float Row = 2;             // FlexDirection.Row
+// The widget UXML's inline rule (widgetProgressGauge's inline sheet in the
+// game's UI bundle) for the values above it defines. Put back as « none »
+// (keyword Null), such a value is not the UXML's again in game: the element
+// resolves it from the style sheets (InitialStyle: a column, no width, no
+// margin) until a full style update re-applies the rule, and 1.19.0/1.20.0
+// showed that update does not come for these gauges. Put back as the rule's
+// own value instead: the same resolved style, without depending on it.
+constexpr Written UxmlRule[] = {
+    {Window, Width, Unit::Pixel, 566}, {Window, Height, Unit::Pixel, 34}, {Window, MinWidth, Unit::Pixel, 240},
+    {Window, MinHeight, Unit::Pixel, 34}, {Main, Direction, Unit::Enum, Row}, {Main, PaddingLeft, Unit::Pixel, 12},
+    {Main, MinWidth, Unit::Pixel, 240}, {GaugeBox, Direction, Unit::Enum, Row}, {Gauge, MarginLeft, Unit::Pixel, 4},
+    {Level, Direction, Unit::Enum, Row}, {Level, Width, Unit::Pixel, 68}, {Level, MarginLeft, Unit::Pixel, 4},
+    {LevelValue, MarginLeft, Unit::Pixel, 4}, {Omega, Direction, Unit::Enum, Row}, {Omega, Width, Unit::Pixel, 68},
+    {Omega, MarginLeft, Unit::Pixel, 4}, {OmegaBox, MarginLeft, Unit::Pixel, 8}, {Button, Height, Unit::Percent, 100},
+    {Button, MarginLeft, Unit::Pixel, 4}};
+// The value an element resolves (VisualElement's own IResolvedStyle), read
+// for the untick's diagnostic: a float, a StyleFloat (its keyword: auto or
+// none), or an enum.
+enum class Kind { Float, StyleFloat, Enum };
+struct Resolver { Contract get; Kind kind; };
+constexpr Resolver Resolvers[PropertyCount] = {
+    {{"UnityEngine.UIElements.IResolvedStyle.get_width", 0, 0x55EF140}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_height", 0, 0x55EDA70}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_minWidth", 0, 0x55EDE90}, Kind::StyleFloat},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_minHeight", 0, 0x55EDE30}, Kind::StyleFloat},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_maxHeight", 0, 0x55EDD70}, Kind::StyleFloat},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_flexDirection", 0, 0x55ED890}, Kind::Enum},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingLeft", 0, 0x55EDFB0}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingTop", 0, 0x55EE070}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingBottom", 0, 0x55EDF50}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_marginLeft", 0, 0x55EDC50}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_marginTop", 0, 0x55EDD10}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_left", 0, 0x55EDB30}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_top", 0, 0x55EE3B0}, Kind::Float}};
+constexpr const char* PartNames[PartCount] = {"window", "ctr_main", "gaugeContainer", "gauge", "level", "lbl_value", "omega", "omegaBox",
+    "btn_settings"};
+constexpr const char* PropertyNames[PropertyCount] = {"width", "height", "minWidth", "minHeight", "maxHeight", "flexDirection", "paddingLeft",
+    "paddingTop", "paddingBottom", "marginLeft", "marginTop", "left", "top"};
 
 struct Natives {
     Klass gaugeUi{}, binding{}, hub{}, window{}, resizable{}, bar{}, menu{}, item{}, view{}, callback{}, root{}, separator{};
@@ -137,7 +176,8 @@ struct Natives {
     Method setOrientation{}, getOrientation{}, setVertical{}, setHorizontal{}, setCorner{}, enableHandle{}, disableHandle{};
     Method appendCheckbox{}, removeItemAt{}, insertItem{}, menuItems{}, itemCallback{}, itemDisabled{}, itemData{}, menuData{}, removeMenu{};
     Method parent{}, panel{}, layout{}, name{}, getStyle{}, setLength{}, presetContainer{}, loadDimension{}, loadPosition{};
-    Method incrementVersion{};
+    Method incrementVersion{}, classListContains{};
+    std::array<Method, PropertyCount> resolve{};
     Method savePosition{}, saveDimension{};
     // Checked offsets: the gauge's type, the hub's gauges, a menu's root, a
     // window's content, its three resize flags, its lock, its top and bottom
@@ -149,7 +189,18 @@ struct Natives {
 // One inline value the mod wrote: the element's style (InlineStyleAccess), the
 // value before (the game's own, or keyword Null: none, the UXML's rule applies)
 // and the one written. Put back only while it is still the mod's.
-struct Owned { Ref style, before, applied; Property property = Width; };
+struct Owned { Ref style, before, applied; Property property = Width; Part part = Window; };
+// What an element resolved for one value of the layout, as text (the untick's diagnostic).
+struct Sample { Part part; Property property; std::string value; };
+// A diagnostic due after an untick: the gauge's elements, what they resolved
+// before it turned vertical, read again once the game has updated their style.
+struct Diagnosis {
+    int type = 0;
+    std::array<Ref, PartCount> parts;
+    std::vector<Sample> samples;
+    std::string bar;
+    uint64_t due = 0;
+};
 // A place the game keeps for a gauge (LoadUiPositionById): per-mille of the
 // screen, or flush with its right or bottom edge; none saved: has false.
 struct Stored {
@@ -189,6 +240,10 @@ struct Record {
     // Its length and place in the settings when it was laid out or last kept:
     // other ones there (a saved layout applied, 1.20.0) lay it out again.
     Settings::GaugeVerticalBox basis{};
+    // What its elements resolved before anything was written, and its bar
+    // (orientation, classes): compared once it is put back (the diagnostic).
+    std::vector<Sample> samples;
+    std::string bar;
 };
 // The row of the menu shown: at most one, the game's DisplayMenu closes every other menu first.
 struct Row {
@@ -206,6 +261,7 @@ struct State {
     // The UI ids of gauges just put back: a save of the game still on its way
     // for them is the vertical box's, left out until then.
     std::vector<std::pair<std::wstring, uint64_t>> recent;
+    std::vector<Diagnosis> checks;                   // the untick diagnostics due
     int skipped = 0, unexpected = 0;                 // types left horizontal for the session; those found unexpected (logged)
     std::array<unsigned, 32> failures{};             // consecutive errors, by type bit
     unsigned restoreAttempts = 0;
@@ -299,8 +355,11 @@ float PixelValue(Obj box) {
 }
 void Assign(Obj box, Unit unit, float value) {
     if (unit == Unit::Enum) {
-        int number = static_cast<int>(value);
-        api.Call(box, "set_value", {&number}); // StyleEnum<T>.set_value: generic, by name as every style helper
+        // StyleEnum<FlexDirection>: its value, keyword Undefined, written as
+        // the struct is laid out (no generic setter whose shared code could
+        // leave the keyword as it was).
+        const struct { int value, keyword; } style{static_cast<int>(value), 0};
+        std::memcpy(api.object_unbox(box), &style, sizeof(style));
         return;
     }
     int lengthUnit = unit == Unit::Percent ? 1 : 0;
@@ -315,18 +374,98 @@ Owned* OwnedOf(Record& r, Obj style, Property property) {
 // setter runs (a setter that throws once it has written is still undone). A
 // value the mod already owns keeps its value before, unless the game wrote
 // its own since: that one is then the one to put back.
-void Own(Record& r, Obj style, Property property, Unit unit, float value) {
+void Own(Record& r, Part part, Obj style, Property property, Unit unit, float value) {
     Ref current(ReadStyle(style, property)), applied(ReadStyle(style, property));
     Assign(applied.get(), unit, value);
     Owned* owned = OwnedOf(r, style, property);
     if (!owned) {
-        r.styles.push_back(Owned{Ref(style), std::move(current), std::move(applied), property});
+        r.styles.push_back(Owned{Ref(style), std::move(current), std::move(applied), property, part});
         owned = &r.styles.back();
     } else {
         if (!Same(current.get(), owned->applied.get(), property)) owned->before = std::move(current);
         owned->applied = std::move(applied);
     }
     WriteStyle(style, property, owned->applied.get());
+}
+// A style's keyword (StyleLength: after its Length; StyleEnum: after its value); 1 is Null.
+int Keyword(Obj box, Property property) {
+    int keyword = 0;
+    std::memcpy(&keyword, static_cast<const char*>(api.object_unbox(box)) + (property == Direction ? 4 : 8), sizeof(keyword));
+    return keyword;
+}
+// The value the UXML's inline rule gives this element (UxmlRule), boxed as
+// its style's getter has it; nullptr for one the rule leaves out.
+Obj UxmlValue(const Owned& owned) {
+    for (const auto& rule : UxmlRule) {
+        if (rule.part != owned.part || rule.property != owned.property) continue;
+        Obj box = ReadStyle(owned.style.get(), owned.property);
+        Assign(box, rule.unit, rule.value);
+        return box;
+    }
+    return nullptr;
+}
+// What an element resolves for a value (its IResolvedStyle), as text: its
+// pixels, auto or none, or an enum's number (FlexDirection: 0 column, 2 row).
+std::string ResolvedText(Obj element, Property property) {
+    Ref box(element ? api.Invoke(n.resolve[property], element) : nullptr);
+    if (!box.get()) return "?";
+    const void* data = api.object_unbox(box.get());
+    char text[32];
+    if (Resolvers[property].kind == Kind::Enum) {
+        int value = 0;
+        std::memcpy(&value, data, sizeof(value));
+        std::snprintf(text, sizeof(text), "%d", value);
+        return text;
+    }
+    struct { float value; int keyword; } resolved{};
+    std::memcpy(&resolved, data, Resolvers[property].kind == Kind::StyleFloat ? 8 : 4);
+    if (resolved.keyword == 2) return "auto";
+    if (resolved.keyword == 3) return "none";
+    std::snprintf(text, sizeof(text), "%g", resolved.value);
+    return text;
+}
+// The bar's own state: its orientation (its getter) and its orientation classes.
+std::string BarState(Obj bar) {
+    const int orientation = api.Value<int>(api.Invoke(n.getOrientation, bar));
+    std::string text = std::to_string(orientation);
+    for (const char* name : {"horizontal", "vertical"}) {
+        Ref value(api.string_new(name));
+        if (api.Value<bool>(api.Invoke(n.classListContains, bar, {value.get()}))) text += std::string("/") + name;
+    }
+    return text;
+}
+// What each element of the layout resolves now.
+std::vector<Sample> Samples(const std::array<Ref, PartCount>& parts) {
+    std::vector<Sample> samples;
+    for (const auto& value : Layout) samples.push_back({value.part, value.property, ResolvedText(parts[value.part].get(), value.property)});
+    return samples;
+}
+// Once the gauge is put back and the game has updated its style: what its
+// elements resolve now, and any value that differs from what they resolved
+// before it turned vertical (VERTICAL_GAUGE_RESTORED … diff=…), so a log
+// tells exactly what a restore left different.
+void Diagnose(const Diagnosis& check) {
+    const auto now = Samples(check.parts);
+    std::string values, diff;
+    for (size_t i = 0; i < now.size() && i < check.samples.size(); ++i) {
+        const auto& before = check.samples[i];
+        const std::string name = std::string(PartNames[before.part]) + "." + PropertyNames[before.property];
+        values += (values.empty() ? "" : ",") + name + "=" + now[i].value;
+        if (now[i].value != before.value) diff += (diff.empty() ? "" : ",") + name + ":" + before.value + ">" + now[i].value;
+    }
+    const std::string bar = check.parts[Gauge].get() ? BarState(check.parts[Gauge].get()) : "?";
+    if (bar != check.bar) diff += (diff.empty() ? "" : ",") + std::string("bar:") + check.bar + ">" + bar;
+    Log("VERTICAL_GAUGE_RESTORED type=" + Hex(check.type) + " bar=" + bar + " values=" + values + " diff=" + (diff.empty() ? "none" : diff));
+}
+void RunDiagnoses() {
+    const uint64_t now = s.clock();
+    for (size_t i = 0; i < s.checks.size();) {
+        if (now < s.checks[i].due) { ++i; continue; }
+        Diagnosis check = std::move(s.checks[i]);
+        s.checks.erase(s.checks.begin() + static_cast<std::ptrdiff_t>(i));
+        try { Diagnose(check); }
+        catch (const std::exception& error) { Report(s.errorLog, std::string("VERTICAL_GAUGES_ERROR diagnosis ") + error.what()); }
+    }
 }
 // One of the window's own values of the vertical layout set again, in pixels,
 // its value before unchanged: the player's resize taken (the game's resizer
@@ -543,6 +682,12 @@ void ShowHandles(Record& r) {
 void Build(Record& r, const Elements& e) {
     Obj window = e.parts[Window].get();
     for (size_t part = 0; part < PartCount; ++part) r.parts[part].reset(e.parts[part].get());
+    // What its elements resolve as the game built them, before anything is
+    // written (the untick's diagnostic); never in the way of the layout.
+    try {
+        r.samples = Samples(r.parts);
+        r.bar = BarState(r.parts[Gauge].get());
+    } catch (const std::exception&) { r.samples.clear(); }
     r.resizable = {Read<bool>(window, n.vertical), Read<bool>(window, n.horizontal), Read<bool>(window, n.corner)};
     std::array<Ref, PartCount> styles;
     for (size_t part = 0; part < PartCount; ++part) styles[part].reset(StyleOf(e.parts[part].get()));
@@ -568,7 +713,7 @@ void Build(Record& r, const Elements& e) {
     if (const Rect laid = LayoutOf(window); Laid(laid)) { r.laidWidth = laid.width; r.laidHeight = laid.height; }
     for (const auto& value : Layout) {
         const float pixels = value.value == TheLength ? r.length : value.value == TheMaxLength ? MaxLength(r.screenHeight) : value.value;
-        Own(r, styles[value.part].get(), value.property, value.unit, pixels);
+        Own(r, value.part, styles[value.part].get(), value.property, value.unit, pixels);
     }
     // Once: the window's width reads back byte for byte, as VerticalGaugesFrame compares it.
     if (!s.layoutChecked) {
@@ -648,7 +793,12 @@ void Restore(Record& r) {
     for (auto owned = r.styles.rbegin(); owned != r.styles.rend(); ++owned) {
         Ref current(ReadStyle(owned->style.get(), owned->property));
         if (s.failed || Same(current.get(), owned->applied.get(), owned->property))
-            WriteStyle(owned->style.get(), owned->property, owned->before.get());
+        {
+            // None of its own before (keyword Null): the UXML rule's value, when
+            // it gives one (UxmlRule), else none again (the style sheets').
+            Ref rule(Keyword(owned->before.get(), owned->property) == 1 ? UxmlValue(*owned) : nullptr);
+            WriteStyle(owned->style.get(), owned->property, rule.get() ? rule.get() : owned->before.get());
+        }
     }
     // A value put back as « none » (keyword Null: the UXML's own, row for
     // ctr_main, 68 px for the level, 240 px the window's minimum width…) is not
@@ -744,6 +894,16 @@ bool Undo(size_t index) {
     try { Restore(r); }
     catch (const std::exception& error) { Fault(type, "restore", error.what()); return false; }
     if (!r.id.empty()) s.recent.emplace_back(r.id, s.clock() + RecentMs);
+    // Its diagnostic once the game has updated its style (its next frames).
+    if (!r.samples.empty() && s.checks.size() < 8) {
+        Diagnosis check;
+        check.type = type;
+        for (size_t part = 0; part < PartCount; ++part) check.parts[part].reset(r.parts[part].get());
+        check.samples = r.samples;
+        check.bar = r.bar;
+        check.due = s.clock() + DiagnoseAfterMs;
+        s.checks.push_back(std::move(check));
+    }
     s.records.erase(s.records.begin() + static_cast<std::ptrdiff_t>(index));
     Log("VERTICAL_GAUGE_OFF type=" + Hex(type));
     return true;
@@ -760,8 +920,8 @@ void Replaced(Record& r, Obj width) {
     if (pixels > 0) r.width = pixels;
     if (Laid(screen)) r.screenHeight = screen.height;
     r.length = Length(r.chosen > 0 ? r.chosen : r.width, r.screenHeight);
-    Own(r, r.windowStyle.get(), Width, Unit::Pixel, Thickness);
-    Own(r, r.windowStyle.get(), Height, Unit::Pixel, r.length);
+    Own(r, Window, r.windowStyle.get(), Width, Unit::Pixel, Thickness);
+    Own(r, Window, r.windowStyle.get(), Height, Unit::Pixel, r.length);
     Settle(r);
     Report(s.replacedLog, "VERTICAL_GAUGE_REPLACED type=" + Hex(r.type) + " width=" + Number(pixels));
 }
@@ -1017,6 +1177,7 @@ void RestoreAll() {
 }
 void Tick() {
     TickRow();
+    RunDiagnoses();
     const uint64_t now = s.clock();
     std::erase_if(s.recent, [now](const auto& recent) { return now >= recent.second; });
     const int mask = Mask();
@@ -1136,6 +1297,9 @@ void Install() {
     n.layout = api.FindVerified(n.element, "get_layout", 0, 0x55F6930);
     n.name = api.FindVerified(n.element, "get_name", 0, 0x3158710);
     n.incrementVersion = api.FindVerified(n.element, "IncrementVersion", 1, 0x55E5580);
+    n.classListContains = api.FindVerified(n.element, "ClassListContains", 1, 0x55E1840);
+    for (size_t property = 0; property < PropertyCount; ++property)
+        n.resolve[property] = api.FindVerified(n.element, Resolvers[property].get.name, Resolvers[property].get.argc, Resolvers[property].get.rva);
     n.getStyle = api.FindVerified(n.element, "get_style", 0, 0x55F74A0);
     n.style = api.Class(UiImage, UiSpace, "InlineStyleAccess");
     for (size_t property = 0; property < PropertyCount; ++property) {

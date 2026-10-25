@@ -80,6 +80,9 @@ struct OptionsUi {
     managed::Ref mapCoordsSource, mapCoordsOption, miniMapCoordsSource, miniMapCoordsOption;
     // Credits row: project name, x.y.z version, author and a GitHub button.
     managed::Ref creditsOption, creditsMarker;
+    // « Dossier du mod » (1.20.1), after the credits: a text-button row known by
+    // its unique description reference that opens the module's folder in Explorer.
+    managed::Ref modFolderOption, modFolderMarker;
     // « Statistiques »: the counting checkbox (1.15.0), then the statistics
     // window's rows (1.16.0): « Voir mes statistiques », a text-button row
     // known by its unique description reference (statsOpenMarker) that opens

@@ -10,7 +10,24 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.20.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.20.1
+
+VERSION 1.20.1 : DOSSIER DU MOD, JAUGES VERTICALES
+- À propos : nouvelle ligne « Dossier du mod » avec un bouton « Ouvrir ».
+  Il ouvre dans l’Explorateur de Windows le dossier de la version chargée
+  (ses fichiers et son journal module.log). Les réglages partagés
+  (DofusMiniatures-3.7.11.11-settings.ini) et les statistiques sont dans
+  le dossier au-dessus, à côté des dossiers des autres versions. Le bouton
+  ne modifie ni ne supprime rien.
+- Jauges verticales : remise à l’horizontale, une jauge retrouve vraiment
+  son aspect d’origine (barre sur toute la longueur, icône, niveau et
+  bouton … à leur place), même après avoir été déplacée ou allongée à la
+  verticale. Le mod remet lui-même les valeurs de la jauge du jeu.
+- Une ligne VERTICAL_GAUGE_RESTORED … diff=… est écrite dans module.log ;
+  diff=none veut dire que tout est revenu. Si la jauge a encore l’air
+  fausse, envoie cette ligne.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.20.0 : AFFICHAGES ENREGISTRÉS
 - Affichages enregistrés : un affichage que tu enregistres dans le jeu,

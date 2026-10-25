@@ -99,6 +99,11 @@ std::string failMethod;
 Obj failOwner = nullptr;
 int failCount = 0;
 bool skewReadBack = false; // the window's width reads back otherwise than written
+// What the owner's 1.19.0 and 1.20.0 logs show and the snapshot does not
+// explain: values put back as « none » never resolve from the UXML's rule
+// again, IncrementVersion(StyleSheet) or not. On: the fake's full style
+// update leaves them on the style sheets' values.
+bool ruleNeverReturns = false;
 // The settings as Module::Change keeps them (a failed save still keeps them).
 unsigned changes = 0;
 bool changeFails = false;
@@ -203,6 +208,14 @@ std::array<unsigned char, 12> LengthStyle(float value, int unit = 0) {
     return bytes;
 }
 bool Styled(Obj e, const std::string& property) { return Get(e).styles.contains(property); }
+// No code-set value, or one equal to the UXML rule's: the element resolves the UXML's own.
+bool AsUxml(Obj e, const std::string& property) {
+    const auto& o = Get(e);
+    const auto set = o.styles.find(property);
+    if (set == o.styles.end()) return true;
+    const auto rule = o.uxml.find(property);
+    return rule != o.uxml.end() && rule->second == set->second;
+}
 // A code-set length: its value, unit (0 pixels, 1 percent) and keyword.
 std::tuple<float, int, int> LengthOf(Obj e, const std::string& property) {
     Check(Styled(e, property), "Style not written: " + Get(e).name + "." + property);
@@ -307,9 +320,11 @@ Gauge MakeGauge(int type, Obj owner = nullptr) {
         {"height", LengthStyle(100, 1)}};
     Get(g.box).uxml = {{"flexDirection", row()}};
     Get(g.bar).uxml = {{"marginLeft", LengthStyle(4)}};
-    Get(g.level).uxml = {{"width", LengthStyle(68)}};
-    Get(g.omega).uxml = {{"width", LengthStyle(68)}};
-    Get(g.button).uxml = {{"height", LengthStyle(100, 1)}};
+    Get(g.level).uxml = {{"flexDirection", row()}, {"width", LengthStyle(68)}, {"marginLeft", LengthStyle(4)}};
+    Get(g.value).uxml = {{"marginLeft", LengthStyle(4)}};
+    Get(g.omega).uxml = {{"flexDirection", row()}, {"width", LengthStyle(68)}, {"marginLeft", LengthStyle(4)}};
+    Get(g.omegaBox).uxml = {{"marginLeft", LengthStyle(8)}};
+    Get(g.button).uxml = {{"height", LengthStyle(100, 1)}, {"marginLeft", LengthStyle(4)}};
     Put<Obj>(g.window, 0x310, g.content);
     Put<bool>(g.window, 0x354, true); Put<bool>(g.window, 0x355, false); Put<bool>(g.window, 0x356, true);
     Put<int>(g.window, 0x350, 5); // drag-position="Custom"
@@ -544,7 +559,14 @@ std::string Diff(const Snapshot& a, const Snapshot& b) {
 }
 Snapshot Take(const Gauge& g) {
     Snapshot s;
-    for (auto e : g.Elements()) for (const auto& [property, bytes] : Get(e).styles) s.styles[{e, property}] = bytes;
+    // A code-set value equal to the UXML rule's resolves as the rule does: the same as none.
+    for (auto e : g.Elements())
+        for (const auto& [property, bytes] : Get(e).styles) {
+            const auto rule = Get(e).uxml.find(property);
+            const size_t size = IsEnumStyle(property) ? 8 : 12;
+            if (rule != Get(e).uxml.end() && std::memcmp(rule->second.data(), bytes.data(), size) == 0) continue;
+            s.styles[{e, property}] = bytes;
+        }
     s.flags = {Flag(g.window, 0x354), Flag(g.window, 0x355), Flag(g.window, 0x356)};
     s.handles = Get(g.window).handles;
     s.orientation = Get(g.bar).orientation;
@@ -780,9 +802,27 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         else { target.styles[property] = bytes; target.stale.erase(property); }
         return nullptr;
     }
+    if (m.starts_with("UnityEngine.UIElements.IResolvedStyle.get_")) {
+        // What the element resolves (its computed style): a float, a StyleFloat, an enum.
+        const auto property = m.substr(std::string("UnityEngine.UIElements.IResolvedStyle.get_").size());
+        const auto bytes = Computed(self, property);
+        if (IsEnumStyle(property)) { int value = 0; std::memcpy(&value, bytes.data(), 4); return Box(value); }
+        float value = 0; int keyword = 0;
+        std::memcpy(&value, bytes.data(), 4); std::memcpy(&keyword, bytes.data() + 8, 4);
+        struct { float value; int keyword; } resolved{keyword ? 0.f : value, keyword};
+        if (property.starts_with("min") || property.starts_with("max")) return Box(resolved, "StyleFloat");
+        return Box(resolved.value, "Single");
+    }
+    if (m == "ClassListContains") {
+        // The bar's orientation classes (pq.peg adds the enum value's name).
+        const auto& name = Get(static_cast<Obj>(args.at(0))).text;
+        const bool has = o.klass->name == "ExtendedProgressBarLong" &&
+            ((name == "horizontal" && o.orientation == 0) || (name == "vertical" && o.orientation == 1));
+        return Box(has, "Boolean");
+    }
     if (m == "IncrementVersion") {
         // VisualElement.IncrementVersion: a StyleSheet change asks the panel for a full style update.
-        if (*static_cast<int*>(args.at(0)) & 0x10) o.stale.clear();
+        if ((*static_cast<int*>(args.at(0)) & 0x10) && !ruleNeverReturns) o.stale.clear();
         return nullptr;
     }
     if (m == "get_parent") return o.parent;
@@ -961,7 +1001,7 @@ struct Fixture {
         keptBoxes.clear(); savedHeights.clear();
         positionHook = nullptr; dimensionHook = nullptr; positionSaves = dimensionSaves = 0;
         failVerified.clear(); failField.clear(); failMethod.clear(); barBaseName = "BaseProgressBar`2";
-        failOwner = nullptr; failCount = 0; skewReadBack = false; changeFails = false; hideRow = separatorRow = true;
+        failOwner = nullptr; failCount = 0; skewReadBack = false; ruleNeverReturns = false; changeFails = false; hideRow = separatorRow = true;
         calls = nameCalls = enumerations = disposals = lookups = removeMenus = changes = hooks = nativeSections = nativeCallbacks = 0;
         sectionHook = nullptr; hookRva = 0; openMenu = nullptr; nowMs = 100000; screenWidth = 1920; screenHeight = 1080;
         panel = Make("RuntimePanel");
@@ -1070,7 +1110,20 @@ void InstallResolvesEveryContract() {
         {"DofusContextualMenuRoot", "RemoveMenu", 1, 0x16D2AB0},
         {"VisualElement", "get_parent", 0, 0x55F7180}, {"VisualElement", "get_panel", 0, 0x55F7170}, {"VisualElement", "get_layout", 0, 0x55F6930},
         {"VisualElement", "get_name", 0, 0x3158710}, {"VisualElement", "get_style", 0, 0x55F74A0},
-        {"VisualElement", "IncrementVersion", 1, 0x55E5580},
+        {"VisualElement", "IncrementVersion", 1, 0x55E5580}, {"VisualElement", "ClassListContains", 1, 0x55E1840},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_width", 0, 0x55EF140},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_height", 0, 0x55EDA70},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_minWidth", 0, 0x55EDE90},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_minHeight", 0, 0x55EDE30},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_maxHeight", 0, 0x55EDD70},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_flexDirection", 0, 0x55ED890},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingLeft", 0, 0x55EDFB0},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingTop", 0, 0x55EE070},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingBottom", 0, 0x55EDF50},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_marginLeft", 0, 0x55EDC50},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_marginTop", 0, 0x55EDD10},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_left", 0, 0x55EDB30},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_top", 0, 0x55EE3B0},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_width", 0, 0x55D2740}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_width", 1, 0x55D63F0},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_height", 0, 0x55D1540}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_height", 1, 0x55D3D60},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x55D1850}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x55D4410},
@@ -1356,7 +1409,7 @@ void KeptOnTheScreen() {
     module->settings.gaugeVertical = 0;
     Tick();
     Check(Take(character) == horizontal && Records() == 0, "Unticked: back where the game had it");
-    Check(Pixels(energy.window, "left") == 1920 - 566 && Pixels(energy.window, "top") == 900 && !Styled(energy.window, "width"),
+    Check(Pixels(energy.window, "left") == 1920 - 566 && Pixels(energy.window, "top") == 900 && AsUxml(energy.window, "width"),
         "The game's own place, kept on the screen at its UXML width");
 }
 // Unticked, the gauge is exactly as the game built it: every code-set value
@@ -1386,7 +1439,7 @@ void RoundTripIsExact() {
     Check(Pixels(g.bar, "marginTop") == 7, "A value the game wrote since stays the game's");
     Check(Pixels(g.window, "left") == 300 && Pixels(g.window, "top") == 200 && positionSaves == 0 && savedPositions.empty(),
         "Dragged while vertical: back where the game had it, the drag never saved in the game's layout");
-    Check(Pixels(g.window, "width") == 600 && Pixels(g.window, "height") == 40 && Pixels(g.main, "paddingTop") == 2 && !Styled(g.main, "minWidth") &&
+    Check(Pixels(g.window, "width") == 600 && Pixels(g.window, "height") == 40 && Pixels(g.main, "paddingTop") == 2 && AsUxml(g.main, "minWidth") &&
         Get(g.bar).orientation == 0 && Flag(g.window, 0x354) && !Flag(g.window, 0x355) && Flag(g.window, 0x356), "The rest as before");
 }
 // The game re-places a vertical gauge (the never-moved character's gauge gets
@@ -1440,7 +1493,7 @@ void GameReplacementIsUndone() {
     Tick();
     // Its 707 x 35 box kept on the screen: 1 px up (the game's own check uses blxf's 706 x 34 box).
     Check(Pixels(g.window, "width") == 707 && Pixels(g.window, "height") == 35 && Pixels(g.window, "left") == 607 &&
-        Pixels(g.window, "top") == 1080 - 35 && !Styled(g.window, "minWidth") && Records() == 1, "Unticked: the game's latest size and place");
+        Pixels(g.window, "top") == 1080 - 35 && AsUxml(g.window, "minWidth") && Records() == 1, "Unticked: the game's latest size and place");
 }
 // A layout round trip (a fight with its own layout, a layout preset): with
 // the resize flags off, the game's placements no longer give the gauge its
@@ -1777,7 +1830,7 @@ void FollowsTheScreensHeight() {
     Check(Pixels(g.window, "height") == 900 && Pixels(g.window, "top") == 180, "900 px long again, at its place again");
     module->settings.gaugeVertical = 0;
     Tick();
-    Check(Pixels(g.window, "width") == 900 && !Styled(g.window, "height") && !Styled(g.window, "top"), "Unticked: the game's own size");
+    Check(Pixels(g.window, "width") == 900 && AsUxml(g.window, "height") && !Styled(g.window, "top"), "Unticked: the game's own size");
 }
 // Dragged into a corner while vertical, then unticked (its menu, the options'
 // switch or Stop): back at the game's own place, here the UXML's (no inline
@@ -1799,7 +1852,7 @@ void EdgePlacesAreKept() {
         if (way == 1) module->settings.gaugeVerticalMenu = false;
         if (way < 2) Tick();
         if (way == 2) { module->stopped = true; RestoreVerticalGauges(); }
-        Check(Records() == 0 && !Styled(g.window, "left") && !Styled(g.window, "top") && !Styled(g.window, "width") && savedPositions.empty(),
+        Check(Records() == 0 && !Styled(g.window, "left") && !Styled(g.window, "top") && AsUxml(g.window, "width") && savedPositions.empty(),
             "Horizontal again at the game's own place, the corner never in its layout");
     }
     Fixture f;
@@ -2031,6 +2084,47 @@ void ResolvedAsTheGameBuiltIt() {
     }
     Check(Logged("VERTICAL_GAUGE_KEPT type=0x10 length=313 place=") == 1, "The chosen length logged once");
 }
+// The owner's 1.20.0 report (r124 log): the character's gauge (734 px),
+// vertical, dragged, pulled to 160 then 550 px long, unticked 2 s later:
+// « repasser à l'horizontal est encore buggé ». The values the layout had put
+// back as « none » never came back from the UXML's rule in game, full style
+// update or not (ruleNeverReturns). They are put back as the rule's own
+// values: every element resolves as the game built it either way, and the
+// untick's diagnostic logs what each one resolves and what differs (none).
+void RestoredWithoutTheStyleUpdate() {
+    for (bool never : {true, false}) {
+        Fixture f;
+        ruleNeverReturns = never;
+        savedWidths["GaugeCharacter"] = 734.4446f;
+        savedHeights["GaugeCharacter"] = 35.555542f;
+        savedPositions["GaugeCharacter"] = {741.7969f, 540.305f, false, false};
+        const auto g = MakeGauge(0x1);
+        LayoutPass(); GameReplace(g); LayoutPass();
+        const auto horizontal = Take(g);
+        const auto resolved = Resolved(g);
+        module->settings.gaugeVertical = 0x1;
+        Tick(); LayoutPass();
+        GameDrag(g, -100, -40);
+        LayoutPass(); Frame(); Tick(); Tick(); Tick(); Tick();
+        GamePullEdge(g, BottomHandle, 160 - Get(g.window).height);
+        LayoutPass(); Frame(); Tick();
+        GamePullEdge(g, BottomHandle, 550 - Get(g.window).height);
+        LayoutPass(); Frame(); Tick(); Tick(); Tick(); Tick();
+        Check(module->settings.gaugeVerticalBoxes[0].length == 550, "550 px long, kept");
+        module->settings.gaugeVertical = 0;
+        Tick(); LayoutPass();
+        Check(Resolved(g) == resolved, std::string(never ? "Without" : "With") + " the style update: every style resolved as the game built it, not:" +
+            Differences(resolved, Resolved(g)));
+        Check(Take(g) == horizontal && Get(g.bar).orientation == 0, "Its code-set values, bar and handles as the game built them:" + Diff(horizontal, Take(g)));
+        Check(Logged("VERTICAL_GAUGE_RESTORED") == 0, "The diagnostic waits for the game's style update");
+        Tick(); Tick(); Tick();
+        Check(Logged("VERTICAL_GAUGE_RESTORED type=0x1 bar=0/horizontal values=window.width=") == 1 && Logged("VERTICAL_GAUGE_RESTORED") == 1,
+            "Logged once: what each element resolves");
+        const auto line = std::find_if(logs.begin(), logs.end(), [](const std::string& l) { return l.rfind("VERTICAL_GAUGE_RESTORED", 0) == 0; });
+        Check(line != logs.end() && line->ends_with(" diff=none") && line->find("ctr_main.flexDirection=2") != std::string::npos &&
+            line->find("level.width=68") != std::string::npos, "Nothing differs from the horizontal gauge the game built: " + (line != logs.end() ? *line : std::string()));
+    }
+}
 // The rules: a gauge's own type, the settings' mask, the length, the place on the screen.
 void Policy() {
     using verticalGauges::KeepOnScreen;
@@ -2099,6 +2193,7 @@ int main() {
         run(ResizedWhileVertical);
         run(DraggedWhileVertical);
         run(ResolvedAsTheGameBuiltIt);
+        run(RestoredWithoutTheStyleUpdate);
         run(BackWhereTheGameKeepsIt);
         run(Policy);
         std::cout << "PASS: « Afficher à la verticale »: every contract verified at its pinned RVA, a missing one turning only this feature off "

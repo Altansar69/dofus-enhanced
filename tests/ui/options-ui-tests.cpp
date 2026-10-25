@@ -34,6 +34,8 @@ enum SectionIndex : size_t { AppearanceSection, AnimationSection, GlowSection, C
 // text button opening the window: OpenStatsWindow below counts the opens) and
 // the checkbox of the window's top-bar button.
 unsigned statsOpens = 0;
+// « À propos » › « Dossier du mod » (1.20.1): the folders OpenModFolder below was asked to open.
+std::vector<std::filesystem::path> openedFolders;
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
     PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra, NotebookSendExtra, GaugeVerticalExtra, PartyTravelExtra,
@@ -274,7 +276,7 @@ struct Fixture {
         fakeStatus = metamob::KeyStatus::Verified;
         keyForgets = keyCopies = lengthReads = nativeTextInits = inputsCreated = 0;
         submittedKeys.clear(); notices.clear(); verifiedRvas.clear(); keyChecks.clear();
-        statsOpens = 0;
+        statsOpens = 0; openedFolders.clear();
         state.servicesReady = true;
         state.ready.store(true);
         state.settings = Config(2, 1);
@@ -596,6 +598,8 @@ void OpenTreasureOverlay(const std::filesystem::path& folder) {
 void OpenNotebookPanel() { ++fake::notebookOpens; }
 // « Voir mes statistiques » opens the statistics window (stats-window.cpp is not linked here).
 void OpenStatsWindow() { ++fake::statsOpens; }
+// « Dossier du mod » opens Explorer (mod-folder.cpp is not linked here).
+void OpenModFolder(const std::filesystem::path& folder) { fake::openedFolders.push_back(folder); }
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
     ++fake::uiHooks;
     if (rva == 0x2D80470) {
@@ -736,7 +740,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.20.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.20.1 — par Altansar"), ButtonRow(ui.modFolderOption, "Dossier du mod")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -843,8 +847,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.20.0" && std::string(ModVersion) == "r124" &&
-        ModRevision == 124,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.20.1" && std::string(ModVersion) == "r125" &&
+        ModRevision == 125,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -891,14 +895,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.20.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.20.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r124") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r125") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 74 && optionModels == 74 + 3,
-        "The UI must create seventy-four private sources and seventy-seven rows");
+    Check(sourceModels == 74 && optionModels == 74 + 4,
+        "The UI must create seventy-four private sources and seventy-eight rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -2822,6 +2826,61 @@ void MetamobFieldsLeaveOnAbandon() {
     f.Ui().Restore();
 }
 
+// « À propos » › « Dossier du mod » (1.20.1): after the credits, an owned text
+// button known by its own description reference that opens the module's own
+// folder in Explorer, from any view of the row, never the native action.
+void ModFolderRow() {
+    Fixture f;
+    initHook(f.page, false, true, SectionId(AboutSection), nullptr);
+    CheckLayout(f);
+    const auto parent = f.Categories().back();
+    auto& ui = f.Ui();
+    Check(Name(Section(parent, AboutSection)) == "À propos" &&
+        Rows(Section(parent, AboutSection)) == std::vector<Obj>({ui.creditsOption.get(), ui.modFolderOption.get()}),
+        "À propos: the credits, then « Dossier du mod »");
+    const auto row = ui.modFolderOption.get();
+    const auto& model = Get(row);
+    Check(model.klass->name == "TextButtonOption" && !model.refs.at("source") && ui.modFolderMarker.get() == model.refs.at("description") &&
+        ui.modFolderMarker.get() != ui.creditsMarker.get() && ui.modFolderMarker.get() != ui.statsOpenMarker.get() &&
+        ui.modFolderMarker.get() != ui.metamobKeyMarker.get(), "« Dossier du mod » is an owned text button known by its own description reference");
+    Check(Label(row) == "Dossier du mod" && ButtonText(row) == "Ouvrir", "Its button: « Ouvrir »");
+    const auto text = Description(row);
+    for (const char* term : {"Ouvre dans l’Explorateur de Windows le dossier de cette version du mod", "DofusMiniatures-3.7.11.11-r125",
+            "DofusMiniatures.dll", "module.log", "DofusMiniatures-3.7.11.11-settings.ini", "dans le dossier au-dessus",
+            "ne modifie ni ne supprime aucun fichier"})
+        Check(text.find(term) != std::string::npos, std::string("« Dossier du mod » says: ") + term);
+    Check(text.find('\'') == std::string::npos && text.find("offline-test") == std::string::npos,
+        "Typographic apostrophes, and no personal path in the text");
+    // Ouvrir opens the module's folder, nothing else.
+    auto view = MakeRowView();
+    textInitHook(view.element, row, nullptr);
+    Click(view);
+    Check(openedFolders == std::vector<std::filesystem::path>{L"offline-test"} && openedUrls.empty() && statsOpens == 0 &&
+        foreignButtonClicks == 0 && changes == 0, "Ouvrir opens the module's folder, nothing else");
+    Check(SaveShown(view) && !Slot(view), "Its view keeps the native button as it is");
+    // The credits button still opens the project page only.
+    auto credits = Make("TextButtonOptionElement");
+    Get(credits).refs["option"] = ui.creditsOption.get();
+    textButtonHook(credits, Make("Visual"), nullptr);
+    Check(openedFolders.size() == 1 && openedUrls.size() == 1, "Ouvrir GitHub never opens the folder");
+    const auto clone = Make("TextButtonOption");
+    Get(clone).refs["description"] = Get(row).refs.at("description");
+    auto cloneView = MakeRowView();
+    textInitHook(cloneView.element, clone, nullptr);
+    Click(cloneView);
+    Check(openedFolders.size() == 2 && foreignButtonClicks == 0, "A native search clone of the row opens it too");
+    f.state.stopRequested.store(true);
+    Click(view);
+    f.state.stopRequested.store(false);
+    Check(openedFolders.size() == 2 && foreignButtonClicks == 0, "A stopping module ignores it, without the native action");
+    f.StopAndRestore();
+    Check(!ui.modFolderOption.get() && !ui.modFolderMarker.get(), "Restore releases the row");
+    auto stale = Make("TextButtonOptionElement");
+    Get(stale).refs["option"] = row;
+    textButtonHook(stale, Make("Visual"), nullptr);
+    Check(openedFolders.size() == 2 && foreignButtonClicks == 1, "After restore the stale row runs the native action");
+}
+
 // « Statistiques » (1.16.0): the counting checkbox, « Voir mes statistiques »
 // (an owned text button known by its own description reference: no source, no
 // native action) and the checkbox of the window's top-bar button. The lines,
@@ -3079,6 +3138,7 @@ int main() {
         run(fake::EverySectionSelectionAndRestore);
         run(fake::RestoreRetriesAfterFailedRebuild);
         run(fake::CreditsLinkOpensProject);
+        run(fake::ModFolderRow);
         run(fake::RegistrationAndValues);
         run(fake::AnimationTogglesValuesAndDefaults);
         run(fake::AppearanceCategoriesValuesAndDefaults);
@@ -3117,7 +3177,7 @@ int main() {
         run(fake::PerformanceSectionRows);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: seventeen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, « Défaut (<thème>) » following the game's theme, its eleven themes and three colours, its three sizes, invalid choices reverted), « Jauges » after « Curseur » (the gauges' vertical row on by default, its reset keeping each gauge's choice), « Affichages enregistrés » after « Jauges » (the mod's windows kept in the game's saved layouts, on by default), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
+        std::cout << "PASS: seventeen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, « Défaut (<thème>) » following the game's theme, its eleven themes and three colours, its three sizes, invalid choices reverted), « Jauges » after « Curseur » (the gauges' vertical row on by default, its reset keeping each gauge's choice), « Affichages enregistrés » after « Jauges » (the mod's windows kept in the game's saved layouts, on by default), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet », and « À propos » (credits, then « Dossier du mod » opening the module's own folder from any view of its row)\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

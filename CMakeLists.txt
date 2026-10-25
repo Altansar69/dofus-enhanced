@@ -52,8 +52,8 @@ add_library(DofusMiniatures SHARED
   src/stats/stats-format.cpp src/stats/stats-window.cpp
   src/ui/cursor-art.cpp src/ui/custom-cursor.cpp
   src/ui/vertical-gauges.cpp src/ui/game-theme.cpp
-  src/ui/preset-windows-store.cpp src/ui/preset-windows.cpp)
-target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
+  src/ui/preset-windows-store.cpp src/ui/preset-windows.cpp src/ui/mod-folder.cpp)
+target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh shell32 ole32)
 
 # Loader (console and silent automatic variants) and the runtime probe.
 set(LOADER_SOURCES src/loader/launcher.cpp src/core/common.cpp src/loader/autoload.cpp
