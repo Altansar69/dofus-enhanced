@@ -12,6 +12,18 @@ bool ParseInt(const std::string& text, int& value) {
     const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
     return result.ec == std::errc{} && result.ptr == text.data() + text.size();
 }
+// A vertical gauge's own key (1.18.1): `prefix` then its fqd+GaugesType in
+// decimal, exactly one bit of Settings::GaugeVerticalBits; its bit's index, -1
+// for any other key.
+int GaugeVerticalKey(const std::string& key, const char* prefix) {
+    const std::string start = prefix;
+    int type = 0;
+    if (key.size() <= start.size() || key.compare(0, start.size(), start) != 0 || !ParseInt(key.substr(start.size()), type)) return -1;
+    if (type <= 0 || (type & ~Settings::GaugeVerticalBits) != 0 || (type & (type - 1)) != 0) return -1;
+    int bit = 0;
+    while (!(type & (1 << bit))) ++bit;
+    return bit;
+}
 struct Flag { const char* key; bool Settings::* field; };
 // The « Apparence » miniature categories and the « Animations » toggles, each
 // its own 0/1 line. An animation key the file does not hold takes the value of
@@ -72,6 +84,8 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     int legacyMapDimension = -1, legacyMiniMapDimension = -1;
     int legacyAnimationMode = 1; // the default of every revision that had it
     unsigned animationFlagsRead = 0;
+    // The cursor's colour since 1.18.1, and that of 1.17.x and 1.18.0 (-1: absent).
+    int cursorPalette = -1, legacyCursorColor = -1;
     while (std::getline(file, line)) {
         if (line.size() > 256) throw std::runtime_error("Settings line too long");
         if (line == "mode=0") settings.mode = 0;
@@ -117,9 +131,19 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "treasureButton" && (value == 0 || value == 1)) settings.treasureButton = value != 0;
             else if (key == "notebookButton" && (value == 0 || value == 1)) settings.notebookButton = value != 0;
             else if (key == "customCursor" && (value == 0 || value == 1)) settings.customCursor = value != 0;
-            else if (key == "customCursorColor" && ValidCustomCursorColor(value)) settings.customCursorColor = value;
+            else if (key == "customCursorPalette" && ValidCustomCursorColor(value)) cursorPalette = value;
+            else if (key == "customCursorColor" && ValidLegacyCursorColor(value)) legacyCursorColor = value;
             else if (key == "customCursorSize" && ValidCustomCursorSize(value)) settings.customCursorSize = value;
             else if (key == "gaugeVertical" && ValidGaugeVertical(value)) settings.gaugeVertical = value;
+            else if (const int lengthBit = GaugeVerticalKey(key, "gaugeVerticalLength"); lengthBit >= 0) {
+                if (ValidGaugeVerticalLength(value)) settings.gaugeVerticalBoxes[static_cast<size_t>(lengthBit)].length = value;
+            }
+            else if (const int xBit = GaugeVerticalKey(key, "gaugeVerticalX"); xBit >= 0) {
+                if (ValidGaugeVerticalPlace(value)) settings.gaugeVerticalBoxes[static_cast<size_t>(xBit)].x = value;
+            }
+            else if (const int yBit = GaugeVerticalKey(key, "gaugeVerticalY"); yBit >= 0) {
+                if (ValidGaugeVerticalPlace(value)) settings.gaugeVerticalBoxes[static_cast<size_t>(yBit)].y = value;
+            }
             else if (key == "metamobSync" && (value == 0 || value == 1)) settings.metamobSync = value != 0;
             else if (key == "monsterGlowMode" && ValidMonsterGlowMode(value)) { settings.monsterGlowMode = value; monsterGlowModeRead = true; }
             else if (key == "monsterUiGlow" && !monsterGlowModeRead && (value == 0 || value == 1)) settings.monsterGlowMode = value;
@@ -191,6 +215,9 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     if (!dimensionChoices && settings.coordsWorldChatMode == 2) settings.coordsWorldChatMode = 1;
     // A place needs both coordinates; one alone means the chosen corner.
     if (!ValidPerfOverlayPlace(settings.perfOverlayX, settings.perfOverlayY)) settings.perfOverlayX = settings.perfOverlayY = -1;
+    // A vertical gauge's place needs both coordinates too; one alone: its place at the horizontal.
+    for (auto& box : settings.gaugeVerticalBoxes)
+        if ((box.x < 0) != (box.y < 0)) box.x = box.y = -1;
     // 1.16.x and 1.17.0 sized the overlay alike on both axes (perfOverlayScale,
     // still written for them): an axis this file does not hold, or holds out of
     // 50..300, takes that size when the file holds a valid one, 100 otherwise.
@@ -203,6 +230,13 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
     // revisions keeps them only with that box ticked, so that no overlay
     // appears by itself after the update (both were ticked by default).
     if (!perfOverlayPartsRead && !settings.perfOverlay) settings.perfOverlayGpu = settings.perfOverlayDisk = false;
+    // « Couleur du curseur »: the 1.18.1 choice when the file holds a valid
+    // one. Otherwise (written by 1.17.x or 1.18.0, or by one of them since:
+    // they drop customCursorPalette) the colour they saved: « Or », « Émeraude »
+    // and « Argent » as they were, the game theme's colour as « Défaut », which
+    // follows it too. Neither: « Défaut ».
+    if (cursorPalette >= 0) settings.customCursorColor = cursorPalette;
+    else if (legacyCursorColor >= 0) settings.customCursorColor = FromLegacyCursorColor(legacyCursorColor);
     return settings;
 }
 std::optional<bool> Settings::ReadMetamobSync(const std::filesystem::path& path) {
@@ -234,6 +268,10 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
     if (!ValidCustomCursorColor(customCursorColor) || !ValidCustomCursorSize(customCursorSize))
         throw std::runtime_error("Invalid cursor choice");
     if (!ValidGaugeVertical(gaugeVertical)) throw std::runtime_error("Invalid vertical gauges");
+    for (size_t bit = 0; bit < gaugeVerticalBoxes.size(); ++bit)
+        if (!ValidGaugeVerticalBox(gaugeVerticalBoxes[bit]) ||
+            (!(gaugeVerticalBoxes[bit] == GaugeVerticalBox{}) && !((1 << bit) & GaugeVerticalBits)))
+            throw std::runtime_error("Invalid vertical gauge length or place");
     static std::atomic_uint64_t nextSave{0};
     auto temporary = path;
     temporary += L".tmp-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(++nextSave);
@@ -301,13 +339,25 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
         file << "\nsoulButton=" << (soulButton ? 1 : 0) << "\ntreasureButton=" << (treasureButton ? 1 : 0)
              << "\nnotebookButton=" << (notebookButton ? 1 : 0);
         // 1.17.0 « Curseur »: the mod's cursors, their colour and their size. A
-        // file without them (before 1.17.0) keeps the Windows cursor.
-        file << "\ncustomCursor=" << (customCursor ? 1 : 0) << "\ncustomCursorColor=" << customCursorColor
-             << "\ncustomCursorSize=" << customCursorSize;
+        // file without them (before 1.17.0) keeps the Windows cursor. The colour
+        // twice: as 1.17.x and 1.18.0 know it (0..3, which they read, a theme of
+        // its own as the game theme's colour; they ignore any other value), then
+        // the choice of 1.18.1 (customCursorPalette), which Read prefers.
+        file << "\ncustomCursor=" << (customCursor ? 1 : 0) << "\ncustomCursorColor=" << LegacyCursorColor(customCursorColor)
+             << "\ncustomCursorSize=" << customCursorSize << "\ncustomCursorPalette=" << customCursorColor;
         // 1.18.0: the vertical gauges, their fqd+GaugesType bits in decimal (their
         // menu row, gaugeVerticalMenu, is an ExtraFlags line). A file without it
         // (before 1.18.0) keeps every gauge horizontal.
         file << "\ngaugeVertical=" << gaugeVertical;
+        // 1.18.1: each vertical gauge's length and place chosen with the mouse,
+        // its fqd+GaugesType in the key, only those chosen. A file without them
+        // keeps each gauge as long as it is wide, at its place at the horizontal.
+        for (size_t bit = 0; bit < gaugeVerticalBoxes.size(); ++bit) {
+            const auto& box = gaugeVerticalBoxes[bit];
+            const int type = 1 << bit;
+            if (box.length != 0) file << "\ngaugeVerticalLength" << type << '=' << box.length;
+            if (box.x >= 0) file << "\ngaugeVerticalX" << type << '=' << box.x << "\ngaugeVerticalY" << type << '=' << box.y;
+        }
         if (withMetamobSync) file << "\nmetamobSync=" << (metamobSync ? 1 : 0);
         file << "\nsoulPanelX=" << soulPanelX << "\nsoulPanelY=" << soulPanelY << '\n';
         for (int item : resourceMapItems) file << "resourceMapItem=" << item << '\n';

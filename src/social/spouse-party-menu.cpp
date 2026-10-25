@@ -2,18 +2,20 @@
 #include "core/module.hpp"
 #include <cstdlib>
 #include <memory>
+#include <tuple>
 
 namespace {
 using namespace managed;
 constexpr const char* MakerSpace = "Core.UILogic.Components.ContextMenu.ContextMenuFactory";
 struct Menu {
     Ref menu, maker, social, party, bus, cached, compositor, spouse, member, item, callback;
+    std::string name; // The spouse's character name: the only identity the game keeps.
     int64_t playerId = 0;
     bool online = false, armed = false, attached = false;
     uint64_t created = 0;
 };
 std::unique_ptr<Menu> owned;
-Klass partyMaker{}, socialClass{}, partyClass{}, spouseClass{}, memberClass{};
+Klass partyMaker{}, socialClass{}, partyClass{}, spouseClass{}, memberClass{}, companionClass{};
 Method append{}, getSpouse{}, getMembers{}, memberId{}, joinSpouse{};
 Method playerCtor{};
 Klass characterClass{}, mapClass{}, mapInfoClass{}, subareaClass{};
@@ -31,24 +33,38 @@ void MenuState(const char* stage, Obj maker) {
     previous = value; next = now + 5000;
     Log("SPOUSE_PARTY_MENU_STATE " + value);
 }
-bool Available() {
-    return installed && module && module->ready && module->servicesReady &&
-        !module->stopped && !module->stopRequested && module->settings.spouseTeleport && !module->InCombat();
+// Null when usable; otherwise the reason, so a log tells combat from a disabled preference.
+const char* Unavailable() {
+    if (!installed || !module || !module->ready || !module->servicesReady || module->stopped || module->stopRequested) return "inactive";
+    if (!module->settings.spouseTeleport) return "disabled-in-settings";
+    return module->InCombat() ? "combat" : nullptr;
 }
+bool Available() { return !Unavailable(); }
 int Count(Obj list) {
     if (!list) return 0;
     int n = api.Value<int>(api.Call(list, "get_Count"));
     if (n < 0 || n > 128) throw std::runtime_error("Spouse party menu list bounds");
     return n;
 }
-Obj Member(Obj party, int64_t id) {
+// 3.7.12.12 builds the spouse (io) in fvg.bhft from its message: name, look,
+// online flag and map, but never writes the Int64 io.dcyt (it stays 0). The game
+// itself invites the spouse to a group by this name (SpouseUI.OnButtonGroup).
+std::string SpouseName(Obj spouse) { return api.String(api.Field(spouse, "dcys")); }
+std::string MemberName(Obj member) { return api.String(api.Field(member, "ddkt")); }
+int64_t MemberId(Obj member) { return api.Value<int64_t>(api.Invoke(memberId, member)); }
+// The single accepted party member (exact lg: not a companion, not an invited guest)
+// carrying the spouse's name; character names are unique, two matches fail closed.
+Obj SpouseMember(Obj party, const std::string& name, int& matches) {
+    matches = 0;
+    Obj found = nullptr;
+    if (name.empty()) return nullptr;
     Ref members(api.Invoke(getMembers, party));
     for (int i = 0, n = Count(members.get()); i < n; ++i) {
         Ref member(api.Call(members.get(), "get_Item", {&i}));
-        if (Is(member.get(), memberClass) && api.Value<int64_t>(api.Invoke(memberId, member.get())) == id &&
-            *static_cast<bool*>(api.FieldAddress(member.get(), "ddku"))) return member.get();
+        if (Is(member.get(), memberClass) && *static_cast<bool*>(api.FieldAddress(member.get(), "ddku")) &&
+            MemberName(member.get()) == name) { ++matches; found = member.get(); }
     }
-    return nullptr;
+    return matches == 1 ? found : nullptr;
 }
 bool Fresh(const Menu& m) {
     if (!Available() || module->cached.get() != m.cached.get() || module->compositor.get() != m.compositor.get() ||
@@ -56,10 +72,11 @@ bool Fresh(const Menu& m) {
         module->FindService("fmz") != m.bus.get() ||
         *static_cast<int64_t*>(api.FieldAddress(m.maker.get(), "m_playerId")) != m.playerId) return false;
     Ref spouse(api.Invoke(getSpouse, m.social.get()));
-    return spouse.get() == m.spouse.get() && Is(spouse.get(), spouseClass) &&
-        *static_cast<int64_t*>(api.FieldAddress(spouse.get(), "dcyt")) == m.playerId &&
-        *static_cast<bool*>(api.FieldAddress(spouse.get(), "dcyy")) == m.online &&
-        Member(m.party.get(), m.playerId) == m.member.get();
+    if (spouse.get() != m.spouse.get() || !Is(spouse.get(), spouseClass) || SpouseName(spouse.get()) != m.name ||
+        *static_cast<bool*>(api.FieldAddress(spouse.get(), "dcyy")) != m.online) return false;
+    int matches = 0;
+    Ref member(SpouseMember(m.party.get(), m.name, matches));
+    return member.get() && member.get() == m.member.get() && MemberId(member.get()) == m.playerId;
 }
 int Index(const Menu& m) {
     Ref rows(api.Call(m.menu.get(), "get_menuItems"));
@@ -103,7 +120,7 @@ std::string DistanceCaption(const Menu& m) {
 Obj CreateHook(Obj maker, Method method) {
     RestoreSpousePartyMenu();
     Obj result = originalCreate(maker, method);
-    if (!Available()) { MenuState("unavailable-or-combat", maker); return result; }
+    if (auto why = Unavailable()) { MenuState(why, maker); return result; }
     if (!result || !Is(maker, partyMaker)) { MenuState("other-menu", maker); return result; }
     try {
         auto next = std::make_unique<Menu>();
@@ -114,11 +131,16 @@ Obj CreateHook(Obj maker, Method method) {
         if (!Is(next->social.get(), socialClass) || !Is(next->party.get(), partyClass) || !next->bus.get()) { MenuState("services-unavailable", maker); return result; }
         next->playerId = *static_cast<int64_t*>(api.FieldAddress(maker, "m_playerId"));
         next->spouse.reset(api.Invoke(getSpouse, next->social.get()));
-        if (!Is(next->spouse.get(), spouseClass) || next->playerId <= 0 ||
-            *static_cast<int64_t*>(api.FieldAddress(next->spouse.get(), "dcyt")) != next->playerId) { MenuState(next->spouse.get() ? "spouse-id-or-type-mismatch" : "spouse-data-missing", maker); return result; }
+        if (!Is(next->spouse.get(), spouseClass)) { MenuState(next->spouse.get() ? "spouse-type" : "spouse-data-missing", maker); return result; }
+        next->name = SpouseName(next->spouse.get());
+        if (next->name.empty()) { MenuState("spouse-name-unavailable", maker); return result; }
+        int matches = 0;
+        next->member.reset(SpouseMember(next->party.get(), next->name, matches));
+        if (!next->member.get()) { MenuState(matches > 1 ? "spouse-name-ambiguous" : "spouse-not-in-accepted-party", maker); return result; }
+        // The clicked slot is the spouse only when its native target id is that member's id.
+        if (next->playerId <= 0 || MemberId(next->member.get()) != next->playerId) { MenuState("other-member", maker); return result; }
         next->online = *static_cast<bool*>(api.FieldAddress(next->spouse.get(), "dcyy"));
-        next->member.reset(Member(next->party.get(), next->playerId));
-        if (!next->member.get() || !Fresh(*next)) { MenuState("party-member-or-session-mismatch", maker); return result; }
+        if (!Fresh(*next)) { MenuState("party-member-or-session-mismatch", maker); return result; }
         const auto distance = DistanceCaption(*next);
         Ref text(api.string_new(("Se téléporter au conjoint — " + distance).c_str())), empty(api.string_new(""));
         Ref help(api.string_new("Distance en cases de carte d'après la dernière position connue, hors détours, actualisée à l'ouverture du menu. La portée et les restrictions de téléportation restent vérifiées par Dofus."));
@@ -149,18 +171,21 @@ bool ReadPartySpouse(managed::Obj member, std::string& distance, bool& online, c
     if (!installed || !module || !module->ready || !module->servicesReady || module->stopped || module->stopRequested)
         return reject("inactive");
     if (!module->settings.spouseTeleport) return reject("disabled-in-settings");
-    if (!Is(member, memberClass)) return reject(member ? "member-type" : "member-missing");
+    if (!Is(member, memberClass)) return reject(Is(member, companionClass) ? "companion" : member ? "member-type" : "member-missing");
     Menu current;
     current.social.reset(module->FindService("foi")); current.party.reset(module->FindService("fne"));
     if (!Is(current.social.get(), socialClass)) return reject("social-service");
     if (!Is(current.party.get(), partyClass)) return reject("party-service");
     current.spouse.reset(api.Invoke(getSpouse, current.social.get()));
     if (!Is(current.spouse.get(), spouseClass)) return reject(current.spouse.get() ? "spouse-type" : "spouse-data-missing");
-    current.playerId = *static_cast<int64_t*>(api.FieldAddress(current.spouse.get(), "dcyt"));
+    current.name = SpouseName(current.spouse.get());
+    if (current.name.empty()) return reject("spouse-name-unavailable");
+    int matches = 0;
+    Ref currentMember(SpouseMember(current.party.get(), current.name, matches));
+    if (!currentMember.get()) return reject(matches > 1 ? "spouse-name-ambiguous" : "spouse-not-in-accepted-party");
+    if (currentMember.get() != member) return reject(MemberName(member) == current.name ? "spouse-wrapper-mismatch" : "other-member");
+    current.playerId = MemberId(member);
     if (current.playerId <= 0) return reject("spouse-id-unavailable");
-    Ref currentMember(Member(current.party.get(), current.playerId));
-    if (!currentMember.get()) return reject("spouse-not-in-accepted-party");
-    if (currentMember.get() != member) return reject(api.Value<int64_t>(api.Invoke(memberId, member)) == current.playerId ? "spouse-wrapper-mismatch" : "other-member");
     online = current.online = *static_cast<bool*>(api.FieldAddress(current.spouse.get(), "dcyy"));
     distance = DistanceCaption(current);
     if (reason) *reason = "ready";
@@ -224,7 +249,14 @@ void InstallSpousePartyMenu() {
     partyMaker = api.Class("Core.dll", MakerSpace, "PartyMemberMenuMaker");
     socialClass = api.Class("Core.dll", "", "fvh"); partyClass = api.Class("Core.dll", "", "fti");
     spouseClass = api.Class("Core.dll", "", "io"); memberClass = api.Class("Core.dll", "", "lg");
+    companionClass = api.Class("Core.dll", "", "lf"); // lf : lg, the party's companion entities
     auto player = api.Class("Core.dll", MakerSpace, "PlayerMenuMaker");
+    // Checked offsets of the pinned 3.7.12.12 layout (contracts-new.json).
+    for (auto [type, name, offset] : {std::tuple{spouseClass, "dcys", size_t(0x10)}, {spouseClass, "dcyy", size_t(0x31)},
+            {spouseClass, "dcyz", size_t(0x38)}, {memberClass, "ddkt", size_t(0x18)}, {memberClass, "ddku", size_t(0x20)},
+            {player, "m_playerId", size_t(0xB8)}})
+        if (api.field_get_offset(api.FieldInfo(type, name)) != offset)
+            throw std::runtime_error(std::string("Spouse party field layout: ") + name);
     getSpouse = api.FindVerified(socialClass, "bfou", 0, 0x752E20);
     getMembers = api.FindVerified(partyClass, "bfmh", 0, 0x752E20);
     memberId = api.FindVerified(memberClass, "oab", 0, 0x68D2B0);

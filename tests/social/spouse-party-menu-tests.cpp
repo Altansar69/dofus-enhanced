@@ -145,9 +145,10 @@ void Initialize() {
     api.gchandle_free = [](GCHandle id) { handles.erase(id); };
     api.method_get_param = [](Method, uint32_t)->const void* { return api.Class("", "", "Struct"); };
     api.class_from_type = [](const void* c)->Klass { return const_cast<void*>(c); };
+    api.field_get_offset = [](void* field)->size_t { if (!field) throw std::runtime_error("Unknown field"); return *static_cast<size_t*>(field); };
 }
 struct Fixture {
-    Module owner{"offline"}; Obj maker{}, spouse{}, member{}, members{};
+    Module owner{"offline"}; Obj maker{}, spouse{}, member{}, self{}, members{};
     Fixture() {
         module = &owner; owner.ready = owner.servicesReady = true;
         owner.cached.reset(Make("Cached")); owner.compositor.reset(Make("Compositor"));
@@ -158,11 +159,17 @@ struct Fixture {
         auto location = Make("tk"); Get(location).numbers["m_mapId"] = 100;
         Get(services["fng"]).fields["location"] = location;
         MapInfo(100, -5, -7); MapInfo(200, 3, -3);
-        spouse = Make("io"); Get(spouse).numbers = {{"dcyt", 1234567890123}, {"dcyy", 1}, {"dcyz", 200}};
+        // As built by the game's spouse handler (fvg.bhft, 3.7.12.12): name (dcys),
+        // online flag and map; the Int64 dcyt is never written and stays 0.
+        spouse = Make("io"); Get(spouse).numbers = {{"dcyt", 0}, {"dcyy", 1}, {"dcyz", 200}};
+        Get(spouse).fields["dcys"] = api.string_new("Kaelia");
         Get(services["foi"]).fields["spouse"] = spouse;
         member = Make("lg"); Get(member).numbers = {{"id", 1234567890123}, {"ddku", 1}};
-        members = List({member}); Get(services["fne"]).fields["members"] = members;
+        Get(member).fields["ddkt"] = api.string_new("Kaelia");
+        self = Make("lg"); Get(self).numbers = {{"id", 4242}, {"ddku", 1}}; Get(self).fields["ddkt"] = api.string_new("Joueur");
+        members = List({self, member}); Get(services["fne"]).fields["members"] = members;
         maker = Make("PartyMemberMenuMaker"); Get(maker).numbers["m_playerId"] = 1234567890123;
+        Get(maker).fields["m_playerName"] = api.string_new("Kaelia");
         Get(maker).fields = {{"m_socialService", services["foi"]}, {"m_partyService", services["fne"]}, {"m_bus", services["fmz"]}};
     }
     void Open() { Check(createHook(maker, nullptr) == lastMenu, "Preserve native result"); }
@@ -170,11 +177,16 @@ struct Fixture {
     ~Fixture() { detachFails = tooltipDetachFails = false; RestoreSpousePartyMenu(); RestoreSpousePartyWidget(); module = nullptr; }
 };
 struct WidgetFixture : Fixture {
-    Obj hub{}, display{}, slot{}, root{}, portrait{}, binding{}, button{};
+    Obj hub{}, display{}, slot{}, ownSlot{}, companionSlot{}, root{}, portrait{}, binding{}, button{};
     WidgetFixture() {
         hub = services["fqv"] = Make("ghu"); display = Make("PartyDisplayUi"); Get(hub).fields["dytb"] = display;
         slot = Make("PartyMember"); Get(slot).fields["partyMemberWrapper"] = member;
-        Get(display).fields["m_partyMemberSlots"] = List({slot});
+        // The owner's report: 3 filled slots, the player, the spouse and a companion
+        // (lf, the game's subclass of lg for party entities) shown last.
+        ownSlot = Make("PartyMember"); Get(ownSlot).fields["partyMemberWrapper"] = self;
+        auto companion = Make("lf"); Get(companion).numbers = {{"id", 77}, {"ddku", 1}}; Get(companion).fields["ddkt"] = api.string_new("Kaelia");
+        companionSlot = Make("PartyMember"); Get(companionSlot).fields["partyMemberWrapper"] = companion;
+        Get(display).fields["m_partyMemberSlots"] = List({ownSlot, slot, companionSlot});
         root = Make("Root"); Get(root).fields["panel"] = root;
         portrait = Make("Portrait"); Get(portrait).fields = {{"parent", root}, {"panel", root}};
         Get(portrait).items = {Make("NativeHealth"), Make("NativeActions"), Make("NativeCrown")};
@@ -187,6 +199,9 @@ struct WidgetFixture : Fixture {
 };
 void WidgetCases() {
     InstallSpousePartyWidget();
+    { WidgetFixture f; f.Tick();
+      Check(f.button && std::find(logs.begin(), logs.end(), "SPOUSE_PARTY_WIDGET_STATE ready") != logs.end(),
+            "Owner's 1.18.0 party (player, spouse, companion; game leaves dcyt at 0) shows the spouse button and outline"); }
     { WidgetFixture f; f.owner.settings.spouseTeleport = false; f.Tick();
       Check(!f.button && Get(f.portrait).items.size() == 3 && !teleports, "Disabled spouse feature creates no portrait controls");
       std::string distance; bool online = true; const char* reason = nullptr;
@@ -248,11 +263,23 @@ void WidgetCases() {
       Check(!ReadPartySpouse(f.member, distance, online, &reason) && std::string(reason) == "spouse-data-missing", "Missing social state is reported without player identifiers");
       Get(services["foi"]).fields["spouse"] = f.spouse; Get(f.members).items.clear();
       Check(!ReadPartySpouse(f.member, distance, online, &reason) && std::string(reason) == "spouse-not-in-accepted-party", "Missing party membership has a distinct diagnostic"); }
+    { WidgetFixture f; std::string distance; bool online; const char* reason = nullptr;
+      auto companion = Get(f.companionSlot).fields["partyMemberWrapper"];
+      Check(!ReadPartySpouse(companion, distance, online, &reason) && std::string(reason) == "companion", "A companion carrying the spouse's name is never the spouse");
+      Check(!ReadPartySpouse(f.self, distance, online, &reason) && std::string(reason) == "other-member", "The player's own slot is another member");
+      Get(f.spouse).fields["dcys"] = api.string_new("");
+      Check(!ReadPartySpouse(f.member, distance, online, &reason) && std::string(reason) == "spouse-name-unavailable", "Unnamed spouse data fails closed");
+      Get(f.spouse).fields["dcys"] = api.string_new("Kaelia"); Get(f.member).numbers["ddku"] = 0;
+      Check(!ReadPartySpouse(f.member, distance, online, &reason) && std::string(reason) == "spouse-not-in-accepted-party", "Invited guest with the spouse's name is not matched"); }
+    { WidgetFixture f; auto twin = Make("lg"); Get(twin).numbers = {{"id", 99}, {"ddku", 1}}; Get(twin).fields["ddkt"] = api.string_new("Kaelia");
+      Get(f.members).items.push_back(twin); f.Tick(); std::string distance; bool online; const char* reason = nullptr;
+      Check(!f.button && !ReadPartySpouse(f.member, distance, online, &reason) && std::string(reason) == "spouse-name-ambiguous", "Two members with the spouse's name fail closed"); }
+    { WidgetFixture f; Get(f.spouse).fields["dcys"] = api.string_new("kaelia"); f.Tick(); Check(!f.button, "Name match is exact, as the game's own"); }
     { WidgetFixture f; f.Show(); auto old = f.button; detachFails = true; RestoreSpousePartyWidget();
       Check(SpousePartyWidgetCleanupPending(), "Failed removal retains GC roots for retry"); HandleSpousePartyWidgetToggle(old); Check(!teleports, "Cleanup-pending button disarmed");
       detachFails = false; RestoreSpousePartyWidget(); Check(!SpousePartyWidgetCleanupPending() && Get(f.portrait).items.size() == 3, "Retried removal succeeds without deleting native children"); }
     for (int reason = 0; reason < 4; ++reason) { WidgetFixture f;
-      if (reason == 0) Get(f.spouse).numbers["dcyt"]++;
+      if (reason == 0) Get(f.spouse).fields["dcys"] = api.string_new("Autre");
       if (reason == 1) Get(f.slot).numbers["m_isWaitingMember"] = 1;
       if (reason == 2) Get(f.display).numbers["isArenaParty"] = 1;
       if (reason == 3) Get(f.root).fields["panel"] = nullptr;
@@ -269,6 +296,15 @@ Obj Api::Call(Obj self, const char* name, std::initializer_list<void*> args) con
 Obj Api::New(Klass c, std::initializer_list<void*> args) const { auto o = fake::Make(*static_cast<std::string*>(c)); if (*static_cast<std::string*>(c) == "Length") std::memcpy(o, *args.begin(), sizeof(float)); return o; }
 Obj Api::Field(Obj self, const char* name) const { return fake::Get(self).fields[name]; }
 void* Api::FieldAddress(Obj self, const char* name) const { return &fake::Get(self).numbers[name]; }
+std::string Api::String(Obj self) const { return self ? fake::Get(self).text : std::string(); }
+// Field layout of the pinned 3.7.12.12 metadata (contracts-new.json); unknown fields fail.
+void* Api::FieldInfo(Klass c, const char* name) const {
+    static const std::unordered_map<std::string, size_t> layout{
+        {"io.dcys", 0x10}, {"io.dcyy", 0x31}, {"io.dcyz", 0x38}, {"lg.ddkt", 0x18}, {"lg.ddku", 0x20},
+        {"PlayerMenuMaker.m_playerId", 0xB8}};
+    auto found = layout.find(*static_cast<std::string*>(c) + "." + name);
+    return found == layout.end() ? nullptr : const_cast<size_t*>(&found->second);
+}
 }
 Module* module = nullptr;
 Module::Module(std::filesystem::path p) : folder(p) {}
@@ -305,17 +341,22 @@ int main() { using namespace fake; try {
     { Fixture f; Get(f.spouse).numbers["dcyy"] = 0; f.Open(); Check(Get(Item()).text.ends_with("hors ligne"), "Offline status must not present an old numeric distance"); }
     { Fixture f; Get(f.maker).type = "PlayerMenuMaker"; f.Open(); Check(Rows() == 2, "Other player/chat menus untouched"); }
     { Fixture f; Get(f.maker).numbers["m_playerId"]++; f.Open(); Check(Rows() == 2, "Another group member cannot get spouse action"); }
+    { Fixture f; Get(f.maker).numbers["m_playerId"] = 4242; f.Open(); Check(Rows() == 2, "Right-clicking the player's own party slot gets no spouse action"); }
+    { Fixture f; Get(f.spouse).fields["dcys"] = api.string_new(""); f.Open(); Check(Rows() == 2, "Unnamed spouse data gets no action"); }
+    { Fixture f; auto twin = Make("lg"); Get(twin).numbers = {{"id", 99}, {"ddku", 1}}; Get(twin).fields["ddkt"] = api.string_new("Kaelia");
+      Get(f.members).items.push_back(twin); f.Open(); Check(Rows() == 2, "Ambiguous spouse name fails closed"); }
+    { Fixture f; f.Open(); Get(f.member).fields["ddkt"] = api.string_new("Renomme"); f.Click(); Check(!teleports, "Renamed member after opening rejected"); }
     { Fixture f; Get(services["foi"]).fields["spouse"] = nullptr; f.Open(); Check(Rows() == 2, "Unmarried player gets no action"); }
     { Fixture f; Get(f.member).numbers["ddku"] = 0; f.Open(); Check(Rows() == 2, "Invited guest is not an actual group member"); }
     { Fixture f; Get(f.members).items.clear(); f.Open(); Check(Rows() == 2, "Out-of-group spouse gets no party action"); }
     { Fixture f; combat = true; f.Open(); Check(Rows() == 2, "No teleport entry during combat"); }
     { Fixture f; Get(f.spouse).numbers["dcyy"] = 0; f.Open(); Check(Rows() == 3 && Get(Item()).numbers["disabled"], "Offline spouse has disabled entry"); f.Click(); Check(!teleports, "Offline row never sends action"); }
-    { Fixture f; Get(f.spouse).fields["dcys"] = Make("NewName"); f.Open(); f.Click(); Check(teleports == 1, "Spouse identification is independent of name"); }
+    { Fixture f; Get(f.spouse).numbers["dcyt"] = 999; f.Open(); f.Click(); Check(teleports == 1, "Spouse identification never depends on the unwritten Int64 dcyt"); }
     { Fixture f; f.Open(); Get(f.spouse).numbers["dcyy"] = 0; f.Click(); Check(!teleports, "Disconnect after opening rejected"); TickSpousePartyMenu(); Check(Rows() == 2, "Stale row removed"); }
     { Fixture f; f.Open(); Get(f.members).items.clear(); f.Click(); Check(!teleports, "Leaving party after opening rejected"); }
     { Fixture f; f.Open(); Get(f.member).numbers["ddku"] = 0; f.Click(); Check(!teleports, "Member becoming a guest rejected"); }
-    { Fixture f; f.Open(); auto replacement = Make("lg"); Get(replacement).numbers = Get(f.member).numbers; Get(f.members).items = {replacement}; f.Click(); Check(!teleports, "Leave/rejoin same ID invalidates old row"); }
-    { Fixture f; f.Open(); Get(f.spouse).numbers["dcyt"]++; f.Click(); Check(!teleports, "Changed marriage invalidates action"); }
+    { Fixture f; f.Open(); auto replacement = Make("lg"); Get(replacement).numbers = Get(f.member).numbers; Get(replacement).fields = Get(f.member).fields; Get(f.members).items = {replacement}; f.Click(); Check(!teleports, "Leave/rejoin same ID invalidates old row"); }
+    { Fixture f; f.Open(); Get(f.spouse).fields["dcys"] = api.string_new("Autre"); f.Click(); Check(!teleports, "Changed marriage invalidates action"); }
     { Fixture f; f.Open(); Get(f.maker).numbers["m_playerId"]++; f.Click(); Check(!teleports, "Rebound menu target invalidates action"); }
     { Fixture f; f.Open(); combat = true; f.Click(); Check(!teleports, "Fight beginning before click invalidates action"); }
     for (auto name : {"foi", "fne", "fmz"}) { Fixture f; f.Open(); services[name] = Make("Replacement"); f.Click(); Check(!teleports, "Replaced service invalidates action"); }

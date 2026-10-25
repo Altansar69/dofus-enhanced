@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -41,7 +42,11 @@ struct Settings {
     // Curseur (1.17.0) : les curseurs du mod à la place de la souris de Windows,
     // désactivés par défaut, leur couleur et leur taille.
     bool customCursor = false; // Curseur : curseurs Dofus du mod à la place de la souris de Windows
-    int customCursorColor = 0; // 0 Or, 1 couleur du thème du jeu, 2 Émeraude, 3 Argent
+    // Couleur (1.18.1) : 0 Défaut (le thème actuel du jeu, suivi), 1 à 11 un
+    // thème du jeu (sa valeur ThemeEnum), 12 Or, 13 Émeraude, 14 Argent. Le
+    // fichier la garde sous customCursorPalette, et sous customCursorColor la
+    // valeur de 1.17.x et 1.18.0 (0 Or, 1 thème du jeu, 2 Émeraude, 3 Argent).
+    int customCursorColor = 0;
     int customCursorSize = 0; // 0 comme la souris de Windows, 1 grande (×1,5), 2 très grande (×2)
     // Jauges (1.18.0) : les jauges affichées à la verticale (case « Afficher à
     // la verticale » du menu … de chaque jauge), un bit fqd+GaugesType chacune
@@ -49,6 +54,17 @@ struct Settings {
     // d'ExtraToggles : décochée, toutes les jauges à l'horizontale, leurs choix gardés.
     int gaugeVertical = 0;
     bool gaugeVerticalMenu = true; // Jauges : la case « Afficher à la verticale » dans le menu … des jauges
+    // Jauges (1.18.1) : la longueur et la place de chaque jauge à la verticale
+    // choisies à la souris, une par bit de fqd+GaugesType (à l'index du bit).
+    // length : en pixels de l'interface, 0 pour sa largeur à l'horizontale ;
+    // x et y : son coin haut gauche en dix-millièmes de la largeur et de la
+    // hauteur de l'écran, -1 et -1 pour la place qu'elle a à l'horizontale.
+    // Jamais dans la disposition du jeu, qui garde sa taille et sa place à l'horizontale.
+    struct GaugeVerticalBox {
+        int length = 0, x = -1, y = -1;
+        bool operator==(const GaugeVerticalBox&) const = default;
+    };
+    std::array<GaugeVerticalBox, 26> gaugeVerticalBoxes{};
     bool metamobSync = false; // Metamob : +1 dans la quête Metamob après chaque capture d'archimonstre ou de boss (la clé n'est jamais ici)
     std::vector<int> resourceMapItems{};
     bool githubUpdates = true;
@@ -162,13 +178,32 @@ struct Settings {
         return ValidPerfOverlayPlace(x) && ValidPerfOverlayPlace(y) && (x < 0) == (y < 0);
     }
     static bool ValidPerfOverlayScale(int value) { return value >= 50 && value <= 300; }
-    static bool ValidCustomCursorColor(int value) { return value >= 0 && value <= 3; }
+    // « Couleur du curseur » (customCursorColor since 1.18.1).
+    static constexpr int CursorDefault = 0, CursorFirstTheme = 1, CursorLastTheme = 11, CursorGold = 12, CursorEmerald = 13,
+        CursorSilver = 14;
+    static bool ValidCustomCursorColor(int value) { return value >= CursorDefault && value <= CursorSilver; }
+    // The 1.17.x and 1.18.0 value (customCursorColor= in the file): 0 Or, 1 the
+    // game theme's colour, 2 Émeraude, 3 Argent. A theme of its own is the
+    // game theme's colour there.
+    static constexpr bool ValidLegacyCursorColor(int value) { return value >= 0 && value <= 3; }
+    static constexpr int LegacyCursorColor(int value) {
+        return value == CursorGold ? 0 : value == CursorEmerald ? 2 : value == CursorSilver ? 3 : 1;
+    }
+    static constexpr int FromLegacyCursorColor(int legacy) {
+        return legacy == 0 ? CursorGold : legacy == 2 ? CursorEmerald : legacy == 3 ? CursorSilver : CursorDefault;
+    }
     static bool ValidCustomCursorSize(int value) { return value >= 0 && value <= 2; }
     // fqd+GaugesType's gauges: the character's experience (1), the guild's (2),
     // the honour points (8), the pods (0x10), the energy points (0x20) and the
     // twenty jobs' experience (0x40 to 0x2000000); 4 is none.
     static constexpr int GaugeVerticalBits = 0x3FFFFFB;
     static bool ValidGaugeVertical(int value) { return value >= 0 && (value & ~GaugeVerticalBits) == 0; }
+    static bool ValidGaugeVerticalLength(int value) { return value == 0 || (value >= 160 && value <= 16384); }
+    static bool ValidGaugeVerticalPlace(int value) { return value >= -1 && value <= 10000; }
+    static bool ValidGaugeVerticalBox(const GaugeVerticalBox& box) {
+        return ValidGaugeVerticalLength(box.length) && ValidGaugeVerticalPlace(box.x) && ValidGaugeVerticalPlace(box.y) &&
+            (box.x < 0) == (box.y < 0);
+    }
     static Settings Read(const std::filesystem::path& path, bool* autoLoadSpecified = nullptr);
     // metamobSync as the shared file holds it now; nullopt when the file is
     // unreadable or was last written by a revision that does not know it.

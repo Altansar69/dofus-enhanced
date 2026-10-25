@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.18.0**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.18.1**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -310,14 +310,21 @@ mod la remplace plutôt que celle de Windows. En combat, l’icône du sort,
 l’interdiction et les PA/PM que le jeu affiche à côté de la souris restent
 les siens.
 
-**Couleur du curseur** : « Or » (par défaut) est doré, avec une émeraude sur
-la flèche et sur le gant ; « Émeraude » est vert, avec un ornement doré ;
-« Argent » est gris clair, avec une émeraude ; « Couleur du thème du jeu »
-reprend la couleur d’accent du thème choisi dans les options du jeu
-(jaune-vert avec le thème Standard), éclaircie si elle est trop sombre pour
-rester visible, avec un ornement doré si elle est verte et une émeraude sinon.
-Elle suit le thème en une demi-seconde quand tu en changes ; sans couleurs de
-thème lisibles, celles du thème Standard sont utilisées.
+**Couleur du curseur** : « Défaut » (par défaut) reprend le thème choisi dans
+les options du jeu, dont le nom s’affiche entre parenthèses (« Défaut
+(Bonta) », par exemple), et le suit en une demi-seconde quand tu en changes ;
+sans couleurs de thème lisibles, celles du thème Standard sont utilisées.
+Viennent ensuite les onze thèmes du jeu, chacun proposé seul (Standard, Bonta,
+Brakmar, Tribute, Gold and steel, Belladone, Unicorn, Emerald mine, Sufokia,
+Pandala, Wabbit) : le curseur garde alors ses couleurs, quel que soit le thème
+de l’interface. Avec un thème, le curseur prend sa couleur d’accent (jaune-vert
+avec Standard), éclaircie si elle est trop sombre pour rester visible, sur un
+contour tiré de son fond sombre, avec un ornement doré si elle est verte et une
+émeraude sinon. Enfin les couleurs du mod : « Or » est doré, avec une émeraude
+sur la flèche et sur le gant ; « Émeraude » est vert, avec un ornement doré ;
+« Argent » est gris clair, avec une émeraude. Depuis la 1.18.1, l’ancien choix
+« Couleur du thème du jeu » devient « Défaut » ; « Or », « Émeraude » et
+« Argent » sont gardés.
 
 **Taille du curseur** : « Comme la souris de Windows » (par défaut) reprend la
 taille du pointeur de Windows et la mise à l’échelle de l’écran où se trouve le
@@ -378,28 +385,25 @@ Cochée, la jauge passe à la verticale :
 - de haut en bas : l’icône de la jauge, la barre, « NIV. » au-dessus du
   niveau (rien pour les pods, comme à l’horizontale) ou le badge Oméga d’un
   personnage Oméga, puis le bouton ⋯ ;
-- elle fait **48 pixels de large** et **garde sa longueur** : sa largeur à
-  l’horizontale, entre 160 pixels et la hauteur de l’écran moins 16. Elle suit
-  la taille enregistrée dans la disposition en cours, celle d’un combat
-  comprise, et sa longueur suit aussi un changement de résolution ou
-  d’échelle de l’interface ;
+- elle fait **48 pixels de large** ; sa longueur est d’abord sa largeur à
+  l’horizontale, entre 160 pixels et la hauteur de l’écran moins 16, et suit
+  un changement de résolution ou d’échelle de l’interface ;
 - elle **garde sa place** : son coin en haut à gauche ne bouge pas, sauf du
   nécessaire pour rester entièrement à l’écran (une jauge en bas de l’écran
   remonte d’autant) ; si le jeu l’avait décalée pour la garder entière à
   l’écran à l’horizontale (une jauge laissée à la verticale contre le bord
   droit, par exemple), elle revient là où tu l’avais laissée ;
 - elle **se déplace comme avant** (glisser, aimantation aux autres fenêtres,
-  Alt pour s’en passer, Maj pour déplacer le groupe aimanté) ; le jeu
-  enregistre sa place dans la disposition comme d’habitude ;
-- sa **taille ne se change qu’à l’horizontale** : ses bords de
-  redimensionnement disparaissent tant qu’elle est verticale, et le jeu
-  n’enregistre jamais de taille verticale. Pour l’allonger : décoche, élargis
-  la jauge, puis recoche.
+  Alt pour s’en passer, Maj pour déplacer le groupe aimanté) ;
+- sa **longueur se change en tirant son bord haut ou son bord bas**, de 160
+  pixels à la hauteur de l’écran moins 16 ; sa largeur ne change pas.
+  Depuis la 1.18.1, sa longueur et sa place à la verticale sont gardées par le
+  mod pour la prochaine fois, et jamais enregistrées dans la disposition du
+  jeu, qui garde celles de la jauge horizontale.
 
-Décochée, la jauge redevient **exactement** celle du jeu (sa taille, celle de
-la disposition en cours, ses réglages, ses bords de redimensionnement), à la
-place où tu l’as laissée, gardée entièrement à l’écran, même collée en haut ou
-à gauche de l’écran.
+Décochée, la jauge redevient **exactement** celle du jeu (ses réglages, ses
+bords de redimensionnement), à sa place et à sa taille d’avant, gardée
+entièrement à l’écran.
 
 Le choix de chaque jauge est enregistré dans les réglages du mod, pas dans la
 disposition du jeu, et vaut pour tous tes personnages. Une jauge masquée puis
@@ -764,8 +768,8 @@ cases sont décochées par défaut :
 - **Activité du disque** : le temps d’activité et le débit du disque où le jeu
   est installé, tous programmes confondus.
 
-Le GPU et le disque partagent une ligne, mesurée une fois par seconde, par
-exemple « GPU 23 % · Disque C: 4 % · 1,2 Mo/s » ; chacune de ces deux cases
+Le GPU et le disque sont mesurés une fois par seconde, par exemple
+« GPU 23 % · Disque C: 4 % (1,2 Mo/s) » ; chacune de ces deux cases
 suffit à faire apparaître le cadre, même sans les FPS et la mémoire. Une mesure
 que Windows ne fournit pas n’apparaît simplement pas. Sans les FPS, le cadre
 affiche « Mesure en cours… » jusqu’à la première mesure (environ une seconde)
@@ -778,19 +782,20 @@ défaut), il se fait glisser au clic gauche et se pose où tu veux. Quand la
 souris survole le cadre, une petite poignée de six points apparaît dans son
 coin en bas à droite, le seul sans arrondi ; elle reste visible pendant que tu
 le déplaces ou le redimensionnes et disparaît quand la souris s’en va. Le cadre
-se redimensionne comme une fenêtre : son bord droit règle sa largeur, son bord
-bas sa hauteur, et son coin en bas à droite les deux à la fois, librement. Sa
-largeur et sa hauteur vont chacune de la moitié au triple de leur taille
-normale ; son coin en haut à gauche reste en place, le bord ou le coin tiré
-suit la souris, et le cadre ne sort jamais de l’écran. Le texte garde ses
-proportions : il prend la plus grande taille qui tient dans le cadre (celle du
-côté le moins agrandi), calé en haut à gauche, sans jamais être coupé ; ses
-marges, ses coins arrondis et la poignée suivent la même taille, et le cadre
-ne rétrécit pas quand les chiffres changent. Au survol, le jeu affiche le
-curseur correspondant, comme sur ses propres fenêtres : une double flèche
-gauche-droite sur le bord droit, haut-bas sur le bord bas, en diagonale sur le
-coin en bas à droite, et le curseur de déplacement ailleurs (les curseurs du
-mod quand **Curseur Dofus** est coché) ; le curseur habituel revient dès que la
+se redimensionne comme une fenêtre, par ses quatre bords et ses quatre coins :
+un bord gauche ou droit règle sa largeur, un bord haut ou bas sa hauteur, un
+coin les deux à la fois, et le côté opposé reste en place. Sa largeur et sa
+hauteur vont chacune de la moitié au triple de leur taille normale ; le bord
+ou le coin tiré suit la souris, et le cadre ne sort jamais de l’écran. Les
+mesures se rangent selon la place : plus le cadre est large, plus elles se
+suivent sur une même ligne, séparées par « · » ; plus il est étroit ou haut,
+plus elles passent sur les lignes du dessous. Le texte garde ses proportions :
+il prend la plus grande taille qui tient dans le cadre, sans jamais être
+coupé ; ses marges, ses coins arrondis et la poignée suivent la même taille.
+Au survol, le jeu affiche le curseur correspondant, comme sur ses propres
+fenêtres : une double flèche sur les bords et les coins, dans leur sens, et le
+curseur de déplacement ailleurs (les curseurs du mod quand **Curseur Dofus**
+est coché) ; le curseur habituel revient dès que la
 souris quitte le cadre. Le coin se prend sur au moins 18 pixels de l’écran
 (davantage quand le texte est agrandi) et chaque bord sur au moins 6, sauf sur
 un tout petit cadre (une seule ligne réduite, par exemple), où ils

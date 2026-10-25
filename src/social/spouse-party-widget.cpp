@@ -204,7 +204,9 @@ void TickSpousePartyWidget() {
             Ref member(api.Field(slot.get(), "partyMemberWrapper"));
             const char* failure = nullptr;
             if (!ReadPartySpouse(member.get(), distance, online, &failure)) {
-                if (!matched && (std::string(failure) != "other-member" || std::string(reason) == "empty")) reason = failure;
+                // Another player or a companion says nothing about the spouse: never let it mask a real reason.
+                const bool bystander = std::string(failure) == "other-member" || std::string(failure) == "companion";
+                if (!matched && (!bystander || std::string(reason) == "empty")) reason = failure;
                 continue;
             }
             ++matched;

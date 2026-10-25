@@ -4,6 +4,7 @@
 #include "animations/animation-mode-labels.hpp"
 #include "glow/glow-mode-labels.hpp"
 #include "ui/native-click.hpp"
+#include "ui/game-theme.hpp"
 #include "stats/stats-window.hpp"
 #include <algorithm>
 #include <exception>
@@ -58,13 +59,13 @@ constexpr CheckRow ExtraRows[] = {
     {"« Ajouter aux positions » au clic droit sur les cartes", "Au clic droit sur une case de la grande carte ou de la mini-carte, ajoute l’entrée « Ajouter aux positions » : elle enregistre cette case (coordonnées, dimension et nom de la zone) dans les positions du carnet, même fermé, et le chat le confirme. Une case déjà enregistrée n’est pas ajoutée deux fois. Activé par défaut."},
     {"Afficher les FPS et la mémoire", "Ajoute à l’affichage des performances les images par seconde (FPS), la durée moyenne et la plus longue d’une image sur la dernière seconde, la mémoire utilisée par le jeu et sa part du processeur, mises à jour deux fois par seconde. L’affichage apparaît dès que cette case, « Charge du GPU » ou « Activité du disque » est cochée, avec seulement les mesures cochées, dans un coin de l’écran (en haut à gauche par défaut) jusqu’à ce que tu le déplaces ou le redimensionnes à la souris ; sa place et sa taille sont ensuite gardées. Son bouton dans la barre du haut le masque ou le réaffiche sans décocher ces cases. Le cadre ne capte jamais le clavier ; les menus, fenêtres de confirmation et infobulles du jeu passent au-dessus. Désactivé par défaut."},
     {"Charge du GPU", "Ajoute à l’affichage des performances la part de la carte graphique utilisée par le jeu, comme la colonne GPU du Gestionnaire des tâches : celle de son moteur le plus chargé (la 3D le plus souvent), mesurée une fois par seconde, par exemple « GPU 23 % ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Si Windows ne fournit pas cette mesure, elle n’apparaît pas. Désactivé par défaut."},
-    {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % · 1,2 Mo/s ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Pour un jeu installé sur le réseau, elle n’apparaît pas. Désactivé par défaut."},
-    {"Déplacer et redimensionner l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux. Redimensionne-le comme une fenêtre : son bord droit change sa largeur, son bord bas sa hauteur, et son coin en bas à droite, où une petite poignée de points apparaît quand la souris survole l’affichage, les deux à la fois ; sa largeur et sa hauteur vont chacune de la moitié au triple de leur taille normale, et son coin en haut à gauche reste en place. Le texte garde ses proportions et prend la plus grande taille qui tient dans le cadre, sans jamais être coupé. Au survol, le jeu affiche le curseur correspondant : une double flèche sur ces deux bords et sur son coin en bas à droite, le curseur de déplacement ailleurs (les curseurs du mod quand « Curseur Dofus » est coché). L’affichage reste entièrement à l’écran, et sa place et sa taille sont gardées, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu. Activé par défaut."},
+    {"Activité du disque", "Ajoute à l’affichage des performances l’activité du disque où le jeu est installé, comme l’onglet Performances du Gestionnaire des tâches : son temps d’activité et son débit (lectures et écritures de tous les programmes sur ce disque), mesurés une fois par seconde, par exemple « Disque C: 4 % (1,2 Mo/s) ». Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire. Pour un jeu installé sur le réseau, elle n’apparaît pas. Désactivé par défaut."},
+    {"Déplacer et redimensionner l’affichage à la souris", "Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux. Redimensionne-le comme une fenêtre, par n’importe lequel de ses quatre bords ou de ses quatre coins : un bord gauche ou droit change sa largeur, un bord haut ou bas sa hauteur, un coin les deux à la fois, et le côté opposé reste en place ; une petite poignée de points apparaît dans son coin en bas à droite quand la souris survole l’affichage. Sa largeur et sa hauteur vont chacune de la moitié au triple de leur taille normale. Les mesures se rangent selon la place : plus l’affichage est large, plus elles se suivent sur une même ligne, séparées par « · » ; plus il est étroit ou haut, plus elles passent sur les lignes du dessous. Le texte garde ses proportions et prend la plus grande taille qui tient dans le cadre, sans jamais être coupé. Au survol, le jeu affiche le curseur correspondant : une double flèche sur ses bords et ses coins, le curseur de déplacement ailleurs (les curseurs du mod quand « Curseur Dofus » est coché). L’affichage reste entièrement à l’écran, et sa place et sa taille sont gardées, même après un redémarrage ou un changement de résolution. Les clics sur l’affichage ne vont pas au jeu. Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu. Activé par défaut."},
     {"Bouton dans la barre du haut", "Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances sans décocher ses mesures ; si aucune n’est cochée, il coche « Afficher les FPS et la mémoire ». Masqué avec ce bouton, l’affichage le reste après un redémarrage, jusqu’à un nouveau clic ou une mesure cochée ici. Décochée, le bouton disparaît et seules les cases ci-dessus commandent l’affichage, qui réapparaît s’il était masqué. Activé par défaut."},
     {"Boutons d’envoi à côté des messages", "Dans les messages du carnet, deux petits boutons à droite de chaque nom : le premier envoie ce message dans le chat, sur le canal enregistré avec lui (« actuel » : le canal en cours du chat) ; le second le place dans le brouillon du chat, sans l’envoyer. Ils utilisent le message tel qu’il est enregistré. L’entrée sélectionnée et tes modifications en cours ne changent pas. Décochée, les deux boutons disparaissent et le carnet ne propose plus d’envoyer ni de préparer ses messages dans le chat ; « Bouton de copie à côté des entrées » permet encore de copier un message pour le coller toi-même dans le chat. Activé par défaut."},
     // « Jauges » (1.18.0): the master switch of the « Afficher à la verticale »
     // row the mod adds to each gauge's menu (vertical-gauges.cpp).
-    {"Affichage vertical dans le menu … des jauges", "Ajoute la case « Afficher à la verticale » au menu … (les trois petits points) de chaque jauge : expérience du personnage, expérience de guilde, points d’honneur, pods, points d’énergie et expérience de chaque métier. Cochée dans ce menu, la jauge passe à la verticale : elle se remplit de bas en haut, son niveau en dessous ; elle garde sa longueur et sa place, se déplace comme avant, et sa taille se change seulement à l’horizontale. Décochée ici, la case disparaît des menus et toutes les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé. Activé par défaut."}};
+    {"Affichage vertical dans le menu … des jauges", "Ajoute la case « Afficher à la verticale » au menu … (les trois petits points) de chaque jauge : expérience du personnage, expérience de guilde, points d’honneur, pods, points d’énergie et expérience de chaque métier. Cochée dans ce menu, la jauge passe à la verticale : elle se remplit de bas en haut, son niveau en dessous ; elle se déplace comme avant, sa longueur se change en tirant son bord haut ou bas, et le mod garde sa longueur et sa place à la verticale ; décochée, elle revient à sa place et à sa taille d’avant. Décochée ici, la case disparaît des menus et toutes les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé. Activé par défaut."}};
 // « Dimension avec les coordonnées » on the big map, the mini-map and in the
 // chat: the same three choices, each id the saved mode (Settings'
 // coordsWorld*Mode), « Oui, sauf dans le Monde des Douze » by default.
@@ -93,15 +94,35 @@ static_assert(std::size(GlowCategoryDescriptions) == std::size(GlowCategoryToggl
     std::tuple_size_v<decltype(OptionsUi::glowCategorySources)> == std::size(GlowCategoryToggles));
 // « Curseur » (1.17.0): the mod's cursors, then their colour and size, each
 // choice's id the saved value (Settings' customCursorColor and customCursorSize).
+// The colours (1.18.1): « Défaut (<the game's theme>) », each game theme in the
+// order of the game's selector (ids: their ThemeEnum value), then the mod's own
+// three. The game's dropdown finds the selected row by its id
+// (MultipleChoiceOptionElement.RefreshSelection) and a click by its label
+// (OnSelectionChanged): every label differs.
 constexpr const char* CustomCursorTitle = "Curseur Dofus";
 constexpr const char* CustomCursorDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
 constexpr const char* CustomCursorColorTitle = "Couleur du curseur";
-constexpr const char* CustomCursorColorDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Couleur du thème du jeu » : reprend la couleur d’accent du thème choisi dans les options du jeu (Thème) et la suit quand tu en changes, par exemple jaune-vert avec le thème Standard ; une couleur trop sombre est éclaircie. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. « Or » par défaut.";
-constexpr const char* CustomCursorColors[] = {"Or", "Couleur du thème du jeu", "Émeraude", "Argent"};
+constexpr const char* CustomCursorColorDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Défaut » reprend les couleurs du thème choisi dans les options du jeu (Thème), dont le nom s’affiche entre parenthèses, et les suit quand tu en changes. Chaque thème du jeu (Standard, Bonta, Brakmar…) est aussi proposé seul : le curseur garde alors ses couleurs, quel que soit le thème de l’interface. Avec un thème, le curseur prend sa couleur d’accent, éclaircie si elle est trop sombre, sur un contour tiré de son fond sombre ; jaune-vert avec le thème Standard. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. Réglée sur « Défaut » par défaut.";
+constexpr const char* CustomCursorDefault = "Défaut";
+struct CursorColour { int id; const char* label; };
+constexpr CursorColour CustomCursorFixedColors[] = {
+    {Settings::CursorGold, "Or"}, {Settings::CursorEmerald, "Émeraude"}, {Settings::CursorSilver, "Argent"}};
+// « Défaut (Bonta) » while the game shows Bonta; « Défaut » while its theme is unknown.
+std::string CursorDefaultLabel(int theme) {
+    const char* name = gameTheme::Name(theme);
+    return name ? std::string(CustomCursorDefault) + " (" + name + ")" : std::string(CustomCursorDefault);
+}
 constexpr const char* CustomCursorSizeTitle = "Taille du curseur";
 constexpr const char* CustomCursorSizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié (48 pixels à 100 %) et « Très grande » la double (64 pixels à 100 %), sans dépasser 128 pixels. À toutes les tailles, ce sont des curseurs de Windows, comme la souris : ils suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) gardent leur taille habituelle. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
 constexpr const char* CustomCursorSizes[] = {"Comme la souris de Windows", "Grande", "Très grande"};
-static_assert(std::size(CustomCursorColors) == 4 && std::size(CustomCursorSizes) == 3);
+static_assert(std::size(CustomCursorSizes) == 3 && gameTheme::Count == Settings::CursorLastTheme - Settings::CursorFirstTheme + 1 &&
+    Settings::CursorGold == Settings::CursorLastTheme + 1 && std::size(CustomCursorFixedColors) == 3);
+// The theme named in « Défaut (…) » read at most this often while the options
+// exist; at once when the mod's category is added to a page.
+constexpr ULONGLONG CursorThemeReadMs = 500;
+// MultipleChoiceOption.set_needRebuild: a shown dropdown rebuilt with the new
+// label (null without its contract: the label changes at the row's next view).
+Method setNeedRebuild = nullptr;
 Klass generalClass = nullptr;
 using EnableFn = void(*)(Obj, Method);
 using InitFn = void(*)(Obj, bool, bool, int, Method);
@@ -271,13 +292,9 @@ void ApplySettings(OptionsUi& ui, const Settings& settings, bool notify) {
     SetSource(ui.statsButtonSource.get(), settings.statsButton, notify);
 }
 using Choices = std::vector<std::pair<int, std::string>>;
-Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
-    int size = -1, icon = 0; // FigmaIcons.none
-    bool wheel = false;
-    Ref option(api.New(api.Class("Core.dll", Elements, "MultipleChoiceOption"),
-        {source, container, &size, &wheel, &icon}));
-    Describe(option.get(), title, description);
-    auto choicesSetter = api.Find(api.object_get_class(option.get()), "set_choices", 1);
+// A new list of (id, label) for a MultipleChoiceOption.
+void SetChoices(Obj option, const Choices& entries) {
+    auto choicesSetter = api.Find(api.object_get_class(option), "set_choices", 1);
     Ref choices(api.New(api.class_from_type(api.method_get_param(choicesSetter, 0))));
     auto addChoice = api.Find(api.object_get_class(choices.get()), "Add", 1);
     auto tupleClass = api.class_from_type(api.method_get_param(addChoice, 0));
@@ -288,8 +305,51 @@ Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* d
         Ref tuple(api.New(tupleClass, {&id, text.get()}));
         api.Invoke(addChoice, choices.get(), {api.object_unbox(tuple.get())});
     }
-    api.Invoke(choicesSetter, option.get(), {choices.get()});
+    api.Invoke(choicesSetter, option, {choices.get()});
+}
+Obj MakeChoiceOption(Obj source, Obj container, const char* title, const char* description, const Choices& entries) {
+    int size = -1, icon = 0; // FigmaIcons.none
+    bool wheel = false;
+    Ref option(api.New(api.Class("Core.dll", Elements, "MultipleChoiceOption"),
+        {source, container, &size, &wheel, &icon}));
+    Describe(option.get(), title, description);
+    SetChoices(option.get(), entries);
     return option.get();
+}
+// « Couleur du curseur »: « Défaut (<theme>) », the game's themes, the mod's colours.
+Choices CursorColorChoices(int theme) {
+    Choices choices{{Settings::CursorDefault, CursorDefaultLabel(theme)}};
+    for (const auto& entry : gameTheme::Themes) choices.emplace_back(entry.id, entry.name);
+    for (const auto& entry : CustomCursorFixedColors) choices.emplace_back(entry.id, entry.label);
+    return choices;
+}
+// « Défaut (…) » names the game's current theme: read again at most every
+// CursorThemeReadMs (at once when forced); a new theme gives the row a new list
+// of choices, and a dropdown on screen is rebuilt with it, as the game does
+// with its resolution list. A failure is logged once and never stops the mod:
+// the label stays as it is.
+void RefreshCursorThemeLabel(OptionsUi& ui, bool force) {
+    const Obj option = ui.customCursorColorOption.get();
+    if (!option) return;
+    const auto now = GetTickCount64();
+    if (!force && now < ui.nextCursorThemeRead) return;
+    ui.nextCursorThemeRead = now + CursorThemeReadMs;
+    const int theme = ReadGameTheme();
+    if (theme == ui.cursorThemeShown) return;
+    try {
+        SetChoices(option, CursorColorChoices(theme));
+        ui.cursorThemeShown = theme;
+        // Only while the tab is on a page (none after a logout's Abandon): never
+        // through the view of a page the game tore down.
+        if (setNeedRebuild && !ui.pages.empty()) {
+            bool rebuild = true;
+            api.Invoke(setNeedRebuild, option, {&rebuild});
+        }
+    } catch (const std::exception& error) {
+        if (ui.cursorThemeLogged) return;
+        ui.cursorThemeLogged = true;
+        Log(std::string("UI_CURSOR_THEME_LABEL_ERROR ") + error.what());
+    }
 }
 Obj MakeBoolOption(Obj source, Obj container, Obj tooltip, const char* title, const char* description) {
     Ref option(api.New(api.Class("Core.dll", Elements, "BoolOption"), {tooltip, source, container}));
@@ -419,8 +479,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
         prepared.glowCategoryOptions[i].reset(MakeBoolOption(prepared.glowCategorySources[i].get(), current.get(), tooltip.get(),
             GlowCategoryLabels[i], GlowCategoryDescriptions[i]));
     // Section « Curseur »: the checkbox, then the colour and the size.
-    Choices cursorColors, cursorSizes;
-    for (int i = 0; i != static_cast<int>(std::size(CustomCursorColors)); ++i) cursorColors.emplace_back(i, CustomCursorColors[i]);
+    const int cursorTheme = ReadGameTheme();
+    Choices cursorColors = CursorColorChoices(cursorTheme), cursorSizes;
     for (int i = 0; i != static_cast<int>(std::size(CustomCursorSizes)); ++i) cursorSizes.emplace_back(i, CustomCursorSizes[i]);
     prepared.customCursorOption.reset(MakeBoolOption(prepared.customCursorSource.get(), current.get(), tooltip.get(), CustomCursorTitle,
         CustomCursorDescription));
@@ -554,6 +614,8 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     ui.customCursorOption = std::move(prepared.customCursorOption);
     ui.customCursorColorSource = std::move(prepared.customCursorColorSource);
     ui.customCursorColorOption = std::move(prepared.customCursorColorOption);
+    ui.cursorThemeShown = cursorTheme;
+    ui.nextCursorThemeRead = GetTickCount64() + CursorThemeReadMs;
     ui.customCursorSizeSource = std::move(prepared.customCursorSizeSource);
     ui.customCursorSizeOption = std::move(prepared.customCursorSizeOption);
     ui.combatMiniatureSources = std::move(prepared.combatMiniatureSources);
@@ -1041,6 +1103,14 @@ void OptionsUi::Install() {
     api.FindVerified(labelClass, "set_text", 1, 0x1594570);
     // Clicks on the row's own buttons (the key status indicator, trash, « Oui », « Non »).
     nativeClick::AddHandler(KeyButtonClick);
+    // « Défaut (…) » renamed on screen at once (1.18.1). Without its contract,
+    // the new label shows at the row's next view only.
+    try {
+        setNeedRebuild = api.FindVerified(api.Class("Core.dll", Elements, "MultipleChoiceOption"), "set_needRebuild", 1, 0x2DA3A00);
+    } catch (const std::exception& error) {
+        setNeedRebuild = nullptr;
+        Log(std::string("UI_CURSOR_THEME_REBUILD_UNAVAILABLE ") + error.what());
+    }
 }
 void OptionsUi::CapturePage(Obj page) {
     pendingPage.reset(page);
@@ -1055,6 +1125,8 @@ bool OptionsUi::Attach(Obj page) {
         if (owned.owner.get() == page && Contains(categories.get(), owned.category.get())) return false;
     }
     if (!EnsureModels(*this, page)) return false;
+    // « Défaut (…) »: the theme the game shows now, before the page shows the row.
+    RefreshCursorThemeLabel(*this, true);
     for (int i = 0, count = Count(categories.get()); i < count; ++i) {
         auto existing = Item(categories.get(), i);
         if (FieldValue<int>(existing, "categoryId") == ModCategory)
@@ -1143,6 +1215,7 @@ void OptionsUi::Tick() {
         }
     }
     if (!ModelsLoaded(*this)) return;
+    RefreshCursorThemeLabel(*this, false);
     auto next = module->settings;
     next.mode = api.Value<int>(api.Call(modeSource.get(), "get_property"));
     next.roleplayMode = api.Value<int>(api.Call(roleplayModeSource.get(), "get_property"));
@@ -1274,6 +1347,7 @@ void OptionsUi::Restore() {
     customCursorSource.reset(); customCursorOption.reset();
     customCursorColorSource.reset(); customCursorColorOption.reset();
     customCursorSizeSource.reset(); customCursorSizeOption.reset();
+    cursorThemeShown = -1; nextCursorThemeRead = 0; cursorThemeLogged = false;
     preloadSource.reset();
     preloadOption.reset();
     resourcesSource.reset();

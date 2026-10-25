@@ -12,8 +12,8 @@ enum class Shape : uint8_t {
     ArrowForbidden, HandForbidden, ArrowBusy, HandBusy
 };
 inline constexpr int ShapeCount = 13;
-// « Couleur du curseur », the option's values: 0 Or, 1 couleur du thème du jeu,
-// 2 Émeraude, 3 Argent.
+// The palettes: Or, a game theme's (« Défaut » and each theme of « Couleur du
+// curseur », custom-cursor.cpp's ArtColour), Émeraude, Argent.
 enum class Colour : uint8_t { Gold = 0, Theme = 1, Emerald = 2, Silver = 3 };
 // The colours a cursor is drawn with, 0xRRGGBB.
 struct Palette {

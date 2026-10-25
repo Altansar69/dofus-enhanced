@@ -609,40 +609,81 @@ int main() {
             Require(last.notebookButton && !last.treasureButton && !last.soulButton, "The last valid top-bar button line wins");
         }
         {
-            // 1.17.0 « Curseur »: the mod's cursors off by default, « Or » and the
-            // Windows pointer's size; each on its own line, every combination kept.
+            // 1.17.0 « Curseur »: the mod's cursors off by default, at the Windows
+            // pointer's size; each on its own line, every combination kept.
             // Anything else is never read and an unknown choice never saved; a file
-            // written before 1.17.0 keeps the Windows cursor.
-            Require(!defaults.customCursor && defaults.customCursorColor == 0 && defaults.customCursorSize == 0 &&
-                Settings::ValidCustomCursorColor(0) && Settings::ValidCustomCursorColor(3) && !Settings::ValidCustomCursorColor(-1) &&
-                !Settings::ValidCustomCursorColor(4) && Settings::ValidCustomCursorSize(0) && Settings::ValidCustomCursorSize(2) &&
-                !Settings::ValidCustomCursorSize(-1) && !Settings::ValidCustomCursorSize(3),
-                "The mod's cursors off by default, in gold, at the Windows pointer's size");
+            // written before 1.17.0 keeps the Windows cursor. The colour (1.18.1):
+            // 0 « Défaut » (the default), 1..11 a game theme, 12 Or, 13 Émeraude,
+            // 14 Argent, saved as customCursorPalette and, for 1.17.x and 1.18.0,
+            // as their customCursorColor 0..3 (a theme as their game theme's colour).
+            Require(!defaults.customCursor && defaults.customCursorColor == Settings::CursorDefault && defaults.customCursorSize == 0 &&
+                Settings::ValidCustomCursorColor(0) && Settings::ValidCustomCursorColor(14) && !Settings::ValidCustomCursorColor(-1) &&
+                !Settings::ValidCustomCursorColor(15) && Settings::ValidCustomCursorSize(0) && Settings::ValidCustomCursorSize(2) &&
+                !Settings::ValidCustomCursorSize(-1) && !Settings::ValidCustomCursorSize(3) && Settings::CursorFirstTheme == 1 &&
+                Settings::CursorLastTheme == 11 && Settings::CursorGold == 12 && Settings::CursorEmerald == 13 && Settings::CursorSilver == 14,
+                "The mod's cursors off by default, in the game theme's colours (« Défaut »), at the Windows pointer's size");
+            // What 1.17.x and 1.18.0 read of a file (their Read: the last customCursorColor line within 0..3, else 0 « Or »).
+            const auto olderColour = [](const std::string& text) {
+                int colour = 0;
+                for (size_t at = text.find("\ncustomCursorColor="); at != std::string::npos; at = text.find("\ncustomCursorColor=", at + 1)) {
+                    const auto start = at + 19, end = text.find('\n', start);
+                    const auto value = text.substr(start, end - start);
+                    if (value.size() == 1 && value[0] >= '0' && value[0] <= '3') colour = value[0] - '0';
+                }
+                return colour;
+            };
             for (int on = 0; on < 2; ++on)
-                for (int colour = 0; colour <= 3; ++colour)
+                for (int colour = 0; colour <= 14; ++colour)
                     for (int size = 0; size <= 2; ++size) {
                         auto cursor = defaults;
                         cursor.customCursor = on != 0; cursor.customCursorColor = colour; cursor.customCursorSize = size;
                         cursor.Save(path);
                         const auto saved = FileText(path);
+                        const int legacy = colour == 12 ? 0 : colour == 13 ? 2 : colour == 14 ? 3 : 1;
                         Require(Settings::Read(path) == cursor && saved.find("\ncustomCursor=" + std::to_string(on) + "\n") != std::string::npos &&
-                            saved.find("\ncustomCursorColor=" + std::to_string(colour) + "\n") != std::string::npos &&
+                            saved.find("\ncustomCursorPalette=" + std::to_string(colour) + "\n") != std::string::npos &&
+                            saved.find("\ncustomCursorColor=" + std::to_string(legacy) + "\n") != std::string::npos && olderColour(saved) == legacy &&
                             saved.find("\ncustomCursorSize=" + std::to_string(size) + "\n") != std::string::npos,
-                            "The cursor option, its colour and its size persist, each on its own line");
+                            "The cursor option, its colour (with the one of 1.17.x and 1.18.0) and its size persist, each on its own line");
                         { std::ofstream bad(path, std::ios::app); bad << "customCursor=2\ncustomCursor=-1\ncustomCursor=oui\ncustomCursorColor=4\n"
-                            "customCursorColor=-1\ncustomCursorColor=x\ncustomCursorColor=\ncustomCursorSize=3\ncustomCursorSize=-1\ncustomCursorSize= 1\n"; }
+                            "customCursorColor=-1\ncustomCursorColor=x\ncustomCursorColor=\ncustomCursorSize=3\ncustomCursorSize=-1\ncustomCursorSize= 1\n"
+                            "customCursorPalette=15\ncustomCursorPalette=-1\ncustomCursorPalette=x\ncustomCursorPalette=\ncustomCursorPalette= 3\n"; }
                         Require(Settings::Read(path) == cursor, "A malformed cursor value keeps the saved choice");
+                        // A client of 1.17.x or 1.18.0 sharing the file saves it again
+                        // without customCursorPalette: back here, its colour as it saw it.
+                        { std::ofstream older(path, std::ios::trunc); older << "customCursor=" << on << "\ncustomCursorColor=" << legacy
+                            << "\ncustomCursorSize=" << size << "\n"; }
+                        auto seen = cursor; seen.customCursorColor = colour >= 12 ? colour : Settings::CursorDefault;
+                        Require(Settings::Read(path) == seen, "A file saved again by 1.17.x or 1.18.0 keeps the colour they showed");
                     }
+            // Migration from 1.17.x and 1.18.0: « Or », « Émeraude » and « Argent »
+            // as they were, « Couleur du thème du jeu » as « Défaut ».
+            for (const auto& [legacy, colour] : {std::pair{0, 12}, std::pair{1, 0}, std::pair{2, 13}, std::pair{3, 14}}) {
+                { std::ofstream older(path, std::ios::trunc); older << "customCursor=1\ncustomCursorColor=" << legacy << "\ncustomCursorSize=2\n"; }
+                const auto migrated = Settings::Read(path);
+                Require(migrated.customCursor && migrated.customCursorColor == colour && migrated.customCursorSize == 2 &&
+                    Settings::FromLegacyCursorColor(legacy) == colour && Settings::LegacyCursorColor(colour) == legacy,
+                    "A colour of 1.17.x or 1.18.0 keeps its meaning");
+                // Order does not matter: a valid customCursorPalette always wins.
+                { std::ofstream both(path, std::ios::trunc); both << "customCursorPalette=7\ncustomCursorColor=" << legacy << "\n"; }
+                Require(Settings::Read(path).customCursorColor == 7, "customCursorPalette wins over the colour of older revisions");
+            }
+            { std::ofstream invalid(path, std::ios::trunc); invalid << "customCursorPalette=99\ncustomCursorColor=2\n"; }
+            Require(Settings::Read(path).customCursorColor == Settings::CursorEmerald, "An invalid customCursorPalette falls back to the older colour");
+            { std::ofstream invalid(path, std::ios::trunc); invalid << "customCursorPalette=-3\ncustomCursorColor=9\n"; }
+            Require(Settings::Read(path).customCursorColor == Settings::CursorDefault, "Neither valid: « Défaut »");
             { std::ofstream older(path, std::ios::trunc); older << "soulButton=0\nnotebookButton=0\n"; }
             const auto older = Settings::Read(path);
-            Require(!older.customCursor && older.customCursorColor == 0 && older.customCursorSize == 0 && !older.soulButton && !older.notebookButton,
-                "A file written before 1.17.0 keeps the Windows cursor (gold, the Windows size once ticked) and the rest");
+            Require(!older.customCursor && older.customCursorColor == Settings::CursorDefault && older.customCursorSize == 0 && !older.soulButton &&
+                !older.notebookButton, "A file written before 1.17.0 keeps the Windows cursor (« Défaut », the Windows size once ticked) and the rest");
             { std::ofstream twice(path, std::ios::trunc); twice << "customCursor=1\ncustomCursor=0\ncustomCursorColor=3\ncustomCursorColor=1\n"
-                "customCursorSize=2\ncustomCursorSize=1\n"; }
+                "customCursorSize=2\ncustomCursorSize=1\ncustomCursorPalette=4\ncustomCursorPalette=9\n"; }
             const auto last = Settings::Read(path);
-            Require(!last.customCursor && last.customCursorColor == 1 && last.customCursorSize == 1, "The last valid cursor line wins");
-            auto kept = defaults; kept.customCursor = true; kept.customCursorColor = 2; kept.customCursorSize = 1; kept.Save(path);
-            for (const auto& [colour, size] : {std::pair{4, 0}, std::pair{-1, 0}, std::pair{0, 3}, std::pair{0, -1}}) {
+            Require(!last.customCursor && last.customCursorColor == 9 && last.customCursorSize == 1, "The last valid cursor line wins");
+            { std::ofstream twice(path, std::ios::trunc); twice << "customCursorColor=3\ncustomCursorColor=1\n"; }
+            Require(Settings::Read(path).customCursorColor == Settings::CursorDefault, "The last valid older colour wins");
+            auto kept = defaults; kept.customCursor = true; kept.customCursorColor = 3; kept.customCursorSize = 1; kept.Save(path);
+            for (const auto& [colour, size] : {std::pair{15, 0}, std::pair{-1, 0}, std::pair{0, 3}, std::pair{0, -1}}) {
                 auto refused = defaults; refused.customCursorColor = colour; refused.customCursorSize = size;
                 std::string refusal;
                 try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
@@ -689,6 +730,47 @@ int main() {
                 try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
                 Require(refusal == "Invalid vertical gauges" && Settings::Read(path) == kept, "A gauge that does not exist is never saved");
             }
+        }
+        {
+            // 1.18.1 « Jauges »: each vertical gauge's length and place chosen with
+            // the mouse, its fqd+GaugesType in the key (none by default: as long
+            // as it is wide, at its horizontal place), only those chosen written.
+            // A length out of 160..16384 (0: none), a place out of 0..10000, a key
+            // of no gauge, or one coordinate alone, is never read nor saved.
+            Require(defaults.gaugeVerticalBoxes == std::array<Settings::GaugeVerticalBox, 26>{} &&
+                defaults.gaugeVerticalBoxes[0].length == 0 && defaults.gaugeVerticalBoxes[0].x == -1 && defaults.gaugeVerticalBoxes[0].y == -1,
+                "No vertical length or place of its own by default");
+            auto boxes = defaults;
+            boxes.gaugeVerticalBoxes[0] = {884, 7418, 1815};  // the character's experience (0x1)
+            boxes.gaugeVerticalBoxes[4] = {727, -1, -1};      // the pods (0x10): a length only
+            boxes.gaugeVerticalBoxes[25] = {0, 0, 10000};     // the last job (0x2000000): a place only
+            boxes.Save(path);
+            const auto saved = FileText(path);
+            Require(Settings::Read(path) == boxes && saved.find("\ngaugeVerticalLength1=884\ngaugeVerticalX1=7418\ngaugeVerticalY1=1815\n") !=
+                std::string::npos && saved.find("\ngaugeVerticalLength16=727\n") != std::string::npos &&
+                saved.find("gaugeVerticalX16=") == std::string::npos && saved.find("\ngaugeVerticalX33554432=0\ngaugeVerticalY33554432=10000\n") !=
+                std::string::npos && saved.find("gaugeVerticalLength33554432") == std::string::npos && saved.find("gaugeVerticalLength2=") == std::string::npos,
+                "Each chosen length and place persists, only those chosen written");
+            { std::ofstream bad(path, std::ios::app); bad << "gaugeVerticalLength1=159\ngaugeVerticalLength1=16385\ngaugeVerticalLength1=-1\n"
+                "gaugeVerticalLength4=500\ngaugeVerticalLength3=500\ngaugeVerticalLength67108864=500\ngaugeVerticalLength=500\ngaugeVerticalLengthx=500\n"
+                "gaugeVerticalX1=10001\ngaugeVerticalY1=-2\ngaugeVerticalX16=oui\ngaugeVerticalLength16=\n"; }
+            Require(Settings::Read(path) == boxes, "A malformed value, or a key of no gauge, keeps the saved choice");
+            { std::ofstream half(path, std::ios::trunc); half << "gaugeVerticalLength8=300\ngaugeVerticalX8=500\ngaugeVerticalY2=400\n"; }
+            const auto half = Settings::Read(path);
+            Require(half.gaugeVerticalBoxes[3].length == 300 && half.gaugeVerticalBoxes[3].x == -1 && half.gaugeVerticalBoxes[3].y == -1 &&
+                half.gaugeVerticalBoxes[1] == Settings::GaugeVerticalBox{}, "One coordinate alone: the place at the horizontal");
+            auto kept = defaults; kept.gaugeVerticalBoxes[0] = {300, -1, -1}; kept.Save(path);
+            for (const auto& invalid : {Settings::GaugeVerticalBox{100, -1, -1}, Settings::GaugeVerticalBox{300, 5, -1},
+                     Settings::GaugeVerticalBox{300, 10001, 0}, Settings::GaugeVerticalBox{-5, -1, -1}}) {
+                auto refused = defaults; refused.gaugeVerticalBoxes[1] = invalid;
+                std::string refusal;
+                try { refused.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+                Require(refusal == "Invalid vertical gauge length or place" && Settings::Read(path) == kept, "An invalid length or place is never saved");
+            }
+            auto none = defaults; none.gaugeVerticalBoxes[2] = {300, -1, -1}; // bit 2: 4, no gauge
+            std::string refusal;
+            try { none.Save(path); } catch (const std::runtime_error& error) { refusal = error.what(); }
+            Require(refusal == "Invalid vertical gauge length or place" && Settings::Read(path) == kept, "No length for a gauge that does not exist");
         }
         {
             auto corner = defaults; corner.perfOverlayCorner = 4;
@@ -960,7 +1042,7 @@ int main() {
         Require(MH_EnableHook(pointer) == MH_OK && invoke(3) == 55, "Local hook dispatch and trampoline");
         Require(MH_DisableHook(pointer) == MH_OK && invoke(3) == 34, "Local hook restoration");
         MH_Uninitialize();
-        std::cout << "PASS: settings migration (former animation modes to toggles, legacy keys kept), seventeen appearance/animation checkboxes round trip (« PNJ » off by default), exhaustive category and animation policies, modes, fixed sizing presets, the « Curseur » choices (off, Or and the Windows size by default), the « Jauges » choices (every gauge horizontal, the menu row shown by default, unknown gauges refused), version refusal, startup status and local hook roundtrip. No game process accessed.\n";
+        std::cout << "PASS: settings migration (former animation modes to toggles, legacy keys kept), seventeen appearance/animation checkboxes round trip (« PNJ » off by default), exhaustive category and animation policies, modes, fixed sizing presets, the « Curseur » choices (off, Or and the Windows size by default), the « Jauges » choices (every gauge horizontal, the menu row shown by default, unknown gauges refused; each one's vertical length and place, only those chosen, invalid ones refused), version refusal, startup status and local hook roundtrip. No game process accessed.\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n'; return 1;

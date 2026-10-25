@@ -10,7 +10,38 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.18.0
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.18.1
+
+VERSION 1.18.1 : CURSEUR, JAUGES, CONJOINT, PERFORMANCES, PIERRE D’ÂME
+- Curseur : « Couleur du curseur » propose « Défaut (thème actuel) », qui
+  suit le thème choisi dans les options du jeu (son nom entre
+  parenthèses), puis les onze thèmes du jeu chacun seul (Standard, Bonta,
+  Brakmar, Tribute, Gold and steel, Belladone, Unicorn, Emerald mine,
+  Sufokia, Pandala, Wabbit), puis Or, Émeraude et Argent. « Défaut » est
+  le nouveau choix par défaut ; l’ancien « Couleur du thème du jeu »
+  devient « Défaut », Or, Émeraude et Argent sont gardés.
+- Jauges verticales : la longueur se change en tirant le bord haut ou
+  bas de la jauge (de 160 pixels à la hauteur de l’écran moins 16), sa
+  largeur restant la même. Sa longueur et sa place à la verticale sont
+  gardées par le mod, jamais dans la disposition du jeu ; décochée, la
+  jauge revient exactement à sa place et à sa taille d’avant. En 1.18.0,
+  la déplacer ou tenter de l’étirer à la verticale la faisait revenir en
+  haut à droite une fois décochée, et le jeu gardait cette place.
+- Conjoint : ton conjoint est de nouveau reconnu dans le groupe, par son
+  nom (le jeu ne donne plus son identifiant) : le contour et le bouton de
+  téléportation sur sa vignette et l’entrée du clic droit reviennent. Un
+  compagnon n’est jamais pris pour lui.
+- Performances : le cadre se redimensionne par ses quatre bords et ses
+  quatre coins, le côté opposé restant en place, avec la double flèche
+  correspondante au survol. Les mesures se rangent selon la largeur
+  (elles remontent sur la ligne du dessus quand il y a la place,
+  séparées par « · »), le texte à la plus grande taille qui tient. Le
+  disque s’affiche « Disque C: 4 % (1,2 Mo/s) », la mémoire privée
+  « Privée … ».
+- Pierre d’âme : la pierre s’affiche « Petite pierre d’âme (50) » au lieu
+  de « Petite pierre d’âme — 50 ».
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.18.0 : JAUGES À LA VERTICALE
 - Nouvelle case « Afficher à la verticale » dans le menu ⋯ (les trois

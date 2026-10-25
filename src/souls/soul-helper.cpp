@@ -54,7 +54,7 @@ void Fail(const std::exception& error) {
     try { Hide(); } catch (const std::exception& e) { Log(std::string("SOUL_PANEL_CLEANUP_ERROR ") + e.what()); }
 }
 std::string StoneLabel(const StoneType& stone) {
-    return std::string(stone.name) + " — " + std::to_string(stone.power);
+    return std::string(stone.name) + " (" + std::to_string(stone.power) + ")";
 }
 void RefreshInventory(uint64_t now) {
     Ref inventory(module->FindService("fmo"));
@@ -73,7 +73,7 @@ void ShowEquipment(PanelView& view, const StoneType* required) {
     const auto* stone = StoneById(state.contents.equippedGenericId);
     if (stone) {
         view.equipped = (state.contents.equippedName.empty() ?
-            StoneLabel(*stone) : state.contents.equippedName + " — " + std::to_string(stone->power));
+            StoneLabel(*stone) : state.contents.equippedName + " (" + std::to_string(stone->power) + ")");
     } else if (view.equippedItem) {
         view.equipped = state.contents.equippedName.empty() ? "Consommable équipé" : "Consommable équipé : " + state.contents.equippedName;
     } else {

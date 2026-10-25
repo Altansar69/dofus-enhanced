@@ -3,8 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
-// « Afficher à la verticale » (1.18.0): the rules of a vertical gauge, without
-// the game (vertical-gauges-tests covers them).
+// « Afficher à la verticale » (1.18.0, its length and place of its own since
+// 1.18.1): the rules of a vertical gauge, without the game
+// (vertical-gauges-tests covers them).
 namespace verticalGauges {
 // A gauge's own type (fqd+GaugesType, WidgetProgressGaugeUi.m_gaugeType):
 // exactly one of the bits Settings::GaugeVerticalBits holds, the character's
@@ -24,6 +25,23 @@ inline float Length(float width, float screenHeight) {
     if (!std::isfinite(width) || width <= 0) width = UxmlWidth;
     if (std::isfinite(screenHeight) && screenHeight > 0) width = std::min(width, screenHeight - ScreenMargin);
     return std::max(MinLength, width);
+}
+// The longest a vertical gauge may be on a screen `screenHeight` high (its
+// window's maximum height while vertical; 16384 while unknown).
+inline float MaxLength(float screenHeight) {
+    return std::isfinite(screenHeight) && screenHeight > 0 ? std::max(MinLength, screenHeight - ScreenMargin) : 16384.f;
+}
+// A length chosen with the mouse (1.18.1), as settings keep it: whole pixels
+// between MinLength and 16384; then bounded by the screen at each use (Length).
+inline int KeptLength(float length) {
+    if (!std::isfinite(length)) return 0;
+    return static_cast<int>(std::lround(std::clamp(length, MinLength, 16384.f)));
+}
+// A place as settings keep it (1.18.1): ten-thousandths of the screen's width
+// or height, 0 to 10000.
+inline int KeptPlace(float pixels, float size) {
+    if (!std::isfinite(pixels) || !std::isfinite(size) || size <= 0) return 0;
+    return static_cast<int>(std::lround(std::clamp(pixels / size, 0.f, 1.f) * 10000.f));
 }
 struct Box { float x = 0, y = 0, width = 0, height = 0; };
 // The box moved only as much as it needs to lie entirely on a screen

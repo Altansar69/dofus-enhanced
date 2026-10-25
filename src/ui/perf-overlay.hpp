@@ -9,11 +9,13 @@
 // In its corner (perfOverlayCorner, which only an earlier revision chose: the
 // top left otherwise) until the mouse drags it (perfOverlayDrag) to a place
 // kept (perfOverlayX/Y), or resizes it as a window to sizes kept
-// (perfOverlayScaleX/Y): its right edge its width, its bottom edge its height,
-// its bottom-right corner both, where a grip shows while the cursor is over
-// it; its text at the largest size its box holds. Over it, the game's cursor
-// manager shows the double arrow of the handle under the cursor, or the move
-// cursor. With perfOverlayDrag off it stays locked there.
+// (perfOverlayScaleX/Y): by any of its four edges and four corners, the
+// opposite side staying put, a grip showing in its bottom-right corner while
+// the cursor is over it. Its figures are short items that flow onto as few or
+// as many lines as its box gives them room for, its text at the largest size
+// its box holds. Over it, the game's cursor manager shows the double arrow of
+// the handle under the cursor, or the move cursor. With perfOverlayDrag off it
+// stays locked there.
 // Only what is shown is measured; nothing shown: nothing created, nothing
 // measured.
 void InstallPerfOverlay();                      // worker thread, before the hooks, with its top-bar button; never throws

@@ -1,6 +1,7 @@
 #include "ui/custom-cursor.hpp"
 #include "ui/custom-cursor-policy.hpp"
 #include "ui/custom-cursor-player.hpp"
+#include "ui/game-theme.hpp"
 #include "core/module.hpp"
 #include <intrin.h>
 #include <array>
@@ -32,7 +33,7 @@ constexpr uintptr_t ApplyCursorReturn = ApplyCursorCall + 5;
 constexpr int Rgba32 = 4, DontUnloadUnusedAsset = 0x20, CursorModeAuto = 0, MousePointerId = 0;
 // In milliseconds: the frame work at most every FrameMs; the UIDocument's
 // panel, and the drag service while missing, looked up every LookupMs; the
-// theme's colours read every ThemeMs (« Couleur du thème du jeu » only); the
+// game's theme and its colours read every ThemeMs (a theme's colour only); the
 // window's scale and the Windows pointer size every SizeMs, the textures
 // checked as often; a texture of the mod sent again within DedupeMs skipped; a
 // failed destroy tried again every CleanupRetryMs; FaultErrors frame errors
@@ -50,9 +51,13 @@ struct Natives {
     size_t layer = 0, type = 0, state = 0, cachedPtr = 0, dragging = 0;
     Method setCursor{}, update{}, textureCtor{}, loadRaw{}, apply{}, hideFlags{}, destroy{};
     Method documentRoot{}, parent{}, panelOf{}, topElement{}, enabled{}, customStyle{}, readColor{};
-    // The optional parts installed; sized: the player loads the mod's cursors at
-    // their own size (without it, Windows' size, as 1.17.0).
-    bool textHover = false, theme = false, drag = false, sized = false;
+    // FigmaStylesScriptableObject: GetInstance, GetColorByVarName(ThemeEnum, String).
+    Klass figmaStyles{};
+    Method figmaInstance{}, figmaColor{};
+    // The optional parts installed; theme: the colours declared on the panel
+    // (the theme shown); figma: any theme's colours (1.18.1); sized: the player
+    // loads the mod's cursors at their own size (without it, Windows' size, as 1.17.0).
+    bool textHover = false, theme = false, figma = false, drag = false, sized = false;
 } n;
 
 // UnityEngine.Vector2: SetCursor's hotspot, by value in RDX.
@@ -66,8 +71,9 @@ SetCursorFn originalSetCursor = nullptr;
 
 // One texture of the mod per shape, with its hotspot in pixels from the top left.
 struct Drawn { Ref texture; Vector2 hotspot; };
-// What a set is drawn for: the colour choice, the theme's accent and dark
-// colours (« Couleur du thème du jeu » only, 0 otherwise) and the size.
+// What a set is drawn for: the colour choice (Settings' customCursorColor), the
+// theme's accent and dark colours (« Défaut » and the themes only, 0 for « Or »,
+// « Émeraude » and « Argent ») and the size.
 struct Look {
     int colour = -1, size = 0;
     uint32_t accent = 0, dark = 0;
@@ -109,11 +115,18 @@ struct State {
     // reads the button for Move, the text field for the arrow).
     Hover applied;
     bool askedArrow = false, askedMove = false;
-    // The look's inputs, and the theme's variable names.
+    // The look's inputs, and the theme's variable names: the colours for the
+    // choice themeChoice (-1: none yet), the game's theme they come from
+    // (themeShown, 0 unknown) and where from (themeSource, logged).
     unsigned dpi = 96, base = 32;
     uint32_t accent = StandardAccent, dark = StandardDark;
-    int themeDepth = -2;
+    int themeChoice = -1, themeShown = -1;
+    const char* themeSource = "";
     Ref accentName, darkName;
+    // Each game theme's colours, read once through FigmaStylesScriptableObject
+    // (index: ThemeEnum); a failure logged once per theme.
+    struct ThemeColours { bool read = false, failureLogged = false; uint32_t accent = 0, dark = 0; };
+    std::array<ThemeColours, gameTheme::Count + 1> themes;
     uint64_t nextFrame = 0, nextRoot = 0, nextDrag = 0, nextTheme = 0, nextSize = 0;
     unsigned frameErrors = 0;
     uint64_t firstFrameError = 0;
@@ -331,6 +344,14 @@ void Install() {
             n.readColor = api.FindVerified(n.styleAccess, "TryGetValue", 2, 0x55FCCB0); // (CustomStyleProperty<Color>, out Color)
         });
     }
+    // Any game theme's colours without the UI (1.18.1), as the game's own
+    // theme service (eqr.yvk) reads them. Without them, a theme's colours are
+    // the panel's while the game shows that theme, the Standard theme's otherwise.
+    Optional("figma", n.figma, [] {
+        n.figmaStyles = api.Class("Core.dll", "Core.UILogic.Figma.ScriptableObject.Script", "FigmaStylesScriptableObject");
+        n.figmaInstance = api.FindVerified(n.figmaStyles, "GetInstance", 0, 0x2CA7EA0);
+        n.figmaColor = api.FindVerified(n.figmaStyles, "GetColorByVarName", 2, 0x2CA7C90); // (ThemeEnum, String)
+    });
     Optional("drag", n.drag, [] {
         n.dragService = api.Class("Core.dll", "Core.UILogic.Components.DragAndDrop", "DragAndDropService");
         n.dragging = RequireField(n.dragService, "<isDragging>k__BackingField", 0x10);
@@ -586,8 +607,18 @@ void TurnOff(const char* reason, uint64_t now, bool stopping) {
     }
     DestroyDoomed(now, stopping);
 }
+// « Or », « Émeraude » and « Argent » their own palettes; « Défaut » and the
+// themes the theme's (look.accent and look.dark).
+cursorArt::Colour ArtColour(int choice) {
+    switch (choice) {
+    case Settings::CursorGold: return cursorArt::Colour::Gold;
+    case Settings::CursorEmerald: return cursorArt::Colour::Emerald;
+    case Settings::CursorSilver: return cursorArt::Colour::Silver;
+    default: return cursorArt::Colour::Theme;
+    }
+}
 cursorArt::Palette PaletteFor(const Look& look) {
-    return cursorArt::PaletteOf(static_cast<cursorArt::Colour>(look.colour), look.accent, look.dark);
+    return cursorArt::PaletteOf(ArtColour(look.colour), look.accent, look.dark);
 }
 // One shape more of the set for `look`. Complete, the set is in use at once
 // and the one before destroyed once the game took the new cursor.
@@ -668,23 +699,32 @@ void FindDrag() {
         Log("CUSTOM_CURSOR_DRAG_SERVICE found");
     } catch (...) {}
 }
-bool ReadColour(Obj custom, Obj name, uint32_t& rgb) {
-    // CustomStyleProperty<Color>: a value type holding its name.
-    Obj property = name;
-    std::array<float, 4> colour{};
-    if (!api.Value<bool>(api.Invoke(n.readColor, custom, {&property, &colour}))) return false;
+// A UnityEngine.Color (channels from 0 to 1) as 0xRRGGBB; false when a channel
+// is not a number or outside 0..1.
+bool RgbOfColour(const std::array<float, 4>& colour, uint32_t& rgb) {
     for (const float channel : colour)
         if (!std::isfinite(channel) || channel < 0 || channel > 1) return false;
     rgb = RgbOf(colour[0], colour[1], colour[2]);
     return true;
 }
-// The theme's accent (--highlight_primary100) and dark background
-// (--background_dark97), declared by its sheet on the panel's root: from the
-// UIDocument's root up, the nearest declaration of each. depth: the accent's
-// level, -1 without it.
-void ReadTheme(uint32_t& accent, uint32_t& dark, int& depth) {
+bool ReadColour(Obj custom, Obj name, uint32_t& rgb) {
+    // CustomStyleProperty<Color>: a value type holding its name.
+    Obj property = name;
+    std::array<float, 4> colour{};
+    if (!api.Value<bool>(api.Invoke(n.readColor, custom, {&property, &colour}))) return false;
+    return RgbOfColour(colour, rgb);
+}
+// The variables a theme's colours are read from: its accent
+// (--highlight_primary100) and its dark background (--background_dark97).
+void ThemeNames() {
     if (!s.accentName.get()) s.accentName.reset(api.string_new("--highlight_primary100"));
     if (!s.darkName.get()) s.darkName.reset(api.string_new("--background_dark97"));
+}
+// The theme's accent and dark background, declared by its sheet on the panel's
+// root: from the UIDocument's root up, the nearest declaration of each. depth:
+// the accent's level, -1 without it.
+void ReadTheme(uint32_t& accent, uint32_t& dark, int& depth) {
+    ThemeNames();
     bool accentFound = false, darkFound = false;
     Ref scope(s.root.get());
     for (unsigned level = 0; scope.get() && level < ThemeDepth && !(accentFound && darkFound); ++level) {
@@ -699,20 +739,73 @@ void ReadTheme(uint32_t& accent, uint32_t& dark, int& depth) {
         scope.reset(api.Invoke(n.parent, scope.get()));
     }
 }
-// « Couleur du thème du jeu »: the theme's colours, the Standard theme's until
-// they are read; followed when the player changes the theme.
-void UpdateTheme(uint64_t now) {
-    if (!n.theme || now < s.nextTheme) return;
+// One colour of a game theme, as the game's theme service reads it
+// (GetColorByVarName returns a Color; alpha 0: no colour).
+bool FigmaColour(Obj styles, int theme, Obj name, uint32_t& rgb) {
+    int value = theme; // ThemeEnum
+    const Obj box = api.Invoke(n.figmaColor, styles, {&value, name});
+    if (!box) return false;
+    const auto colour = api.Value<std::array<float, 4>>(box);
+    return colour[3] > 0 && RgbOfColour(colour, rgb);
+}
+// A game theme's accent and dark background through FigmaStylesScriptableObject,
+// whatever theme the game shows: read once, kept (the game's data); retried
+// at each ThemeMs while its data is not loaded (no instance yet) or fails, the
+// failure logged once per theme.
+bool FigmaTheme(int theme, uint32_t& accent, uint32_t& dark) {
+    if (!n.figma || !gameTheme::Valid(theme)) return false;
+    auto& cached = s.themes[static_cast<size_t>(theme)];
+    if (cached.read) { accent = cached.accent; dark = cached.dark; return true; }
+    try {
+        ThemeNames();
+        Ref styles(api.Invoke(n.figmaInstance, nullptr));
+        if (!styles.get() || !api.class_is_assignable_from(n.figmaStyles, api.object_get_class(styles.get()))) return false;
+        uint32_t readAccent = 0, readDark = 0;
+        if (!FigmaColour(styles.get(), theme, s.accentName.get(), readAccent) || !FigmaColour(styles.get(), theme, s.darkName.get(), readDark))
+            throw std::runtime_error("no colour");
+        cached.read = true;
+        cached.accent = accent = readAccent;
+        cached.dark = dark = readDark;
+        Log("CUSTOM_CURSOR_THEME_COLOURS theme=" + std::to_string(theme) + " accent=" + Rgb(readAccent) + " dark=" + Rgb(readDark));
+        return true;
+    } catch (const std::exception& error) {
+        if (!cached.failureLogged) {
+            cached.failureLogged = true;
+            Log("CUSTOM_CURSOR_THEME_COLOURS_ERROR theme=" + std::to_string(theme) + " " + error.what());
+        }
+        return false;
+    }
+}
+// The colours of a colour choice drawn from a theme: « Défaut », the theme the
+// game shows (followed when the player changes it), or one game theme. Each
+// theme's own colours (FigmaTheme); without them, the colours declared on the
+// panel, when that theme is the one the game shows (or unknown, for
+// « Défaut »); last, the Standard theme's. Read again every ThemeMs, at once
+// for a new choice.
+void UpdateTheme(uint64_t now, int choice) {
+    if (now < s.nextTheme && choice == s.themeChoice) return;
     s.nextTheme = now + ThemeMs;
+    const int shown = ReadGameTheme();
+    const int theme = choice == Settings::CursorDefault ? shown : choice;
     uint32_t accent = StandardAccent, dark = StandardDark;
-    int depth = -1;
-    try { ReadTheme(accent, dark, depth); }
-    catch (...) { accent = StandardAccent; dark = StandardDark; depth = -1; }
-    if (accent != s.accent || dark != s.dark || depth != s.themeDepth)
-        Log("CUSTOM_CURSOR_THEME accent=" + Rgb(accent) + " dark=" + Rgb(dark) + " depth=" + std::to_string(depth));
+    const char* source = "standard";
+    if (FigmaTheme(theme, accent, dark)) {
+        source = "theme";
+    } else if (n.theme && (theme == shown || (choice == Settings::CursorDefault && shown == 0))) {
+        int depth = -1;
+        try { ReadTheme(accent, dark, depth); }
+        catch (...) { depth = -1; }
+        if (depth >= 0) source = "panel";
+        else { accent = StandardAccent; dark = StandardDark; }
+    }
+    if (choice != s.themeChoice || shown != s.themeShown || accent != s.accent || dark != s.dark || std::string(source) != s.themeSource)
+        Log("CUSTOM_CURSOR_THEME choice=" + std::to_string(choice) + " theme=" + std::to_string(theme) + " shown=" + std::to_string(shown) +
+            " source=" + source + " accent=" + Rgb(accent) + " dark=" + Rgb(dark));
+    s.themeChoice = choice;
+    s.themeShown = shown;
+    s.themeSource = source;
     s.accent = accent;
     s.dark = dark;
-    s.themeDepth = depth;
 }
 // A hover input changed since the last decision: the game's cursor again,
 // through the detour.
@@ -746,10 +839,10 @@ void Tick(uint64_t now) {
         if (s.current.Complete()) CheckTextures();
     }
     Look look;
-    look.colour = Settings::ValidCustomCursorColor(settings.customCursorColor) ? settings.customCursorColor : 0;
+    look.colour = Settings::ValidCustomCursorColor(settings.customCursorColor) ? settings.customCursorColor : Settings::CursorDefault;
     look.size = CursorPixels(s.dpi, s.base, settings.customCursorSize);
-    if (look.colour == static_cast<int>(cursorArt::Colour::Theme)) {
-        UpdateTheme(now);
+    if (ArtColour(look.colour) == cursorArt::Colour::Theme) {
+        UpdateTheme(now, look.colour);
         look.accent = s.accent;
         look.dark = s.dark;
     }
@@ -779,7 +872,7 @@ void InstallCustomCursor() {
     catch (const std::exception& error) { Log(std::string("CUSTOM_CURSOR_DISABLED ") + error.what()); return; }
     s.installed = true;
     Log(std::string("CUSTOM_CURSOR_READY textHover=") + (n.textHover ? "1" : "0") + " theme=" + (n.theme ? "1" : "0") +
-        " drag=" + (n.drag ? "1" : "0") + " size=" + (n.sized ? "1" : "0"));
+        " themes=" + (n.figma ? "1" : "0") + " drag=" + (n.drag ? "1" : "0") + " size=" + (n.sized ? "1" : "0"));
 }
 void CustomCursorFrame(unsigned long long now) {
     using namespace customCursor;

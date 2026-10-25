@@ -98,7 +98,7 @@ inline int CursorPixels(unsigned dpi, unsigned windowsBase, int sizeChoice) {
     return static_cast<int>(std::clamp(pixels, static_cast<double>(cursorArt::MinSize), static_cast<double>(cursorArt::MaxSize)));
 }
 
-// « Couleur du thème du jeu » until the theme's colours are read: the Standard
+// A theme's colours until they are read, or when they cannot be: the Standard
 // theme's accent (--highlight_primary100) and dark background
 // (--background_dark97), 0xRRGGBB.
 inline constexpr uint32_t StandardAccent = 0xF0FF4F, StandardDark = 0x1B1D32;

@@ -51,7 +51,7 @@ add_library(DofusMiniatures SHARED
   src/stats/stats-store.cpp
   src/stats/stats-format.cpp src/stats/stats-window.cpp
   src/ui/cursor-art.cpp src/ui/custom-cursor.cpp
-  src/ui/vertical-gauges.cpp)
+  src/ui/vertical-gauges.cpp src/ui/game-theme.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -109,7 +109,7 @@ add_test(NAME GitHubUpdateTests COMMAND powershell.exe -NoProfile -NonInteractiv
 set_tests_properties(GitHubUpdateTests PROPERTIES TIMEOUT 30)
 
 # Options window and the toolbar module menu.
-dofus_test(OptionsUiTests tests/ui/options-ui-tests.cpp src/ui/options-ui.cpp)
+dofus_test(OptionsUiTests tests/ui/options-ui-tests.cpp src/ui/options-ui.cpp src/ui/game-theme.cpp)
 dofus_test(ToolsUiTests tests/ui/tools-ui-tests.cpp src/ui/tools-ui.cpp)
 # The performance overlay's GPU and disk figures come from PDH (Windows'
 # performance counters); the tests replace every PDH call with a fake.

@@ -59,6 +59,13 @@ int failCount = 0;
 bool failAttachedOnly = false;
 int labelsBuilt = 0, removals = 0, gripRemovals = 0; // the labels' detaches, the other elements'
 float collapsedWidth = -1; // >= 0 or NaN: the label's layout while the game hides its interface
+// TextElement.MeasureTextSize (1.18.1): with the font each label was last laid
+// out at (its inline font size as resolved by the game's layout pass, after
+// the compositor's frame: Resolve, at each of the tests' frames); nothing
+// before it, or when broken (measureBroken: NaN, as without a font).
+std::map<Obj, float> resolvedFonts;
+int measures = 0;
+bool measureBroken = false;
 std::set<uintptr_t> natives;  // the native helpers checked (NativeAt)
 uintptr_t nativeMismatch = 0; // a helper whose bytes differ from the snapshot
 // The panel: RootHigh laid out over it, 1920 x 1080 panel pixels unless a test
@@ -174,6 +181,27 @@ float LaidOutHeight(Obj o) {
         height = std::max(height, minimum);
     }
     return height;
+}
+// The game's layout pass: every label's font as it is now drawn.
+void Resolve() {
+    for (const auto& object : objects)
+        if (object->klass->name == "Label" && object->fields["parent"]) resolvedFonts[object.get()] = FontFactor(object.get());
+}
+// MeasureTextSize: 6 px a character of the longest line, 12 px for the first
+// line and 16 more for each next one (the fake layout's, without the padding),
+// at the font resolved; it must be the one drawn (measured before the layout
+// pass after a new font: the module divides by the wrong one).
+std::array<float, 2> Measured(Obj o, const std::string& text) {
+    const auto resolved = resolvedFonts.find(o);
+    if (measureBroken || resolved == resolvedFonts.end()) return {std::nanf(""), std::nanf("")};
+    Check(resolved->second == FontFactor(o), "Measured with a font drawn since the last layout pass");
+    size_t longest = 0, line = 0, lines = 1;
+    for (const unsigned char c : text) {
+        if (c == '\n') { line = 0; ++lines; continue; }
+        if ((c & 0xC0) != 0x80) longest = std::max(longest, ++line);
+    }
+    const float factor = resolved->second;
+    return {6.f * factor * static_cast<float>(longest), factor * (12.f + 16.f * static_cast<float>(lines - 1))};
 }
 // The label's layout in its layer: x, y, width, height, from its anchored sides.
 std::array<float, 4> LabelBox(Obj o) {
@@ -412,6 +440,13 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     if (m == "set_text") { o.text = Get(static_cast<Obj>(args[0])).text; ++o.texts; return nullptr; }
     if (m == "set_enableRichText") { o.rich = *static_cast<bool*>(args[0]); return nullptr; }
     if (m == "set_visible") { o.visible = *static_cast<bool*>(args[0]); return nullptr; }
+    if (m == "MeasureTextSize") {
+        Check(o.klass->name == "Label" && Panel(self), "Only the overlay's label measures, in its panel");
+        Check(*static_cast<float*>(args[1]) == 0 && *static_cast<int*>(args[2]) == 0 && *static_cast<float*>(args[3]) == 0 &&
+            *static_cast<int*>(args[4]) == 0, "Measured without a width or height limit (MeasureMode.Undefined)");
+        ++measures;
+        return Box(Measured(self, Get(static_cast<Obj>(args[0])).text));
+    }
     throw std::runtime_error("Unexpected fake method " + info.type + "." + m);
 }
 }
@@ -614,7 +649,8 @@ std::vector<Obj> Owned(Obj layer) {
 }
 void Tick() { nowMs += 200; TickPerfOverlay(); }
 // One frame of `ticks` (100 ns), then the main compositor's frame call.
-void Frame(int64_t ticks = FrameTicks) { counter += ticks; PerfOverlayFrame(nowMs); }
+// The game's layout pass came between the last frame and this one (Resolve).
+void Frame(int64_t ticks = FrameTicks) { counter += ticks; Resolve(); PerfOverlayFrame(nowMs); }
 // Pumps at 60 FPS: 12 frames, the game using 12 % of 8 processors, then the 200 ms pump.
 void Pump(int pumps = 1) {
     for (int p = 0; p < pumps; ++p) {
@@ -660,13 +696,22 @@ void ReleaseCollections(HANDLE gate) {
 const std::string Measuring = "FPS : mesure en cours…";
 // Without the frame rate: nothing to show yet, or nothing to give.
 const std::string WaitingLine = "Mesure en cours…", UnavailableLine = "Mesure indisponible";
-const std::string Memory = "Mémoire 1,52 Go · privée 1,31 Go";
+const std::string Memory = "Mémoire 1,52 Go · Privée 1,31 Go";
 const std::string Heap = "Tas géré 312 Mo / 420 Mo";
 const std::string Steady = "60 FPS · 16,7 ms (max 16,7 ms)\n" + Memory + "\n" + Heap + " · CPU 12 %";
 // A new label's first text: its CPU share needs a second sample.
 const std::string SteadyNoCpu = "60 FPS · 16,7 ms (max 16,7 ms)\n" + Memory + "\n" + Heap;
 // The fourth line from the fake counters.
-const std::string DevicesLine = "GPU 23 % · Disque C: 4 % · 1,2 Mo/s";
+const std::string DevicesLine = "GPU 23 % · Disque C: 4 % (1,2 Mo/s)";
+const std::string DiskLine = "Disque C: 4 % (1,2 Mo/s)";
+// 1.18.1: its items on two lines (150 % wide, 100 % high).
+const std::string TwoLines = "60 FPS · 16,7 ms (max 16,7 ms) · Mémoire 1,52 Go\nPrivée 1,31 Go · Tas géré 312 Mo / 420 Mo · CPU 12 %";
+// A layout within a hundredth of a pixel (a text size not a whole factor).
+bool Close(const std::array<float, 4>& box, const std::array<float, 4>& expected, float tolerance = .01f) {
+    for (size_t i = 0; i < box.size(); ++i)
+        if (!(std::fabs(box[i] - expected[i]) <= tolerance)) return false;
+    return true;
+}
 // The fake layout's widths (6 px a character of the longest line, plus 16).
 constexpr float MemoryLineWidth = 6 * 32 + 16, CpuLineWidth = 6 * 35 + 16; // longest line: the memory one, the third one with the CPU share
 
@@ -748,12 +793,23 @@ void Formatting() {
     sample.cpu = 12.4;
     const std::string three = "60 FPS · 16,7 ms (max 33,4 ms)\n" + Memory + "\n" + Heap + " · CPU 12 %";
     Check(Text(sample) == three, "Three lines");
+    // 1.18.1: each figure an item of its own, its slot and its line's group.
+    const auto items = ItemsOf(sample);
+    Check(items == Items{{SlotFps, "60 FPS", 0}, {SlotTimes, "16,7 ms (max 33,4 ms)", 0}, {SlotMemory, "Mémoire 1,52 Go", 1},
+        {SlotPrivate, "Privée 1,31 Go", 1}, {SlotHeap, "Tas géré 312 Mo / 420 Mo", 2}, {SlotCpu, "CPU 12 %", 2}}, "Its items");
+    Check(GroupStarts(items) == std::vector<size_t>{0, 2, 4} && Join(items, {0}) == "60 FPS · 16,7 ms (max 33,4 ms) · Mémoire 1,52 Go · "
+        "Privée 1,31 Go · Tas géré 312 Mo / 420 Mo · CPU 12 %" && Join(items, {0, 3, 5}) == "60 FPS · 16,7 ms (max 33,4 ms) · Mémoire 1,52 Go\n"
+        "Privée 1,31 Go · Tas géré 312 Mo / 420 Mo\nCPU 12 %", "Its items on any lines, « · » between those of a line");
+    Check(Shape("16,7 ms (max 33,4 ms)") == "00,0 ms (max 00,0 ms)" && Shape("Disque C: 4 % (1,2 Mo/s)") == "Disque C: 0 % (0,0 Mo/s)" &&
+        Shape("Mémoire 1,52 Go") == "Mémoire 0,00 Go", "Their shapes: every digit a zero");
     // The fourth line: the graphics card and the game's disk, each left out when unknown.
     auto full = sample;
     full.gpu = 23; full.drive = L'C'; full.diskBusy = 4; full.diskRate = 1.2 * MiB;
-    Check(Text(full) == three + "\nGPU 23 % · Disque C: 4 % · 1,2 Mo/s", "Four lines: " + Text(full));
+    Check(Text(full) == three + "\n" + DevicesLine, "Four lines: " + Text(full));
+    Check(ItemsOf(full).size() == 8 && ItemsOf(full)[6] == Item{SlotGpu, "GPU 23 %", 3} && ItemsOf(full)[7] == Item{SlotDisk, DiskLine, 3},
+        "The disk one item: its active time, its transfer rate in brackets");
     full.gpu = -1;
-    Check(Text(full) == three + "\nDisque C: 4 % · 1,2 Mo/s", "Without the GPU");
+    Check(Text(full) == three + "\n" + DiskLine, "Without the GPU");
     full.diskRate = -1;
     Check(Text(full) == three + "\nDisque C: 4 %", "Without the transfer rate");
     full.diskBusy = -1; full.diskRate = 2048;
@@ -779,9 +835,9 @@ void Formatting() {
     auto alone = full;
     alone.fps = false;
     alone.gpu = 23; alone.drive = L'C'; alone.diskBusy = 4; alone.diskRate = 1.2 * MiB;
-    Check(Text(alone) == "GPU 23 % · Disque C: 4 % · 1,2 Mo/s", "The GPU and the disk alone: " + Text(alone));
+    Check(Text(alone) == DevicesLine, "The GPU and the disk alone: " + Text(alone));
     alone.waiting = true;
-    Check(Text(alone) == "GPU 23 % · Disque C: 4 % · 1,2 Mo/s", "A part still waiting: the other's figures");
+    Check(Text(alone) == DevicesLine, "A part still waiting: the other's figures");
     alone.drive = 0;
     Check(Text(alone) == "GPU 23 %", "The GPU alone");
     alone.gpu = -1; alone.drive = L'D'; alone.diskBusy = -1; alone.diskRate = 0;
@@ -790,6 +846,7 @@ void Formatting() {
     Check(Text(alone) == WaitingLine, "Nothing to show yet: the neutral text, never the FPS one");
     alone.waiting = false;
     Check(Text(alone) == UnavailableLine, "Nothing to give (Windows refusing the parts shown)");
+    Check(Placeholder(ItemsOf(alone)) && ItemsOf(alone).front().slot == SlotNote && !Placeholder(ItemsOf(full)), "A neutral text: one item of its own");
     Check(Placeholder(WaitingLine) && Placeholder(UnavailableLine) && !Placeholder(Measuring) && !Placeholder("GPU 23 %"),
         "The neutral texts never set the width");
     const auto left = Place(0), right = Place(1), bottomLeft = Place(2), bottomRight = Place(3), other = Place(7);
@@ -882,6 +939,75 @@ void CounterArrays() {
     answer = ERROR_SUCCESS;
 }
 // The mouse placement: edges, places and the drag's steps.
+// 1.18.1, the reflow: for each number of lines the narrowest width its items
+// need on them (their order kept), the largest text size its box holds over
+// them (fewer lines between equals), then its items filling lines as wide as
+// its box gives them at that size (an item up on the line before as soon as
+// it fits there); its natural size its groups' lines.
+void FlowModel() {
+    using namespace perfOverlay;
+    // The steady items at 100 % (6 px a character): 60 FPS, the frame times,
+    // the memory, the private bytes, the heap, the CPU share; « · » 18 px, a
+    // line 12 px and 16 px more for each next one.
+    const std::vector<float> widths{36, 126, 90, 84, 144, 48};
+    const Metrics metrics{18, 12, 16};
+    Check(LineWidth(widths, 0, 2, 18) == 180 && LineWidth(widths, 4, 6, 18) == 210 && LineWidth(widths, 3, 3, 18) == 0 &&
+        FlowWidth(widths, {0, 2, 4}, 18) == 210 && FlowHeight(3, metrics) == 44 && FlowHeight(1, metrics) == 12 && FlowHeight(0, metrics) == 0,
+        "Its lines' widths and heights");
+    Check(Balanced(widths, 18, 1) == std::vector<size_t>{0} && Balanced(widths, 18, 2) == std::vector<size_t>{0, 3} &&
+        Balanced(widths, 18, 3) == std::vector<size_t>{0, 2, 4} && Balanced(widths, 18, 4) == std::vector<size_t>{0, 2, 4, 5} &&
+        Balanced(widths, 18, 5) == std::vector<size_t>{0, 2, 3, 4, 5} && Balanced(widths, 18, 6) == std::vector<size_t>{0, 1, 2, 3, 4, 5} &&
+        Balanced(widths, 18, 9) == std::vector<size_t>{0, 1, 2, 3, 4, 5} && Balanced({}, 18, 3) == std::vector<size_t>{0},
+        "Each number of lines: the widest line the narrowest, in their order");
+    Check(Balanced({60, 60, 60}, 0, 2) == std::vector<size_t>{0, 2}, "Between equals, the earlier lines the fuller");
+    Items items{{SlotFps, "60 FPS", 0}, {SlotTimes, "16,7 ms (max 16,7 ms)", 0}, {SlotMemory, "Mémoire 1,52 Go", 1},
+        {SlotPrivate, "Privée 1,31 Go", 1}, {SlotHeap, "Tas géré 312 Mo / 420 Mo", 2}, {SlotCpu, "CPU 12 %", 2}};
+    const Extent natural = NaturalOf(widths, items, metrics);
+    Check(natural.width == 226 && natural.height == 52, "Its natural size: its groups' three lines with its insets");
+    const auto fit = [&](float width, float height) { return Fit(widths, metrics, width, height); };
+    Check(Greedy(widths, 18, 210) == std::vector<size_t>{0, 2, 4} && Greedy(widths, 18, 294) == std::vector<size_t>{0, 3, 5} &&
+        Greedy(widths, 18, 1000) == std::vector<size_t>{0} && Greedy(widths, 18, 10) == std::vector<size_t>{0, 1, 2, 3, 4, 5} &&
+        Greedy({}, 18, 100) == std::vector<size_t>{0}, "Filled: each item on the line before when it fits there");
+    // Its natural box: its groups' three lines at 100 %.
+    auto flow = fit(226, 52);
+    Check(flow.starts == std::vector<size_t>{0, 2, 4} && flow.factor == 1 && Join(items, flow.starts) == Steady, "100 %: its three lines, its text at 100 %");
+    // Wider: two lines (12 px more for the second one than one line), its
+    // text larger as soon as they give it more room: 328 px at 100 %.
+    flow = fit(339, 52);
+    Check(flow.starts == std::vector<size_t>{0, 3} && Near(flow.factor, 339.0 / 328, 1e-5) && 328 * flow.factor <= 339 &&
+        Join(items, flow.starts) == "60 FPS · 16,7 ms (max 16,7 ms) · Mémoire 1,52 Go\nPrivée 1,31 Go · Tas géré 312 Mo / 420 Mo · CPU 12 %",
+        "150 % wide: the items flow onto two lines, its text a little larger");
+    flow = fit(678, 52);
+    Check(flow.starts == std::vector<size_t>{0, 4} && Near(flow.factor, 52.0 / 36, 1e-5),
+        "300 % wide: two lines as high as its box allows, the first as full as its width allows");
+    flow = fit(678, 26);
+    Check(flow.starts == std::vector<size_t>{0} && Near(flow.factor, 678.0 / 634, 1e-5) && 634 * flow.factor <= 678,
+        "300 % wide, 50 % high: all on one line");
+    // Narrower or taller: more lines.
+    flow = fit(113, 26);
+    Check(flow.Lines() == 3 && flow.factor == .5f, "50 % both ways: its three lines at 50 %");
+    flow = fit(226, 156);
+    Check(flow.Lines() == 6 && Near(flow.factor, 226.0 / 160, 1e-5), "100 % wide, 300 % high: an item a line, its text larger");
+    flow = fit(339, 156);
+    Check(flow.starts == std::vector<size_t>{0, 2, 3, 4, 5} && Near(flow.factor, 339.0 / 196, 1e-5) && 196 * flow.factor <= 339 &&
+        84 * flow.factor <= 156, "150 % wide, 300 % high: five lines");
+    // Widened a little at a time, its text still at 100 % (its height the
+    // limit): the items come up to the line above as soon as they fit there,
+    // then two lines once they give it a larger text; back as it narrows.
+    flow = fit(300, 52);
+    Check(flow.starts == std::vector<size_t>{0, 2, 4} && flow.factor == 1, "Not room enough yet for the memory on the first line");
+    flow = fit(310, 52);
+    Check(flow.starts == std::vector<size_t>{0, 3, 5} && flow.factor == 1 && Join(items, flow.starts) ==
+        "60 FPS · 16,7 ms (max 16,7 ms) · Mémoire 1,52 Go\nPrivée 1,31 Go · Tas géré 312 Mo / 420 Mo\nCPU 12 %",
+        "Room enough: the memory up on the first line, the next items up with it");
+    flow = fit(330, 52);
+    Check(flow.starts == std::vector<size_t>{0, 3} && Near(flow.factor, 330.0 / 328, 1e-5), "Two lines, its text larger");
+    Check(fit(330, 52).starts == flow.starts && fit(310, 52).starts == std::vector<size_t>{0, 3, 5} && fit(226, 52).starts ==
+        std::vector<size_t>{0, 2, 4}, "A function of its box alone: the same layout every time, back as it narrows");
+    // Never more than three times its natural size, never without a box.
+    Check(Fit({10}, {0, 10, 10}, 1000, 1000).factor == 3 && Fit({}, metrics, 226, 52).factor == 0 && fit(0, 52).factor == 0 &&
+        fit(226, std::nanf("")).factor == 0 && fit(-5, 52).Lines() == 0, "At most three times, nothing without a box");
+}
 void PlacementModel() {
     using namespace perfOverlay;
     Check(ClampEdge(500, 200, 1920) == 500 && ClampEdge(-50, 200, 1920) == 8 && ClampEdge(1900, 200, 1920) == 1712 &&
@@ -919,39 +1045,39 @@ void PlacementModel() {
         return result;
     };
     Check(step(true, true, true, false, 500, 500) == DragStep::None && state.phase == Drag::Idle, "A press the panel gives to something else");
-    Check(step(true, true, false, true, 20, 20) == DragStep::None && state.phase == Drag::Idle, "A press not located (another window)");
-    Check(step(false, true, true, true, 20, 20) == DragStep::None && state.phase == Drag::Idle, "The button held from before: no press");
-    Check(step(true, true, true, true, 20, 20) == DragStep::None && state.phase == Drag::Pressed && state.grabX == 12 && state.grabY == 12,
-        "Pressed on the overlay: the grab offset");
-    Check(step(false, true, true, true, 22, 22) == DragStep::None && state.phase == Drag::Pressed, "Under 4 px: still a click");
-    Check(step(false, false, true, true, 22, 22) == DragStep::None && state.phase == Drag::Idle, "Released: a click, nothing saved");
-    step(true, true, true, true, 20, 20);
-    Check(step(false, true, true, true, 520, 320) == DragStep::Move && state.phase == Drag::Moving && state.left == 508 && state.top == 308,
+    Check(step(true, true, false, true, 40, 20) == DragStep::None && state.phase == Drag::Idle, "A press not located (another window)");
+    Check(step(false, true, true, true, 40, 20) == DragStep::None && state.phase == Drag::Idle, "The button held from before: no press");
+    Check(step(true, true, true, true, 40, 20) == DragStep::None && state.phase == Drag::Pressed && state.grabX == 32 && state.grabY == 12,
+        "Pressed on the overlay (beyond its top-left corner's handle): the grab offset");
+    Check(step(false, true, true, true, 42, 22) == DragStep::None && state.phase == Drag::Pressed, "Under 4 px: still a click");
+    Check(step(false, false, true, true, 42, 22) == DragStep::None && state.phase == Drag::Idle, "Released: a click, nothing saved");
+    step(true, true, true, true, 40, 20);
+    Check(step(false, true, true, true, 540, 320) == DragStep::Move && state.phase == Drag::Moving && state.left == 508 && state.top == 308,
         "Moving with the grab offset");
     Check(step(false, true, true, true, 5000, -100) == DragStep::Move && state.left == 1686 && state.top == 8, "Clamped inside the margins");
-    Check(step(false, false, true, true, 0, 0) == DragStep::End && state.phase == Drag::Idle && state.left == 1686 && state.top == 8 &&
+    Check(step(false, false, true, true, 20, 0) == DragStep::End && state.phase == Drag::Idle && state.left == 1686 && state.top == 8 &&
         state.width == 226 && state.height == 52 && state.spaceWidth == 1920 && state.spaceHeight == 1080, "Released anywhere: the last place");
     box = {8, 8, 226, 52};
-    step(true, true, true, true, 20, 20);
-    Check(step(false, true, false, false, 300, 300) == DragStep::None && state.phase == Drag::Idle, "Pressed, then the window left: nothing");
-    step(true, true, true, true, 20, 20);
-    Check(step(false, true, true, false, 300, 300) == DragStep::None && state.phase == Drag::Idle && box.x == 8,
+    step(true, true, true, true, 40, 20);
+    Check(step(false, true, false, false, 320, 300) == DragStep::None && state.phase == Drag::Idle, "Pressed, then the window left: nothing");
+    step(true, true, true, true, 40, 20);
+    Check(step(false, true, true, false, 320, 300) == DragStep::None && state.phase == Drag::Idle && box.x == 8,
         "Pressed, then the point held covered: nothing moved");
-    step(true, true, true, true, 20, 20);
-    step(false, true, true, true, 120, 20); // drawn at 108
-    step(false, true, true, true, 220, 20); // seen at 108, drawn at 208
-    Check(step(false, true, true, false, 230, 20) == DragStep::Back && state.phase == Drag::Idle && state.left == 108 && state.top == 8 &&
+    step(true, true, true, true, 40, 20);
+    step(false, true, true, true, 140, 20); // drawn at 108
+    step(false, true, true, true, 240, 20); // seen at 108, drawn at 208
+    Check(step(false, true, true, false, 250, 20) == DragStep::Back && state.phase == Drag::Idle && state.left == 108 && state.top == 8 &&
         state.width == 226 && state.spaceWidth == 1920, "The point held covered while moving: back at the last place seen");
-    step(true, true, true, true, 120, 20);
-    step(false, true, true, true, 220, 20); // seen at 108, drawn at 208
-    Check(step(false, false, true, false, 220, 20) == DragStep::Back && state.left == 108, "Covered at the release: back too, never left under it");
-    step(true, true, true, true, 120, 20);
-    step(false, true, true, true, 220, 20);
-    Check(step(false, true, false, false, 330, 20) == DragStep::End && state.left == 208 && state.phase == Drag::Idle,
+    step(true, true, true, true, 140, 20);
+    step(false, true, true, true, 240, 20); // seen at 108, drawn at 208
+    Check(step(false, false, true, false, 240, 20) == DragStep::Back && state.left == 108, "Covered at the release: back too, never left under it");
+    step(true, true, true, true, 140, 20);
+    step(false, true, true, true, 240, 20);
+    Check(step(false, true, false, false, 350, 20) == DragStep::End && state.left == 208 && state.phase == Drag::Idle,
         "The window left while moving: ended where it was");
     // The interface hidden while moving (no layout): ended, the sizes of the last move kept.
-    step(true, true, true, true, 220, 20);
-    step(false, true, true, true, 320, 20);
+    step(true, true, true, true, 240, 20);
+    step(false, true, true, true, 340, 20);
     const float none = std::nanf("");
     Check(Advance(state, false, true, false, false, 0, 0, Rect{none, none, none, none}, none, none) == DragStep::End && state.left == 308 &&
         state.width == 226 && state.height == 52 && state.spaceWidth == 1920 && state.spaceHeight == 1080, "Hidden while moving: the last move's sizes");
@@ -965,66 +1091,81 @@ void PlacementModel() {
     Check(Scaled(226, 100, 150) == 339 && Scaled(339, 150, 50) == 113 && Scaled(52, 100, 200) == 104, "Sizes scaled from one scale to another");
     Check(BoxAt(226, 150) == 339 && BoxAt(52, 120) == 63 && BoxAt(208.5f, 100) == 209 && BoxAt(226, 50) == 113 && BoxAt(0, 200) == 0,
         "A side of its box: its natural length at its scale, rounded up so that its text fits; none while unknown");
-    // 1.16.1, its handles: its bottom-right corner, the last 16 px of both
-    // sides at its size but never under 18 pixels of the screen, then its
-    // right and bottom edges, 5 px thick at its size but never under 6 pixels
-    // of the screen; the corner never wider than half of it nor higher than
-    // it, an edge never thicker than a quarter of it (the rest moves it).
+    // Its handles (1.18.1: as a window's, all four edges and corners): each
+    // corner the last 16 px of both sides at its text's size but never under
+    // 18 pixels of the screen, then its edges, 5 px thick at its size but
+    // never under 6 pixels of the screen; a corner never wider nor higher
+    // than a third of it, an edge never thicker than a quarter of it (its
+    // middle moves it).
     using enum ResizeHandle;
-    const auto zone = [](const Rect& box, float x, float y, int scale, float pixels = 1) { return HandleAt(box, x, y, scale, pixels); };
+    const auto zone = [](const Rect& box, float x, float y, float scale, float pixels = 1) { return HandleAt(box, x, y, scale, pixels); };
     const Rect overlay{8, 8, 226, 52};
-    Check(zone(overlay, 233, 59, 100) == Corner && zone(overlay, 216, 42, 100) == Corner &&
-        zone(overlay, 215.5f, 59, 100) == Bottom && zone(overlay, 233, 41.5f, 100) == Right,
-        "100 %: its corner 18 px a side (the screen's least), the edges beyond it");
-    Check(zone(overlay, 228, 20, 100) == Right && zone(overlay, 227.5f, 20, 100) == Body && zone(overlay, 100, 54, 100) == Bottom &&
-        zone(overlay, 100, 53.5f, 100) == Body && zone(overlay, 20, 20, 100) == Body && zone(overlay, 20, 59, 100) == Bottom,
-        "100 %: its right and bottom edges 6 px thick, the rest moves it");
+    Check(zone(overlay, 233, 59, 100) == BottomRight && zone(overlay, 9, 9, 100) == TopLeft && zone(overlay, 233, 9, 100) == TopRight &&
+        zone(overlay, 9, 59, 100) == BottomLeft, "100 %: its four corners");
+    Check(zone(overlay, 216, 43, 100) == BottomRight && zone(overlay, 215.5f, 43, 100) == Body && zone(overlay, 216, 42, 100) == Body &&
+        zone(overlay, 26, 25, 100) == TopLeft && zone(overlay, 26.5f, 25, 100) == Body && zone(overlay, 20, 20, 100) == TopLeft,
+        "100 %: each corner 18 px wide (the screen's least) and a third of it high (17,3 px)");
+    Check(zone(overlay, 228, 30, 100) == Right && zone(overlay, 227.5f, 30, 100) == Body && zone(overlay, 14, 30, 100) == Left &&
+        zone(overlay, 14.5f, 30, 100) == Body && zone(overlay, 100, 14, 100) == Top && zone(overlay, 100, 14.5f, 100) == Body &&
+        zone(overlay, 100, 54, 100) == Bottom && zone(overlay, 100, 53.5f, 100) == Body && zone(overlay, 40, 20, 100) == Body,
+        "100 %: its four edges 6 px thick, the rest moves it");
     const Rect doubled{8, 8, 452, 104}, half{8, 8, 113, 26}, tripled{8, 8, 678, 156};
-    Check(zone(doubled, 428, 80, 200) == Corner && zone(doubled, 427.5f, 80, 200) == Body && zone(doubled, 450.5f, 30, 200) == Right &&
-        zone(doubled, 449.5f, 30, 200) == Body && zone(doubled, 100, 102.5f, 200) == Bottom && zone(doubled, 100, 101.5f, 200) == Body,
-        "200 %: its corner 32 px, its edges 10 px: its handles grow with it");
-    Check(zone(tripled, 638, 116, 300) == Corner && zone(tripled, 637, 116, 300) == Body && zone(tripled, 671, 30, 300) == Right &&
-        zone(tripled, 100, 149, 300) == Bottom, "300 %: its corner 48 px, its edges 15 px");
-    Check(zone(half, 103, 16, 50) == Corner && zone(half, 102.5f, 16, 50) == Body && zone(half, 115, 12, 50) == Right &&
-        zone(half, 50, 28, 50) == Bottom && zone(half, 50, 27.5f, 50) == Body,
+    Check(zone(doubled, 428, 80, 200) == BottomRight && zone(doubled, 427.5f, 80, 200) == Body && zone(doubled, 40, 40, 200) == TopLeft &&
+        zone(doubled, 450.5f, 60, 200) == Right && zone(doubled, 449.5f, 60, 200) == Body && zone(doubled, 100, 102.5f, 200) == Bottom &&
+        zone(doubled, 100, 101.5f, 200) == Body && zone(doubled, 18, 60, 200) == Left && zone(doubled, 100, 18, 200) == Top,
+        "200 %: its corners 32 px, its edges 10 px: its handles grow with it");
+    Check(zone(tripled, 638, 116, 300) == BottomRight && zone(tripled, 637, 116, 300) == Body && zone(tripled, 671, 60, 300) == Right &&
+        zone(tripled, 100, 149, 300) == Bottom && zone(tripled, 23, 60, 300) == Left && zone(tripled, 100, 23, 300) == Top,
+        "300 %: its corners 48 px, its edges 15 px");
+    Check(zone(half, 103, 26, 50) == BottomRight && zone(half, 102.5f, 26, 50) == Body && zone(half, 115, 20, 50) == Right &&
+        zone(half, 50, 28, 50) == Bottom && zone(half, 50, 27.5f, 50) == Body && zone(half, 14, 20, 50) == Left,
         "50 %: still 18 px and 6 px of the screen, never smaller with the overlay");
     // A small window (a panel pixel half a pixel of the screen) or a 4K one
     // (two): 18 pixels of the screen are 36, then 9 panel pixels.
-    Check(zone(overlay, 198, 24, 100, .5f) == Corner && zone(overlay, 197.5f, 24, 100, .5f) == Body &&
-        zone(overlay, 222, 20, 100, .5f) == Right && zone(overlay, 100, 48, 100, .5f) == Bottom,
-        "A small window: its corner 36 panel pixels, its edges 12 (still 18 and 6 pixels of the screen)");
-    Check(zone(overlay, 218, 44, 100, 2) == Corner && zone(overlay, 217.5f, 44, 100, 2) == Body &&
-        zone(overlay, 229, 20, 100, 2) == Right && zone(overlay, 228.5f, 20, 100, 2) == Body,
+    Check(zone(overlay, 198, 44, 100, .5f) == BottomRight && zone(overlay, 197.5f, 44, 100, .5f) == Body &&
+        zone(overlay, 222, 30, 100, .5f) == Right && zone(overlay, 100, 48, 100, .5f) == Bottom && zone(overlay, 20, 30, 100, .5f) == Left,
+        "A small window: its corners 36 panel pixels wide, its edges 12 (still 18 and 6 pixels of the screen)");
+    Check(zone(overlay, 218, 44, 100, 2) == BottomRight && zone(overlay, 217.5f, 44, 100, 2) == Body &&
+        zone(overlay, 229, 30, 100, 2) == Right && zone(overlay, 228.5f, 30, 100, 2) == Body,
         "Twice the screen's pixels: its own size wins (16 and 5 panel pixels)");
-    Check(zone(overlay, 218, 44, 100, std::nanf("")) == Corner && zone(overlay, 216, 42, 100, 0) == Corner,
+    Check(zone(overlay, 218, 44, 100, std::nanf("")) == BottomRight && zone(overlay, 216, 43, 100, 0) == BottomRight,
         "No screen scale known: one pixel of the screen a panel pixel");
-    // A one-line overlay at 50 % (the GPU alone): its corner never wider
-    // than half of it, the whole of its height; its bottom edge a quarter.
+    // A one-line overlay at 50 % (the GPU alone): its corners a third of its
+    // width and of its height, its top and bottom edges a quarter of it.
     const Rect line{8, 8, 32, 10};
-    Check(zone(line, 24, 9, 50) == Corner && zone(line, 24, 17.5f, 50) == Corner && zone(line, 23.5f, 9, 50) == Body &&
-        zone(line, 10, 16, 50) == Bottom && zone(line, 10, 15, 50) == Body,
-        "A small overlay: its corner half its width and its whole height, its left half moves it");
+    Check(zone(line, 30, 17, 50) == BottomRight && zone(line, 30, 9, 50) == TopRight && zone(line, 10, 9, 50) == TopLeft &&
+        zone(line, 24, 13, 50) == Body && zone(line, 35, 13, 50) == Right && zone(line, 24, 16.5f, 50) == Bottom && zone(line, 24, 9.5f, 50) == Top,
+        "A small overlay: its corners a third of it, its middle moves it");
     const Handles sizes = HandleSizes(overlay, 100, 1);
-    Check(sizes.cornerWidth == 18 && sizes.cornerHeight == 18 && sizes.right == 6 && sizes.bottom == 6 &&
+    Check(sizes.cornerWidth == 18 && Near(sizes.cornerHeight, 52.0 / 3, 1e-4) && sizes.edgeX == 6 && sizes.edgeY == 6 &&
         Near(PanelScale(3840, 2160, 1920, 1080), 2) && Near(PanelScale(1920, 1200, 1920, 1080), 1) && Near(PanelScale(960, 540, 1920, 1080), .5),
         "The handles' sizes; the screen's pixels in a panel pixel");
-    Check(std::string(HandleName(ResizeHandle::Corner)) == "corner" && std::string(HandleName(ResizeHandle::Right)) == "right" &&
-        std::string(HandleName(ResizeHandle::Bottom)) == "bottom", "The handles' names in the log");
-    // 1.17.1, the game's cursors over it (CursorType): the double arrow of the
-    // handle under the cursor, the move cursor elsewhere.
-    Check(CursorOf(ResizeHandle::Right) == 0x20000 && CursorOf(ResizeHandle::Bottom) == 0x80000 && CursorOf(ResizeHandle::Corner) == 0x100000 &&
-        CursorOf(ResizeHandle::Body) == 0x10000, "Its handles' cursors: ResizeEW, ResizeNS, ResizeNWSE, and Move elsewhere");
-    // Its handles at its text's size, the smaller scale: 452 px wide at 200 %
-    // but 100 % high, its corner is that of 100 % (18 px), not of 200 % (32).
+    Check(SideX(Left) == -1 && SideX(TopLeft) == -1 && SideX(BottomLeft) == -1 && SideX(Right) == 1 && SideX(TopRight) == 1 &&
+        SideX(BottomRight) == 1 && SideX(Top) == 0 && SideX(Bottom) == 0 && SideX(Body) == 0 && SideY(Top) == -1 && SideY(TopLeft) == -1 &&
+        SideY(TopRight) == -1 && SideY(Bottom) == 1 && SideY(BottomLeft) == 1 && SideY(BottomRight) == 1 && SideY(Left) == 0 &&
+        SideY(Right) == 0 && SideY(Body) == 0, "The side each handle moves on each axis");
+    Check(std::string(HandleName(BottomRight)) == "bottom-right" && std::string(HandleName(TopLeft)) == "top-left" &&
+        std::string(HandleName(TopRight)) == "top-right" && std::string(HandleName(BottomLeft)) == "bottom-left" &&
+        std::string(HandleName(Right)) == "right" && std::string(HandleName(Bottom)) == "bottom" && std::string(HandleName(Left)) == "left" &&
+        std::string(HandleName(Top)) == "top", "The handles' names in the log");
+    // The game's cursors over it (CursorType): the double arrow of the handle
+    // under the cursor, the move cursor elsewhere.
+    Check(CursorOf(Right) == 0x20000 && CursorOf(Left) == 0x20000 && CursorOf(Bottom) == 0x80000 && CursorOf(Top) == 0x80000 &&
+        CursorOf(BottomRight) == 0x100000 && CursorOf(TopLeft) == 0x100000 && CursorOf(TopRight) == 0x40000 && CursorOf(BottomLeft) == 0x40000 &&
+        CursorOf(Body) == 0x10000, "Its handles' cursors: ResizeEW, ResizeNS, ResizeNWSE, ResizeNESW, and Move elsewhere");
+    // Its handles at its text's size: 452 px wide at 200 % but 100 % high,
+    // its corner is that of 100 % (18 px), not of 200 % (32).
     const Rect wide{8, 8, 452, 52};
-    Check(zone(wide, 443, 43, Scales{200, 100}.Text()) == Corner && zone(wide, 440, 43, Scales{200, 100}.Text()) == Body &&
-        zone(wide, 440, 43, 200) == Corner, "Its handles at its text's size");
+    const auto text = static_cast<float>(Scales{200, 100}.Text());
+    Check(zone(wide, 443, 43, text) == BottomRight && zone(wide, 440, 43, text) == Body &&
+        zone(wide, 440, 43, 200) == BottomRight, "Its handles at its text's size");
     // 1.17.1, as a window's: each side its own way from its length at the
     // press, its top-left staying put; its corner both freely (no longer along
     // its diagonal), its right edge its width only, its bottom edge its height
     // only; whole percents within 50..300, never past the panel's margins.
     Drag sizing;
     sizing.resize = true;
+    sizing.handle = ResizeHandle::BottomRight;
     sizing.left = sizing.top = 8;
     sizing.startWidth = 226;
     sizing.startHeight = 52;
@@ -1072,6 +1213,65 @@ void PlacementModel() {
     Check(edged(100, 84) == Scales{180, 150}, "The width drawn kept while its bottom edge moves");
     edge.top = 1000;
     Check(edged(100, 5000) == Scales{180, 138}, "An edge never past the margins either");
+    // 1.18.1, its left and top sides too: the edge held follows the cursor,
+    // the opposite one stays put (its right or bottom side), each side within
+    // 50..300 % and its own room to the panel's margin.
+    Drag sides;
+    sides.resize = true;
+    sides.handle = ResizeHandle::TopLeft;
+    sides.left = 500;
+    sides.top = 300;
+    sides.right = 726;
+    sides.bottom = 352;
+    sides.startWidth = 226;
+    sides.startHeight = 52;
+    sides.grabX = sides.grabY = 5; // from its top-left: its left and top sides held
+    const auto sided = [&](float x, float y) { return ResizedScales(sides, x, y, 1920, 1080); };
+    Check(sided(505, 305) == Scales{100, 100} && sided(392, 279) == Scales{150, 150} && ResizedLeft(sides, 339) == 387 &&
+        ResizedTop(sides, 78) == 274, "Its top-left corner: 150 % both ways, its bottom-right corner kept");
+    Check(sided(392, 305) == Scales{150, 100} && sided(505, 279) == Scales{100, 150} && sided(5000, 5000) == Scales{50, 50} &&
+        sided(-5000, -5000) == Scales{300, 300} && ResizedLeft(sides, BoxAt(226, 300)) == 48, "Each side freely, within 50..300 %");
+    sides.right = 300;
+    sides.bottom = 100;
+    Check(sided(-5000, -5000) == Scales{129, 176} && ResizedLeft(sides, BoxAt(226, 129)) == 8 && ResizedTop(sides, BoxAt(52, 176)) == 8,
+        "Never past the panel's left and top margins");
+    sides.right = 726;
+    sides.bottom = 352;
+    sides.handle = ResizeHandle::Left;
+    sides.grabY = 22; // from its bottom side, not moved
+    Check(sided(392, 900) == Scales{150, 100} && ResizedTop(sides, 52) == 300 && ResizedLeft(sides, 339) == 387,
+        "Its left edge: its width only, its right side and its top kept");
+    sides.handle = ResizeHandle::Top;
+    sides.grabX = 100;
+    sides.grabY = 5;
+    Check(sided(1500, 279) == Scales{100, 150} && ResizedLeft(sides, 226) == 500 && ResizedTop(sides, 78) == 274,
+        "Its top edge: its height only, its bottom side and its left kept");
+    sides.handle = ResizeHandle::TopRight;
+    sides.grabX = 5; // from its right side
+    Check(sided(834, 279) == Scales{150, 150} && ResizedLeft(sides, 339) == 500 && ResizedTop(sides, 78) == 274,
+        "Its top-right corner: its left and bottom sides kept");
+    sides.handle = ResizeHandle::BottomLeft;
+    sides.grabX = 5;
+    sides.grabY = 5; // from its left and bottom sides
+    Check(sided(392, 373) == Scales{150, 150} && ResizedLeft(sides, 339) == 387 && ResizedTop(sides, 78) == 300,
+        "Its bottom-left corner: its right and top sides kept");
+    Check(HeldPoint(sides, {387, 300, 339, 78}).x == 392 && HeldPoint(sides, {387, 300, 339, 78}).y == 373,
+        "The point held: from its left side and its bottom side");
+    // Pressed on its left edge: a resize by it, from its left side.
+    Drag leftEdge;
+    const Rect placed{500, 300, 226, 52};
+    Check(Advance(leftEdge, true, true, true, true, 503, 330, placed, 1920, 1080) == DragStep::None && leftEdge.handle == ResizeHandle::Left &&
+        leftEdge.grabX == 3 && leftEdge.grabY == 22 && leftEdge.right == 726 && leftEdge.bottom == 352, "Pressed on its left edge");
+    Check(Advance(leftEdge, false, true, true, true, 390, 340, placed, 1920, 1080) == DragStep::Scale && leftEdge.scales == Scales{150, 100} &&
+        ResizedLeft(leftEdge, 339) == 387 && leftEdge.left == 500, "Its left edge dragged: 150 % wide, its right side kept");
+    Check(Advance(leftEdge, false, false, true, true, 390, 340, placed, 1920, 1080) == DragStep::End, "Released");
+    Check(Advance(leftEdge, true, true, true, true, 502, 302, placed, 1920, 1080) == DragStep::None && leftEdge.handle == ResizeHandle::TopLeft &&
+        leftEdge.grabX == 2 && leftEdge.grabY == 2, "Pressed on its top-left corner");
+    Advance(leftEdge, false, false, true, true, 502, 302, placed, 1920, 1080);
+    // Its handles at its text's size when the reflow draws it larger.
+    Check(Advance(leftEdge, true, true, true, true, 712, 330, placed, 1920, 1080, Scales{100, 100}, 1, 300) == DragStep::None &&
+        leftEdge.handle == ResizeHandle::Right, "Its handles at its text's size (300 %: 15 px edges)");
+    Advance(leftEdge, false, false, true, true, 712, 330, placed, 1920, 1080);
     // A resize's steps: a press in the grip, a click changes nothing, the
     // scales follow (drawn at once here), released: saved; the point held
     // covered: back at the last scales where the panel picked it.
@@ -1087,8 +1287,8 @@ void PlacementModel() {
         resize.startScales == Scales{100, 100}, "Pressed in the grip: a resize, its offset from the corner");
     Check(resizeStep(false, true, true, true, 231, 57) == DragStep::None && resizeStep(false, false, true, true, 231, 57) == DragStep::None &&
         resize.phase == Drag::Idle && box.width == 226, "A click: nothing");
-    Check(resizeStep(true, true, true, true, 20, 20) == DragStep::None && !resize.resize, "Pressed elsewhere: a move");
-    resizeStep(false, false, true, true, 20, 20);
+    Check(resizeStep(true, true, true, true, 40, 20) == DragStep::None && !resize.resize, "Pressed elsewhere: a move");
+    resizeStep(false, false, true, true, 40, 20);
     resizeStep(true, true, true, true, 229, 55);
     Check(resizeStep(false, true, true, true, 342, 81) == DragStep::Scale && resize.phase == Drag::Moving && resize.scales == Scales{150, 150} &&
         resize.seenScales == Scales{100, 100} && resize.left == 8 && resize.top == 8, "Resized: 150 % both ways, its top-left kept");
@@ -1123,7 +1323,7 @@ void PlacementModel() {
         "Pressed elsewhere: a move");
     Advance(edges, false, false, true, true, 100, 30, box, 1920, 1080);
     // A small window: the corner pressed 30 panel pixels from it (15 pixels of the screen).
-    Check(Advance(edges, true, true, true, true, 204, 30, box, 1920, 1080, Scales{}, .5f) == DragStep::None && edges.handle == ResizeHandle::Corner,
+    Check(Advance(edges, true, true, true, true, 204, 44, box, 1920, 1080, Scales{}, .5f) == DragStep::None && edges.handle == ResizeHandle::BottomRight,
         "A small window: its corner still 18 pixels of the screen");
 }
 
@@ -1196,7 +1396,8 @@ void Install() {
         {"Label", ".ctor", 0, 0x5729760}, {"TextElement", "set_text", 1, 0x564B780}, {"TextElement", "set_enableRichText", 1, 0x564B1E0},
         {"Length", ".ctor", 2, 0x561D3D0}, {"BaseVisualElementPanel", "Pick", 1, 0x57A4050}, {"pq", "pbs", 0, 0x2E93CC0},
         {"VisualElement", ".ctor", 0, 0x55F50B0}, {"VisualElement", "set_visible", 1, 0x55FA170},
-        {"DofusCursor", "SetCursor", 4, 0x280A070}, {"DofusCursor", "RemoveCursor", 2, 0x2809EA0}};
+        {"DofusCursor", "SetCursor", 4, 0x280A070}, {"DofusCursor", "RemoveCursor", 2, 0x2809EA0},
+        {"TextElement", "MeasureTextSize", 5, 0x5645AF0}};
     const std::vector<std::tuple<std::string, uintptr_t, uintptr_t>> styles{
         {"position", 0x55D1A30, 0x55D48B0}, {"left", 0x55D1610, 0x55D3EB0}, {"top", 0x55D1CD0, 0x55D4F70}, {"right", 0x55D1AC0, 0x55D4960},
         {"bottom", 0x55D1190, 0x55D3530}, {"paddingLeft", 0x55D1970, 0x55D46D0}, {"paddingRight", 0x55D19B0, 0x55D4770},
@@ -1210,8 +1411,8 @@ void Install() {
         expected.insert({"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_" + property, 1, set});
     }
     Check(contracts == expected, "Exactly the pinned contracts: " + std::to_string(contracts.size()) + " of " + std::to_string(expected.size()));
-    for (const uintptr_t rva : {0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0, 0x57A4050, 0x55F50B0, 0x55FA170, 0x280A070, 0x2809EA0})
-        Check(Guarded(rva), "The GC exports, the code behind them, the panel's pick, the grip's elements and the game's cursor manager are guarded");
+    for (const uintptr_t rva : {0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0, 0x57A4050, 0x55F50B0, 0x55FA170, 0x280A070, 0x2809EA0, 0x5645AF0})
+        Check(Guarded(rva), "The GC exports, the code behind them, the panel's pick, the grip's elements, the game's cursor manager and the text measure are guarded");
     InstallPerfOverlay();
     Check(contracts == expected && Logged("PERF_OVERLAY_DISABLED") == 2 && toolsFake::registrations.size() == registered, "Installed once");
 }
@@ -1312,17 +1513,24 @@ void Created() {
     Check(dots == std::set<std::pair<float, float>>{{6.f, 0.f}, {3.f, 3.f}, {6.f, 3.f}, {0.f, 6.f}, {3.f, 6.f}, {6.f, 6.f}},
         "A triangle against its bottom-right corner");
     // About twice a second: not at the next pump, at the second one. Its
-    // natural size from its first layout, its box at its sizes (100 %).
+    // items measured at its first layout (1.18.1: with its own font, each
+    // shape once, the separator and the lines), its natural size their
+    // groups' lines, its box at its sizes (100 %), its items on the three
+    // lines its box gives the largest text.
+    const auto measuredBefore = measures;
     Pump();
     Check(o.texts == 1, "No refresh 200 ms later");
+    Check(ui.learned && ui.metrics.separator == 18 && ui.metrics.first == 12 && ui.metrics.pitch == 16 && measures == measuredBefore + 7 &&
+        ui.lines == 3 && ui.font == 1 && ui.widths[SlotMeasuring] == 132 && ui.widths[SlotHeap] == 144, "Its items measured at its first layout, once");
     Check(ui.naturalWidth == MemoryLineWidth && ui.naturalHeight == 52 && Pixels(label, "minWidth") == MemoryLineWidth &&
         Pixels(label, "minHeight") == 52, "Its natural size at its first layout, its box at 100 %");
     Pump();
     Check(o.text == Steady && o.texts == 2, "Refreshed 400 ms later: " + o.text);
-    Check(Pixels(label, "minWidth") == MemoryLineWidth, "At least as wide as its last text was laid out");
+    Check(Pixels(label, "minWidth") == CpuLineWidth && ui.naturalWidth == CpuLineWidth && measures == measuredBefore + 10,
+        "Widened by its new figures at once, only their new shapes measured");
     // Same figures: the text is left alone.
     Pump(4);
-    Check(o.text == Steady && o.texts == 2, "Unchanged figures: no new text");
+    Check(o.text == Steady && o.texts == 2 && measures == measuredBefore + 10, "Unchanged figures: no new text, nothing measured");
     Check(Pixels(label, "minWidth") == CpuLineWidth, "Widened to the wider text");
     // A 50 ms frame: the worst frame of the last second, then forgotten.
     Frame(500000);
@@ -1382,7 +1590,7 @@ void Corners() {
         // The CPU samples went with the previous label; a fresh width too.
         Check(Get(label).text == SteadyNoCpu && !Styled(label, "minWidth"), "A new label's first figures: " + Get(label).text);
         Pump(2);
-        Check(Get(label).text == Steady && Pixels(label, "minWidth") == MemoryLineWidth, "Then the CPU share: " + Get(label).text);
+        Check(Get(label).text == Steady && Pixels(label, "minWidth") == CpuLineWidth, "Then the CPU share, widening it at once: " + Get(label).text);
     }
     // Rate-limited: the same line once a minute.
     Check(Logged("PERF_OVERLAY_REMOVED corner") == 1 && Logged("PERF_OVERLAY_READY layer=RootHigh corner=1") == 1 &&
@@ -1604,40 +1812,40 @@ void Dragging() {
     // A press outside the overlay: the panel picks something else, nothing follows the cursor.
     Mouse(500, 500, true);
     Check(cursorReads == cursors + 1 && picks == picked + 1 && drag.phase == Drag::Idle, "A press elsewhere: no drag");
-    Mouse(20, 20, true);
-    Mouse(600, 400, true);
-    Mouse(600, 400, false);
+    Mouse(40, 20, true);
+    Mouse(620, 400, true);
+    Mouse(620, 400, false);
     Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == 0 && picks == picked + 1,
         "Held from elsewhere onto the overlay: still nothing");
     // The game's window in the background: no press of its own.
     foreground = false;
-    Mouse(20, 20, true);
-    Mouse(300, 300, true);
-    Mouse(300, 300, false);
+    Mouse(40, 20, true);
+    Mouse(320, 300, true);
+    Mouse(320, 300, false);
     foreground = true;
     Check(Pixels(label, "left") == 8 && saves == 0 && picks == picked + 1, "Another window in the foreground: no drag");
     // A game element drawn above the overlay (a menu, a popup): the press is its own.
     blockers.push_back({Element("VisualElement", "GameMenu"), 0, 0, 100, 100});
-    Mouse(20, 20, true);
-    Mouse(300, 300, true);
-    Mouse(300, 300, false);
+    Mouse(40, 20, true);
+    Mouse(320, 300, true);
+    Mouse(320, 300, false);
     blockers.clear();
     Check(Pixels(label, "left") == 8 && saves == 0 && picks == picked + 2, "Under a game element: no drag");
     // The interface hidden by the game: no layout, no drag.
     collapsedWidth = 0;
-    Mouse(20, 20, true);
-    Mouse(300, 300, true);
-    Mouse(300, 300, false);
+    Mouse(40, 20, true);
+    Mouse(320, 300, true);
+    Mouse(320, 300, false);
     collapsedWidth = -1;
     Check(Pixels(label, "left") == 8 && saves == 0 && picks == picked + 2, "Interface hidden: no drag");
     // A click: pressed and released within 4 px.
-    Mouse(20, 20, true);
-    Mouse(22, 21, true);
-    Mouse(22, 21, false);
+    Mouse(40, 20, true);
+    Mouse(42, 21, true);
+    Mouse(42, 21, false);
     Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == 0 && drag.phase == Drag::Idle, "A click moves nothing");
     // The drag: the overlay follows the cursor, keeping the grab offset (12, 12).
-    Mouse(20, 20, true);
-    Mouse(1000, 500, true);
+    Mouse(40, 20, true);
+    Mouse(1020, 500, true);
     Check(Pixels(label, "left") == 988 && Pixels(label, "top") == 488 && drag.phase == Drag::Moving && saves == 0, "Follows the cursor");
     Check(Get(GripOf()).visible && Pixels(GripOf(), "left") == 988 + LabelBox(label)[2] - 9 && Pixels(GripOf(), "top") == 488 + LabelBox(label)[3] - 9,
         "Its grip shown during the drag, at its bottom-right corner");
@@ -1650,9 +1858,9 @@ void Dragging() {
     Check(Pixels(label, "left") == 1920 - width - 8 && Pixels(label, "top") == 1080 - height - 8, "Clamped inside the margins");
     Mouse(-300, -200, true);
     Check(Pixels(label, "left") == 8 && Pixels(label, "top") == 8, "Clamped at the top left too");
-    Mouse(1500, 900, true);
+    Mouse(1520, 900, true);
     // Released: the place saved once, as ten-thousandths of the free space.
-    Mouse(1500, 900, false);
+    Mouse(1520, 900, false);
     const int x = PlaceOfEdge(1488, width, 1920), y = PlaceOfEdge(888, height, 1080);
     Check(saves == 1 && module->settings.perfOverlayX == x && module->settings.perfOverlayY == y && x == 8784 && y == 8638 &&
         LoggedLine("PERF_OVERLAY_PLACED x=8784 y=8638") == 1, "Saved once: " + std::to_string(module->settings.perfOverlayX) + "," +
@@ -1673,11 +1881,11 @@ void Dragging() {
     clientWidth = 3840;
     clientHeight = 2160;
     const auto at = LabelBox(label);
-    Mouse(2996, 1796, true); // the panel's (1498, 898): on the overlay
-    Mouse(1000, 1000, true); // (500, 500): 998 and 398 panel pixels away
+    Mouse(3056, 1796, true); // the panel's (1528, 898): on the overlay, beyond its top-left corner's handle
+    Mouse(1060, 1000, true); // (530, 500): 998 and 398 panel pixels away
     Check(std::fabs(Pixels(label, "left") - (at[0] - 998)) < .01f && std::fabs(Pixels(label, "top") - (at[1] - 398)) < .01f,
         "Client pixels scaled to the panel's");
-    Mouse(1000, 1000, false);
+    Mouse(1060, 1000, false);
     clientWidth = 1920;
     clientHeight = 1080;
     const float droppedLeft = Pixels(label, "left"), droppedTop = Pixels(label, "top");
@@ -1700,48 +1908,48 @@ void Dragging() {
     Step(); // the button seen up once: a new label sees a press only when it starts
     Check(Pixels(label, "right") == 8 && Pixels(label, "bottom") == 8 && !Styled(label, "left") && !Styled(label, "top"), "Bottom right corner");
     const auto corner = LabelBox(label);
-    Mouse(static_cast<long>(corner[0] + 5), static_cast<long>(corner[1] + 5), true);
-    Mouse(705, 405, true);
+    Mouse(static_cast<long>(corner[0] + 40), static_cast<long>(corner[1] + 10), true);
+    Mouse(740, 410, true);
     const float cornerWidth = LabelBox(label)[2], cornerHeight = LabelBox(label)[3];
     Check(Pixels(label, "right") == 1920 - 700 - cornerWidth && Pixels(label, "bottom") == 1080 - 400 - cornerHeight &&
         !Styled(label, "left") && !Styled(label, "top") && LabelBox(label)[0] == 700 && LabelBox(label)[1] == 400, "Its right and bottom sides moved");
-    Mouse(705, 405, false);
+    Mouse(740, 410, false);
     Check(saves == 3 && module->settings.perfOverlayX == PlaceOfEdge(700, cornerWidth, 1920) && module->settings.perfOverlayCorner == 3,
         "Saved, its corner kept");
     // The window losing the foreground mid-drag: the drag ends there, saved.
-    Mouse(705, 405, true);
-    Mouse(305, 305, true);
+    Mouse(740, 410, true);
+    Mouse(340, 310, true);
     foreground = false;
-    Mouse(800, 800, true);
+    Mouse(835, 805, true);
     Check(drag.phase == Drag::Idle && saves == 4 && LabelBox(label)[0] == 300 && LabelBox(label)[1] == 300,
         "Foreground lost: ended where it was, saved");
     foreground = true;
-    Mouse(900, 600, true);
-    Mouse(900, 600, false);
+    Mouse(935, 605, true);
+    Mouse(935, 605, false);
     Check(LabelBox(label)[0] == 300 && saves == 4, "The button still down when it comes back: no drag");
     // Something of the game drawn over the point held mid-drag (the loading
     // screen): ended, back at the last place where the panel picked it, saved.
-    Mouse(305, 305, true);
-    Mouse(405, 305, true);
-    Mouse(505, 305, true);
+    Mouse(340, 310, true);
+    Mouse(440, 310, true);
+    Mouse(540, 310, true);
     blockers.push_back({Element("VisualElement", "LoadingScreen"), 0, 0, 1920, 1080});
-    Mouse(905, 305, true);
+    Mouse(940, 310, true);
     Check(drag.phase == Drag::Idle && saves == 5 && LabelBox(label)[0] == 400 && LabelBox(label)[1] == 300,
         "Covered mid-drag: back at the last place seen, saved");
-    Mouse(905, 305, false);
-    Mouse(405, 305, true);
-    Mouse(805, 305, true);
-    Mouse(805, 305, false);
+    Mouse(940, 310, false);
+    Mouse(440, 310, true);
+    Mouse(840, 310, true);
+    Mouse(840, 310, false);
     blockers.clear();
     Check(LabelBox(label)[0] == 400 && saves == 5, "Under the loading screen: no drag");
     // Restore mid-drag: stopped, nothing saved.
-    Mouse(405, 305, true);
-    Mouse(605, 305, true);
+    Mouse(440, 310, true);
+    Mouse(640, 310, true);
     Check(drag.phase == Drag::Moving, "Dragging");
     RestorePerfOverlay();
     Check(drag.phase == Drag::Idle && saves == 5 && !Overlay(), "Restore: the drag stopped, nothing saved");
-    Mouse(705, 305, true);
-    Mouse(705, 305, false);
+    Mouse(740, 310, true);
+    Mouse(740, 310, false);
     Tick();
     label = Overlay();
     Step();
@@ -1749,14 +1957,14 @@ void Dragging() {
         "Recreated at the saved place");
     // The label taken away by the game mid-drag (its panel gone): stopped, nothing saved.
     const auto start = LabelBox(label);
-    Mouse(static_cast<long>(start[0] + 5), static_cast<long>(start[1] + 5), true);
-    Mouse(static_cast<long>(start[0] + 105), static_cast<long>(start[1] + 5), true);
+    Mouse(static_cast<long>(start[0] + 40), static_cast<long>(start[1] + 10), true);
+    Mouse(static_cast<long>(start[0] + 140), static_cast<long>(start[1] + 10), true);
     Check(drag.phase == Drag::Moving, "Dragging again");
     Get(document).fields["panel"] = nullptr;
     Tick();
     Check(!Overlay() && drag.phase == Drag::Idle, "Removed with its layer: the drag stopped");
-    Mouse(static_cast<long>(start[0] + 205), static_cast<long>(start[1] + 5), true);
-    Mouse(static_cast<long>(start[0] + 205), static_cast<long>(start[1] + 5), false);
+    Mouse(static_cast<long>(start[0] + 240), static_cast<long>(start[1] + 10), true);
+    Mouse(static_cast<long>(start[0] + 240), static_cast<long>(start[1] + 10), false);
     Get(document).fields["panel"] = panel;
     Tick();
     label = Overlay();
@@ -1768,15 +1976,15 @@ void Dragging() {
     label = Overlay();
     Step();
     const auto held = LabelBox(label);
-    Mouse(static_cast<long>(held[0] + 5), static_cast<long>(held[1] + 5), true);
-    Mouse(static_cast<long>(held[0] + 300), static_cast<long>(held[1] + 5), true);
-    Mouse(static_cast<long>(held[0] + 300), static_cast<long>(held[1] + 5), false);
+    Mouse(static_cast<long>(held[0] + 40), static_cast<long>(held[1] + 10), true);
+    Mouse(static_cast<long>(held[0] + 335), static_cast<long>(held[1] + 10), true);
+    Mouse(static_cast<long>(held[0] + 335), static_cast<long>(held[1] + 10), false);
     Check(LabelBox(label)[0] == held[0] && saves == 5, "Held before the label: no drag");
     // A save that fails: logged, the place kept for this session.
     saveFails = true;
-    Mouse(static_cast<long>(held[0] + 5), static_cast<long>(held[1] + 5), true);
-    Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), true);
-    Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), false);
+    Mouse(static_cast<long>(held[0] + 40), static_cast<long>(held[1] + 10), true);
+    Mouse(static_cast<long>(held[0] + 90), static_cast<long>(held[1] + 10), true);
+    Mouse(static_cast<long>(held[0] + 90), static_cast<long>(held[1] + 10), false);
     saveFails = false;
     const int failedPlace = module->settings.perfOverlayX;
     Check(saves == 6 && Logged("PERF_OVERLAY_PLACE_ERROR Injected save failure") == 1 && failedPlace == PlaceOfEdge(LabelBox(label)[0], LabelBox(label)[2], 1920) &&
@@ -1790,8 +1998,8 @@ void Dragging() {
     // Unchecked (1.16.0): locked at its place, never sent back to its corner;
     // the drag in progress stops unsaved (back at the place saved), clicks
     // let through, the button no longer read.
-    Mouse(static_cast<long>(held[0] + 55), static_cast<long>(held[1] + 5), true);
-    Mouse(static_cast<long>(held[0] + 255), static_cast<long>(held[1] + 5), true);
+    Mouse(static_cast<long>(held[0] + 90), static_cast<long>(held[1] + 10), true);
+    Mouse(static_cast<long>(held[0] + 290), static_cast<long>(held[1] + 10), true);
     Check(drag.phase == Drag::Moving, "Dragging when unchecked");
     module->settings.perfOverlayDrag = false;
     Tick();
@@ -1848,7 +2056,7 @@ void DragEdges() {
     blockers.push_back(buttons);
     // Held by its lower part, the overlay goes partly under them: its centre
     // covered, never the point held.
-    Mouse(20, 50, true); // the point held: (12, 42) in the overlay
+    Mouse(40, 50, true); // the point held: (32, 42) in the overlay, between its bottom-left corner and its bottom edge
     Mouse(900, 53, true);
     Mouse(1800, 50, true);
     Mouse(1800, 50, false);
@@ -1857,36 +2065,36 @@ void DragEdges() {
         Within({buttons.x, buttons.y, buttons.width, buttons.height}, under[0] + under[2] / 2, under[1] + under[3] / 2),
         "Dropped at the top right, its centre under the menu buttons");
     // Grabbed again by its visible part, above its bottom edge (6 px: a
-    // resize): it moves.
-    Mouse(static_cast<long>(under[0]) + 14, 50, true);
-    Mouse(1000, 500, true);
+    // resize) and beyond its bottom-left corner (18 px): it moves.
+    Mouse(static_cast<long>(under[0]) + 34, 50, true);
+    Mouse(1020, 500, true);
     Check(drag.phase == Drag::Moving && !drag.resize && LabelBox(label)[0] == 986 && LabelBox(label)[1] == 458, "Grabbed by its visible part");
-    Mouse(1000, 500, false);
+    Mouse(1020, 500, false);
     // The point held taken under them: back at the last place where it was seen.
-    Mouse(1000, 470, true); // the point held: (14, 12)
-    Mouse(1200, 100, true);
-    Mouse(1400, 20, true);  // drawn at (1386, 8): the point held, (1400, 20), under the buttons
-    Mouse(1400, 20, true);
+    Mouse(1020, 470, true); // the point held: (34, 12)
+    Mouse(1220, 100, true);
+    Mouse(1420, 20, true);  // drawn at (1386, 8): the point held, (1420, 20), under the buttons
+    Mouse(1420, 20, true);
     Check(drag.phase == Drag::Idle && LabelBox(label)[0] == 1186 && LabelBox(label)[1] == 88 && saves == saved + 3 &&
         module->settings.perfOverlayX == PlaceOfEdge(1186, width, 1920) && module->settings.perfOverlayY == PlaceOfEdge(88, height, 1080),
         "The point held covered: back at the last place seen, saved there");
-    Mouse(1400, 20, false);
+    Mouse(1420, 20, false);
     Check(LabelBox(label)[0] == 1186 && saves == saved + 3, "Released afterwards: nothing more");
     blockers.clear();
     // A borderless full screen at another aspect ratio than the display's:
     // the panel scaled alike on both axes and centred between black bars.
     clientWidth = 1920;
     clientHeight = 1200; // 60 px above and below the 1920 x 1080 panel
-    Mouse(1196, 153, true); // the panel's (1196, 93): on the overlay
-    Mouse(1296, 253, true);
+    Mouse(1226, 163, true); // the panel's (1226, 103): on the overlay
+    Mouse(1326, 263, true);
     Check(drag.phase == Drag::Moving && LabelBox(label)[0] == 1286 && LabelBox(label)[1] == 188, "Letterboxed: the bars left out");
-    Mouse(1296, 253, false);
+    Mouse(1326, 263, false);
     clientWidth = 2560;
     clientHeight = 1080; // 320 px left and right
-    Mouse(1616, 193, true); // the panel's (1296, 193): on the overlay
-    Mouse(1016, 393, true);
+    Mouse(1646, 203, true); // the panel's (1326, 203): on the overlay
+    Mouse(1046, 403, true);
     Check(drag.phase == Drag::Moving && LabelBox(label)[0] == 686 && LabelBox(label)[1] == 388, "Pillarboxed: the bars left out");
-    Mouse(1016, 393, false);
+    Mouse(1046, 403, false);
     Mouse(100, 393, true); // a black bar: outside the panel
     Check(drag.phase == Drag::Idle, "A press on a black bar: not the overlay");
     Mouse(100, 393, false);
@@ -1898,9 +2106,9 @@ void DragEdges() {
     const bool metamob = module->settings.metamobSync;
     const auto synced = syncs;
     sharedMetamob = !metamob;
-    Mouse(696, 393, true);
-    Mouse(796, 493, true);
-    Mouse(796, 493, false);
+    Mouse(726, 403, true);
+    Mouse(826, 503, true);
+    Mouse(826, 503, false);
     Check(saves == saved + 6 && syncs == synced + 1 && module->settings.metamobSync == !metamob && changes == 0 &&
         LabelBox(label)[0] == 786, "Saved as Module::Change saves, without its appearance refresh");
     sharedMetamob.reset();
@@ -1949,7 +2157,7 @@ void DeviceWorkers() {
     Check(pdhFake::Paths() == std::vector<std::wstring>{L"\\PhysicalDisk(*)\\% Idle Time", L"\\PhysicalDisk(*)\\Disk Bytes/sec"} &&
         pdhFake::Alive() == 1, "No GPU counter; the first worker's query closed");
     Pump(2);
-    Check(Get(Overlay()).text == Steady + "\nDisque C: 4 % · 1,2 Mo/s", "Disk only: " + Get(Overlay()).text);
+    Check(Get(Overlay()).text == Steady + "\n" + DiskLine, "Disk only: " + Get(Overlay()).text);
     // Both unchecked: stopped and joined, its query closed.
     module->settings.perfOverlayDisk = false;
     Tick();
@@ -2005,7 +2213,7 @@ void DeviceWorkers() {
     restart();
     Check(WaitFor([] { const auto figures = Figures(); return !figures.gpuProblem.empty() && figures.disk.busy >= 0; }), "GPU counter refused");
     Pump(2);
-    Check(Get(Overlay()).text == Steady + "\nDisque C: 4 % · 1,2 Mo/s" && LoggedLine("PERF_OVERLAY_GPU_UNAVAILABLE counter=C0000BB8") == 1 &&
+    Check(Get(Overlay()).text == Steady + "\n" + DiskLine && LoggedLine("PERF_OVERLAY_GPU_UNAVAILABLE counter=C0000BB8") == 1 &&
         !diskReported, "No GPU counter: the disk still shown: " + Get(Overlay()).text);
     pdhFake::Configure([] { pdhFake::gpuStatus = ERROR_SUCCESS; pdhFake::diskStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_COUNTER); });
     restart();
@@ -2122,8 +2330,8 @@ void IndependentParts() {
     ReleaseCollections(gate);
     Check(WaitFor([] { return Figures().gpu >= 0; }), "Its figure");
     Pump(2);
-    Check(Get(label).text == "GPU 23 %" && Unmeasured() && !ui.provisional && Pixels(label, "minWidth") == 0 && Pixels(label, "minHeight") == 0,
-        "The GPU alone, the neutral text's size forgotten: " + Get(label).text);
+    Check(Get(label).text == "GPU 23 %" && !ui.provisional && ui.naturalWidth == 64 && ui.naturalHeight == 20 && Pixels(label, "minWidth") == 64 &&
+        Pixels(label, "minHeight") == 20, "The GPU alone, sized again from its figure at once, the neutral text's size forgotten: " + Get(label).text);
     Pump(2);
     Check(Pixels(label, "minWidth") == 6 * 8 + 16, "Its width from its figures, never from the neutral text");
     Check(measureReads == measured && ring.count == 0 && cpuMeter.count == 0, "Without the frame rate: no counter, memory, heap or CPU read");
@@ -2135,7 +2343,7 @@ void IndependentParts() {
     Check(label && Get(label).text == WaitingLine && devices.worker && !devices.worker->gpu && devices.worker->disk, "« Activité du disque » alone");
     Check(WaitFor([] { return Figures().disk.busy >= 0; }), "Its figures");
     Pump(2);
-    Check(Get(label).text == "Disque C: 4 % · 1,2 Mo/s", "The disk alone: " + Get(label).text);
+    Check(Get(label).text == DiskLine, "The disk alone: " + Get(label).text);
     module->settings.perfOverlayGpu = true;
     Tick();
     label = Overlay();
@@ -2148,9 +2356,9 @@ void IndependentParts() {
     Step(); // the button seen up
     const auto box = LabelBox(label);
     const auto saved = saves;
-    Mouse(static_cast<long>(box[0] + 5), static_cast<long>(box[1] + 5), true);
-    Mouse(static_cast<long>(box[0] + 405), static_cast<long>(box[1] + 305), true);
-    Mouse(static_cast<long>(box[0] + 405), static_cast<long>(box[1] + 305), false);
+    Mouse(static_cast<long>(box[0] + 40), static_cast<long>(box[1] + 10), true);
+    Mouse(static_cast<long>(box[0] + 440), static_cast<long>(box[1] + 310), true);
+    Mouse(static_cast<long>(box[0] + 440), static_cast<long>(box[1] + 310), false);
     Check(Overlay() == label && LabelBox(label)[0] == box[0] + 400 && LabelBox(label)[1] == box[1] + 300 && saves == saved + 1 &&
         module->settings.perfOverlayX >= 0 && measureReads == measured && ring.count == 0, "Dragged and saved, no frame read");
     // Unticked: locked there, its clicks let through.
@@ -2197,7 +2405,7 @@ void IndependentParts() {
     ReleaseCollections(gate);
     Check(WaitFor([] { return Figures().disk.busy >= 0; }), "Its figures");
     Pump(2);
-    Check(Get(label).text == "Disque C: 4 % · 1,2 Mo/s", "Then its figures: " + Get(label).text);
+    Check(Get(label).text == DiskLine, "Then its figures: " + Get(label).text);
     module->settings.perfOverlayDisk = false;
     Tick();
     Check(!Overlay() && !devices.worker && !devices.thread && WaitFor(Retired), "Unticked again: removed, its worker stopped");
@@ -2242,20 +2450,23 @@ void Resizing() {
     Mouse(231, 57, false);
     Check(drag.phase == Drag::Idle && ui.scales == Scales{100, 100} && LabelBox(label) == Box{8, 8, 226, 52} && saves == saved,
         "A click on the grip changes nothing");
-    // Its corner dragged across: wider only, its text, insets and height kept.
+    // Its corner dragged across: wider only (1.18.1), its items flow onto two
+    // lines, its text a little larger (the widest of them 328 px at 100 %).
     Mouse(229, 55, true);
     Mouse(342, 55, true);
-    Check(drag.phase == Drag::Moving && drag.resize && ui.scales == Scales{150, 100} && Pixels(label, "fontSize") == 12 &&
-        Pixels(label, "paddingLeft") == 8 && Pixels(label, "minWidth") == 339 && Pixels(label, "minHeight") == 52 &&
-        LabelBox(label) == Box{8, 8, 339, 52} && saves == saved, "Its corner across: 150 % wide, 100 % high, its text at 100 %; nothing saved yet");
+    const float wider = 339.f / 328;
+    Check(drag.phase == Drag::Moving && drag.resize && ui.scales == Scales{150, 100} && Near(Pixels(label, "fontSize"), 12 * wider, 1e-3) &&
+        Near(Pixels(label, "paddingLeft"), 8 * wider, 1e-3) && Pixels(label, "minWidth") == 339 && Pixels(label, "minHeight") == 52 &&
+        Get(label).text == TwoLines && ui.lines == 2 && Close(LabelBox(label), Box{8, 8, 339, 52}) && saves == saved,
+        "Its corner across: 150 % wide, 100 % high, its items on two lines; nothing saved yet: " + Get(label).text);
     // Then down: both at 150 %, its text, insets, corners and box alike.
     Mouse(342, 81, true);
     Check(ui.scales == Scales{150, 150} && Pixels(label, "fontSize") == 18 && Pixels(label, "paddingLeft") == 12 && Pixels(label, "paddingRight") == 12 &&
         Pixels(label, "paddingTop") == 6 && Pixels(label, "paddingBottom") == 6 && Pixels(label, "borderTopLeftRadius") == 9 &&
         Pixels(label, "borderBottomLeftRadius") == 9 && Pixels(label, "borderBottomRightRadius") == 0 && Pixels(label, "minWidth") == 339 &&
         Pixels(label, "minHeight") == 78, "150 % both ways: its text, insets, corners and box alike");
-    Check(LabelBox(label) == Box{8, 8, 339, 78} && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == saved,
-        "Its top-left kept, its corner under the cursor (at the grab offset)");
+    Check(LabelBox(label) == Box{8, 8, 339, 78} && Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && saves == saved && Get(label).text == Steady,
+        "Its top-left kept, its corner under the cursor (at the grab offset), its three lines back");
     // A layout of another size meanwhile (the game lays it out after the
     // frame): the pumps neither grow nor place it during a resize.
     collapsedWidth = 1000;
@@ -2264,16 +2475,17 @@ void Resizing() {
     collapsedWidth = -1;
     Check(ui.naturalWidth == CpuLineWidth && ui.naturalHeight == 52 && Pixels(label, "minWidth") == 339 && Pixels(label, "minHeight") == 78 &&
         Pixels(label, "left") == 8 && Pixels(label, "top") == 8 && drag.phase == Drag::Moving, "Never grown nor placed during a resize");
-    // Much taller than wide: its text at its width's scale, the largest its box holds.
+    // Much taller than wide: its items on more lines, the largest text its
+    // box holds (five lines, the widest 196 px at 100 %), from its top-left.
     Mouse(342, 159, true);
-    Check(ui.scales == Scales{150, 300} && Pixels(label, "fontSize") == 18 && Pixels(label, "minHeight") == 156 &&
-        LabelBox(label) == Box{8, 8, 339, 156}, "150 % wide, 300 % high: its text at 150 %, from its top-left");
+    Check(ui.scales == Scales{150, 300} && Near(Pixels(label, "fontSize"), 12 * 339.f / 196, 1e-3) && Pixels(label, "minHeight") == 156 &&
+        ui.lines == 5 && Close(LabelBox(label), Box{8, 8, 339, 156}), "150 % wide, 300 % high: five lines, its text larger: " + Get(label).text);
     Mouse(455, 107, true);
     Check(ui.scales == Scales{200, 200} && Pixels(label, "fontSize") == 24 && LabelBox(label) == Box{8, 8, 452, 104}, "200 %");
     Mouse(455, 107, false);
     Check(drag.phase == Drag::Idle && saves == saved + 1 && settings.perfOverlayScaleX == 200 && settings.perfOverlayScaleY == 200 &&
         settings.perfOverlayX == PlaceOfEdge(8, 452, 1920) && settings.perfOverlayY == PlaceOfEdge(8, 104, 1080) &&
-        LoggedLine("PERF_OVERLAY_SCALED scaleX=200 scaleY=200 x=54 y=82 handle=corner") == 1,
+        LoggedLine("PERF_OVERLAY_SCALED scaleX=200 scaleY=200 x=54 y=82 handle=bottom-right") == 1,
         "Saved once at the release: its sizes, and the place of its top-left for that box");
     Pump(4);
     Check(LabelBox(label) == Box{8, 8, 452, 104} && Pixels(label, "minWidth") == 452 && Pixels(label, "minHeight") == 104 && saves == saved + 1,
@@ -2290,7 +2502,7 @@ void Resizing() {
     Mouse(229, 55, true);
     Check(drag.phase == Drag::Idle && ui.scales == Scales{50, 50} && LabelBox(label) == Box{8, 8, 113, 26} && saves == saved + 2 &&
         settings.perfOverlayScaleX == 50 && settings.perfOverlayScaleY == 50 && settings.perfOverlayX == 44 && settings.perfOverlayY == 76 &&
-        LoggedLine("PERF_OVERLAY_SCALED scaleX=50 scaleY=50 x=44 y=76 handle=corner") == 1,
+        LoggedLine("PERF_OVERLAY_SCALED scaleX=50 scaleY=50 x=44 y=76 handle=bottom-right") == 1,
         "The point held covered: back at the last sizes where it was picked, saved");
     // The pumps of that frame come before the game lays it out at those sizes
     // (its panels' update follows the compositor's): its layout still that of
@@ -2340,8 +2552,8 @@ void Resizing() {
         "Anything else: its natural size");
     settings.perfOverlayScaleY = 200;
     Tick();
-    Check(ui.scales == Scales{100, 200} && Pixels(label, "fontSize") == 12 && Pixels(label, "minHeight") == 104 && LabelBox(label)[3] == 104,
-        "A width out of 50..300 alone: 100 % wide, its height as asked");
+    Check(ui.scales == Scales{100, 200} && Near(Pixels(label, "fontSize"), 12 * 226.f / 196, 1e-3) && ui.lines == 5 &&
+        Pixels(label, "minHeight") == 104 && LabelBox(label)[3] == 104, "A width out of 50..300 alone: 100 % wide, its height as asked (five lines)");
     settings.perfOverlayScaleX = settings.perfOverlayScaleY = 50;
     Tick();
     Check(ui.scales == Scales{50, 50} && Pixels(label, "fontSize") == 6 && LabelBox(label)[2] == 113 && LabelBox(label)[3] == 26, "Back at its sizes");
@@ -2487,7 +2699,7 @@ void GripAndEdges() {
     // Its corner pressed 17 px from it (18 at least, whatever its size): a
     // resize, its grip at its new corner and at its size.
     Mouse(217, 43, true);
-    Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::Corner && Get(grip).visible, "Pressed 17 px from its corner: a resize");
+    Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::BottomRight && Get(grip).visible, "Pressed 17 px from its corner: a resize");
     Mouse(330, 69, true);
     Check(drag.phase == Drag::Moving && ui.scales == Scales{150, 150} && LabelBox(label) == Box{8, 8, 339, 78} && Get(grip).visible &&
         Pixels(grip, "left") == 333.5f && Pixels(grip, "top") == 72.5f && Pixels(grip, "paddingLeft") == 13.5f,
@@ -2502,43 +2714,48 @@ void GripAndEdges() {
     const auto at = [](float width, float height) {
         return " x=" + std::to_string(PlaceOfEdge(8, width, 1920)) + " y=" + std::to_string(PlaceOfEdge(8, height, 1080));
     };
-    const std::string cornerLine = "PERF_OVERLAY_SCALED scaleX=150 scaleY=150" + at(339, 78) + " handle=corner";
+    const std::string cornerLine = "PERF_OVERLAY_SCALED scaleX=150 scaleY=150" + at(339, 78) + " handle=bottom-right";
     const std::string rightLine = "PERF_OVERLAY_SCALED scaleX=100 scaleY=150" + at(226, 78) + " handle=right";
     const std::string bottomLine = "PERF_OVERLAY_SCALED scaleX=100 scaleY=200" + at(226, 104) + " handle=bottom";
     const auto byCorner = LoggedLine(cornerLine), byRight = LoggedLine(rightLine), byBottom = LoggedLine(bottomLine);
     Mouse(330, 69, false);
     Check(drag.phase == Drag::Idle && settings.perfOverlayScaleX == 150 && settings.perfOverlayScaleY == 150 && LoggedLine(cornerLine) == byCorner + 1,
         "Released: saved, logged with its width, its height and the handle used");
-    // Its right edge, anywhere along it: its width only, back to 100 %, its
-    // height (150 %) and its top-left kept, its text at the smaller size.
-    Mouse(345, 30, true);
+    // Its right edge, anywhere along it between its corners: its width only,
+    // back to 100 %, its height (150 %) and its top-left kept, its items on
+    // four lines (the widest 208 px at 100 %), its text the largest they give.
+    Mouse(345, 45, true);
     Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::Right && Get(grip).visible, "Pressed on its right edge");
     Mouse(232, 300, true);
-    Check(drag.phase == Drag::Moving && ui.scales == Scales{100, 150} && LabelBox(label) == Box{8, 8, 226, 78} && Pixels(label, "fontSize") == 12 &&
-        Pixels(grip, "left") == 225 && Pixels(grip, "top") == 77 && Pixels(grip, "paddingLeft") == 9,
-        "Its right edge dragged: 100 % wide, still 150 % high, its text at 100 %, its grip at its corner at that size");
+    const float fourLines = 226.f / 208;
+    Check(drag.phase == Drag::Moving && ui.scales == Scales{100, 150} && Close(LabelBox(label), Box{8, 8, 226, 78}) && ui.lines == 4 &&
+        Near(Pixels(label, "fontSize"), 12 * fourLines, 1e-3) && Near(Pixels(grip, "left"), 234 - 9 * fourLines, 1e-3) &&
+        Near(Pixels(grip, "top"), 86 - 9 * fourLines, 1e-3) && Near(Pixels(grip, "paddingLeft"), 9 * fourLines, 1e-3),
+        "Its right edge dragged: 100 % wide, still 150 % high, four lines, its grip at its corner at its text's size: " + Get(label).text);
     Mouse(232, 300, false);
     Check(settings.perfOverlayScaleX == 100 && settings.perfOverlayScaleY == 150 && LoggedLine(rightLine) == byRight + 1, "Saved, logged");
     // Its bottom edge, anywhere along it: its height only, 26 px lower: 200 %.
     Mouse(100, 84, true);
     Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::Bottom, "Pressed on its bottom edge");
     Mouse(700, 110, true);
-    Check(drag.phase == Drag::Moving && ui.scales == Scales{100, 200} && LabelBox(label) == Box{8, 8, 226, 104} && Pixels(label, "fontSize") == 12,
-        "Its bottom edge dragged: 200 % high, its width (100 %) kept");
+    const float fiveLines = 226.f / 196;
+    Check(drag.phase == Drag::Moving && ui.scales == Scales{100, 200} && Close(LabelBox(label), Box{8, 8, 226, 104}) && ui.lines == 5 &&
+        Near(Pixels(label, "fontSize"), 12 * fiveLines, 1e-3), "Its bottom edge dragged: 200 % high, its width (100 %) kept, five lines");
     Mouse(700, 110, false);
     Check(settings.perfOverlayScaleX == 100 && settings.perfOverlayScaleY == 200 && LoggedLine(bottomLine) == byBottom + 1, "Saved, logged");
     // Elsewhere: still a move, its grip along.
     Mouse(40, 30, true);
     Mouse(140, 130, true);
     Check(drag.phase == Drag::Moving && !drag.resize && LabelBox(label)[0] == 108 && LabelBox(label)[1] == 108 &&
-        Pixels(grip, "left") == 108 + 226 - 9.f && Pixels(grip, "top") == 108 + 104 - 9.f, "Elsewhere: moved, its grip along");
+        Near(Pixels(grip, "left"), 108 + 226 - 9 * fiveLines, 1e-3) && Near(Pixels(grip, "top"), 108 + 104 - 9 * fiveLines, 1e-3),
+        "Elsewhere: moved, its grip along");
     Mouse(140, 130, false);
     // A small window (a panel pixel half a pixel of the screen): its corner
     // still 18 pixels of the screen, 36 panel pixels (18 otherwise at 100 %).
     clientWidth = 960;
     clientHeight = 540;
     Mouse(150, 89, true); // the panel's (300, 178): 34 px from its corner both ways
-    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::Corner, "A small window: its corner 18 pixels of the screen");
+    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::BottomRight, "A small window: its corner 18 pixels of the screen");
     Mouse(150, 89, false);
     clientWidth = 1920;
     clientHeight = 1080;
@@ -2698,11 +2915,13 @@ void Cursors() {
 // indisponible ») sizes the overlay only until its first figures,
 // provisionally, its box at its width and its height all the same; its first
 // figures size it again from scratch (narrower here), never such a text
-// afterwards (its box kept, that text never clipped: it widens the box by
-// itself). A resize pressed before those figures are measured starts from the
-// box as seen: the edge held under the cursor, the other side at its size.
+// afterwards: 1.18.1, its box kept, that text drawn smaller to fit in it
+// (never clipped). A resize pressed before its items are measured is let go
+// (its first frame: no size to resize from); figures coming during a resize
+// keep its box until it ends.
 void NeutralTexts() {
     using namespace perfOverlay;
+    using namespace mouse;
     using Box = std::array<float, 4>;
     auto& settings = module->settings;
     settings.perfOverlay = settings.perfOverlayDisk = false;
@@ -2716,11 +2935,11 @@ void NeutralTexts() {
     pdhFake::Configure([] { pdhFake::readStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_OBJECT); });
     Tick();
     const auto label = Overlay();
-    Check(label && Get(label).text == WaitingLine && Unmeasured() && !Styled(label, "minWidth") && !Styled(label, "minHeight"),
+    Check(label && Get(label).text == WaitingLine && Unmeasured() && !ui.learned && !Styled(label, "minWidth") && !Styled(label, "minHeight"),
         "The GPU alone, waiting: nothing measured before its first layout");
     // Its first layout: measured from that text, provisionally, its box at 100 % by 200 %.
     Step();
-    Check(ui.provisional && ui.naturalWidth == 6 * 16 + 16 && ui.naturalHeight == 20 && Pixels(label, "minWidth") == 112 &&
+    Check(ui.learned && ui.provisional && ui.naturalWidth == 6 * 16 + 16 && ui.naturalHeight == 20 && Pixels(label, "minWidth") == 112 &&
         Pixels(label, "minHeight") == 40 && Pixels(label, "fontSize") == 12 && LabelBox(label) == Box{8, 8, 112, 40},
         "A text without figures: its box at its width and its height all the same");
     // Windows refusing the figure: « Mesure indisponible », wider, grows it, still provisionally.
@@ -2728,72 +2947,63 @@ void NeutralTexts() {
     Pump(4);
     Check(Get(label).text == UnavailableLine && ui.provisional && ui.naturalWidth == 6 * 19 + 16 && Pixels(label, "minWidth") == 130 &&
         LabelBox(label) == Box{8, 8, 130, 40}, "A wider text without figures: grown, still provisionally");
-    // Its first figures: its size forgotten, measured again from them at the next frame.
+    // Its first figures: its size forgotten, sized again from them at once.
     pdhFake::Configure([] { pdhFake::readStatus = ERROR_SUCCESS; });
     Check(WaitFor([] { return Figures().gpu >= 0; }), "The GPU's figure");
     Pump(2);
-    Check(Get(label).text == "GPU 23 %" && Unmeasured() && !ui.provisional && Pixels(label, "minWidth") == 0 && Pixels(label, "minHeight") == 0 &&
-        LabelBox(label) == Box{8, 8, 64, 20}, "Its first figures: the size of the text without figures forgotten");
-    // Its bottom edge pressed at that very frame: measured from the box seen,
-    // its height from it (the edge held under the cursor), nothing moving.
+    Check(Get(label).text == "GPU 23 %" && !ui.provisional && ui.naturalWidth == 64 && ui.naturalHeight == 20 && Pixels(label, "minWidth") == 64 &&
+        Pixels(label, "minHeight") == 40 && Pixels(label, "fontSize") == 12 && LabelBox(label) == Box{8, 8, 64, 40},
+        "Its first figures: the size of the text without figures forgotten, its box from them");
+    // Its bottom edge, between its bottom corners: its height only.
     const auto saved = saves;
     const auto scaledLine = [](int x, int y, float width, float height, const char* handle) {
         return "PERF_OVERLAY_SCALED scaleX=" + std::to_string(x) + " scaleY=" + std::to_string(y) + " x=" +
             std::to_string(PlaceOfEdge(8, width, 1920)) + " y=" + std::to_string(PlaceOfEdge(8, height, 1080)) + " handle=" + handle;
     };
-    const auto tallerLines = LoggedLine(scaledLine(100, 150, 64, 30, "bottom"));
-    Mouse(20, 27, true);
-    Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::Bottom && drag.startScales == Scales{100, 100} &&
-        ui.scales == Scales{100, 100} && ui.naturalWidth == 64 && ui.naturalHeight == 20 && !ui.provisional && LabelBox(label) == Box{8, 8, 64, 20} &&
-        CursorAsked(label) == 0x80000, "Pressed before its figures were measured: measured from the box seen, nothing moves");
-    Mouse(20, 37, true);
-    Check(drag.phase == Drag::Moving && ui.scales == Scales{100, 150} && Pixels(label, "fontSize") == 12 && LabelBox(label) == Box{8, 8, 64, 30},
-        "Its bottom edge under the cursor: 150 % high, its width kept");
-    Mouse(20, 37, false);
-    Check(drag.phase == Drag::Idle && saves == saved + 1 && settings.perfOverlayScaleX == 100 && settings.perfOverlayScaleY == 150 &&
-        LoggedLine(scaledLine(100, 150, 64, 30, "bottom")) == tallerLines + 1, "Saved at those sizes");
+    const auto tallerLines = LoggedLine(scaledLine(100, 250, 64, 50, "bottom"));
+    Mouse(40, 47, true);
+    Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::Bottom && CursorAsked(label) == 0x80000, "Pressed on its bottom edge");
+    Mouse(40, 57, true);
+    Check(drag.phase == Drag::Moving && ui.scales == Scales{100, 250} && Pixels(label, "fontSize") == 12 && LabelBox(label) == Box{8, 8, 64, 50},
+        "Its bottom edge under the cursor: 250 % high, its width kept");
+    Mouse(40, 57, false);
+    Check(drag.phase == Drag::Idle && saves == saved + 1 && settings.perfOverlayScaleX == 100 && settings.perfOverlayScaleY == 250 &&
+        LoggedLine(scaledLine(100, 250, 64, 50, "bottom")) == tallerLines + 1, "Saved at those sizes");
     // A text without figures after them: never sizes it, its box kept, the
-    // text widening it by itself (never clipped); the figures back in that box.
+    // text drawn smaller to fit in it, never clipped; the figures back in that box.
     pdhFake::Configure([] { pdhFake::readStatus = static_cast<PDH_STATUS>(PDH_CSTATUS_NO_OBJECT); });
     Check(WaitFor([] { return !Figures().gpuProblem.empty(); }), "The GPU refused again");
     Pump(4);
     Check(Get(label).text == UnavailableLine && ui.naturalWidth == 64 && ui.naturalHeight == 20 && !ui.provisional && Pixels(label, "minWidth") == 64 &&
-        Pixels(label, "minHeight") == 30 && LabelBox(label) == Box{8, 8, 130, 30}, "A text without figures after them: never sizes it, never clipped");
+        Pixels(label, "minHeight") == 50 && Near(Pixels(label, "fontSize"), 12 * 64.f / 130, 1e-3) && Close(LabelBox(label), Box{8, 8, 64, 50}),
+        "A text without figures after them: never sizes it, drawn smaller in its box, never clipped");
     pdhFake::Configure([] { pdhFake::readStatus = ERROR_SUCCESS; });
     Check(WaitFor([] { return Figures().gpu >= 0; }), "The GPU's figure again");
     Pump(4);
-    Check(Get(label).text == "GPU 23 %" && ui.naturalWidth == 64 && LabelBox(label) == Box{8, 8, 64, 30} && saves == saved + 1,
-        "The figures back in their box");
-    // Wider than high (200 % by 100 %), a new label: its bottom edge pressed
-    // before its first figures are measured, its width back at 200 % at once
-    // (the side not held at its size), its height from the box seen.
-    settings.perfOverlayScaleX = 200;
-    settings.perfOverlayScaleY = 100;
-    RestorePerfOverlay();
-    const HANDLE gate = HoldCollections();
-    Tick();
-    const auto wide = Overlay();
-    Check(wide && wide != label && Get(wide).text == WaitingLine && WaitFor([] { return pdhFake::waiting.load() == 1; }), "A new label, waiting");
-    Step();
-    Check(ui.provisional && ui.naturalWidth == 112 && LabelBox(wide) == Box{8, 8, 224, 20} && Pixels(wide, "fontSize") == 12,
-        "Its text without figures: 200 % wide, 100 % high");
-    ReleaseCollections(gate);
-    Check(WaitFor([] { return Figures().gpu >= 0; }), "Its figure");
-    Pump(2);
-    Check(Get(wide).text == "GPU 23 %" && Unmeasured() && LabelBox(wide) == Box{8, 8, 64, 20}, "Its first figures, to be measured");
-    const auto widerLines = LoggedLine(scaledLine(200, 150, 128, 30, "bottom"));
-    Mouse(20, 27, true);
-    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::Bottom && drag.startScales == Scales{200, 100} && ui.scales == Scales{200, 100} &&
-        ui.naturalWidth == 64 && ui.naturalHeight == 20 && LabelBox(wide) == Box{8, 8, 128, 20}, "Pressed: its width at 200 % at once, its height as seen");
-    Mouse(20, 37, true);
-    Check(ui.scales == Scales{200, 150} && Pixels(wide, "fontSize") == 18 && LabelBox(wide) == Box{8, 8, 128, 30}, "150 % high, still 200 % wide");
-    Mouse(20, 37, false);
-    Check(drag.phase == Drag::Idle && saves == saved + 2 && settings.perfOverlayScaleX == 200 && settings.perfOverlayScaleY == 150 &&
-        LoggedLine(scaledLine(200, 150, 128, 30, "bottom")) == widerLines + 1, "Saved at those sizes");
-    // Its first figures during a resize from the size of its text without
-    // figures: its box kept until the resize ends, then measured again.
-    settings.perfOverlayX = settings.perfOverlayY = -1;
+    Check(Get(label).text == "GPU 23 %" && ui.naturalWidth == 64 && Pixels(label, "fontSize") == 12 && LabelBox(label) == Box{8, 8, 64, 50} &&
+        saves == saved + 1, "The figures back in their box");
+    // A press on a new label's corner before its items could be measured (its
+    // first layout not usable yet, measured again 50 ms later): let go, nothing
+    // resized; the button held meanwhile never pressing again.
     settings.perfOverlayScaleX = settings.perfOverlayScaleY = 100;
+    RestorePerfOverlay();
+    Tick();
+    const auto early = Overlay();
+    collapsedWidth = 0;
+    Step();
+    collapsedWidth = -1;
+    Check(early && !ui.learned && !Styled(early, "minWidth"), "A new label, its first layout not usable: nothing measured yet");
+    const auto box = LabelBox(early);
+    Mouse(static_cast<long>(box[0] + box[2] - 2), static_cast<long>(box[1] + box[3] - 2), true);
+    Check(drag.phase == Drag::Idle && !ui.learned && ui.scales == Scales{100, 100} && saves == saved + 1, "Pressed before its items were measured: let go");
+    nowMs += SettleMs;
+    Mouse(static_cast<long>(box[0] + box[2] + 100), static_cast<long>(box[1] + box[3] + 100), true);
+    Check(ui.learned && drag.phase == Drag::Idle && ui.scales == Scales{100, 100} && Pixels(early, "minWidth") == 112,
+        "Measured 50 ms later; the button held: never a press");
+    Mouse(static_cast<long>(box[0] + box[2] + 100), static_cast<long>(box[1] + box[3] + 100), false);
+    // Its first figures during a resize from the size of its text without
+    // figures: its box kept until the resize ends, then sized again.
+    settings.perfOverlayX = settings.perfOverlayY = -1;
     RestorePerfOverlay();
     const HANDLE held = HoldCollections();
     Tick();
@@ -2801,23 +3011,23 @@ void NeutralTexts() {
     Check(resized && Get(resized).text == WaitingLine && WaitFor([] { return pdhFake::waiting.load() == 1; }), "Another label, waiting");
     Step();
     Check(ui.provisional && LabelBox(resized) == Box{8, 8, 112, 20}, "At 100 %");
-    const auto cornerLines = LoggedLine(scaledLine(150, 150, 168, 30, "corner"));
+    const auto cornerLines = LoggedLine(scaledLine(150, 150, 168, 30, "bottom-right"));
     Mouse(117, 25, true);
     Mouse(173, 35, true);
-    Check(drag.phase == Drag::Moving && drag.handle == ResizeHandle::Corner && ui.scales == Scales{150, 150} && LabelBox(resized) == Box{8, 8, 168, 30},
+    Check(drag.phase == Drag::Moving && drag.handle == ResizeHandle::BottomRight && ui.scales == Scales{150, 150} && LabelBox(resized) == Box{8, 8, 168, 30},
         "Resized by its corner from the size of its text without figures");
     ReleaseCollections(held);
     Check(WaitFor([] { return Figures().gpu >= 0; }), "Its figure, during the resize");
     Pump(2);
     Check(Get(resized).text == "GPU 23 %" && drag.phase == Drag::Moving && ui.provisional && ui.naturalWidth == 112 &&
-        LabelBox(resized) == Box{8, 8, 168, 30}, "Its first figures during the resize: its box kept until it ends");
+        LabelBox(resized) == Box{8, 8, 168, 30} && Pixels(resized, "fontSize") == 18, "Its first figures during the resize: its box kept until it ends");
     Mouse(173, 35, false);
-    Check(drag.phase == Drag::Idle && saves == saved + 3 && LoggedLine(scaledLine(150, 150, 168, 30, "corner")) == cornerLines + 1, "Saved");
+    Check(drag.phase == Drag::Idle && saves == saved + 2 && LoggedLine(scaledLine(150, 150, 168, 30, "bottom-right")) == cornerLines + 1, "Saved");
     Pump(2);
     Step();
     const auto measured = LabelBox(resized);
     Check(!ui.provisional && ui.naturalWidth == 64 && ui.naturalHeight == 20 && measured[2] == 96 && measured[3] == 30 &&
-        std::fabs(measured[0] - 8) < 1 && std::fabs(measured[1] - 8) < 1, "Then measured again from its figures, at its sizes");
+        std::fabs(measured[0] - 8) < 1 && std::fabs(measured[1] - 8) < 1, "Then sized again from its figures, at its sizes");
     Mouse(900, 900, false);
     settings.perfOverlayGpu = settings.perfOverlayDrag = false;
     settings.perfOverlayX = settings.perfOverlayY = -1;
@@ -2825,6 +3035,157 @@ void NeutralTexts() {
     Tick();
     Check(!Overlay() && cursorRequests.empty() && WaitFor(Retired), "Unticked: removed, its worker stopped");
     settings.perfOverlay = true;
+}
+
+// ------------------------------------------------------ all its edges
+// 1.18.1: resized as a window by all four edges and all four corners: the
+// edge held follows the cursor and the opposite side stays put (a label
+// anchored by its right and bottom sides moved by them), the game's cursor
+// of each handle over it and during its gesture (left-right on its left
+// edge, up-down on its top edge, one diagonal on its top-left corner, the
+// other on its top-right and bottom-left ones), its items flowing again at
+// each size, saved once at the end with the place of its top-left for that
+// box, its handle logged.
+void AllEdges() {
+    using namespace perfOverlay;
+    using namespace mouse;
+    using Box = std::array<float, 4>;
+    auto& settings = module->settings;
+    settings.perfOverlay = settings.perfOverlayDrag = settings.perfOverlayShown = true;
+    settings.perfOverlayGpu = settings.perfOverlayDisk = false;
+    settings.perfOverlayCorner = 0;
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    settings.perfOverlayScaleX = settings.perfOverlayScaleY = 100;
+    RestorePerfOverlay();
+    Tick();
+    Pump(4);
+    auto label = Overlay();
+    Step();
+    Check(label && LabelBox(label) == Box{8, 8, 226, 52} && Get(label).text == Steady, "At its natural size, top left");
+    // Moved by its middle to (500, 300) first.
+    Mouse(48, 28, true);
+    Mouse(540, 320, true);
+    Mouse(540, 320, false);
+    Check(LabelBox(label) == Box{500, 300, 226, 52} && !drag.resize, "Moved by its middle");
+    const auto saved = saves;
+    // Over its left and top edges and its other corners: their cursors.
+    const auto cursorAt = [&](long x, long y) { nowMs += HoverMs; Mouse(x, y, false); return CursorAsked(label); };
+    Check(cursorAt(503, 330) == 0x20000 && cursorAt(600, 302) == 0x80000 && cursorAt(502, 302) == 0x100000 && cursorAt(724, 302) == 0x40000 &&
+        cursorAt(502, 350) == 0x40000 && cursorAt(724, 350) == 0x100000 && cursorAt(600, 326) == 0x10000,
+        "Its left edge left-right, its top edge up-down, its top-left corner NW-SE, its top-right and bottom-left ones NE-SW, its middle the move cursor");
+    const auto line = [](int x, int y, float left, float top, float width, float height, const char* handle) {
+        return "PERF_OVERLAY_SCALED scaleX=" + std::to_string(x) + " scaleY=" + std::to_string(y) + " x=" +
+            std::to_string(PlaceOfEdge(left, width, 1920)) + " y=" + std::to_string(PlaceOfEdge(top, height, 1080)) + " handle=" + handle;
+    };
+    // Its left edge: its width only, its right side (726) kept, its items on two lines.
+    Mouse(503, 330, true);
+    Check(drag.phase == Drag::Pressed && drag.resize && drag.handle == ResizeHandle::Left && CursorAsked(label) == 0x20000, "Pressed on its left edge");
+    Mouse(390, 340, true);
+    Check(drag.phase == Drag::Moving && ui.scales == Scales{150, 100} && Close(LabelBox(label), Box{387, 300, 339, 52}) && Pixels(label, "left") == 387 &&
+        Get(label).text == TwoLines && saves == saved, "Its left edge dragged: 150 % wide, its right side and its top kept, two lines");
+    Mouse(390, 340, false);
+    Check(saves == saved + 1 && settings.perfOverlayScaleX == 150 && settings.perfOverlayScaleY == 100 &&
+        settings.perfOverlayX == PlaceOfEdge(387, 339, 1920) && settings.perfOverlayY == PlaceOfEdge(300, 52, 1080) &&
+        LoggedLine(line(150, 100, 387, 300, 339, 52, "left")) == 1, "Saved once: its sizes and the place of its top-left");
+    // Its top edge: its height only, its bottom side (352) kept.
+    Mouse(500, 302, true);
+    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::Top && CursorAsked(label) == 0x80000, "Pressed on its top edge");
+    Mouse(500, 276, true);
+    Check(ui.scales == Scales{150, 150} && Close(LabelBox(label), Box{387, 274, 339, 78}) && Pixels(label, "fontSize") == 18 && Get(label).text == Steady,
+        "Its top edge dragged: 150 % high, its bottom side kept, three lines at 150 %");
+    Mouse(500, 276, false);
+    Check(saves == saved + 2 && LoggedLine(line(150, 150, 387, 274, 339, 78, "top")) == 1, "Saved");
+    // Its top-left corner: both, its bottom-right corner (726, 352) kept.
+    Mouse(389, 276, true);
+    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::TopLeft && CursorAsked(label) == 0x100000, "Pressed on its top-left corner");
+    Mouse(502, 302, true);
+    Check(ui.scales == Scales{100, 100} && Close(LabelBox(label), Box{500, 300, 226, 52}) && Pixels(label, "fontSize") == 12,
+        "Its top-left corner dragged: back to 100 %, its bottom-right corner kept");
+    Mouse(502, 302, false);
+    Check(saves == saved + 3 && LoggedLine(line(100, 100, 500, 300, 226, 52, "top-left")) == 1, "Saved");
+    // Its top-right corner: its left side and its bottom kept.
+    Mouse(724, 302, true);
+    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::TopRight && CursorAsked(label) == 0x40000, "Pressed on its top-right corner");
+    Mouse(837, 276, true);
+    Check(ui.scales == Scales{150, 150} && Close(LabelBox(label), Box{500, 274, 339, 78}) && CursorAsked(label) == 0x40000,
+        "Its top-right corner dragged: its left side and its bottom kept");
+    Mouse(837, 276, false);
+    Check(saves == saved + 4 && LoggedLine(line(150, 150, 500, 274, 339, 78, "top-right")) == 1, "Saved");
+    // Its bottom-left corner: its right side (839) and its top kept.
+    Mouse(502, 350, true);
+    Check(drag.phase == Drag::Pressed && drag.handle == ResizeHandle::BottomLeft && CursorAsked(label) == 0x40000, "Pressed on its bottom-left corner");
+    Mouse(615, 324, true);
+    Check(ui.scales == Scales{100, 100} && Close(LabelBox(label), Box{613, 274, 226, 52}), "Its bottom-left corner dragged: its right side and its top kept");
+    Mouse(615, 324, false);
+    Check(saves == saved + 5 && LoggedLine(line(100, 100, 613, 274, 226, 52, "bottom-left")) == 1, "Saved");
+    // Far beyond its left side: 300 % at most, entirely on screen.
+    Mouse(615, 300, true);
+    Mouse(-500, 300, true);
+    Check(drag.handle == ResizeHandle::Left && ui.scales == Scales{300, 100} && Close(LabelBox(label), Box{161, 274, 678, 52}) && Get(label).text.find('\n') != std::string::npos,
+        "300 % wide at most, its right side kept");
+    Mouse(-500, 300, false);
+    Check(saves == saved + 6 && settings.perfOverlayScaleX == 300, "Saved");
+    // A label anchored by its right and bottom sides (the corner an earlier
+    // revision chose): its left edge and its top-left corner move them, its
+    // right and bottom sides kept 8 px from the panel's.
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    settings.perfOverlayScaleX = settings.perfOverlayScaleY = 100;
+    settings.perfOverlayCorner = 3;
+    Tick();
+    label = Overlay();
+    Pump(4);
+    Step();
+    Check(label && LabelBox(label) == Box{1686, 1020, 226, 52}, "Bottom right, at its natural size");
+    Mouse(1688, 1046, true);
+    Mouse(1575, 1046, true);
+    Check(drag.handle == ResizeHandle::Left && ui.scales == Scales{150, 100} && Close(LabelBox(label), Box{1573, 1020, 339, 52}) &&
+        Pixels(label, "right") == 8 && Pixels(label, "bottom") == 8 && !Styled(label, "left"), "Its left edge: its right side kept 8 px from the panel's");
+    Mouse(1575, 1046, false);
+    Mouse(1575, 1022, true);
+    Mouse(1462, 996, true);
+    Check(drag.handle == ResizeHandle::TopLeft && ui.scales == Scales{200, 150} && Close(LabelBox(label), Box{1460, 994, 452, 78}) &&
+        Pixels(label, "right") == 8 && Pixels(label, "bottom") == 8, "Its top-left corner: its right and bottom sides kept");
+    Mouse(1462, 996, false);
+    Check(saves == saved + 8 && settings.perfOverlayScaleX == 200 && settings.perfOverlayScaleY == 150 && settings.perfOverlayCorner == 3 &&
+        settings.perfOverlayX == PlaceOfEdge(1460, 452, 1920) && settings.perfOverlayY == PlaceOfEdge(994, 78, 1080), "Saved, its corner kept");
+    Check(changes == 0 && Logged("PERF_OVERLAY_MEASURE_ESTIMATED") == 0, "Never Module::Change; every item measured, never estimated");
+    settings.perfOverlayCorner = 0;
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    settings.perfOverlayScaleX = settings.perfOverlayScaleY = 100;
+    settings.perfOverlayDrag = false;
+    RestorePerfOverlay();
+}
+
+// 1.18.1: the game unable to measure its items (MeasureTextSize giving no
+// size, as without a font): estimated, 7 px a character and 16 px a line at
+// 100 %, logged once a label; its items laid out all the same. The next label
+// measures them again.
+void MeasureFallback() {
+    using namespace perfOverlay;
+    auto& settings = module->settings;
+    settings.perfOverlay = settings.perfOverlayShown = true;
+    settings.perfOverlayGpu = settings.perfOverlayDisk = settings.perfOverlayDrag = false;
+    settings.perfOverlayX = settings.perfOverlayY = -1;
+    settings.perfOverlayScaleX = settings.perfOverlayScaleY = 100;
+    RestorePerfOverlay();
+    const auto before = Logged("PERF_OVERLAY_MEASURE_ESTIMATED");
+    measureBroken = true;
+    Tick();
+    Pump(3);
+    const auto label = Overlay();
+    Check(label && ui.learned && ui.estimated && ui.metrics.first == 16 && ui.metrics.pitch == 16 && ui.metrics.separator == 21 &&
+        ui.widths[SlotHeap] == 7 * 24 && LoggedLine("PERF_OVERLAY_MEASURE_ESTIMATED invalid") == 1 && Logged("PERF_OVERLAY_MEASURE_ESTIMATED") == before + 1,
+        "Estimated, logged once");
+    Check(Get(label).text == Steady && ui.naturalWidth == 7 * 35 + 16 && Pixels(label, "minWidth") == 7 * 35 + 16 && Pixels(label, "fontSize") == 12,
+        "Laid out all the same, on its groups' lines: " + Get(label).text);
+    measureBroken = false;
+    RestorePerfOverlay();
+    Tick();
+    Pump(3);
+    Check(Overlay() && ui.learned && !ui.estimated && ui.metrics.separator == 18 && Logged("PERF_OVERLAY_MEASURE_ESTIMATED") == before + 1 &&
+        Pixels(Overlay(), "minWidth") == CpuLineWidth, "The next label measured again");
+    settings.perfOverlay = false;
+    Tick();
 }
 
 // ------------------------------------------------------ the top-bar button
@@ -2939,6 +3300,7 @@ int main() {
         Formatting();
         DeviceModel();
         CounterArrays();
+        FlowModel();
         PlacementModel();
         Install();
         OptionOff();
@@ -2958,19 +3320,23 @@ int main() {
         GripAndEdges();
         Cursors();
         NeutralTexts();
+        AllEdges();
+        MeasureFallback();
         TopBarButton();
         RestorePerfOverlay();
         Check(!perfOverlay::devices.worker && !perfOverlay::devices.thread && WaitFor(Retired), "No worker left after Restore");
         mod.compositor.reset();
         module = nullptr;
         Check(handles.empty(), "No managed reference kept after Restore");
+        Check(Logged("PERF_OVERLAY_MEASURE_ESTIMATED") == 1 && measures > 0, "Every item measured with the font drawn, estimated only when the game gave no size");
         std::cout << "PASS: performance overlay: frame rate and frame times over the last second (a slow frame forgotten after "
             "a second, 1024-frame ring), CPU share over the last two refreshes, Mo/Go and French decimals, three-line text and "
-            "a fourth for the GPU and the disk, every native call verified and guarded (63 methods, 2 GC exports and the 4 "
+            "a fourth for the GPU and the disk, every native call verified and guarded (64 methods, 2 GC exports and the 4 "
             "functions behind them, the layer host's offset), inert when off or disabled, waits for its layer (loading screens, "
             "pq.pbs throwing), first child of RootHigh, ignores clicks and focus without the mouse placement, rounded dark "
-            "background, its text from its top-left, never narrower or lower once laid out (its natural size from its first "
-            "layout), four corners (top right under the game menu), refreshed every second "
+            "background, its text from its top-left, never narrower or lower once laid out (its natural size from its items "
+            "measured at its first layout with its own font, each shape once, never with a font drawn since), four corners "
+            "(top right under the game menu), refreshed every second "
             "pump and only when changed, no CPU share spanning a wait, recreated when the game rebuilds its layers or the "
             "session changes, removed at once when unchecked or restored, 3 errors within 5 minutes give up (errors at each "
             "first refresh included), cleanup retried twice a second for 10 s; mouse placement: a press on the overlay only "
@@ -2990,9 +3356,13 @@ int main() {
             "counter, memory, heap or CPU read without the frame rate, the "
             "mouse placement alone showing nothing), recreated for another choice of parts, and the mouse place kept and the "
             "overlay locked there when the mouse placement is unchecked, across restarts; resize (1.16.0, as a window since "
-            "1.17.1): its width and its height each (perfOverlayScaleX/Y), its text, insets and corners at the smaller one "
-            "(the largest its box holds, from its top-left), its box at each from its natural size (the widest and tallest "
-            "text kept at 100 %), its top-left kept even when anchored by its right and bottom sides, its corner following "
+            "1.17.1): its width and its height each (perfOverlayScaleX/Y), its box at each from its natural size (the widest "
+            "and tallest items kept at 100 %); reflow (1.18.1): each figure an item (« · » between those of a line), for each "
+            "number of lines the narrowest width its items need, the largest text its box holds over them, its items then "
+            "filling lines as wide as the box gives them (up on the line above as soon as they fit, back as it narrows: one "
+            "line in a wide strip, an item a line in a tall one), a function of its box alone, each item's widest shape kept "
+            "(no jitter), estimated and logged once when the game gives no size; its top-left kept by its right and bottom "
+            "edges even when anchored by its right and bottom sides, its corner following "
             "the cursor freely, each side in whole percents within 50..300 and its own room to the panel's margins, a click "
             "changing nothing, never grown or placed meanwhile nor by the layout of the sizes before (the game lays it out "
             "after the frame), back at the last sizes seen when the point held is covered, saved once with the place of its "
@@ -3002,18 +3372,19 @@ int main() {
             "above the label (never its children: its text measure kept), never picked, shown while the cursor is over it "
             "(looked at every 50 ms, the panel's pick only over it) and during a drag, hidden when it leaves, under a game "
             "element, with another window in the foreground and while locked, following the corner at the overlay's size; "
-            "its corner (at least 18 pixels of the screen, 16 px at its text's size, never wider than half of it), its right "
-            "edge and its bottom edge (at least 6 pixels of the screen, 5 px at its text's size, never thicker than a quarter "
-            "of it) resize it, the right edge its width only, the bottom edge its height only, the rest moving it; each resize "
+            "its corners (at least 18 pixels of the screen, 16 px at its text's size, never wider or higher than a third of "
+            "it) and its edges (at least 6 pixels of the screen, 5 px at its text's size, never thicker than a quarter of it) "
+            "resize it, all four of each since 1.18.1, the edge held following the cursor and the opposite side kept, the "
+            "rest moving it; each resize "
             "logged as it ends (PERF_OVERLAY_SCALED, with its width, its height and its handle), the grip recreated with the "
             "label and removed with it; cursors (1.17.1): the game's cursor manager asked on its UI layer for the label, the "
-            "double arrow of the handle under the cursor (left-right, up-down, diagonal) or the move cursor, asked once a "
+            "double arrow of the handle under the cursor (left-right, up-down, both diagonals) or the move cursor, asked once a "
             "change (a game element's request left on top), the handle pressed kept during its gesture, removed when the "
             "cursor leaves, at the next frame after a gesture ended outside, when unticked and with the overlay (parts "
             "unticked, Restore, the module stopping), a failed removal logged without keeping the overlay; texts without "
-            "figures (1.17.1): its box at its width and its height from them, provisionally, measured again from its first "
-            "figures (narrower), never after them (never clipped), a resize pressed before that measure starting from the "
-            "box seen, its other side at its size; "
+            "figures (1.17.1): its box at its width and its height from them, provisionally, sized again from its first "
+            "figures (narrower), never after them (drawn smaller in its box, never clipped), a resize pressed before its "
+            "items are measured let go, figures during a resize keeping its box until it ends; "
             "top-bar button (1.16.0): registered at installation (« Performances », FigmaIcons.activity, no layouts, its "
             "option removing it), pressed while a part is ticked and not hidden by it, a click hiding the overlay with its "
             "parts kept ticked and nothing measured, or showing it again (« Afficher les FPS et la mémoire » ticked when no "

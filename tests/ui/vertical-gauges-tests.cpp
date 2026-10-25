@@ -47,6 +47,8 @@ struct Object : Raw {
     std::vector<Obj> items;                                       // a list's, a dictionary's, an element's children
     alignas(8) std::array<unsigned char, 24> bytes{};             // a boxed value
     std::string name, text, property, help;
+    std::wstring wide;                                            // a string's characters, as il2cpp_string_chars gives them
+    std::array<bool, 8> handles{};                                // a window's resize handles shown, by ResizeHandler
     // Its parent as get_parent reads it (m_LogicalParent) and the element whose
     // children it is (m_PhysicalParent: a window's content element for the
     // window's own children).
@@ -98,11 +100,24 @@ uint64_t nowMs = 100000;
 // unless a test changes the interface scale), the hub and its gauges.
 float screenWidth = 1920, screenHeight = 1080;
 Obj panel = nullptr, layer = nullptr, hub = nullptr, cachedData = nullptr, presets = nullptr, openMenu = nullptr;
-std::map<std::string, float> savedWidths; // UiPresetOptionsContainer.LoadUiDimensionById, by UI id
+// UiPresetOptionsContainer.LoadUiDimensionById, by UI id: the width, and the
+// height (35 unless saved otherwise).
+std::map<std::string, float> savedWidths, savedHeights;
 // UiPresetOptionsContainer.LoadUiPositionById, by UI id: per-mille of the
 // screen, or flush with its right or bottom edge.
-struct SavedPosition { float x = 0, y = 0; bool right = false, bottom = false; };
+struct SavedPosition {
+    float x = 0, y = 0;
+    bool right = false, bottom = false;
+    bool operator==(const SavedPosition&) const = default;
+};
 std::map<std::string, SavedPosition> savedPositions;
+// The game's layout saves (UiPresetOptionsContainer.SaveUiPositionById and
+// SaveUiDimensionById), through the module's detours once installed.
+using SavePositionFn = void (*)(Obj, Obj, Obj, bool, bool, Method);
+using SaveDimensionFn = void (*)(Obj, Obj, Obj, Method);
+SavePositionFn positionHook = nullptr;
+SaveDimensionFn dimensionHook = nullptr;
+unsigned positionSaves = 0, dimensionSaves = 0;
 // The game's CreateGenericGaugeSection: « Masquer le module » left out
 // (fow.zml()), or a menu without its separator.
 bool hideRow = true, separatorRow = true;
@@ -124,7 +139,7 @@ template<class T> Obj Box(T value, const std::string& type = "Int32") {
     std::memcpy(Get(o).bytes.data(), &value, sizeof(value));
     return o;
 }
-Obj String(const std::string& text) { auto o = Make("String"); Get(o).text = text; return o; }
+Obj String(const std::string& text) { auto o = Make("String"); Get(o).text = text; Get(o).wide.assign(text.begin(), text.end()); return o; }
 template<class T> void Put(Obj o, size_t offset, T value) {
     Check(offset >= 0x10 && offset - 0x10 + sizeof(T) <= sizeof(Raw::fields), "Fake field outside the object");
     std::memcpy(Get(o).fields + offset - 0x10, &value, sizeof(T));
@@ -226,6 +241,20 @@ struct Gauge {
     }
 };
 std::vector<Gauge> gauges;
+bool Flag(Obj window, size_t offset) { bool value = false; std::memcpy(&value, Get(window).fields + offset - 0x10, 1); return value; }
+// ResizeHandler: the corners 0 to 3, Right 4, Left 5, Bottom 6, Top 7.
+constexpr int BottomHandle = 6, TopHandle = 7;
+// ResizableWindow.UpdateResizeHandlers (0x15BE8A0), run by each resize flag's
+// setter when it changes: the left and right handles follow
+// m_horizontalResizable, the top and bottom ones m_verticalResizable, the
+// corners m_cornerResizable; none while the interface is locked (m_isUILocked).
+void UpdateResizeHandlers(Obj window) {
+    auto& shown = Get(window).handles;
+    const bool locked = Flag(window, 0x2CC);
+    for (int corner = 0; corner < 4; ++corner) shown[corner] = Flag(window, 0x356) && !locked;
+    shown[4] = shown[5] = Flag(window, 0x355) && !locked;
+    shown[BottomHandle] = shown[TopHandle] = Flag(window, 0x354) && !locked;
+}
 std::string Id(int type) {
     switch (type) {
     case 0x1: return "GaugeCharacter";
@@ -265,6 +294,8 @@ Gauge MakeGauge(int type, Obj owner = nullptr) {
     g.inner = Element("DofusVisualElement", "window_inner"); Add(g.window, g.inner, g.content);
     Put<Obj>(g.window, 0x310, g.content);
     Put<bool>(g.window, 0x354, true); Put<bool>(g.window, 0x355, false); Put<bool>(g.window, 0x356, true);
+    Put<int>(g.window, 0x350, 5); // drag-position="Custom"
+    UpdateResizeHandlers(g.window);
     g.widget = Make("WidgetProgressGaugeUi");
     Put<int>(g.widget, 0x184, type);
     auto& refs = Get(g.widget).refs;
@@ -308,7 +339,6 @@ void GamePlace(const Gauge& g) {
     GameWrite(g.window, "left", std::clamp(x, 0.f, screenWidth - width));
     GameWrite(g.window, "top", std::clamp(y, 0.f, screenHeight - height));
 }
-bool Flag(Obj window, size_t offset) { bool value = false; std::memcpy(&value, Get(window).fields + offset - 0x10, 1); return value; }
 // The box the gauges' hub keeps for each gauge (gob`1's place and size, gom
 // slots 0x15-0x18): only goz`1.blxe refreshes it, from the window's
 // resolvedStyle (its last layout), before anything else: its place unless
@@ -356,7 +386,8 @@ void GameReplace(const Gauge& g) {
         const auto size = savedWidths.find(Id(g.type));
         if (size != savedWidths.end()) {
             box.width = size->second;
-            box.height = 35; // LoadUiDimensionById's y, as the fake gives it
+            const auto height = savedHeights.find(Id(g.type));
+            box.height = height == savedHeights.end() ? 35 : height->second; // LoadUiDimensionById's y, as the fake gives it
             GameWrite(g.window, "width", box.width);
             GameWrite(g.window, "height", box.height);
             sized = true;
@@ -379,18 +410,100 @@ void GameReplace(const Gauge& g) {
     }
     GameKeepOnScreen(g.window, box);
 }
+// UiPresetOptionsContainer.SaveUiPositionById (0x2092DE0) and
+// SaveUiDimensionById (0x2092A80) as the game runs them: into the current
+// layout, through the module's detours once it has installed them.
+void NativeSavePosition(Obj, Obj id, Obj coordinates, bool right, bool bottom, Method) {
+    ++positionSaves;
+    float x = 0, y = 0;
+    std::memcpy(&x, Get(coordinates).fields, 4); std::memcpy(&y, Get(coordinates).fields + 4, 4);
+    savedPositions[Get(id).text] = {x, y, right, bottom};
+}
+void NativeSaveDimension(Obj, Obj id, Obj coordinates, Method) {
+    ++dimensionSaves;
+    float width = 0, height = 0;
+    std::memcpy(&width, Get(coordinates).fields, 4); std::memcpy(&height, Get(coordinates).fields + 4, 4);
+    savedWidths[Get(id).text] = width;
+    savedHeights[Get(id).text] = height;
+}
+Obj Coordinates(float x, float y) {
+    auto c = Make("UICoordinates");
+    Put<float>(c, 0x10, x); Put<float>(c, 0x14, y);
+    return c;
+}
+void GameSavePosition(const Gauge& g, float x, float y) {
+    (positionHook ? positionHook : NativeSavePosition)(presets, String(Id(g.type)), Coordinates(x, y), false, false, nullptr);
+}
+void GameSaveDimension(const Gauge& g, float width, float height) {
+    (dimensionHook ? dimensionHook : NativeSaveDimension)(presets, String(Id(g.type)), Coordinates(width, height), nullptr);
+}
+// pq.pae (0x2E8FE80): a window's place as the game saves it, per-mille of the
+// screen from its header's world place (the gauges' header is display none:
+// the window's own top-left corner; its size 0, never against an edge).
+void GameSavePlace(const Gauge& g) {
+    GameSavePosition(g, PixelsOr(g.window, "left", 546) / screenWidth * 1000.f, PixelsOr(g.window, "top", 860) / screenHeight * 1000.f);
+}
+// A drag of the window by its drag handle (ctr_main, the whole window):
+// ElementDraggerWithBounds.SetNewPosition (0x1671500) writes its inline left
+// and top, kept on the screen (ClampToRemainInAllowedScreenSpace), then
+// ElementDragger.onDraggedAction: gob`1.WindowDragged -> pq.pae -> cnt ->
+// goz`1.blwv -> SaveUiPositionById.
+void GameDrag(const Gauge& g, float dx, float dy) {
+    const auto& w = Get(g.window);
+    GameWrite(g.window, "left", std::clamp(w.x + dx, 0.f, screenWidth - w.width));
+    GameWrite(g.window, "top", std::clamp(w.y + dy, 0.f, screenHeight - w.height));
+    GameSavePlace(g);
+}
+// A press on the window's top or bottom edge, pulled by dy: its resize handle
+// when shown (ElementResizer.Top 0x167B0A0 / Bottom 0x1674F00: the height,
+// and the top for the top edge, between the minimum and maximum height its
+// resolved style had at the press and inside the screen; then
+// NotifyEndOfResize 0x16777C0 -> onResizeDoneAction -> gob`1.blry -> cnx ->
+// goz`1.blwu: SaveUiPositionById and SaveUiDimensionById). A hidden handle is
+// not picked: the press lands on ctr_main, the drag handle, and drags the
+// window instead.
+void GamePullEdge(const Gauge& g, int handle, float dy) {
+    const auto& w = Get(g.window);
+    if (!Get(g.window).handles[static_cast<size_t>(handle)] || w.hidden) { GameDrag(g, 0, dy); return; }
+    const float minimum = std::max(PixelsOr(g.window, "minHeight", 34), 0.f), maximum = PixelsOr(g.window, "maxHeight", 1e9f);
+    if (handle == BottomHandle) {
+        const float height = std::clamp(std::min(w.height + dy, screenHeight - w.y), minimum, maximum);
+        GameWrite(g.window, "height", height);
+    } else {
+        const float height = std::clamp(std::min(w.height - dy, w.y + w.height), minimum, maximum);
+        GameWrite(g.window, "top", w.y + w.height - height);
+        GameWrite(g.window, "height", height);
+    }
+    GameSavePlace(g);
+    GameSaveDimension(g, PixelsOr(g.window, "width", w.uxmlWidth), PixelsOr(g.window, "height", 34));
+}
 // Everything of a gauge the module may change: each element's code-set
-// values, its window's resize flags, its bar's orientation.
+// values, its window's resize flags and handles, its bar's orientation.
 struct Snapshot {
     std::map<std::pair<Obj, std::string>, std::array<unsigned char, 12>> styles;
     std::array<bool, 3> flags{};
+    std::array<bool, 8> handles{};
     int orientation = 0;
     bool operator==(const Snapshot&) const = default;
 };
+// What differs between two snapshots, for a failed check.
+std::string Diff(const Snapshot& a, const Snapshot& b) {
+    std::string text;
+    for (const auto& [key, bytes] : a.styles) {
+        const auto other = b.styles.find(key);
+        if (other == b.styles.end() || other->second != bytes) text += " " + Get(key.first).name + "." + key.second;
+    }
+    for (const auto& [key, bytes] : b.styles) if (!a.styles.contains(key)) text += " +" + Get(key.first).name + "." + key.second;
+    if (a.flags != b.flags) text += " flags";
+    if (a.handles != b.handles) text += " handles";
+    if (a.orientation != b.orientation) text += " orientation";
+    return text;
+}
 Snapshot Take(const Gauge& g) {
     Snapshot s;
     for (auto e : g.Elements()) for (const auto& [property, bytes] : Get(e).styles) s.styles[{e, property}] = bytes;
     s.flags = {Flag(g.window, 0x354), Flag(g.window, 0x355), Flag(g.window, 0x356)};
+    s.handles = Get(g.window).handles;
     s.orientation = Get(g.bar).orientation;
     return s;
 }
@@ -633,7 +746,15 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     if (m == "get_gaugeOrientation") return Box(o.orientation);
     if (m == "set_verticalResizable" || m == "set_horizontalResizable" || m == "set_cornerResizable") {
         const size_t offset = m == "set_verticalResizable" ? 0x354 : m == "set_horizontalResizable" ? 0x355 : 0x356;
-        Put<bool>(self, offset, *static_cast<bool*>(args.at(0)));
+        const bool value = *static_cast<bool*>(args.at(0));
+        if (Flag(self, offset) != value) { Put<bool>(self, offset, value); UpdateResizeHandlers(self); } // the setter's own check
+        return nullptr;
+    }
+    if (m == "EnableResizeHandler" || m == "DisableResizeHandler") {
+        // m_resizeHandles[handler].visible
+        const int handler = *static_cast<int*>(args.at(0));
+        Check(handler >= 0 && handler < 8, "A ResizeHandler value");
+        o.handles[static_cast<size_t>(handler)] = m == "EnableResizeHandler";
         return nullptr;
     }
     if (m == "AppendCheckboxItem") {
@@ -684,10 +805,8 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     if (m == "LoadUiDimensionById") {
         const auto found = savedWidths.find(Get(static_cast<Obj>(args.at(0))).text);
         if (found == savedWidths.end()) return nullptr;
-        auto coordinates = Make("UICoordinates");
-        Put<float>(coordinates, 0x10, found->second);
-        Put<float>(coordinates, 0x14, 35.f);
-        return coordinates;
+        const auto height = savedHeights.find(found->first);
+        return Coordinates(found->second, height == savedHeights.end() ? 35.f : height->second);
     }
     if (m == "LoadUiPositionById") {
         // ValueTuple<String, UICoordinates, Boolean, Boolean>, boxed: all default when none is saved.
@@ -723,9 +842,20 @@ void Module::Change(Settings next, bool save) {
 void Log(const std::string& message) { fixture::logs.push_back(message); }
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original) {
     const auto& m = *static_cast<const fixture::MethodData*>(method);
-    fixture::Check(m.type == "WidgetProgressGaugeUi" && m.name == "CreateGenericGaugeSection" && m.argc == 1 && m.rva == rva,
-        "Only the gauge menu's builder is hooked, through its verified method");
+    fixture::Check(m.rva == rva, "A detour through its verified method");
     ++fixture::hooks;
+    if (m.type == "UiPresetOptionsContainer" && m.name == "SaveUiPositionById" && m.argc == 4) {
+        fixture::positionHook = reinterpret_cast<fixture::SavePositionFn>(replacement);
+        *original = reinterpret_cast<void*>(&fixture::NativeSavePosition);
+        return;
+    }
+    if (m.type == "UiPresetOptionsContainer" && m.name == "SaveUiDimensionById" && m.argc == 2) {
+        fixture::dimensionHook = reinterpret_cast<fixture::SaveDimensionFn>(replacement);
+        *original = reinterpret_cast<void*>(&fixture::NativeSaveDimension);
+        return;
+    }
+    fixture::Check(m.type == "WidgetProgressGaugeUi" && m.name == "CreateGenericGaugeSection" && m.argc == 1,
+        "Only the gauge menu's builder and the layout's two saves are hooked");
     fixture::hookRva = rva;
     fixture::sectionHook = reinterpret_cast<fixture::SectionFn>(replacement);
     *original = reinterpret_cast<void*>(&fixture::NativeSection);
@@ -753,6 +883,8 @@ void Initialize() {
     api.class_is_assignable_from = [](Klass base, Klass k) { return Derives(static_cast<Class*>(k)->name, static_cast<Class*>(base)->name); };
     api.object_unbox = [](Obj o) -> void* { return Get(o).bytes.data(); };
     api.string_new = [](const char* text) -> Obj { return String(text); };
+    api.string_length = [](Obj o) -> int32_t { return static_cast<int32_t>(Get(o).wide.size()); };
+    api.string_chars = [](Obj o) -> const wchar_t* { return Get(o).wide.c_str(); };
     api.gchandle_new = [](Obj o, bool) -> GCHandle { handles[++handleId] = o; return handleId; };
     api.gchandle_get_target = [](GCHandle h) -> Obj { return handles.at(h); };
     api.gchandle_free = [](GCHandle h) { Check(handles.erase(h) == 1, "Invalid GC release"); };
@@ -767,7 +899,9 @@ void Initialize() {
     api.field_get_offset = [](void* field) { return static_cast<FieldData*>(field)->offset; };
     fieldInfos = {{"WidgetProgressGaugeUi.m_gaugeType", {0x184}}, {"gfc.dyfh", {0xF0}}, {"ResizableWindow.<content>k__BackingField", {0x310}},
         {"ResizableWindow.m_verticalResizable", {0x354}}, {"ResizableWindow.m_horizontalResizable", {0x355}},
-        {"ResizableWindow.m_cornerResizable", {0x356}}, {"DofusContextualMenu.dofusContextualMenuRoot", {0x38}}, {"UICoordinates.x", {0x10}},
+        {"ResizableWindow.m_cornerResizable", {0x356}}, {"ResizableWindow.m_isUILocked", {0x2CC}}, {"ResizableWindow.m_disableTopHandle", {0x2CA}},
+        {"ResizableWindow.m_disableBottomHandle", {0x2CB}}, {"ResizableWindow.m_dragPosition", {0x350}},
+        {"DofusContextualMenu.dofusContextualMenuRoot", {0x38}}, {"UICoordinates.x", {0x10}},
         {"UICoordinates.y", {0x14}}};
 }
 // One test's game and module: the gauges' layer in the panel, the hub, the
@@ -776,7 +910,8 @@ struct Fixture {
     Module state{L"offline-vertical-gauges"};
     explicit Fixture(bool install = true) {
         logs.clear(); contracts.clear(); fieldsChecked.clear(); callsOn.clear(); gauges.clear(); savedWidths.clear(); savedPositions.clear();
-        keptBoxes.clear();
+        keptBoxes.clear(); savedHeights.clear();
+        positionHook = nullptr; dimensionHook = nullptr; positionSaves = dimensionSaves = 0;
         failVerified.clear(); failField.clear(); failMethod.clear(); barBaseName = "BaseProgressBar`2";
         failOwner = nullptr; failCount = 0; skewReadBack = false; changeFails = false; hideRow = separatorRow = true;
         calls = nameCalls = enumerations = disposals = lookups = removeMenus = changes = hooks = nativeSections = nativeCallbacks = 0;
@@ -834,7 +969,7 @@ std::vector<std::string> Texts(Obj menu) {
     for (auto row : Rows(menu)) texts.push_back(Get(row).klass->name == "ContextMenuSeparatorItem" ? "---" : Get(row).text);
     return texts;
 }
-constexpr const char* Help = "Affiche cette jauge à la verticale : elle se remplit de bas en haut, son niveau en dessous. Elle garde sa longueur et sa place et se déplace comme avant ; sa taille se change seulement à l’horizontale. Décoche pour la remettre à l’horizontale.";
+constexpr const char* Help = "Affiche cette jauge à la verticale : elle se remplit de bas en haut, son niveau en dessous. Tire son bord haut ou bas pour changer sa longueur ; sa longueur et sa place à la verticale sont gardées pour la prochaine fois. Décoche pour la remettre à l’horizontale, à sa place et à sa taille d’avant.";
 // The vertical layout, every value of the table on its element, the bar
 // vertical and the window without its resize handles, `length` long.
 void CheckVertical(const Gauge& g, float length, const std::string& what) {
@@ -851,8 +986,12 @@ void CheckVertical(const Gauge& g, float length, const std::string& what) {
         what + ": the Omega icon above its badge");
     Check(Pixels(g.button, "height") == 24 && Pixels(g.button, "marginLeft") == 0 && Pixels(g.button, "marginTop") == 2,
         what + ": the « … » button 24 px high");
-    Check(Get(g.bar).orientation == 1 && !Flag(g.window, 0x354) && !Flag(g.window, 0x355) && !Flag(g.window, 0x356),
-        what + ": the game's vertical bar, no resize handle");
+    Check(Pixels(g.window, "minHeight") == 160 && Pixels(g.window, "maxHeight") == screenHeight - 16,
+        what + ": the game's resizes between 160 px and the screen's height less 16 px");
+    const auto& shown = Get(g.window).handles;
+    Check(Get(g.bar).orientation == 1 && !Flag(g.window, 0x354) && !Flag(g.window, 0x355) && !Flag(g.window, 0x356) &&
+        shown == std::array<bool, 8>{false, false, false, false, false, false, true, true},
+        what + ": the game's vertical bar, its resize flags off, only its top and bottom handles");
     for (auto e : {g.container, g.content, g.icon, g.title, g.badge, g.omegaValue, g.inner, g.omegaIcon})
         Check(Get(e).styles.empty(), what + ": nothing else written");
 }
@@ -863,7 +1002,8 @@ void CheckVertical(const Gauge& g, float length, const std::string& what) {
 void InstallResolvesEveryContract() {
     Fixture f;
     Check(LoggedLine("VERTICAL_GAUGES_READY") && Logged("VERTICAL_GAUGES_DISABLED") == 0, "Installed and ready");
-    Check(hooks == 1 && hookRva == 0x2815820 && sectionHook != nullptr, "One detour: CreateGenericGaugeSection");
+    Check(hooks == 3 && hookRva == 0x2815820 && sectionHook != nullptr && positionHook != nullptr && dimensionHook != nullptr,
+        "Three detours: the layout's two saves, then CreateGenericGaugeSection");
     const std::set<std::tuple<std::string, std::string, int, uintptr_t>> expected{
         {"WidgetProgressGaugeUi", "CreateGenericGaugeSection", 1, 0x2815820},
         {"WidgetProgressGaugeBinding", "get_widgetProgressGauge", 0, 0x154DFD0}, {"WidgetProgressGaugeBinding", "get_ctr_main", 0, 0x154D9A0},
@@ -873,7 +1013,8 @@ void InstallResolvesEveryContract() {
         {"WidgetProgressGaugeBinding", "get_btn_settings", 0, 0x154D8F0},
         {"BaseProgressBar`2", "set_gaugeOrientation", 1, 0x3C94C70}, {"BaseProgressBar`2", "get_gaugeOrientation", 0, 0x3925FB0},
         {"ResizableWindow", "set_verticalResizable", 1, 0x15BFCF0}, {"ResizableWindow", "set_horizontalResizable", 1, 0x15BFC40},
-        {"ResizableWindow", "set_cornerResizable", 1, 0x15BF930},
+        {"ResizableWindow", "set_cornerResizable", 1, 0x15BF930}, {"ResizableWindow", "EnableResizeHandler", 1, 0x15BCB60},
+        {"ResizableWindow", "DisableResizeHandler", 1, 0x15BC990},
         {"DofusContextualMenu", "AppendCheckboxItem", 9, 0x16D63D0}, {"DofusContextualMenu", "RemoveItemAt", 1, 0x16D8BF0},
         {"DofusContextualMenu", "InsertItem", 2, 0x16D8850}, {"DofusContextualMenu", "get_menuItems", 0, 0x68D2B0},
         {"ContextMenuItem", "get_m_callback", 0, 0x16CF040}, {"ContextMenuItem", "get_disabled", 0, 0x16CF020},
@@ -884,6 +1025,10 @@ void InstallResolvesEveryContract() {
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_width", 0, 0x55D2740}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_width", 1, 0x55D63F0},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_height", 0, 0x55D1540}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_height", 1, 0x55D3D60},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x55D1850}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x55D4410},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minHeight", 0, 0x55D1810},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minHeight", 1, 0x55D4370},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_maxHeight", 0, 0x55D1790},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_maxHeight", 1, 0x55D4230},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x55D13C0},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x55D3A80},
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingLeft", 0, 0x55D1970},
@@ -900,11 +1045,21 @@ void InstallResolvesEveryContract() {
         {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_top", 0, 0x55D1CD0}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_top", 1, 0x55D4F70},
         {"Length", ".ctor", 2, 0x561D3D0}, {"StyleLength", "set_value", 1, 0x5623940},
         {"CachedDataService", "get_uiPresetOptionsContainer", 0, 0x7E0890}, {"UiPresetOptionsContainer", "LoadUiDimensionById", 1, 0x20918C0},
-        {"UiPresetOptionsContainer", "LoadUiPositionById", 1, 0x2091B60}};
+        {"UiPresetOptionsContainer", "LoadUiPositionById", 1, 0x2091B60}, {"UiPresetOptionsContainer", "SaveUiPositionById", 4, 0x2092DE0},
+        {"UiPresetOptionsContainer", "SaveUiDimensionById", 2, 0x2092A80}};
     Check(contracts == expected, "Every native method verified at its pinned RVA, and nothing else");
     Check(fieldsChecked == std::set<std::string>{"WidgetProgressGaugeUi.m_gaugeType", "gfc.dyfh", "ResizableWindow.<content>k__BackingField",
         "ResizableWindow.m_verticalResizable", "ResizableWindow.m_horizontalResizable", "ResizableWindow.m_cornerResizable",
-        "DofusContextualMenu.dofusContextualMenuRoot", "UICoordinates.x", "UICoordinates.y"}, "Every field read at a checked offset");
+        "ResizableWindow.m_isUILocked", "ResizableWindow.m_disableTopHandle", "ResizableWindow.m_disableBottomHandle",
+        "ResizableWindow.m_dragPosition", "DofusContextualMenu.dofusContextualMenuRoot", "UICoordinates.x", "UICoordinates.y"},
+        "Every field read at a checked offset");
+    // The layout's saves, with no vertical gauge: the game's own, as they were.
+    const auto g = MakeGauge(0x10);
+    LayoutPass();
+    GameDrag(g, 10, 0);
+    GameSaveDimension(g, 600, 34);
+    Check(positionSaves == 1 && dimensionSaves == 1 && savedWidths.at("GaugePods") == 600 && savedPositions.contains("GaugePods"),
+        "No vertical gauge: the game's saves untouched");
     // Nothing asked, nothing done: no lookup, no enumeration, no call.
     const auto before = calls + nameCalls;
     for (int i = 0; i < 5; ++i) { Tick(); Frame(); }
@@ -913,8 +1068,10 @@ void InstallResolvesEveryContract() {
 // A contract that does not match turns this feature off alone, logged once:
 // no detour, no row, no call from the pump, the frame or Stop.
 void MissingContractTurnsOnlyThisOff() {
-    for (int failure = 0; failure < 8; ++failure) {
+    for (int failure = 0; failure < 10; ++failure) {
         Fixture f(false);
+        if (failure == 8) failVerified = "SaveUiDimensionById";
+        if (failure == 9) failField = "ResizableWindow.m_isUILocked";
         if (failure == 0) failVerified = "set_gaugeOrientation"; // an adapter as the inflated method's pointer
         if (failure == 1) failVerified = "LoadUiDimensionById";
         if (failure == 2) failVerified = "get_btn_settings";
@@ -1127,7 +1284,7 @@ void KeptOnTheScreen() {
     LayoutPass();
     Tick();
     Check(Pixels(energy.window, "left") == 1920 - 48 && Pixels(energy.window, "top") == 1080 - 566 && RecordOf(energy) &&
-        !RecordOf(energy)->clampPending, "Shown: vertical, kept on the screen");
+        !RecordOf(energy)->settlePending, "Shown: vertical, kept on the screen");
     module->settings.gaugeVertical = 0;
     Tick();
     Check(Take(character) == horizontal && Records() == 0, "Unticked: back where the game had it");
@@ -1135,8 +1292,9 @@ void KeptOnTheScreen() {
         "The game's own place, kept on the screen at its UXML width");
 }
 // Unticked, the gauge is exactly as the game built it: every code-set value
-// (keyword Null: none), its resize flags, its bar. A value the game wrote
-// meanwhile stays the game's; dragged while vertical, it keeps its place.
+// (keyword Null: none), its resize flags and handles, its bar. A value the
+// game wrote meanwhile stays the game's; dragged while vertical, it comes back
+// where the game had it all the same, the game's layout untouched.
 void RoundTripIsExact() {
     Fixture f;
     const auto g = MakeGauge(0x8);
@@ -1154,11 +1312,12 @@ void RoundTripIsExact() {
     Tick();
     LayoutPass();
     GameWrite(g.bar, "marginTop", 7);                                    // the game's own write on a value the mod owns
-    GameWrite(g.window, "left", 1500); GameWrite(g.window, "top", 100);  // dragged while vertical
+    GameDrag(g, 1200, -100);                                             // dragged while vertical
     module->settings.gaugeVertical = 0;
     Tick();
     Check(Pixels(g.bar, "marginTop") == 7, "A value the game wrote since stays the game's");
-    Check(Pixels(g.window, "left") == 1920 - 600 && Pixels(g.window, "top") == 100, "Dragged while vertical: its place kept, on the screen");
+    Check(Pixels(g.window, "left") == 300 && Pixels(g.window, "top") == 200 && positionSaves == 0 && savedPositions.empty(),
+        "Dragged while vertical: back where the game had it, the drag never saved in the game's layout");
     Check(Pixels(g.window, "width") == 600 && Pixels(g.window, "height") == 40 && Pixels(g.main, "paddingTop") == 2 && !Styled(g.main, "minWidth") &&
         Get(g.bar).orientation == 0 && Flag(g.window, 0x354) && !Flag(g.window, 0x355) && Flag(g.window, 0x356), "The rest as before");
 }
@@ -1186,7 +1345,7 @@ void GameReplacementIsUndone() {
     Check(Records() == 2 && RecordOf(pods) && Get(g.window).y == 1080 - 707, "Both vertical, the character's gauge on the screen");
     const auto quiet = calls + nameCalls;
     for (int i = 0; i < 10; ++i) Frame();
-    Check(calls + nameCalls == quiet + 20, "Each frame: one call per vertical gauge, its width read back");
+    Check(calls + nameCalls == quiet + 80, "Each frame: four calls per vertical gauge, its width, height, left and top read back");
     const auto onScreen = [&g] {
         const auto& w = Get(g.window);
         return w.x >= 0 && w.y >= 0 && w.x + w.width <= 1920 && w.y + w.height <= 1080;
@@ -1195,7 +1354,7 @@ void GameReplacementIsUndone() {
     Check(Pixels(g.window, "top") == 1046 && Pixels(g.window, "width") == 707, "The game's default written");
     Frame();
     Check(Pixels(g.window, "width") == 48 && Pixels(g.window, "height") == 707 && LoggedLine("VERTICAL_GAUGE_REPLACED type=0x1 width=707") &&
-        Pixels(g.window, "top") == 1080 - 707 && Pixels(g.window, "left") == 607 && !RecordOf(g)->clampPending,
+        Pixels(g.window, "top") == 1080 - 707 && Pixels(g.window, "left") == 607 && !RecordOf(g)->settlePending,
         "The vertical size again before the next layout, as long as the game's new width, kept on the screen at once");
     LayoutPass();
     Check(onScreen(), "Laid out on the screen: never below it");
@@ -1204,7 +1363,7 @@ void GameReplacementIsUndone() {
     LayoutPass();
     GameReplace(g);
     Frame();
-    Check(Pixels(g.window, "top") == 1080 - 707 && !RecordOf(g)->clampPending, "Hidden: kept on the screen from the place the game wrote");
+    Check(Pixels(g.window, "top") == 1080 - 707 && !RecordOf(g)->settlePending, "Hidden: kept on the screen from the place the game wrote");
     Get(g.window).hidden = false;
     LayoutPass();
     Check(onScreen() && Get(g.window).y == 1080 - 707, "Shown again: on the screen at once");
@@ -1547,15 +1706,16 @@ void FollowsTheScreensHeight() {
     screenHeight = 1080;
     LayoutPass();
     Tick();
-    Check(Pixels(g.window, "height") == 900 && Pixels(g.window, "top") == 16, "900 px long again, its place kept");
+    Check(Pixels(g.window, "height") == 900 && Pixels(g.window, "top") == 180, "900 px long again, at its place again");
     module->settings.gaugeVertical = 0;
     Tick();
     Check(Pixels(g.window, "width") == 900 && !Styled(g.window, "height") && !Styled(g.window, "top"), "Unticked: the game's own size");
 }
-// A place against the screen's top or left edge (0 px) is a place the game
-// wrote too: the horizontal box kept on the screen from it when unticked, by
-// the options' switch or at Stop; and a vertical gauge kept there, the game's
-// first placement not laid out yet included.
+// Dragged into a corner while vertical, then unticked (its menu, the options'
+// switch or Stop): back at the game's own place, here the UXML's (no inline
+// place), not at the corner. A place against the screen's top or left edge
+// (0 px) the game wrote is a place too: a vertical gauge kept there, the
+// game's first placement not laid out yet included.
 void EdgePlacesAreKept() {
     for (int way = 0; way < 3; ++way) {
         Fixture f;
@@ -1564,14 +1724,15 @@ void EdgePlacesAreKept() {
         LayoutPass();
         Tick();
         LayoutPass();
-        GameWrite(g.window, "left", 1920 - 48); GameWrite(g.window, "top", 0); // dragged into the top right corner
+        GameDrag(g, 2000, -2000); // dragged into the top right corner
         LayoutPass();
+        Check(Pixels(g.window, "left") == 1920 - 48 && Pixels(g.window, "top") == 0, "In the top right corner");
         if (way == 0) module->settings.gaugeVertical = 0;
         if (way == 1) module->settings.gaugeVerticalMenu = false;
         if (way < 2) Tick();
         if (way == 2) { module->stopped = true; RestoreVerticalGauges(); }
-        Check(Records() == 0 && Pixels(g.window, "left") == 1920 - 566 && Pixels(g.window, "top") == 0 && !Styled(g.window, "width"),
-            "Horizontal again against the top edge, entirely on the screen");
+        Check(Records() == 0 && !Styled(g.window, "left") && !Styled(g.window, "top") && !Styled(g.window, "width") && savedPositions.empty(),
+            "Horizontal again at the game's own place, the corner never in its layout");
     }
     Fixture f;
     module->settings.gaugeVertical = 0x20;
@@ -1582,7 +1743,7 @@ void EdgePlacesAreKept() {
     Check(RecordOf(g) && Pixels(g.window, "left") == 0 && Pixels(g.window, "top") == 0, "Vertical in the top left corner, where the game placed it");
 }
 // The game keeps each gauge's place in its layout (per-mille of the screen;
-// a drag while vertical saves the vertical box's) and places a new widget
+// never the vertical box's since 1.18.1) and places a new widget
 // there at its horizontal size (its saved one), kept on the screen: a gauge
 // left vertical against the right edge comes back farther left. Turned
 // vertical, it goes back where the game keeps it, as the game's next
@@ -1619,6 +1780,151 @@ void BackWhereTheGameKeepsIt() {
     Tick();
     Check(Take(pods) == horizontal && Records() == 3, "Unticked: the horizontal box the game placed");
 }
+// The owner's 1.18.0 report: the character's gauge, 734 x 35 at its saved
+// place (741.8, 540.3 per-mille: against the right edge, mid-height), turned
+// vertical, then a press on its top edge pulled up to make it longer, then
+// unticked. It must come back exactly as the game had it, the game's layout
+// untouched, and stay there at the game's next re-placement (a fight, a
+// layout preset).
+void BackWhereTheGameHadIt() {
+    Fixture f;
+    savedWidths["GaugeCharacter"] = 734;
+    savedPositions["GaugeCharacter"] = {741.8f, 540.3f, false, false};
+    const auto g = MakeGauge(0x1);
+    LayoutPass(); GameReplace(g); LayoutPass();
+    Check(std::abs(Get(g.window).x - (1920 - 734)) < .01f && std::abs(Get(g.window).y - 583.524f) < .01f && Get(g.window).width == 734,
+        "The game placed it against the right edge, at mid-height");
+    const auto horizontal = Take(g);
+    const auto layout = savedPositions;
+    const auto widths = savedWidths, heights = savedHeights;
+    module->settings.gaugeVertical = 0x1;
+    Tick(); LayoutPass();
+    Check(Records() == 1 && Get(g.window).height == 734 && Get(g.window).y == 1080 - 734, "Vertical, 734 px long, on the screen");
+    GamePullEdge(g, TopHandle, -150);  // its top edge pulled up 150 px
+    LayoutPass(); Frame(); Tick(); LayoutPass();
+    module->settings.gaugeVertical = 0;
+    Tick(); LayoutPass();
+    Check(Records() == 0 && Take(g) == horizontal, "Unticked: exactly where and how the game had it (not at the top right):" + Diff(horizontal, Take(g)) + ", found at " +
+        std::to_string(PixelsOr(g.window, "left", -1)) + " x " + std::to_string(PixelsOr(g.window, "top", -1)));
+    Check(savedPositions == layout && savedWidths == widths && savedHeights == heights, "The game's layout untouched");
+    GameReplace(g); LayoutPass();
+    Check(Take(g) == horizontal, "The game's next re-placement: the same place and size");
+    Check(module->settings.gaugeVerticalBoxes[0].length == 884 && LoggedLine("VERTICAL_GAUGE_KEPT type=0x1 length=884 place=7418,1815"),
+        "The length its top edge gave it kept in the settings, with its place");
+}
+// While vertical, its top and bottom edges change its length as the game's
+// own resizes do (the game's resizer on its handles, between 160 px and the
+// screen's height less 16 px), its width staying 48 px; the game's saves of
+// that size and place are left out, its layout keeping the horizontal ones.
+// The length kept in the settings, given again when ticked again, bounded by
+// a smaller screen; unticked, the game's own size and place. The interface
+// locked: no handle; unlocked: shown again at the next pump.
+void ResizedWhileVertical() {
+    Fixture f;
+    savedWidths["GaugePods"] = 700;
+    savedPositions["GaugePods"] = {500, 500, false, false};
+    const auto g = MakeGauge(0x10);
+    LayoutPass(); GameReplace(g); LayoutPass();
+    const auto horizontal = Take(g);
+    const auto layout = savedPositions;
+    const auto widths = savedWidths;
+    module->settings.gaugeVertical = 0x10;
+    Tick(); LayoutPass();
+    CheckVertical(g, 700, "Pods");
+    Check(Get(g.window).x == 960 && Get(g.window).y == 380, "At its horizontal top-left corner, on the screen");
+    const auto height = [&g] { return Pixels(g.window, "height"); };
+    const auto top = [&g] { return Pixels(g.window, "top"); };
+    GamePullEdge(g, BottomHandle, -300);
+    LayoutPass(); Frame(); LayoutPass();
+    Check(height() == 400 && Pixels(g.window, "width") == 48 && top() == 380 && Get(g.window).height == 400,
+        "Its bottom edge pulled up: 400 px long, 48 px wide, its top kept");
+    GamePullEdge(g, BottomHandle, -1000);
+    LayoutPass(); Frame(); LayoutPass();
+    Check(height() == 160, "At least 160 px");
+    GamePullEdge(g, TopHandle, -2000);
+    LayoutPass(); Frame(); LayoutPass();
+    Check(height() == 540 && top() == 0, "Its top edge pulled up to the screen's top");
+    GamePullEdge(g, BottomHandle, 2000);
+    LayoutPass(); Frame(); LayoutPass();
+    Check(height() == 1064 && top() == 0, "At most the screen's height less 16 px");
+    Check(positionSaves == 0 && dimensionSaves == 0 && savedPositions == layout && savedWidths == widths && savedHeights.empty() &&
+        LoggedLine("VERTICAL_GAUGE_LAYOUT_KEPT type=0x10 place") && LoggedLine("VERTICAL_GAUGE_LAYOUT_KEPT type=0x10 size"),
+        "The game's saves of the vertical size and place left out, logged");
+    Tick();
+    Check(module->settings.gaugeVerticalBoxes[4] == Settings::GaugeVerticalBox{}, "Not kept during the resize");
+    for (int i = 0; i < 3; ++i) Tick();
+    Check(module->settings.gaugeVerticalBoxes[4] == Settings::GaugeVerticalBox{1064, 5000, 0} &&
+        LoggedLine("VERTICAL_GAUGE_KEPT type=0x10 length=1064 place=5000,0"), "Kept in the settings once the resize is over");
+    // The interface locked: the game hides every handle; unlocked, it hides them too (the flags off): shown again at the next pump.
+    Put<bool>(g.window, 0x2CC, true); UpdateResizeHandlers(g.window);
+    Tick();
+    Check(Get(g.window).handles == std::array<bool, 8>{}, "Locked: no handle");
+    Put<bool>(g.window, 0x2CC, false); UpdateResizeHandlers(g.window);
+    Tick();
+    Check(Get(g.window).handles[BottomHandle] && Get(g.window).handles[TopHandle], "Unlocked: its top and bottom handles again");
+    module->settings.gaugeVertical = 0;
+    Tick(); LayoutPass();
+    Check(Take(g) == horizontal && savedPositions == layout && savedWidths == widths && dimensionSaves == 0,
+        "Unticked: the game's own size and place, its layout untouched");
+    GameReplace(g); LayoutPass();
+    Check(Take(g) == horizontal, "The game's next placement agrees");
+    module->settings.gaugeVertical = 0x10;
+    Tick(); LayoutPass();
+    Check(height() == 1064 && top() == 0 && Pixels(g.window, "left") == 960 && LoggedLine("VERTICAL_GAUGE_ON type=0x10 length=1064"),
+        "Ticked again: its own length and place");
+    screenHeight = 720;
+    LayoutPass(); Tick(); LayoutPass();
+    Check(height() == 704 && Pixels(g.window, "maxHeight") == 704 && module->settings.gaugeVerticalBoxes[4].length == 1064,
+        "A smaller screen: bounded by it, its choice kept");
+}
+// Dragged while vertical: its place taken once it stays (the game's saves of
+// it left out), kept in the settings, kept across the game's re-placements
+// (they put it at its horizontal saved place: back at its own at once, hidden
+// or not) and when ticked again. A save of the game on its way just after it
+// is put back is still left out; the next ones are the game's.
+void DraggedWhileVertical() {
+    Fixture f;
+    savedPositions["GaugeCharacter"] = {100, 300, false, false};
+    savedWidths["GaugeCharacter"] = 300;
+    const auto g = MakeGauge(0x1);
+    LayoutPass(); GameReplace(g); LayoutPass();
+    const auto horizontal = Take(g);
+    module->settings.gaugeVertical = 0x1;
+    Tick(); LayoutPass();
+    Check(Get(g.window).x == 192 && Get(g.window).y == 324, "Vertical at its horizontal top-left corner");
+    const auto at = [&g](float x, float y) { return std::abs(Pixels(g.window, "left") - x) < .5f && std::abs(Pixels(g.window, "top") - y) < .5f; };
+    GameDrag(g, 1000, -200);
+    LayoutPass(); Frame();
+    Check(at(1192, 124) && positionSaves == 0 && savedPositions.at("GaugeCharacter") == SavedPosition{100, 300, false, false},
+        "Dropped there, the game's layout untouched");
+    Tick(); Tick();
+    Check(RecordOf(g)->at.x == 1192 && RecordOf(g)->at.y == 124, "Its place taken once it stays");
+    for (int i = 0; i < 3; ++i) Tick();
+    Check(module->settings.gaugeVerticalBoxes[0] == Settings::GaugeVerticalBox{0, verticalGauges::KeptPlace(1192, 1920),
+        verticalGauges::KeptPlace(124, 1080)}, "Kept in the settings, without a length of its own");
+    GameReplace(g);                                   // a fight's layout: the game puts it at its saved place
+    Check(at(192, 324), "The game re-placed it at its horizontal place");
+    Frame();
+    Check(at(1192, 124), "Back at its own place at once");
+    Get(g.window).hidden = true;
+    LayoutPass(); GameReplace(g); Frame();
+    Check(at(1192, 124), "Hidden: back at its own place too");
+    Get(g.window).hidden = false;
+    LayoutPass();
+    module->settings.gaugeVertical = 0;
+    Tick(); LayoutPass();
+    Check(Take(g) == horizontal, "Unticked: where the game had it");
+    GameDrag(g, 0, 0);                                // a save of the game on its way
+    Check(positionSaves == 0, "A save on its way just after left out");
+    nowMs += 1000;
+    Tick();
+    GameDrag(g, 10, 0);
+    Check(positionSaves == 1 && std::abs(savedPositions.at("GaugeCharacter").x - 202.f / 1920.f * 1000.f) < .01f, "Then the game's own saves again");
+    LayoutPass();
+    module->settings.gaugeVertical = 0x1;
+    Tick(); LayoutPass();
+    Check(at(1192, 124), "Ticked again: at its own place");
+}
 // The rules: a gauge's own type, the settings' mask, the length, the place on the screen.
 void Policy() {
     using verticalGauges::KeepOnScreen;
@@ -1632,6 +1938,15 @@ void Policy() {
     Check(Length(566, 1080) == 566 && Length(707, 1080) == 707 && Length(2000, 1080) == 1064 && Length(100, 1080) == 160 &&
         Length(0, 1080) == 566 && Length(-5, 1080) == 566 && Length(900, 0) == 900 && Length(900, -1) == 900 && Length(50, 0) == 160 &&
         Length(800, 100) == 160, "The length: the width, between 160 px and the screen's height less 16 px");
+    using verticalGauges::KeptLength;
+    using verticalGauges::KeptPlace;
+    using verticalGauges::MaxLength;
+    Check(MaxLength(1080) == 1064 && MaxLength(720) == 704 && MaxLength(100) == 160 && MaxLength(0) == 16384 && MaxLength(-1) == 16384,
+        "The longest: the screen's height less 16 px, at least 160 px");
+    Check(KeptLength(884.4f) == 884 && KeptLength(50) == 160 && KeptLength(1e9f) == 16384 && KeptLength(NAN) == 0 &&
+        Settings::ValidGaugeVerticalLength(KeptLength(1064)), "A chosen length as the settings keep it");
+    Check(KeptPlace(960, 1920) == 5000 && KeptPlace(0, 1080) == 0 && KeptPlace(-5, 1920) == 0 && KeptPlace(3000, 1920) == 10000 &&
+        KeptPlace(1, 0) == 0 && KeptPlace(NAN, 1920) == 0, "A place as the settings keep it: ten-thousandths of the screen");
     const auto same = [](verticalGauges::Box a, verticalGauges::Box b) { return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height; };
     Check(same(KeepOnScreen({100, 100, 48, 500}, 1920, 1080), {100, 100, 48, 500}), "On the screen: unchanged");
     Check(same(KeepOnScreen({1900, 900, 48, 500}, 1920, 1080), {1872, 580, 48, 500}), "Bottom right: moved in, no further");
@@ -1673,20 +1988,26 @@ int main() {
         run(FailuresStayLocal);
         run(FollowsTheScreensHeight);
         run(EdgePlacesAreKept);
+        run(BackWhereTheGameHadIt);
+        run(ResizedWhileVertical);
+        run(DraggedWhileVertical);
         run(BackWhereTheGameKeepsIt);
         run(Policy);
         std::cout << "PASS: « Afficher à la verticale »: every contract verified at its pinned RVA, a missing one turning only this feature off "
             "(logged once, no detour, no call); the row in each gauge's « … » menu right before « Gestion des jauges » (after « Masquer le module », "
             "or « Couleur de jauge » without it; last without a separator), ticked for a vertical gauge, absent when unwanted or impossible; a click "
             "saving the choice once and turning the gauge vertical or back at once, stale or foreign clicks without effect; the vertical layout "
-            "(the game's vertical bar, 25 inline values, no resize handle) as long as the gauge's horizontal width (the game's, its saved size, its "
-            "layout; 160 px to the screen's height less 16), kept on the screen; restored exactly, the game's own values since kept; the "
-            "game's size writes undone a frame later and the gauge kept on the screen at once, hidden or not (one call per vertical gauge and "
-            "frame, none without); each layout's saved size followed and given back; a gauge re-placed while hidden back where the game's next "
-            "re-placement puts it; new gauges once the game laid them "
-            "out, discarded, detached and hidden ones; the options' switch, Stop with its retries and their limit; unexpected widgets (ctr_main "
-            "not added to its window) and repeated failures left horizontal; another screen height followed; places against the screen's top or "
-            "left edge kept; a new gauge back at the place the game keeps for it, as its re-placements put it\n";
+            "(the game's vertical bar, 27 inline values, its resize flags off, its top and bottom handles shown) as long as the gauge's "
+            "horizontal width (the game's, its saved size, its layout; 160 px to the screen's height less 16), kept on the screen; restored "
+            "exactly, the game's own values since kept; the game's size writes undone a frame later and the gauge kept at its place at once, "
+            "hidden or not (four calls per vertical gauge and frame, none without); each layout's saved size followed and given back; a gauge "
+            "re-placed while hidden back at its place; new gauges once the game laid them out, discarded, detached and hidden ones; the "
+            "options' switch, Stop with its retries and their limit; unexpected widgets (ctr_main not added to its window) and repeated failures "
+            "left horizontal; another screen height followed; dragged into a corner, or pulled by an edge (the 1.18.0 report: the top right "
+            "corner), then unticked: back exactly where and as large as the game had it, its layout untouched; resized by its top and bottom "
+            "edges (160 px to the screen's height less 16, 48 px wide), dragged, kept across the game's re-placements, both kept in the settings "
+            "and given again, never saved in the game's layout (its saves of them left out, a save on its way too); a new gauge where the game "
+            "keeps its horizontal place\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

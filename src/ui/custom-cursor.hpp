@@ -2,8 +2,8 @@
 // « Curseur Dofus » (1.17.0, customCursor): the mod's own cursors, drawn by
 // cursorArt in Dofus' style, stand in for the Windows arrow and for the game's
 // Windows-like cursors (the hand, the text cursor, the move and resize
-// cursors), in the colour of customCursorColor (gold, the game theme's accent,
-// emerald or silver) and at the size of customCursorSize (the Windows
+// cursors), in the colour of customCursorColor (since 1.18.1: the game's
+// current theme, one of its eleven themes, gold, emerald or silver) and at the size of customCursorSize (the Windows
 // pointer's at the game window's scale, half again, or twice). One detour on
 // UnityEngine.Cursor.SetCursor swaps them in within the game's own calls; the
 // game's icons (sword, bubble, tools, fight markers…) stay. They stay Windows

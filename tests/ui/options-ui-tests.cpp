@@ -12,6 +12,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -92,6 +93,8 @@ std::vector<bool> keyChecks; // checkKey calls: false the silent check of a key 
 unsigned keyForgets = 0, keyCopies = 0, lengthReads = 0, nativeTextInits = 0, inputsCreated = 0;
 std::vector<std::string> submittedKeys, notices;
 std::vector<uintptr_t> verifiedRvas;
+// « Défaut (<thème>) » (1.18.1): set_needRebuild's contract missing at Install.
+bool failRebuildContract = false;
 bool (*clickHandler)(Obj) = nullptr; // nativeClick handler registered by the options UI
 const std::string SyncDescription = "Après chaque capture d’un archimonstre ou d’un boss (pierre d’âme remplie en combat), ajoute 1 à ce monstre dans ta quête Ocre sur Metamob, sans rien modifier d’autre. Nécessite ta clé API personnelle (metamob.fr › Paramètres › Clé API). Désactivé par défaut.";
 const std::string KeyDescription = "Colle ta clé dans le champ masqué puis clique sur Enregistrer. Elle est vérifiée auprès de Metamob, chiffrée pour ton compte Windows et gardée uniquement sur ce PC ; elle n’est jamais affichée, journalisée ni incluse dans les mises à jour. Une fois enregistrée, elle reste masquée et la corbeille la supprime de ce PC, après confirmation. Elle reste valable sur Metamob : régénère-la sur le site pour la révoquer.";
@@ -255,6 +258,8 @@ void InitializeApi() {
 struct Fixture {
     Module state{L"offline-test"};
     Obj container, nativeInt, nativeBool, page, game, nativeCategory;
+    // DofusOptionsContainer.currentTheme: the game's theme, Standard (1) unless a test changes it.
+    Obj theme;
     Fixture() {
         module = &state;
         newSourcesLoaded = true;
@@ -288,6 +293,10 @@ struct Fixture {
         Get(nativeBool).boolean = Get(nativeBool).defaultBoolean = true;
         Get(container).refs["creaturesMode"] = nativeInt;
         Get(container).refs["creatureModeFight"] = nativeBool;
+        theme = Make("IntSource");
+        Get(theme).integer = Get(theme).defaultInteger = 1;
+        Get(theme).loaded = true;
+        Get(container).refs["currentTheme"] = theme;
         auto cached = Make("Cached");
         Get(cached).refs["container"] = container;
         state.cached.reset(cached);
@@ -343,11 +352,13 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
         {0x55D26B0, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_whiteSpace", 0}, {0x55D6370, "InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_whiteSpace", 1},
         {0x170D6F0, "DofusButtonCustom", ".ctor", 0}, {0x170E330, "DofusButtonCustom", "set_size", 1}, {0x170E210, "DofusButtonCustom", "set_mainStyle", 1},
         {0x170E400, "DofusButtonCustom", "set_status", 1}, {0x170DFE0, "DofusButtonCustom", "set_icon", 1}, {0x170E5F0, "DofusButtonCustom", "set_text", 1},
-        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1}};
+        {0x1593940, "DofusLabel", ".ctor", 0}, {0x1594570, "DofusLabel", "set_text", 1},
+        {0x2DA3A00, "MultipleChoiceOption", "set_needRebuild", 1}};
     const auto& owner = static_cast<fake::Class*>(klass)->name;
     fake::Check(std::any_of(std::begin(contracts), std::end(contracts), [&](const Contract& contract) {
         return contract.rva == rva && owner == contract.owner && std::string(name) == contract.method && argc == contract.argc;
     }), "Wrong verified options contract");
+    if (rva == 0x2DA3A00 && fake::failRebuildContract) throw std::runtime_error("Synthetic missing contract: set_needRebuild");
     fake::verifiedRvas.push_back(rva);
     return Find(klass, name, argc);
 }
@@ -418,6 +429,12 @@ Obj Api::Call(Obj self, const char* methodName, std::initializer_list<void*> arg
         return nullptr;
     }
     if (name == "get_dofusOptionsContainer") return value.refs.at("container");
+    // MultipleChoiceOption.set_needRebuild: its element's RebuildDropdown (the argument is ignored by the game; always true here).
+    if (name == "set_needRebuild") {
+        Check(value.klass->name == "MultipleChoiceOption" && *static_cast<bool*>(arguments[0]), "Only a choice row is rebuilt");
+        ++value.integers["rebuilds"];
+        return nullptr;
+    }
     if (name == "get_description") return api.Field(self, "description");
     if (name == "get_m_textButtonOption") return value.refs.at("option");
     if (name == "blrl") return value.refs.at("tooltip");
@@ -710,7 +727,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.18.0 — par Altansar")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.18.1 — par Altansar")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -817,8 +834,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.18.0" && std::string(ModVersion) == "r120" &&
-        ModRevision == 120,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.18.1" && std::string(ModVersion) == "r121" &&
+        ModRevision == 121,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -840,9 +857,11 @@ void CheckLayout(Fixture& f) {
             if (row.source) shownSources.push_back(row.source);
             if (row.control != "MultipleChoiceOption") continue;
             const auto& choices = Get(option.refs.at("choices")).items;
-            Check(choices.size() >= 2 && choices.size() <= 4, "Unexpected percentage selector remains");
+            // « Couleur du curseur » (1.18.1): « Défaut », the eleven game themes and three colours, ids 0 to 14.
+            const bool cursorColours = row.option == f.Ui().customCursorColorOption.get();
+            Check(choices.size() >= 2 && choices.size() <= (cursorColours ? 15u : 4u), "Unexpected percentage selector remains");
             for (const auto choice : choices)
-                Check(Get(choice).choice.id >= 0 && Get(choice).choice.id <= 3 &&
+                Check(Get(choice).choice.id >= 0 && Get(choice).choice.id <= (cursorColours ? 14 : 3) &&
                     Get(Get(choice).choice.label).text.find('%') == std::string::npos,
                     "A percentage or minimum choice remains in native search models");
         }
@@ -863,9 +882,9 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.18.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.18.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r120") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r121") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
@@ -1423,18 +1442,20 @@ void SectionResetOwnsItsRows() {
 }
 
 // « Curseur » (1.17.0), right after « Surbrillance »: « Curseur Dofus » (off by
-// default), then the cursors' colour (« Or » by default) and size (« Comme la
+// default), then the cursors' colour (« Défaut » by default since 1.18.1) and size (« Comme la
 // souris de Windows » by default), each id the saved value. Each row shows the
 // saved choice, says what it does and its default, commits only its own
 // setting, follows an outside change and goes back to its default with the
 // section's reset.
 void CursorSectionRows() {
     const std::string boxDescription = "Remplace la souris de Windows dans le jeu par des curseurs dessinés par le mod dans le style de Dofus : la flèche de sélection, la main sur ce que le jeu rend cliquable (boutons, onglets, liens, cases et bords de carte…), le curseur de texte dans les champs de saisie (chat, recherches…), la main ouverte sur les barres de titre des fenêtres puis fermée quand tu les déplaces ou que tu fais glisser un objet, et les doubles flèches sur les bords des fenêtres redimensionnables. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) ne changent pas. Décoché, la souris de Windows et les curseurs habituels du jeu reviennent aussitôt. Désactivé par défaut.";
-    const std::string colourDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Couleur du thème du jeu » : reprend la couleur d’accent du thème choisi dans les options du jeu (Thème) et la suit quand tu en changes, par exemple jaune-vert avec le thème Standard ; une couleur trop sombre est éclaircie. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. « Or » par défaut.";
+    // 1.18.1: « Défaut (<thème>) », each game theme, then the mod's three colours.
+    const std::string colourDescription = "La couleur des curseurs du mod, toujours avec un contour sombre et une ombre pour rester lisibles sur tous les décors. « Défaut » reprend les couleurs du thème choisi dans les options du jeu (Thème), dont le nom s’affiche entre parenthèses, et les suit quand tu en changes. Chaque thème du jeu (Standard, Bonta, Brakmar…) est aussi proposé seul : le curseur garde alors ses couleurs, quel que soit le thème de l’interface. Avec un thème, le curseur prend sa couleur d’accent, éclaircie si elle est trop sombre, sur un contour tiré de son fond sombre ; jaune-vert avec le thème Standard. « Or » : doré, avec une émeraude sur la flèche et sur le gant. « Émeraude » : vert, avec un ornement doré. « Argent » : gris clair. Sans effet tant que « Curseur Dofus » est décoché. Réglée sur « Défaut » par défaut.";
     // 1.17.1: the three sizes are Windows cursors at their real size.
     const std::string sizeDescription = "« Comme la souris de Windows » reprend la taille du pointeur de Windows avec la mise à l’échelle de l’écran où se trouve le jeu : 32 pixels à 100 %, 40 à 125 %, 48 à 150 %, 64 à 200 %, davantage si tu as agrandi le pointeur dans les paramètres de Windows. « Grande » l’agrandit de moitié (48 pixels à 100 %) et « Très grande » la double (64 pixels à 100 %), sans dépasser 128 pixels. À toutes les tailles, ce sont des curseurs de Windows, comme la souris : ils suivent tes mouvements sans retard, quelle que soit la fluidité du jeu. Les curseurs propres au jeu (épée, bulle, outils de récolte, repères de combat…) gardent leur taille habituelle. Sans effet tant que « Curseur Dofus » est décoché. « Comme la souris de Windows » par défaut.";
     Fixture f;
     f.state.settings.customCursor = true; f.state.settings.customCursorColor = 3; f.state.settings.customCursorSize = 2;
+    Get(f.theme).integer = 4; // the game shows Brakmar
     initHook(f.page, false, true, SectionId(CursorSection), nullptr);
     CheckLayout(f);
     auto& ui = f.Ui();
@@ -1449,15 +1470,22 @@ void CursorSectionRows() {
     Check(Get(ui.customCursorOption.get()).klass->name == "BoolOption" && box.klass->name == "BoolSource" && box.boolean && !box.defaultBoolean,
         "« Curseur Dofus »: a native checkbox showing the saved choice, unticked as its reset default");
     Check(colour.klass->name == "IntSource" && colour.integer == 3 && colour.defaultInteger == 0 && size.klass->name == "IntSource" &&
-        size.integer == 2 && size.defaultInteger == 0, "The colour and the size show the saved choices, « Or » and the Windows size as reset defaults");
+        size.integer == 2 && size.defaultInteger == 0, "The colour and the size show the saved choices, « Défaut » and the Windows size as reset defaults");
     const auto choices = [](Obj option) {
         std::vector<std::pair<int, std::string>> list;
         for (const auto choice : Get(Get(option).refs.at("choices")).items) list.emplace_back(Get(choice).choice.id, Get(Get(choice).choice.label).text);
         return list;
     };
     Check(choices(ui.customCursorColorOption.get()) ==
-        std::vector<std::pair<int, std::string>>{{0, "Or"}, {1, "Couleur du thème du jeu"}, {2, "Émeraude"}, {3, "Argent"}},
-        "The four colours, each id the saved value");
+        std::vector<std::pair<int, std::string>>{{0, "Défaut (Brakmar)"}, {1, "Standard"}, {3, "Bonta"}, {4, "Brakmar"}, {2, "Tribute"},
+            {5, "Gold and steel"}, {7, "Belladone"}, {8, "Unicorn"}, {6, "Emerald mine"}, {9, "Sufokia"}, {10, "Pandala"}, {11, "Wabbit"},
+            {12, "Or"}, {13, "Émeraude"}, {14, "Argent"}},
+        "« Défaut » named after the game's theme, the eleven themes in the game's order (ids: ThemeEnum), the mod's three colours, each id the saved value");
+    {
+        std::set<std::string> labels;
+        for (const auto& entry : choices(ui.customCursorColorOption.get())) labels.insert(entry.second);
+        Check(labels.size() == 15, "Every label differs: the game's dropdown finds a click by its label");
+    }
     Check(choices(ui.customCursorSizeOption.get()) ==
         std::vector<std::pair<int, std::string>>{{0, "Comme la souris de Windows"}, {1, "Grande"}, {2, "Très grande"}},
         "The three sizes, each id the saved value");
@@ -1474,7 +1502,7 @@ void CursorSectionRows() {
         expected.customCursor = value;
         Check(f.state.settings == expected && changes == ++commits, "« Curseur Dofus » commits only itself, once");
     }
-    for (int value : {0, 1, 2, 3}) {
+    for (int value : {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}) {
         colour.integer = value;
         ui.Tick();
         expected.customCursorColor = value;
@@ -1490,17 +1518,120 @@ void CursorSectionRows() {
     f.state.settings.customCursor = true; f.state.settings.customCursorColor = 1; f.state.settings.customCursorSize = 1;
     ui.Sync();
     Check(box.boolean && colour.integer == 1 && size.integer == 1, "Outside changes show in the rows");
-    // The section's reset: off, « Or », the Windows size; nothing else.
+    // The section's reset: off, « Défaut », the Windows size; nothing else.
     const auto displayedParent = Get(Get(f.page).refs.at("m_optionsDisplayed")).items.back();
     expected = WithSectionDefaults(f.state.settings, CursorSection);
     api.Call(Section(displayedParent, CursorSection), "Reset");
     ui.Tick();
     Check(f.state.settings == expected && !f.state.settings.customCursor && f.state.settings.customCursorColor == 0 &&
-        f.state.settings.customCursorSize == 0, "The section's reset: off, « Or », the Windows size, nothing else");
+        f.state.settings.customCursorSize == 0, "The section's reset: off, « Défaut », the Windows size, nothing else");
     f.NativePreferencesUnchanged();
     f.StopAndRestore();
     Check(!ui.customCursorSource.get() && !ui.customCursorOption.get() && !ui.customCursorColorSource.get() && !ui.customCursorColorOption.get() &&
         !ui.customCursorSizeSource.get() && !ui.customCursorSizeOption.get(), "Restore releases the rows");
+}
+
+// « Défaut (<thème>) » (1.18.1): the colour's first label names the theme the
+// game shows when the tab is added to a page, then follows it (read at most
+// every 500 ms while the options exist; the dropdown rebuilt as the game
+// rebuilds its resolution list); « Défaut » alone while the theme is unknown.
+// The other choices, the selection (by id) and the settings never change.
+// Without set_needRebuild's contract, logged once at Install, the new label
+// shows at the row's next view.
+void CursorThemeLabel() {
+    const auto choices = [](Obj option) {
+        std::vector<std::pair<int, std::string>> list;
+        for (const auto choice : Get(Get(option).refs.at("choices")).items) list.emplace_back(Get(choice).choice.id, Get(Get(choice).choice.label).text);
+        return list;
+    };
+    const auto label = [&](Obj option) { return choices(option).at(0).second; };
+    {
+        Fixture f;
+        Get(f.theme).integer = 3;
+        f.state.settings.customCursorColor = 0;
+        initHook(f.page, false, true, SectionId(CursorSection), nullptr);
+        auto& ui = f.Ui();
+        const Obj option = ui.customCursorColorOption.get();
+        Check(label(option) == "Défaut (Bonta)" && ui.cursorThemeShown == 3 && Get(option).integers["rebuilds"] == 0,
+            "Named after the game's theme when the tab is added, nothing rebuilt");
+        const auto rest = [&](Obj row) { const auto all = choices(row); return std::vector<std::pair<int, std::string>>(all.begin() + 1, all.end()); };
+        const auto others = rest(option);
+        // The player picks Brakmar in the game's « Thème »: read again within 500 ms.
+        Get(f.theme).integer = 4;
+        ui.Tick();
+        Check(label(option) == "Défaut (Bonta)", "Read at most every 500 ms");
+        ui.nextCursorThemeRead = 0;
+        ui.Tick();
+        Check(label(option) == "Défaut (Brakmar)" && Get(option).integers["rebuilds"] == 1 && ui.cursorThemeShown == 4 &&
+            rest(option) == others &&
+            choices(option).at(0).first == 0, "The game's theme changed: « Défaut (Brakmar) », the dropdown rebuilt, the other choices kept");
+        Check(changes == 0 && Get(ui.customCursorColorSource.get()).integer == 0 && f.state.settings.customCursorColor == 0,
+            "The selection and the settings unchanged");
+        ui.nextCursorThemeRead = 0;
+        ui.Tick();
+        Check(Get(option).integers["rebuilds"] == 1, "The same theme: nothing rebuilt");
+        // Unknown: none, out of range, or no theme option at all.
+        for (const int unknown : {0, 12, -1}) {
+            Get(f.theme).integer = unknown;
+            ui.nextCursorThemeRead = 0;
+            ui.Tick();
+            Check(label(option) == "Défaut" && ui.cursorThemeShown == 0, "An unknown theme: « Défaut » alone");
+        }
+        Check(Get(option).integers["rebuilds"] == 2, "Rebuilt once for the unknown theme");
+        Get(f.theme).integer = 11;
+        Get(f.container).refs.erase("currentTheme");
+        ui.nextCursorThemeRead = 0;
+        ui.Tick();
+        Check(label(option) == "Défaut", "Without the theme option: « Défaut »");
+        Get(f.container).refs["currentTheme"] = f.theme;
+        ui.nextCursorThemeRead = 0;
+        ui.Tick();
+        Check(label(option) == "Défaut (Wabbit)" && Get(option).integers["rebuilds"] == 3, "The theme back: « Défaut (Wabbit) »");
+        // The page rebuilds its list without the tab: added again, the label is
+        // read at once, whatever the wait.
+        auto& categories = Get(Get(f.page).refs.at("m_options")).items;
+        categories.erase(std::remove(categories.begin(), categories.end(), f.Ui().pages.back().category.get()), categories.end());
+        Get(f.theme).integer = 7;
+        ui.nextCursorThemeRead = GetTickCount64() + 60000;
+        initHook(f.page, false, true, SectionId(CursorSection), nullptr);
+        Check(label(ui.customCursorColorOption.get()) == "Défaut (Belladone)", "Added to a page again: the game's theme at once");
+        // Every label differs, whatever the theme.
+        for (const auto& theme : {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}) {
+            Get(f.theme).integer = theme;
+            ui.nextCursorThemeRead = 0;
+            ui.Tick();
+            std::set<std::string> labels;
+            for (const auto& entry : choices(option)) labels.insert(entry.second);
+            Check(labels.size() == 15 && label(option).starts_with("Défaut ("), "Every label differs with each theme");
+        }
+        // The pages torn down (logout): the label still follows, nothing rebuilt.
+        ui.Abandon();
+        const auto rebuilt = Get(option).integers["rebuilds"];
+        Get(f.theme).integer = 5;
+        ui.nextCursorThemeRead = 0;
+        ui.Tick();
+        Check(label(option) == "Défaut (Gold and steel)" && Get(option).integers["rebuilds"] == rebuilt,
+            "Without a page: the new label, no rebuild through a torn-down view");
+        f.StopAndRestore();
+        Check(ui.cursorThemeShown == -1 && ui.nextCursorThemeRead == 0, "Restore forgets the label's theme");
+    }
+    {
+        const auto from = logs.size();
+        failRebuildContract = true;
+        Fixture f;
+        failRebuildContract = false;
+        Check(Logged(from, "UI_CURSOR_THEME_REBUILD_UNAVAILABLE Synthetic missing contract: set_needRebuild"), "A missing contract logged once");
+        initHook(f.page, false, true, SectionId(CursorSection), nullptr);
+        auto& ui = f.Ui();
+        const Obj option = ui.customCursorColorOption.get();
+        Check(label(option) == "Défaut (Standard)", "The fixture's Standard theme");
+        Get(f.theme).integer = 9;
+        ui.nextCursorThemeRead = 0;
+        ui.Tick();
+        Check(label(option) == "Défaut (Sufokia)" && Get(option).integers["rebuilds"] == 0 && changes == 0,
+            "Without set_needRebuild: the new label, shown at the row's next view, nothing else");
+        f.StopAndRestore();
+    }
 }
 
 // « Jauges » (1.18.0), right after « Curseur »: one checkbox, the switch of the
@@ -1511,7 +1642,7 @@ void CursorSectionRows() {
 // itself, follows an outside change, and the section's reset ticks it again
 // without touching the gauges ticked in their own menus.
 void GaugeSectionRows() {
-    const std::string description = "Ajoute la case « Afficher à la verticale » au menu … (les trois petits points) de chaque jauge : expérience du personnage, expérience de guilde, points d’honneur, pods, points d’énergie et expérience de chaque métier. Cochée dans ce menu, la jauge passe à la verticale : elle se remplit de bas en haut, son niveau en dessous ; elle garde sa longueur et sa place, se déplace comme avant, et sa taille se change seulement à l’horizontale. Décochée ici, la case disparaît des menus et toutes les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé. Activé par défaut.";
+    const std::string description = "Ajoute la case « Afficher à la verticale » au menu … (les trois petits points) de chaque jauge : expérience du personnage, expérience de guilde, points d’honneur, pods, points d’énergie et expérience de chaque métier. Cochée dans ce menu, la jauge passe à la verticale : elle se remplit de bas en haut, son niveau en dessous ; elle se déplace comme avant, sa longueur se change en tirant son bord haut ou bas, et le mod garde sa longueur et sa place à la verticale ; décochée, elle revient à sa place et à sa taille d’avant. Décochée ici, la case disparaît des menus et toutes les jauges reviennent à l’horizontale ; le choix de chaque jauge est gardé. Activé par défaut.";
     constexpr int Ticked = 0x2 | 0x10 | 0x2000000; // guild, pods, the breeder's experience
     Fixture f;
     f.state.settings.gaugeVerticalMenu = false;
@@ -1774,8 +1905,8 @@ void ValidationAndLoadingGate() {
             f.Ui().Tick();
             Check(changes == 0 && Get(source).integer == 1, "An invalid dimension choice must revert without persistence");
         }
-    // « Curseur »: four colours (0 to 3), three sizes (0 to 2).
-    for (const auto& [source, invalids] : {std::pair{f.Ui().customCursorColorSource.get(), std::vector<int>{-1, 4, 99}},
+    // « Curseur »: fifteen colours (0 to 14), three sizes (0 to 2).
+    for (const auto& [source, invalids] : {std::pair{f.Ui().customCursorColorSource.get(), std::vector<int>{-1, 15, 99}},
              std::pair{f.Ui().customCursorSizeSource.get(), std::vector<int>{-1, 3, 99}}})
         for (int invalid : invalids) {
             Get(source).integer = invalid;
@@ -2706,14 +2837,20 @@ void PerformanceSectionRows() {
                 "Cette case suffit à faire apparaître l’affichage, même sans les FPS et la mémoire.", "Désactivé par défaut."})
             Check(text.find(term) != std::string::npos, std::string("The GPU and disk boxes say: ") + term);
     for (const char* term : {"Fais glisser l’affichage des performances avec le clic gauche pour le placer où tu veux",
-            "Redimensionne-le comme une fenêtre : son bord droit change sa largeur, son bord bas sa hauteur, et son coin en bas à droite",
-            "où une petite poignée de points apparaît quand la souris survole l’affichage", "les deux à la fois",
-            "sa largeur et sa hauteur vont chacune de la moitié au triple de leur taille normale", "son coin en haut à gauche reste en place",
+            "Redimensionne-le comme une fenêtre, par n’importe lequel de ses quatre bords ou de ses quatre coins",
+            "un bord gauche ou droit change sa largeur, un bord haut ou bas sa hauteur, un coin les deux à la fois, et le côté opposé reste en place",
+            "une petite poignée de points apparaît dans son coin en bas à droite quand la souris survole l’affichage",
+            "Sa largeur et sa hauteur vont chacune de la moitié au triple de leur taille normale",
+            "Les mesures se rangent selon la place : plus l’affichage est large, plus elles se suivent sur une même ligne, séparées par « · »",
+            "plus il est étroit ou haut, plus elles passent sur les lignes du dessous",
             "Le texte garde ses proportions et prend la plus grande taille qui tient dans le cadre, sans jamais être coupé.",
-            "Au survol, le jeu affiche le curseur correspondant : une double flèche sur ces deux bords et sur son coin en bas à droite, le curseur de déplacement ailleurs",
+            "Au survol, le jeu affiche le curseur correspondant : une double flèche sur ses bords et ses coins, le curseur de déplacement ailleurs",
             "les curseurs du mod quand « Curseur Dofus » est coché", "L’affichage reste entièrement à l’écran", "sa place et sa taille sont gardées",
             "Décochée, l’affichage reste verrouillé à sa place et à sa taille et laisse passer les clics vers le jeu.", "Activé par défaut."})
         Check(drag.find(term) != std::string::npos, std::string("« Déplacer et redimensionner l’affichage à la souris » says: ") + term);
+    Check(drag.find("son coin en haut à gauche reste en place") == std::string::npos && drag.find("sur ces deux bords") == std::string::npos &&
+        disk.find("par exemple « Disque C: 4 % (1,2 Mo/s) »") != std::string::npos,
+        "No longer only its right and bottom edges; the disk's example as the overlay shows it");
     for (const char* term : {"Ajoute en haut à droite, à côté de Capture d’âme, un bouton qui affiche ou masque l’affichage des performances",
             "sans décocher ses mesures", "si aucune n’est cochée, il coche « Afficher les FPS et la mémoire »",
             "Masqué avec ce bouton, l’affichage le reste après un redémarrage", "Décochée, le bouton disparaît",
@@ -2820,6 +2957,7 @@ int main() {
         run(fake::GlowModeValuesAndDefaults);
         run(fake::GlowCategories);
         run(fake::CursorSectionRows);
+        run(fake::CursorThemeLabel);
         run(fake::GaugeSectionRows);
         run(fake::ReducedMiniaturesDescription);
         run(fake::NativeResetAndFilteredSearchOwnership);
@@ -2849,7 +2987,7 @@ int main() {
         run(fake::PerformanceSectionRows);
         fake::CheckNoKeyTrace();
 
-        std::cout << "PASS: sixteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, its four colours and three sizes, invalid choices reverted), « Jauges » after « Curseur » (the gauges' vertical row on by default, its reset keeping each gauge's choice), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
+        std::cout << "PASS: sixteen native sections (Apparence with six combat and five roleplay category checkboxes, PNJ off by default, Animations with six toggles, « Curseur » after « Surbrillance » (Curseur Dofus off by default, « Défaut (<thème>) » following the game's theme, its eleven themes and three colours, its three sizes, invalid choices reverted), « Jauges » after « Curseur » (the gauges' vertical row on by default, its reset keeping each gauge's choice), Carnet and Performances with the 1.13.0 rows, Performances with its five boxes and no corner choice (each part ticked alone, the mouse place and size kept and locked when unticked, the top-bar button on by default, an overlay it hid shown again by a part ticked or the button removed, kept by the section reset); layout, display clones, selection, section resets, restore to Jeu), native settings, independent map visibility, reset, session gates, retryable restoration and the Metamob rows of the soul section (masked key field, Enregistrer only once typed, saved key as fixed stars with its status indicator (Clé valide only for a key Metamob accepted; Vérification…, non vérifiée, refusée, illisible) and the trash, in-row confirmation, a new key right after a forget, pooled views, no key trace) and the Statistiques section (counting checkbox, « Voir mes statistiques » opening the statistics window from any view of its row, the checkbox of the window's top-bar button), and the « Bouton dans la barre du haut » rows of Capture d’âme, of the new « Chasse au trésor » section and of « Carnet »\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';

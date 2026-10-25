@@ -97,6 +97,22 @@ Obj document = nullptr, visualRoot = nullptr, panel = nullptr, topElement = null
 Obj chatField = nullptr, chatText = nullptr, searchField = nullptr, searchText = nullptr, button = nullptr;
 Method setCursorMethod = nullptr;
 int updates = 0;
+// The game's themes (1.18.1): the theme its options hold (ReadGameTheme, 0
+// unknown), FigmaStylesScriptableObject's instance (null before its data is
+// loaded) and each theme's colours there; a colour it lacks throws, as the game's.
+const std::string FigmaStyles = "Core.UILogic.Figma.ScriptableObject.Script.FigmaStylesScriptableObject";
+int gameThemeValue = 0, themeReads = 0, figmaReads = 0;
+Obj figmaInstance = nullptr;
+std::map<std::pair<int, std::string>, std::array<float, 4>> figmaColours;
+// A theme's accent and dark background as GetColorByVarName gives them.
+void FigmaTheme(int theme, uint32_t accent, uint32_t dark) {
+    const auto colour = [](uint32_t rgb, float alpha) {
+        return std::array<float, 4>{static_cast<float>(rgb >> 16 & 0xFF) / 255.f, static_cast<float>(rgb >> 8 & 0xFF) / 255.f,
+            static_cast<float>(rgb & 0xFF) / 255.f, alpha};
+    };
+    figmaColours[{theme, "--highlight_primary100"}] = colour(accent, 1.f);
+    figmaColours[{theme, "--background_dark97"}] = colour(dark, .97f);
+}
 // Windows.
 uint64_t nowMs = 1000000;
 bool buttonDown = false;
@@ -237,6 +253,8 @@ managed::Obj Module::FindService(const char* name) const {
     return fake::dragService;
 }
 void Log(const std::string& message) { fake::logs.push_back(message); }
+// DofusOptionsContainer.currentTheme (game-theme.cpp is not linked here).
+int ReadGameTheme() { ++fake::themeReads; return fake::gameThemeValue; }
 #include "ui/custom-cursor.cpp"
 
 namespace fake {
@@ -385,6 +403,20 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         if (!document) throw std::runtime_error("System.NullReferenceException: Object reference not set to an instance of an object.");
         return document;
     }
+    if (m.type == FigmaStyles) {
+        // GetInstance: static, null before the game's data. GetColorByVarName:
+        // a ThemeEnum theme and one of the game's own variables.
+        if (m.name == "GetInstance") { Check(!self, "Static FigmaStylesScriptableObject.GetInstance"); return figmaInstance; }
+        Check(m.name == "GetColorByVarName" && self && self == figmaInstance, "GetColorByVarName on the game's instance");
+        ++figmaReads;
+        const int theme = *static_cast<int*>(args[0]);
+        const std::string name = Get(static_cast<Obj>(args[1])).text;
+        Check(theme >= 1 && theme <= 11 && (name == "--highlight_primary100" || name == "--background_dark97"),
+            "Only a game theme and the variables the game itself reads");
+        const auto found = figmaColours.find({theme, name});
+        if (found == figmaColours.end()) throw std::runtime_error("System.NullReferenceException: Object reference not set to an instance of an object.");
+        return Box(found->second);
+    }
     if (m.name == "Destroy") {
         Check(m.type == "UnityEngine.Object" && !self, "Static Object.Destroy");
         const Obj target = static_cast<Obj>(args[0]);
@@ -487,6 +519,7 @@ void Fresh(bool install = true) {
     destroyAttempts = serviceLookups = staticReads = parentCalls = topCalls = updates = 0;
     buttonDown = false; buttonReads = dpiReads = 0; dpi = 96; pointerBase = 32; nowMs += 100000;
     currentCursor = nullptr; setCursorMethod = nullptr;
+    gameThemeValue = themeReads = figmaReads = 0; figmaInstance = nullptr; figmaColours.clear();
     DefaultOffsets();
     Setup();
     BuildUi();
@@ -535,7 +568,7 @@ void ExpectSent(Obj texture, Vector2 hotspot, int32_t mode, const std::string& m
 }
 void ExpectGame(int64_t type, const std::string& message) { ExpectSent(GameTexture(type), GameHotspot, 0, message); }
 // Ticks « Curseur Dofus »: thirteen frames draw the set, then it is in use.
-void Activate(int colour = 0, int size = 0) {
+void Activate(int colour = Settings::CursorGold, int size = 0) {
     module->settings.customCursor = true;
     module->settings.customCursorColor = colour;
     module->settings.customCursorSize = size;
@@ -651,7 +684,7 @@ void PolicyTable() {
 // ------------------------------------------------------------ installation
 void InstallContracts() {
     Fresh();
-    Check(customCursor::s.installed && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=1 size=1"), "Installed, with its four optional parts");
+    Check(customCursor::s.installed && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 themes=1 drag=1 size=1"), "Installed, with its four optional parts");
     const std::set<std::tuple<std::string, std::string, int, uintptr_t>> expected{
         {"Core.UILogic.DofusCursor", "UpdateCursorTexture", 0, 0x280A4C0}, {"UnityEngine.Cursor", "SetCursor", 3, 0x54024F0},
         {"UnityEngine.Texture2D", ".ctor", 5, 0x5410E20}, {"UnityEngine.Texture2D", "LoadRawTextureData", 2, 0x540E4C0},
@@ -660,7 +693,8 @@ void InstallContracts() {
         {Ui + "VisualElement", "get_parent", 0, 0x55F7180}, {"pq", "pbs", 0, 0x2E93CC0},
         {Ui + "VisualElement", "get_panel", 0, 0x55F7170}, {Ui + "VisualElement", "get_enabledInHierarchy", 0, 0x55F5EF0},
         {Ui + "BaseVisualElementPanel", "GetTopElementUnderPointer", 1, 0x57A3FC0},
-        {Ui + "VisualElement", "get_customStyle", 0, 0x55F5C30}, {Ui + "VisualElement+CustomStyleAccess", "TryGetValue", 2, 0x55FCCB0}};
+        {Ui + "VisualElement", "get_customStyle", 0, 0x55F5C30}, {Ui + "VisualElement+CustomStyleAccess", "TryGetValue", 2, 0x55FCCB0},
+        {FigmaStyles, "GetInstance", 0, 0x2CA7EA0}, {FigmaStyles, "GetColorByVarName", 2, 0x2CA7C90}};
     Check(contracts == expected, "Exactly the required and optional natives, each at its pinned RVA");
     for (const auto& contract : expected) Check(Guarded(std::get<3>(contract)), "Every verified method guarded");
     Check(natives == std::set<uintptr_t>{0x280A73C, 0x28088F9}, "UpdateCursorTexture's call of ApplyCursor and ApplyCursor's tail jump checked");
@@ -668,7 +702,7 @@ void InstallContracts() {
         {"Core.dll", "Core.UILogic.DofusCursor"}, {"Core.dll", "Core.UILogic.Cursor"}, {CoreImage, "UnityEngine.Texture2D"},
         {CoreImage, "UnityEngine.Object"}, {CoreImage, "UnityEngine.Cursor"}, {UiImage, Ui + "VisualElement"}, {"Core.dll", "pq"},
         {UiImage, Ui + "BaseVisualElementPanel"}, {UiImage, Ui + "TextField"}, {"nested", Ui + "VisualElement+CustomStyleAccess"},
-        {"Core.dll", "Core.UILogic.Components.DragAndDrop.DragAndDropService"}};
+        {"Core.dll", "Core.UILogic.Components.DragAndDrop.DragAndDropService"}, {"Core.dll", FigmaStyles}};
     Check(classLookups == images, "Each class from its own image");
     for (const auto& [field, offset] : offsets) Check(fieldLookups.contains(field), "Field layout checked: " + field.second);
     Check(hooks.size() == 1 && hooks[0].contracts == contracts.size() && hooks[0].natives == natives.size() && hooks[0].fields == fieldLookups.size(),
@@ -679,8 +713,8 @@ void InstallContracts() {
         "UnityPlayer.dll's loading of a cursor checked at its pinned site");
     Check(systemHooks.size() == 1 && systemHooks[0].hooksBefore == 1 && customCursor::n.sized &&
         customCursor::originalLoadImage == &FakeLoadImage, "LoadImageW hooked last, once the SetCursor detour exists");
-    Check(customCursor::originalSetCursor == &FakeSetCursor && sent.empty() && updates == 0 && Made().empty() && loads.empty(),
-        "Nothing changed at install");
+    Check(customCursor::originalSetCursor == &FakeSetCursor && sent.empty() && updates == 0 && Made().empty() && loads.empty() &&
+        themeReads == 0 && figmaReads == 0, "Nothing changed nor read at install");
     Fresh(false);
     InstallCustomCursor();
     InstallCustomCursor();
@@ -716,7 +750,7 @@ void OptionalParts() {
     Fresh(false);
     missingClasses.insert(Ui + "TextField");
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE text ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=1 drag=1 size=1"), "Without TextField: the text part off");
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE text ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=1 themes=1 drag=1 size=1"), "Without TextField: the text part off");
     Activate();
     topElement = chatText;
     nowMs += 300;
@@ -726,25 +760,47 @@ void OptionalParts() {
     Fresh(false);
     failVerified.insert(0x55F7180);
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE ui ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=0 drag=1 size=1"),
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE ui ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=0 theme=0 themes=1 drag=1 size=1"),
         "Without get_parent: the text and theme parts off");
-    Activate(1);
+    Activate(Settings::CursorDefault);
     Check(customCursor::s.current.look.accent == customCursor::StandardAccent && customCursor::s.current.look.dark == customCursor::StandardDark &&
-        invokes["pbs"] == 0, "Without the UI part, « Couleur du thème du jeu » draws the Standard theme's colours");
+        invokes["pbs"] == 0, "Without the UI part nor the theme's data, « Défaut » draws the Standard theme's colours");
     Fresh(false);
     missingClasses.insert(Ui + "VisualElement+CustomStyleAccess");
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE theme ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=0 drag=1 size=1"), "Without CustomStyleAccess: the theme part off");
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE theme ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=0 themes=1 drag=1 size=1"), "Without CustomStyleAccess: the theme part off");
     Get(visualRoot).variables["--highlight_primary100"] = {1.f, 0.f, 0.f, 1.f};
-    Activate(1);
+    Activate(Settings::CursorDefault);
     Check(customCursor::s.current.look.accent == customCursor::StandardAccent && invokes["TryGetValue"] == 0, "Without the theme part: the Standard theme's colours");
     topElement = chatText;
     GameAsks(Map, cursorType::None, 0, false);
     ExpectOurs(Shape::Beam, "The text part still works without the theme part");
+    // Without GetColorByVarName (1.18.1): a theme's colours are the panel's
+    // while the game shows it, the Standard theme's otherwise.
+    for (const uintptr_t missing : {uintptr_t{0x2CA7C90}, uintptr_t{0x2CA7EA0}}) {
+        Fresh(false);
+        failVerified.insert(missing);
+        InstallCustomCursor();
+        Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE figma ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 themes=0 drag=1 size=1"),
+            "Without FigmaStylesScriptableObject's methods: the themes part off, the rest on");
+        gameThemeValue = 3;
+        figmaInstance = Make(FigmaStyles);
+        FigmaTheme(3, 0x4F9CFF, 0x292B33);
+        Get(visualRoot).variables["--highlight_primary100"] = {1.f, 0.f, 0.f, 1.f};
+        Activate(3);
+        Check(customCursor::s.current.look.accent == 0xFF0000 && customCursor::s.current.look.dark == customCursor::StandardDark &&
+            figmaReads == 0 && Logged("CUSTOM_CURSOR_THEME choice=3 theme=3 shown=3 source=panel accent=#FF0000 dark=#1B1D32"),
+            "Without the themes part: Bonta shown, Bonta's colours from the panel");
+        module->settings.customCursorColor = 4;
+        Frames(20);
+        Check(customCursor::s.current.look.accent == customCursor::StandardAccent && customCursor::s.current.look.dark == customCursor::StandardDark &&
+            Logged("CUSTOM_CURSOR_THEME choice=4 theme=4 shown=3 source=standard accent=#F0FF4F dark=#1B1D32") && figmaReads == 0,
+            "Without the themes part: Brakmar while Bonta shows, the Standard theme's colours");
+    }
     Fresh(false);
     offsets[{"Core.UILogic.Components.DragAndDrop.DragAndDropService", "<isDragging>k__BackingField"}] = 0x18;
     InstallCustomCursor();
-    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE drag ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=0 size=1"), "Another isDragging layout: the drag part off");
+    Check(LoggedPrefix("CUSTOM_CURSOR_PART_UNAVAILABLE drag ") == 1 && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 themes=1 drag=0 size=1"), "Another isDragging layout: the drag part off");
     Activate();
     Put<bool>(dragService, 0x10, true);
     GameAsks(UiLayer, cursorType::Link);
@@ -779,6 +835,7 @@ void OptionOffPassesThrough() {
 void EnableBuildsAcrossFrames() {
     Fresh();
     module->settings.customCursor = true;
+    module->settings.customCursorColor = Settings::CursorGold;
     for (int shape = 0; shape < cursorArt::ShapeCount; ++shape) {
         GameAsks(Map, cursorType::None, 0, false);
         ExpectSent(nullptr, {}, 0, "While the set is drawn: the game's cursor");
@@ -790,7 +847,7 @@ void EnableBuildsAcrossFrames() {
     ExpectOurs(Shape::Arrow, "The refresh: the mod's arrow for the game's None, at its hotspot, CursorMode.Auto");
     CheckSet(CurrentSet(), 32, cursorArt::Colour::Gold, 0, 0, "Gold at 32 px");
     Check(Made().size() == 13 && TextureHandles() == 13, "Thirteen textures, each held once");
-    Check(LoggedPrefix("CUSTOM_CURSOR_ON size=32 dpi=96 base=32 color=0 mid=#") == 1 && LoggedLine("CUSTOM_CURSOR_ON ").ends_with(" mode=hardware load=texture"),
+    Check(LoggedPrefix("CUSTOM_CURSOR_ON size=32 dpi=96 base=32 color=12 mid=#") == 1 && LoggedLine("CUSTOM_CURSOR_ON ").ends_with(" mode=hardware load=texture"),
         "CUSTOM_CURSOR_ON logs the size, its inputs and the mode: Windows cursors loaded at their size");
     Check(LoadedAt(Ours(Shape::Arrow), 32) && Logged("CUSTOM_CURSOR_LOADED size=32 windows=32") &&
         LoggedIndex("CUSTOM_CURSOR_ON ") < LoggedIndex("CUSTOM_CURSOR_LOADED "), "The player loads the arrow at 32 px, logged after CUSTOM_CURSOR_ON");
@@ -993,24 +1050,25 @@ void NoRefreshWhenUnchanged() {
     Frames(200);
     Check(updates == 1 && sent.size() == count && Made().size() == 13, "Two hundred frames without a change: no refresh, nothing drawn");
 }
-// « Couleur du thème du jeu »: the theme's accent and dark colours, followed
-// when they change; a new set in use before the old one goes.
+// « Défaut » while the game's theme is unknown and its data not loaded: the
+// accent and dark colours declared on the panel, followed when they change; a
+// new set in use before the old one goes.
 void ThemeColour() {
     Fresh();
     Get(visualRoot).variables["--highlight_primary100"] = {79 / 255.f, 156 / 255.f, 1.f, 1.f};
     Get(visualRoot).variables["--background_dark97"] = {41 / 255.f, 43 / 255.f, 51 / 255.f, .97f};
-    Activate(1);
+    Activate(Settings::CursorDefault);
     const uint32_t accent = 0x4F9CFF, dark = 0x292B33;
-    Check(Logged("CUSTOM_CURSOR_THEME accent=#4F9CFF dark=#292B33 depth=1"), "The theme's colours read from the panel's root, one level up");
+    Check(Logged("CUSTOM_CURSOR_THEME choice=0 theme=0 shown=0 source=panel accent=#4F9CFF dark=#292B33"), "The theme's colours read from the panel's root");
     const auto& look = customCursor::s.current.look;
-    Check(look.colour == 1 && look.accent == accent && look.dark == dark, "Drawn for the theme's colours");
+    Check(look.colour == Settings::CursorDefault && look.accent == accent && look.dark == dark, "Drawn for the theme's colours");
     CheckSet(CurrentSet(), 32, cursorArt::Colour::Theme, accent, dark, "The theme's palette");
     // The player picks another theme.
     const auto old = CurrentSet();
     Get(visualRoot).variables["--highlight_primary100"] = {1.f, 84 / 255.f, 84 / 255.f, 1.f};
     events.clear();
     Frames(70); // the colours read again within 500 ms, then thirteen frames
-    Check(Logged("CUSTOM_CURSOR_THEME accent=#FF5454 dark=#292B33 depth=1") && LoggedPrefix("CUSTOM_CURSOR_REDRAWN size=32") == 1,
+    Check(Logged("CUSTOM_CURSOR_THEME choice=0 theme=0 shown=0 source=panel accent=#FF5454 dark=#292B33") && LoggedPrefix("CUSTOM_CURSOR_REDRAWN size=32") == 1,
         "The theme changed: drawn again");
     const auto fresh = CurrentSet();
     CheckSet(fresh, 32, cursorArt::Colour::Theme, 0xFF5454, dark, "The new theme's palette");
@@ -1030,26 +1088,135 @@ void ThemeColour() {
     ExpectOurs(Shape::Hand, "The set in use while the next one is drawn");
     Check(Ours(Shape::Hand) == fresh[static_cast<size_t>(Shape::Hand)], "Still the set before");
     // Gold: the theme no longer read, never drawn again for it.
-    module->settings.customCursorColor = 0;
+    module->settings.customCursorColor = Settings::CursorGold;
     Frames(20);
-    Check(customCursor::s.current.look.colour == 0 && customCursor::s.current.look.accent == 0, "Gold drawn");
+    Check(customCursor::s.current.look.colour == Settings::CursorGold && customCursor::s.current.look.accent == 0, "Gold drawn");
     const auto made = Made().size();
-    const auto reads = invokes["TryGetValue"];
+    const auto reads = invokes["TryGetValue"], themes = themeReads;
     Get(visualRoot).variables["--highlight_primary100"] = {0.f, 1.f, 0.f, 1.f};
+    gameThemeValue = 4;
     Frames(200);
-    Check(Made().size() == made && invokes["TryGetValue"] == reads, "Gold ignores the theme");
+    Check(Made().size() == made && invokes["TryGetValue"] == reads && themeReads == themes, "Gold ignores the theme");
+    gameThemeValue = 0;
     // A theme without the variables: the Standard theme's colours.
     Get(visualRoot).variables.clear();
-    module->settings.customCursorColor = 1;
+    module->settings.customCursorColor = Settings::CursorDefault;
     Frames(20);
-    Check(Logged("CUSTOM_CURSOR_THEME accent=#F0FF4F dark=#1B1D32 depth=-1") && customCursor::s.current.look.accent == customCursor::StandardAccent &&
+    Check(Logged("CUSTOM_CURSOR_THEME choice=0 theme=0 shown=0 source=standard accent=#F0FF4F dark=#1B1D32") && customCursor::s.current.look.accent == customCursor::StandardAccent &&
         customCursor::s.current.look.dark == customCursor::StandardDark, "No variable: the Standard theme's colours");
     // Before any UIDocument: the Standard theme's colours too, never an error.
     Fresh();
     document = nullptr;
-    Activate(1);
+    Activate(Settings::CursorDefault);
     Check(customCursor::s.current.look.accent == customCursor::StandardAccent && !customCursor::s.root.get() && !customCursor::s.faulted,
         "No UIDocument yet: the Standard theme's colours");
+}
+// « Défaut » and each game theme (1.18.1): a theme's own colours through
+// FigmaStylesScriptableObject, whatever theme the game shows, read once per
+// theme; « Défaut » the theme the game shows, followed when the player picks
+// another; without a theme's data, the panel's colours when the game shows
+// that theme, the Standard theme's otherwise; a failure logged once.
+void ThemeChoices() {
+    // Eleven distinct palettes (ThemeEnum order), none of them the Standard one.
+    uint32_t accents[12]{}, darks[12]{};
+    for (int theme = 1; theme <= 11; ++theme) {
+        accents[theme] = 0x204060u + static_cast<uint32_t>(theme) * 0x0A0B0C;
+        darks[theme] = 0x101010u + static_cast<uint32_t>(theme) * 0x010203;
+    }
+    const auto setUp = [&] {
+        figmaInstance = Make(FigmaStyles);
+        for (int theme = 1; theme <= 11; ++theme) FigmaTheme(theme, accents[theme], darks[theme]);
+    };
+    const auto& look = customCursor::s.current.look;
+    Fresh();
+    setUp();
+    gameThemeValue = 3; // Bonta
+    Activate(Settings::CursorDefault);
+    Check(look.colour == Settings::CursorDefault && look.accent == accents[3] && look.dark == darks[3] &&
+        Logged("CUSTOM_CURSOR_THEME choice=0 theme=3 shown=3 source=theme accent=" + customCursor::Rgb(accents[3]) + " dark=" +
+            customCursor::Rgb(darks[3])) &&
+        Logged("CUSTOM_CURSOR_THEME_COLOURS theme=3 accent=" + customCursor::Rgb(accents[3]) + " dark=" + customCursor::Rgb(darks[3])),
+        "« Défaut » while the game shows Bonta: Bonta's own colours");
+    CheckSet(CurrentSet(), 32, cursorArt::Colour::Theme, accents[3], darks[3], "« Défaut (Bonta) »: Bonta's palette");
+    // The player picks Brakmar in the game's options: « Défaut » follows.
+    gameThemeValue = 4;
+    Frames(90);
+    Check(look.accent == accents[4] && look.dark == darks[4] && LoggedPrefix("CUSTOM_CURSOR_REDRAWN size=32") == 1 &&
+        Logged("CUSTOM_CURSOR_THEME choice=0 theme=4 shown=4 source=theme accent=" + customCursor::Rgb(accents[4]) + " dark=" +
+            customCursor::Rgb(darks[4])), "« Défaut » follows the game's theme");
+    // Each theme on its own, whatever the game shows: its own colours, at once,
+    // never the panel's.
+    const auto panelReads = invokes["TryGetValue"];
+    for (const auto& theme : gameTheme::Themes) {
+        module->settings.customCursorColor = theme.id;
+        Frames(14);
+        Check(look.colour == theme.id && look.accent == accents[theme.id] && look.dark == darks[theme.id], std::string("Its own colours: ") + theme.name);
+        CheckSet(CurrentSet(), 32, cursorArt::Colour::Theme, accents[theme.id], darks[theme.id], std::string("Its own palette: ") + theme.name);
+    }
+    Check(invokes["TryGetValue"] == panelReads && LoggedPrefix("CUSTOM_CURSOR_THEME_COLOURS theme=") == 11,
+        "Each theme's colours read once, never the panel's");
+    // A theme of its own ignores the game's theme: nothing drawn again, nothing read again.
+    const auto made = Made().size();
+    const auto reads = figmaReads;
+    gameThemeValue = 9;
+    Frames(200);
+    Check(Made().size() == made && figmaReads == reads && look.colour == 11 && look.accent == accents[11], "Wabbit stays Wabbit, read once");
+    // « Défaut » again: the game's Sufokia, from the colours already read.
+    module->settings.customCursorColor = Settings::CursorDefault;
+    Frames(14);
+    Check(look.accent == accents[9] && figmaReads == reads, "« Défaut »: the game's theme, from the colours already read");
+    // « Or », « Émeraude », « Argent » keep their palettes.
+    for (const auto& [choice, colour] : {std::pair{Settings::CursorGold, cursorArt::Colour::Gold},
+             std::pair{Settings::CursorEmerald, cursorArt::Colour::Emerald}, std::pair{Settings::CursorSilver, cursorArt::Colour::Silver}}) {
+        module->settings.customCursorColor = choice;
+        Frames(14);
+        Check(look.colour == choice && look.accent == 0 && look.dark == 0, "A fixed colour draws no theme");
+        CheckSet(CurrentSet(), 32, colour, 0, 0, "A fixed colour's own palette");
+    }
+    // A colour out of range in the settings (never saved): « Défaut ».
+    module->settings.customCursorColor = 15;
+    Frames(14);
+    Check(look.colour == Settings::CursorDefault && look.accent == accents[9], "An unknown choice draws « Défaut »");
+
+    // A theme its data lacks, or gives an unusable colour: logged once, the
+    // Standard theme's colours while the game shows another theme, the panel's
+    // once it shows that one.
+    Fresh();
+    setUp();
+    figmaColours.erase({6, "--background_dark97"});
+    figmaColours[{7, "--highlight_primary100"}] = {2.f, 0.f, 0.f, 1.f};
+    figmaColours[{8, "--highlight_primary100"}] = {1.f, 0.f, 0.f, 0.f};
+    Get(visualRoot).variables["--highlight_primary100"] = {1.f, 0.f, 0.f, 1.f};
+    gameThemeValue = 3;
+    for (const int theme : {6, 7, 8}) {
+        if (theme == 6) Activate(theme);
+        else { module->settings.customCursorColor = theme; Frames(14); }
+        Check(LoggedPrefix("CUSTOM_CURSOR_THEME_COLOURS_ERROR theme=" + std::to_string(theme) + " ") == 1 &&
+            look.accent == customCursor::StandardAccent && look.dark == customCursor::StandardDark &&
+            Logged("CUSTOM_CURSOR_THEME choice=" + std::to_string(theme) + " theme=" + std::to_string(theme) +
+                " shown=3 source=standard accent=#F0FF4F dark=#1B1D32"),
+            "A theme without usable colours, not shown: the Standard theme's");
+    }
+    Frames(200);
+    Check(LoggedPrefix("CUSTOM_CURSOR_THEME_COLOURS_ERROR theme=8 ") == 1 && !customCursor::s.faulted, "Retried, logged once, never a fault");
+    gameThemeValue = 8;
+    Frames(90);
+    Check(look.accent == 0xFF0000 && look.dark == customCursor::StandardDark &&
+        Logged("CUSTOM_CURSOR_THEME choice=8 theme=8 shown=8 source=panel accent=#FF0000 dark=#1B1D32"),
+        "The game shows that theme: the panel's colours");
+
+    // Before the game's data (no instance yet): the panel's colours for the
+    // theme shown, then its own once loaded.
+    Fresh();
+    gameThemeValue = 2;
+    Get(visualRoot).variables["--highlight_primary100"] = {1.f, 0.f, 0.f, 1.f};
+    Activate(Settings::CursorDefault);
+    Check(look.accent == 0xFF0000 && Logged("CUSTOM_CURSOR_THEME choice=0 theme=2 shown=2 source=panel accent=#FF0000 dark=#1B1D32") &&
+        LoggedPrefix("CUSTOM_CURSOR_THEME_COLOURS_ERROR") == 0, "No data yet: the panel's colours, no error");
+    setUp();
+    Frames(90);
+    Check(look.accent == accents[2] && look.dark == darks[2] && Logged("CUSTOM_CURSOR_THEME_COLOURS theme=2 accent=" + customCursor::Rgb(accents[2]) +
+        " dark=" + customCursor::Rgb(darks[2])), "The data loaded: the theme's own colours");
 }
 // « Taille du curseur » and the window's scale.
 void SizeChanges() {
@@ -1057,7 +1224,7 @@ void SizeChanges() {
     Activate();
     dpi = 144;
     Frames(300); // read within a second, then thirteen frames
-    Check(customCursor::s.current.look.size == 48 && LoggedPrefix("CUSTOM_CURSOR_REDRAWN size=48 dpi=144 base=32 color=0") == 1,
+    Check(customCursor::s.current.look.size == 48 && LoggedPrefix("CUSTOM_CURSOR_REDRAWN size=48 dpi=144 base=32 color=12") == 1,
         "150 %: drawn again at 48 px");
     CheckSet(CurrentSet(), 48, cursorArt::Colour::Gold, 0, 0, "Gold at 48 px");
     nowMs += 300;
@@ -1090,7 +1257,7 @@ void SizeLoads() {
     for (const auto& [scale, choice, pixels] : cases) {
         Fresh();
         dpi = scale;
-        Activate(0, choice);
+        Activate(Settings::CursorGold, choice);
         const std::string what = std::to_string(pixels) + " px (dpi " + std::to_string(scale) + ", choice " + std::to_string(choice) + ")";
         Check(customCursor::s.current.look.size == pixels && LoadedAt(Ours(Shape::Arrow), pixels), "The arrow loaded at " + what);
         nowMs += 300;
@@ -1100,7 +1267,7 @@ void SizeLoads() {
         GameAsks(Interactive, Sword);
         ExpectGame(Sword, "The sword stays the game's: " + what);
         Check(LoadedAt(GameTexture(Sword), 0), "The game's sword at Windows' size, as the player makes it: " + what);
-        Check(LoggedLine("CUSTOM_CURSOR_ON size=" + std::to_string(pixels) + " dpi=" + std::to_string(scale) + " base=32 color=0 mid=#")
+        Check(LoggedLine("CUSTOM_CURSOR_ON size=" + std::to_string(pixels) + " dpi=" + std::to_string(scale) + " base=32 color=12 mid=#")
                 .ends_with(" mode=hardware load=texture") &&
             LoggedPrefix("CUSTOM_CURSOR_LOADED ") == 1 && Logged("CUSTOM_CURSOR_LOADED size=" + std::to_string(pixels) + " windows=32"),
             "CUSTOM_CURSOR_ON with the mode, then CUSTOM_CURSOR_LOADED once for the set: " + what);
@@ -1116,7 +1283,7 @@ void SizeLoads() {
     // loaded at the new size; then the old set destroyed. Never two cursors,
     // never none.
     Fresh();
-    Activate(0, 2);
+    Activate(Settings::CursorGold, 2);
     nowMs += 300;
     GameAsks(UiLayer, cursorType::Link);
     const Obj big = Ours(Shape::Hand);
@@ -1131,13 +1298,13 @@ void SizeLoads() {
     expected.insert(expected.end(), 13, "destroy");
     Check(events == expected && sent.size() == calls + 1 && Get(big).destroyed && LoadedAt(Ours(Shape::Hand), 32),
         "Switched: the new hand sent once and loaded at 32 px, then the 64 px set destroyed");
-    Check(LoggedLine("CUSTOM_CURSOR_REDRAWN size=32 dpi=96 base=32 color=0 mid=#").ends_with(" mode=hardware load=texture") &&
+    Check(LoggedLine("CUSTOM_CURSOR_REDRAWN size=32 dpi=96 base=32 color=12 mid=#").ends_with(" mode=hardware load=texture") &&
         Logged("CUSTOM_CURSOR_LOADED size=64 windows=32") && Logged("CUSTOM_CURSOR_LOADED size=32 windows=32") && AllAuto(),
         "Each set logged with its mode and its load");
     // While the player makes a cursor of the mod, only its own load changes,
     // on its thread: another thread's, or other arguments, go on as they are.
     Fresh();
-    Activate(0, 1);
+    Activate(Settings::CursorGold, 1);
     probeLoads = true;
     nowMs += 300;
     GameAsks(UiLayer, cursorType::Link);
@@ -1164,7 +1331,7 @@ void SizeLoads() {
     Check(LoadedAt(GameTexture(cursorType::Link), 0) && customCursor::sizedLoads == 2, "Unticked: the game's hand at Windows' size");
     // Ticked again, then Stop: the game's cursor back as the player makes it,
     // nothing changed after.
-    Activate(0, 2);
+    Activate(Settings::CursorGold, 2);
     nowMs += 300;
     GameAsks(UiLayer, cursorType::Move);
     Check(LoadedAt(Ours(Shape::Open), 64), "Ticked again: the open hand at 64 px");
@@ -1192,9 +1359,9 @@ void SizePartUnavailable() {
         InstallCustomCursor();
         const std::string name = what;
         Check(customCursor::s.installed && !customCursor::n.sized && hooks.size() == 1 && systemHooks.empty() &&
-            Logged(std::string("CUSTOM_CURSOR_PART_UNAVAILABLE size ") + reason) && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 drag=1 size=0"),
+            Logged(std::string("CUSTOM_CURSOR_PART_UNAVAILABLE size ") + reason) && Logged("CUSTOM_CURSOR_READY textHover=1 theme=1 themes=1 drag=1 size=0"),
             name + ": the size part off and logged, the cursors installed");
-        Activate(0, 2);
+        Activate(Settings::CursorGold, 2);
         nowMs += 300;
         GameAsks(UiLayer, cursorType::Link);
         ExpectOurs(Shape::Hand, name + ": the mod's hand still", 64);
@@ -1241,7 +1408,7 @@ void DisableRestores() {
 // Stop: first of the restores, the game's cursor back, every reference released.
 void StopRestores() {
     Fresh();
-    Activate(1);
+    Activate(Settings::CursorDefault);
     nowMs += 300;
     GameAsks(UiLayer, cursorType::Link);
     Put<bool>(dragService, 0x10, false);
@@ -1328,7 +1495,7 @@ void CleanupRetries() {
         Fresh();
         Activate();
         destroyFails = 1;
-        module->settings.customCursorColor = 2;
+        module->settings.customCursorColor = Settings::CursorEmerald;
         Frames(13);
         Check(CustomCursorCleanupPending() && customCursor::s.doomed.size() == 1, "The old set's destroy failed once: pending");
         nowMs += 100;
@@ -1345,7 +1512,7 @@ void CleanupRetries() {
     Fresh();
     Activate();
     destroyFails = 2;
-    module->settings.customCursorColor = 2;
+    module->settings.customCursorColor = Settings::CursorEmerald;
     Frames(13);
     Check(CustomCursorCleanupPending(), "The old set's destroy failed: pending");
     Frame(500);
@@ -1470,6 +1637,7 @@ int main() {
         fake::HoverInputs();
         fake::NoRefreshWhenUnchanged();
         fake::ThemeColour();
+        fake::ThemeChoices();
         fake::SizeChanges();
         fake::SizeLoads();
         fake::SizePartUnavailable();
@@ -1490,7 +1658,8 @@ int main() {
             "loading is checked), a required contract missing (no hook) or an optional one (its part off; without the size part, "
             "Windows' size as in 1.17.0), the option off (every call unchanged), the set drawn one shape a frame then applied at once, "
             "the dedupe, the drag, the button and the text field read and followed, the theme's colours followed (a new set in use "
-            "before the old one goes), the window's scale and the size choice, each size a Windows cursor (CursorMode.Auto) loaded by "
+            "before the old one goes), « Défaut » following the game's theme and each of its eleven themes in its own colours (read once "
+            "through FigmaStylesScriptableObject, the panel's or the Standard theme's without them), the window's scale and the size choice, each size a Windows cursor (CursorMode.Auto) loaded by "
             "the player at the texture's size at 100 % and 150 % (only the mod's own loads, on their thread; the game's at Windows' "
             "size; a switch applied in one call), the mode and the loads logged, unticking and Stop (the game's cursor back first, every "
             "texture destroyed, every reference released), failed destroys retried then abandoned (at once by a Stop before the "

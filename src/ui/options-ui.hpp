@@ -46,6 +46,11 @@ struct OptionsUi {
     // and their size (a choice each).
     managed::Ref customCursorSource, customCursorOption, customCursorColorSource, customCursorColorOption;
     managed::Ref customCursorSizeSource, customCursorSizeOption;
+    // « Défaut (<thème>) » (1.18.1): the game theme its label names (0: unknown,
+    // « Défaut » alone; -1: no row), when to read it again, a failure logged.
+    int cursorThemeShown = -1;
+    ULONGLONG nextCursorThemeRead = 0;
+    bool cursorThemeLogged = false;
     managed::Ref transitionsSource, transitionsOption;
     managed::Ref preloadSource, preloadOption;
     managed::Ref spouseSource, spouseOption;

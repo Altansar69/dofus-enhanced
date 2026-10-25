@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cwctype>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -228,38 +229,195 @@ constexpr const char* MeasuringText = "FPS : mesure en cours…";
 // them).
 constexpr const char* WaitingText = "Mesure en cours…";
 constexpr const char* UnavailableText = "Mesure indisponible";
-// Three short lines with the frame rate, then one for the graphics card and
-// the disk (alone without the frame rate):
+// Its figures (1.18.1), each a short item of its own, in this order: the
+// frame rate, the frame times, the memory and the private bytes, the managed
+// heap, the CPU share, the graphics card, the disk (its active time and its
+// transfer rate in one item). The slot an item's width is kept by (its
+// widest), and the group of its line in the overlay's natural layout: three
+// short lines with the frame rate, then one for the graphics card and the
+// disk (alone without the frame rate):
 //   60 FPS · 16,7 ms (max 33,4 ms)
-//   Mémoire 1,52 Go · privée 1,31 Go
+//   Mémoire 1,52 Go · Privée 1,31 Go
 //   Tas géré 312 Mo / 420 Mo · CPU 12 %
-//   GPU 23 % · Disque C: 4 % · 1,2 Mo/s
-std::string Text(const Sample& sample) {
+//   GPU 23 % · Disque C: 4 % (1,2 Mo/s)
+enum Slot : size_t { SlotFps, SlotTimes, SlotMeasuring, SlotMemory, SlotPrivate, SlotHeap, SlotCpu, SlotGpu, SlotDisk, SlotNote, SlotCount };
+struct Item {
+    Slot slot = SlotNote;
     std::string text;
+    int group = 0;
+    bool operator==(const Item&) const = default;
+};
+using Items = std::vector<Item>;
+Items ItemsOf(const Sample& sample) {
+    Items items;
     if (sample.fps) {
-        text = sample.frames.valid ? Rate(sample.frames.fps) + " FPS · " + Milliseconds(sample.frames.averageMs) +
-            " (max " + Milliseconds(sample.frames.worstMs) + ")" : std::string(MeasuringText);
-        if (sample.memory) text += "\nMémoire " + Bytes(sample.workingSet) + " · privée " + Bytes(sample.privateBytes);
-        std::string last;
-        if (sample.heap) last = "Tas géré " + Bytes(sample.heapUsed) + " / " + Bytes(sample.heapSize);
-        if (sample.cpu >= 0) last += (last.empty() ? "CPU " : " · CPU ") + Decimal(sample.cpu, 0) + " %";
-        if (!last.empty()) text += "\n" + last;
+        if (sample.frames.valid) {
+            items.push_back({SlotFps, Rate(sample.frames.fps) + " FPS", 0});
+            items.push_back({SlotTimes, Milliseconds(sample.frames.averageMs) + " (max " + Milliseconds(sample.frames.worstMs) + ")", 0});
+        } else {
+            items.push_back({SlotMeasuring, MeasuringText, 0});
+        }
+        if (sample.memory) {
+            items.push_back({SlotMemory, "Mémoire " + Bytes(sample.workingSet), 1});
+            items.push_back({SlotPrivate, "Privée " + Bytes(sample.privateBytes), 1});
+        }
+        if (sample.heap) items.push_back({SlotHeap, "Tas géré " + Bytes(sample.heapUsed) + " / " + Bytes(sample.heapSize), 2});
+        if (sample.cpu >= 0) items.push_back({SlotCpu, "CPU " + Decimal(sample.cpu, 0) + " %", 2});
     }
-    std::string deviceLine;
-    if (sample.gpu >= 0) deviceLine = "GPU " + std::to_string(sample.gpu) + " %";
+    if (sample.gpu >= 0) items.push_back({SlotGpu, "GPU " + std::to_string(sample.gpu) + " %", 3});
     if (sample.drive && (sample.diskBusy >= 0 || sample.diskRate >= 0)) {
         std::string disk = std::string("Disque ") + static_cast<char>(sample.drive) + ":";
         if (sample.diskBusy >= 0) disk += " " + std::to_string(sample.diskBusy) + " %";
-        if (sample.diskRate >= 0) disk += (sample.diskBusy >= 0 ? " · " : " ") + Throughput(sample.diskRate);
-        deviceLine += (deviceLine.empty() ? "" : " · ") + disk;
+        if (sample.diskRate >= 0) disk += sample.diskBusy >= 0 ? " (" + Throughput(sample.diskRate) + ")" : " " + Throughput(sample.diskRate);
+        items.push_back({SlotDisk, disk, 3});
     }
-    if (!deviceLine.empty()) text += (text.empty() ? "" : "\n") + deviceLine;
-    if (text.empty()) text = sample.waiting ? WaitingText : UnavailableText;
+    if (items.empty()) items.push_back({SlotNote, sample.waiting ? WaitingText : UnavailableText, 0});
+    return items;
+}
+// Between the items of a line.
+constexpr const char* Separator = " · ";
+// The items on lines, each line starting at the item `starts` gives (the
+// first at 0, ascending).
+std::string Join(const Items& items, const std::vector<size_t>& starts) {
+    std::string text;
+    for (size_t i = 0, line = 0; i < items.size(); ++i) {
+        if (i > 0 && line + 1 < starts.size() && starts[line + 1] == i) {
+            ++line;
+            text += '\n';
+        } else if (i > 0) {
+            text += Separator;
+        }
+        text += items[i].text;
+    }
     return text;
 }
-// A text without any figure: it sizes the overlay (Grow) only until its first
-// figures, which size it again from scratch (Remeasure): they can be narrower.
+// The natural layout's lines: an item starts one when its group differs from
+// the item before.
+std::vector<size_t> GroupStarts(const Items& items) {
+    std::vector<size_t> starts;
+    for (size_t i = 0; i < items.size(); ++i)
+        if (i == 0 || items[i].group != items[i - 1].group) starts.push_back(i);
+    return starts;
+}
+// The text on the natural layout's lines (a new label's, before its items are
+// measured).
+std::string Text(const Sample& sample) {
+    const auto items = ItemsOf(sample);
+    return Join(items, GroupStarts(items));
+}
+// A text without any figure: it sizes the overlay only until its first
+// figures, which size it again from scratch: they can be narrower.
 bool Placeholder(const std::string& text) { return text == WaitingText || text == UnavailableText; }
+bool Placeholder(const Items& items) { return items.size() == 1 && items[0].slot == SlotNote; }
+// An item's shape: its digits as zeros, measured once for every figure of
+// that many digits, so that its width never follows the figures.
+std::string Shape(std::string text) {
+    for (auto& c : text) if (c >= '0' && c <= '9') c = '0';
+    return text;
+}
+
+// ------------------------------------------------------------ the reflow
+// Its items flow onto as few or as many lines as its box gives them room for
+// (1.18.1). Panel pixels at 100 %: the widths of the items, the separator's
+// (" · "), a line's height and the pitch of the next lines. Its text, insets
+// and corners drawn at one factor (FontPixels at 1).
+constexpr float PaddingX = 8, PaddingY = 4, Radius = 6, FontPixels = 12;
+struct Metrics { float separator = 0, first = 0, pitch = 0; };
+// The width of the items [from, to) on one line.
+float LineWidth(const std::vector<float>& widths, size_t from, size_t to, float separator) {
+    float width = 0;
+    for (size_t i = from; i < to; ++i) width += widths[i];
+    return to > from ? width + separator * static_cast<float>(to - from - 1) : 0.f;
+}
+// The widest line of the items on lines starting at `starts`.
+float FlowWidth(const std::vector<float>& widths, const std::vector<size_t>& starts, float separator) {
+    float widest = 0;
+    for (size_t line = 0; line < starts.size(); ++line)
+        widest = std::max(widest, LineWidth(widths, starts[line], line + 1 < starts.size() ? starts[line + 1] : widths.size(), separator));
+    return widest;
+}
+float FlowHeight(size_t lines, const Metrics& metrics) { return lines ? metrics.first + metrics.pitch * static_cast<float>(lines - 1) : 0.f; }
+// The items split in their order into `lines` lines whose widest is the
+// narrowest possible (the earlier lines the fuller between equals): the
+// starts of its lines.
+std::vector<size_t> Balanced(const std::vector<float>& widths, float separator, size_t lines) {
+    const size_t count = widths.size();
+    lines = std::clamp<size_t>(lines, 1, std::max<size_t>(count, 1));
+    if (count == 0) return {0};
+    // widest[l][i]: the narrowest widest line of the first i items on l + 1
+    // lines; from[l][i]: the start of the last of them.
+    std::vector<std::vector<float>> widest(lines, std::vector<float>(count + 1, std::numeric_limits<float>::infinity()));
+    std::vector<std::vector<size_t>> from(lines, std::vector<size_t>(count + 1, 0));
+    for (size_t i = 1; i <= count; ++i) widest[0][i] = LineWidth(widths, 0, i, separator);
+    for (size_t l = 1; l < lines; ++l)
+        for (size_t i = l + 1; i <= count; ++i)
+            for (size_t j = l; j < i; ++j) {
+                const float candidate = std::max(widest[l - 1][j], LineWidth(widths, j, i, separator));
+                if (candidate <= widest[l][i]) { widest[l][i] = candidate; from[l][i] = j; }
+            }
+    std::vector<size_t> starts(lines, 0);
+    for (size_t l = lines - 1, end = count; l > 0; --l) end = starts[l] = from[l][end];
+    return starts;
+}
+// Its items laid out in its box: their lines, and the factor its text, insets
+// and corners are drawn at.
+struct Flow {
+    std::vector<size_t> starts;
+    float factor = 0;
+    size_t Lines() const { return starts.size(); }
+};
+// The items filled onto lines `capacity` wide (panel pixels at 100 %): each
+// item on the line before when it fits there, on a new line otherwise.
+std::vector<size_t> Greedy(const std::vector<float>& widths, float separator, float capacity) {
+    std::vector<size_t> starts{0};
+    float line = widths.empty() ? 0.f : widths[0];
+    for (size_t i = 1; i < widths.size(); ++i) {
+        if (line + separator + widths[i] <= capacity * 1.0001f + .001f) {
+            line += separator + widths[i];
+        } else {
+            starts.push_back(i);
+            line = widths[i];
+        }
+    }
+    return starts;
+}
+constexpr float MaxFactor = 3; // its text at most three times its natural size (MaxScale)
+// The reflow's rule (1.18.1): its text at the largest size its box holds.
+// Each number of lines L has the narrowest width its items need on L lines
+// (Balanced, their order kept); at the largest factor at which that width
+// and L lines, with its insets, fit in the box (`boxWidth` x `boxHeight`)
+// over every L (the fewer lines between equals), its items then fill lines as
+// wide as the box gives them at that factor (Greedy): an item goes up to the
+// line before as soon as it fits there, and back down when it no longer does.
+// A function of the box and the items' widths alone: no back and forth while
+// they stay (each slot's widest kept, Learn). Never above MaxFactor, its text
+// never wider or higher than the box.
+Flow Fit(const std::vector<float>& widths, const Metrics& metrics, float boxWidth, float boxHeight) {
+    Flow best;
+    if (widths.empty() || !(boxWidth > 0) || !(boxHeight > 0) || !std::isfinite(boxWidth) || !std::isfinite(boxHeight)) return best;
+    float bestWidth = 0;
+    for (size_t lines = 1; lines <= widths.size(); ++lines) {
+        const float width = FlowWidth(widths, Balanced(widths, metrics.separator, lines), metrics.separator) + 2 * PaddingX;
+        const float height = FlowHeight(lines, metrics) + 2 * PaddingY;
+        if (!(width > 0) || !(height > 0)) continue;
+        float factor = std::min({boxWidth / width, boxHeight / height, MaxFactor});
+        while (factor > 0 && (width * factor > boxWidth || height * factor > boxHeight)) factor = std::nextafter(factor, 0.f);
+        if (factor > best.factor) {
+            best.factor = factor;
+            bestWidth = width;
+        }
+    }
+    if (!(best.factor > 0)) return best;
+    best.starts = Greedy(widths, metrics.separator, std::max(boxWidth / best.factor, bestWidth) - 2 * PaddingX);
+    return best;
+}
+// Its natural size (panel pixels at 100 %): its items on the lines of their
+// groups, with its insets.
+struct Extent { float width = 0, height = 0; };
+Extent NaturalOf(const std::vector<float>& widths, const Items& items, const Metrics& metrics) {
+    const auto starts = GroupStarts(items);
+    return {FlowWidth(widths, starts, metrics.separator) + 2 * PaddingX, FlowHeight(starts.size(), metrics) + 2 * PaddingY};
+}
 
 // settings.perfOverlayCorner: 0 top left, 1 top right, 2 bottom left, 3
 // bottom right. Panel pixels, so the game's interface scale applies. At the
@@ -310,14 +468,16 @@ Point PanelPoint(float clientX, float clientY, float clientWidth, float clientHe
 }
 
 // The overlay's size (perfOverlayScaleX/Y, 1.17.1), as a window's: its width
-// and its height, each a percentage of its natural size (the box its text
-// needs at 100 %). Its text, insets and corners are drawn at the smaller one:
-// the largest size its box holds, its proportions kept (never clipped), from
-// its top-left; drawn again at each size, its text stays crisp.
+// and its height, each a percentage of its natural size (the box its items
+// need at 100 % on the lines of their groups). Its items then flow onto the
+// lines that give its text the largest size its box holds (Fit, 1.18.1), its
+// proportions kept (never clipped), from its top-left; drawn again at each
+// size, its text stays crisp. Before its items are measured (its first
+// frame), its text on its groups' lines at the smaller scale.
 constexpr int BaseScale = 100, MinScale = 50, MaxScale = 300; // Settings::ValidPerfOverlayScale
 struct Scales {
     int x = BaseScale, y = BaseScale;
-    int Text() const { return std::min(x, y); } // its text's, insets' and corners'
+    int Text() const { return std::min(x, y); } // its text's, insets' and corners' before its items are measured
     bool operator==(const Scales&) const = default;
 };
 // A size laid out at `from` percent, at `to` percent.
@@ -325,50 +485,84 @@ float Scaled(float size, int from, int to) { return size * static_cast<float>(to
 // A side of its box at `scale` percent of its natural length (panel pixels at
 // 100 %; 0 while unknown: none), rounded up so that its text always fits.
 float BoxAt(float natural, int scale) { return natural > 0 ? std::ceil(Scaled(natural, BaseScale, scale) - .001f) : 0.f; }
-// Its handles, where a press resizes it rather than moves it: its
-// bottom-right corner, the last CornerPixels of both sides at its text's size,
-// then its right and bottom edges, EdgePixels thick at that size. Each is at least
-// CornerScreen or EdgeScreen pixels of the screen whatever its size and the
-// interface's scale (`pixels`: the screen's pixels in a panel pixel); the
-// corner never wider than half of it nor higher than it, an edge never
-// thicker than a quarter of it: the rest of it always moves it.
+// Its handles, where a press resizes it rather than moves it, as a window's
+// (1.18.1: all four edges and corners): its corners, the last CornerPixels of
+// both sides at its text's size (`scale`, a percentage), then its edges,
+// EdgePixels thick at that size. Each is at least CornerScreen or EdgeScreen
+// pixels of the screen whatever its size and the interface's scale
+// (`pixels`: the screen's pixels in a panel pixel); a corner never wider nor
+// higher than a third of it, an edge never thicker than a quarter of it: its
+// middle always moves it.
 constexpr float CornerPixels = 16, CornerScreen = 18, EdgePixels = 5, EdgeScreen = 6;
-enum class ResizeHandle { Body, Corner, Right, Bottom };
-struct Handles { float cornerWidth = 0, cornerHeight = 0, right = 0, bottom = 0; };
-Handles HandleSizes(const Rect& box, int scale, float pixels) {
-    const float factor = static_cast<float>(scale) / static_cast<float>(BaseScale);
+enum class ResizeHandle { Body, Left, Right, Top, Bottom, TopLeft, TopRight, BottomLeft, BottomRight };
+// The side a handle moves on each axis: -1 its left or top side, 1 its right
+// or bottom side, 0 neither.
+int SideX(ResizeHandle handle) {
+    using enum ResizeHandle;
+    return handle == Left || handle == TopLeft || handle == BottomLeft ? -1 : handle == Right || handle == TopRight || handle == BottomRight ? 1 : 0;
+}
+int SideY(ResizeHandle handle) {
+    using enum ResizeHandle;
+    return handle == Top || handle == TopLeft || handle == TopRight ? -1 : handle == Bottom || handle == BottomLeft || handle == BottomRight ? 1 : 0;
+}
+struct Handles { float cornerWidth = 0, cornerHeight = 0, edgeX = 0, edgeY = 0; };
+Handles HandleSizes(const Rect& box, float scale, float pixels) {
+    const float factor = scale / static_cast<float>(BaseScale);
     const float screen = pixels > 0 && std::isfinite(pixels) ? pixels : 1;
     const float corner = std::max(CornerScreen / screen, CornerPixels * factor), edge = std::max(EdgeScreen / screen, EdgePixels * factor);
-    return {std::min(corner, box.width / 2), std::min(corner, box.height), std::min(edge, box.width / 4), std::min(edge, box.height / 4)};
+    return {std::min(corner, box.width / 3), std::min(corner, box.height / 3), std::min(edge, box.width / 4), std::min(edge, box.height / 4)};
 }
-// The handle under the point (x, y) of the overlay laid out as `box`.
-ResizeHandle HandleAt(const Rect& box, float x, float y, int scale, float pixels) {
+// The handle under the point (x, y) of the overlay laid out as `box`: a
+// corner first, then its left or right edge, then its top or bottom edge.
+ResizeHandle HandleAt(const Rect& box, float x, float y, float scale, float pixels) {
+    using enum ResizeHandle;
     const Handles sizes = HandleSizes(box, scale, pixels);
-    const float fromRight = box.x + box.width - x, fromBottom = box.y + box.height - y;
-    if (fromRight <= sizes.cornerWidth && fromBottom <= sizes.cornerHeight) return ResizeHandle::Corner;
-    if (fromRight <= sizes.right) return ResizeHandle::Right;
-    if (fromBottom <= sizes.bottom) return ResizeHandle::Bottom;
-    return ResizeHandle::Body;
+    const float fromLeft = x - box.x, fromRight = box.x + box.width - x, fromTop = y - box.y, fromBottom = box.y + box.height - y;
+    const int sideX = fromLeft <= sizes.cornerWidth ? -1 : fromRight <= sizes.cornerWidth ? 1 : 0;
+    const int sideY = fromTop <= sizes.cornerHeight ? -1 : fromBottom <= sizes.cornerHeight ? 1 : 0;
+    if (sideX && sideY) return sideY < 0 ? (sideX < 0 ? TopLeft : TopRight) : (sideX < 0 ? BottomLeft : BottomRight);
+    if (fromLeft <= sizes.edgeX) return Left;
+    if (fromRight <= sizes.edgeX) return Right;
+    if (fromTop <= sizes.edgeY) return Top;
+    if (fromBottom <= sizes.edgeY) return Bottom;
+    return Body;
 }
-const char* HandleName(ResizeHandle handle) { return handle == ResizeHandle::Right ? "right" : handle == ResizeHandle::Bottom ? "bottom" : "corner"; }
+const char* HandleName(ResizeHandle handle) {
+    switch (handle) {
+    case ResizeHandle::Left: return "left";
+    case ResizeHandle::Right: return "right";
+    case ResizeHandle::Top: return "top";
+    case ResizeHandle::Bottom: return "bottom";
+    case ResizeHandle::TopLeft: return "top-left";
+    case ResizeHandle::TopRight: return "top-right";
+    case ResizeHandle::BottomLeft: return "bottom-left";
+    case ResizeHandle::BottomRight: return "bottom-right";
+    case ResizeHandle::Body: break;
+    }
+    return "body";
+}
 // Core.UILogic.CursorType (Int64 flags, pinned snapshot) asked of the game's
 // cursor manager over the overlay, as its resizable windows ask: the double
-// arrow of the handle under the cursor (left-right on its right edge, up-down
-// on its bottom edge, diagonal on its corner), the move cursor elsewhere.
-constexpr int64_t CursorMove = 0x10000, CursorResizeEW = 0x20000, CursorResizeNS = 0x80000, CursorResizeNWSE = 0x100000;
+// arrow of the handle under the cursor (left-right on its left and right
+// edges, up-down on its top and bottom edges, one diagonal on its top-left
+// and bottom-right corners, the other on its top-right and bottom-left
+// ones), the move cursor elsewhere.
+constexpr int64_t CursorMove = 0x10000, CursorResizeEW = 0x20000, CursorResizeNESW = 0x40000, CursorResizeNS = 0x80000,
+    CursorResizeNWSE = 0x100000;
 int64_t CursorOf(ResizeHandle handle) {
-    return handle == ResizeHandle::Corner ? CursorResizeNWSE : handle == ResizeHandle::Right ? CursorResizeEW :
-        handle == ResizeHandle::Bottom ? CursorResizeNS : CursorMove;
+    const int x = SideX(handle), y = SideY(handle);
+    if (x && y) return x == y ? CursorResizeNWSE : CursorResizeNESW;
+    return x ? CursorResizeEW : y ? CursorResizeNS : CursorMove;
 }
 
 // The overlay dragged with the left button (perfOverlayDrag): a press on it
 // (the panel picks the overlay itself, not a game element above it), then
 // the cursor moving DragThreshold panel pixels. It follows the cursor,
 // keeping the grab offset, inside the margins. Pressed in one of its handles
-// (HandleAt), it is resized instead, as a window: its top-left stays put and
-// the edge held follows the cursor, its right edge its width, its bottom edge
-// its height, its bottom-right corner both, each its own way (ResizedScales).
-// The release (anywhere), the game's window losing
+// (HandleAt), it is resized instead, as a window: the edge held follows the
+// cursor and the opposite one stays put, its left or right edge its width,
+// its top or bottom edge its height, a corner both, each its own way
+// (ResizedScales). The release (anywhere), the game's window losing
 // the foreground or the interface hidden ends it and saves the place (and
 // the size) reached. Something of the game drawn over the point held (the
 // loading screen, a popup, the menu buttons) ends it too, back at the last
@@ -378,11 +572,15 @@ constexpr float DragThreshold = 4;
 struct Drag {
     enum Phase { Idle, Pressed, Moving } phase = Idle;
     bool down = true;            // the button as last seen; true until seen up, so that a press is always seen starting
-    bool resize = false;         // pressed in a handle: resized, its top-left kept, rather than moved
+    bool resize = false;         // pressed in a handle: resized, the sides opposite the handle kept, rather than moved
     ResizeHandle handle = ResizeHandle::Body; // that handle
-    float grabX = 0, grabY = 0;  // the cursor within the overlay at the press, the point held: from its top-left (from its bottom-right corner when resized)
+    // The cursor within the overlay at the press, the point held: from its
+    // top-left; resized, on each axis from the side the handle moves (from its
+    // right or bottom side on an axis it does not move).
+    float grabX = 0, grabY = 0;
     float pressX = 0, pressY = 0;
     float left = 0, top = 0;     // the overlay's top-left edge at the last move (at the press when resized)
+    float right = 0, bottom = 0; // resized: its right and bottom edges at the press, kept while its left or top side moves
     float seenLeft = 0, seenTop = 0; // its top-left edge when the panel last picked it at the point held
     float width = 0, height = 0, spaceWidth = 0, spaceHeight = 0; // its size and the panel's at the last move
     // Resized: its box and scales at the press, the scales drawn and those at
@@ -394,18 +592,21 @@ enum class DragStep { None, Move, Scale, End, Back };
 // The point held in an overlay laid out from `edge` over `size`: the grab
 // offset, kept inside the overlay (its text may shrink it meanwhile).
 float Held(float edge, float size, float grab) { return edge + std::clamp(grab, 0.f, std::max(0.f, size - 1)); }
-// The point held in the overlay laid out as `box`: from its top-left, or from
-// its bottom-right corner when resized.
+// The point held in the overlay laid out as `box`: from its top-left, or, when
+// resized, on each axis from the side its handle moves (from its right or
+// bottom side on an axis it does not move).
 Point HeldPoint(const Drag& drag, const Rect& box) {
-    if (drag.resize) return {Held(box.x, box.width, box.width - drag.grabX), Held(box.y, box.height, box.height - drag.grabY)};
-    return {Held(box.x, box.width, drag.grabX), Held(box.y, box.height, drag.grabY)};
+    if (!drag.resize) return {Held(box.x, box.width, drag.grabX), Held(box.y, box.height, drag.grabY)};
+    return {SideX(drag.handle) < 0 ? Held(box.x, box.width, drag.grabX) : Held(box.x, box.width, box.width - drag.grabX),
+        SideY(drag.handle) < 0 ? Held(box.y, box.height, drag.grabY) : Held(box.y, box.height, box.height - drag.grabY)};
 }
-// One side of a resize: the edge held (`reach` from the overlay's top-left
-// edge, at the grab offset) brought to the cursor, from that side's length at
-// the press (`length`, drawn at `start` percent); whole percents within
-// MinScale..MaxScale, never past the panel's margin (`room` from the top-left
-// edge to it), as a move keeps it (a panel too small for the smallest size:
-// the smallest size). Unchanged (`current`) without a length known.
+// One side of a resize: the edge held (`reach` from the opposite edge, which
+// stays put, at the grab offset) brought to the cursor, from that side's
+// length at the press (`length`, drawn at `start` percent); whole percents
+// within MinScale..MaxScale, never past the panel's margin (`room` from the
+// opposite edge to it), as a move keeps it (a panel too small for the
+// smallest size: the smallest size). Unchanged (`current`) without a length
+// known.
 int AxisScale(float reach, float length, int start, float room, int current) {
     if (!(length > 0)) return current;
     const float ratio = reach / length, fit = room / length, from = static_cast<float>(start);
@@ -414,41 +615,55 @@ int AxisScale(float reach, float length, int start, float room, int current) {
     const float most = std::clamp(std::floor(fit * from + .001f), static_cast<float>(MinScale), static_cast<float>(MaxScale));
     return static_cast<int>(std::lround(std::min(wanted, most)));
 }
-// A resize's scales with the cursor at (x, y), its top-left staying put: its
-// right edge changes its width only, its bottom edge its height only, its
-// corner both, each its own way (no longer along its diagonal).
+// A resize's scales with the cursor at (x, y), the sides opposite its handle
+// staying put: its left or right edge changes its width only, its top or
+// bottom edge its height only, a corner both, each its own way (never along
+// its diagonal).
 Scales ResizedScales(const Drag& drag, float x, float y, float spaceWidth, float spaceHeight) {
     Scales scales = drag.scales;
-    if (drag.handle != ResizeHandle::Bottom)
+    const int sideX = SideX(drag.handle), sideY = SideY(drag.handle);
+    if (sideX > 0)
         scales.x = AxisScale(x + drag.grabX - drag.left, drag.startWidth, drag.startScales.x, spaceWidth - EdgeMargin - drag.left, drag.scales.x);
-    if (drag.handle != ResizeHandle::Right)
+    else if (sideX < 0)
+        scales.x = AxisScale(drag.right - (x - drag.grabX), drag.startWidth, drag.startScales.x, drag.right - EdgeMargin, drag.scales.x);
+    if (sideY > 0)
         scales.y = AxisScale(y + drag.grabY - drag.top, drag.startHeight, drag.startScales.y, spaceHeight - EdgeMargin - drag.top, drag.scales.y);
+    else if (sideY < 0)
+        scales.y = AxisScale(drag.bottom - (y - drag.grabY), drag.startHeight, drag.startScales.y, drag.bottom - EdgeMargin, drag.scales.y);
     return scales;
 }
+// A resized overlay's top-left edge for its box `width` wide and `height`
+// high: its left or top side follows the cursor, its right or bottom side
+// kept; its top-left kept otherwise.
+float ResizedLeft(const Drag& drag, float width) { return SideX(drag.handle) < 0 ? drag.right - width : drag.left; }
+float ResizedTop(const Drag& drag, float height) { return SideY(drag.handle) < 0 ? drag.bottom - height : drag.top; }
 // One frame of a press or a drag: `press` the button going down this frame,
 // `located` the cursor at (x, y) in panel pixels with the game's window in
 // the foreground and both layouts known, `reached` the panel picking the
 // overlay: under the cursor at a press, at the point held afterwards;
-// `scales` the overlay's (its handles at its text's), `pixels` the screen's
-// pixels in a panel pixel (its handles' least size). Move: draw the overlay at
-// (left, top); Scale: draw it at `scales`, its top-left at (left, top); End:
-// save that place (and those scales); Back: the point held covered, draw the
-// overlay back at (left, top), where the panel last picked it (or at the
-// scales it had then), and save it.
+// `scales` the overlay's, `text` its text's size (a percentage; its handles
+// at it; 0: at the smaller scale), `pixels` the screen's pixels in a panel
+// pixel (its handles' least size). Move: draw the overlay at (left, top);
+// Scale: draw it at `scales`, its top-left at ResizedLeft and ResizedTop for
+// its box at them; End: save that place (and those scales); Back: the point
+// held covered, draw the overlay back at (left, top), where the panel last
+// picked it (or at the scales it had then), and save it.
 DragStep Advance(Drag& drag, bool press, bool down, bool located, bool reached, float x, float y, const Rect& box,
-    float spaceWidth, float spaceHeight, Scales scales = {}, float pixels = 1) {
+    float spaceWidth, float spaceHeight, Scales scales = {}, float pixels = 1, float text = 0) {
     switch (drag.phase) {
     case Drag::Idle:
         if (!press || !located || !reached) return DragStep::None;
         drag.phase = Drag::Pressed;
-        drag.handle = HandleAt(box, x, y, scales.Text(), pixels);
+        drag.handle = HandleAt(box, x, y, text > 0 ? text : static_cast<float>(scales.Text()), pixels);
         drag.resize = drag.handle != ResizeHandle::Body;
-        drag.grabX = drag.resize ? box.x + box.width - x : x - box.x;
-        drag.grabY = drag.resize ? box.y + box.height - y : y - box.y;
+        drag.grabX = drag.resize && SideX(drag.handle) >= 0 ? box.x + box.width - x : x - box.x;
+        drag.grabY = drag.resize && SideY(drag.handle) >= 0 ? box.y + box.height - y : y - box.y;
         drag.pressX = x;
         drag.pressY = y;
         drag.left = drag.seenLeft = box.x;
         drag.top = drag.seenTop = box.y;
+        drag.right = box.x + box.width;
+        drag.bottom = box.y + box.height;
         drag.startWidth = box.width;
         drag.startHeight = box.height;
         drag.startScales = drag.scales = drag.seenScales = scales;
@@ -515,7 +730,6 @@ constexpr uint64_t CleanupRetryMs = 500, CleanupGiveUpMs = 10000;
 // The device worker: a sample a second; the game's thread waits at most
 // JoinMs for it to stop (it then ends by itself after its PDH call).
 constexpr DWORD DevicePeriodMs = 1000, JoinMs = 250;
-constexpr float PaddingX = 8, PaddingY = 4, Radius = 6, FontPixels = 12;
 struct Rgba { float r, g, b, a; };
 constexpr Rgba BackgroundTint{0.f, 0.f, 0.f, .55f}, TextTint{.93f, .93f, .93f, 1.f};
 // Its grip, shown while the cursor is over it and during a drag: six dots in
@@ -571,7 +785,7 @@ struct Natives {
     Klass element{}, label{}, length{}, style{}, layerService{}, layerHost{}, panelType{}, cursors{};
     Method parent{}, panel{}, name{}, hierarchy{}, insert{}, remove{}, picking{}, setName{}, getStyle{}, layout{};
     Method childCount{}, childAt{}, focusable{}, labelCtor{}, setText{}, richText{}, documentRoot{}, pick{};
-    Method elementCtor{}, visible{}, setCursor{}, removeCursor{};
+    Method elementCtor{}, visible{}, setCursor{}, removeCursor{}, measure{};
     std::array<Method, prop::Count> get{}, set{};
     GcSize gcUsed = nullptr, gcHeap = nullptr;
 } n;
@@ -690,7 +904,7 @@ struct Ui {
     Ref grip;                            // its grip: an element right above the label, holding its dots
     std::array<Ref, GripDots> dots;
     bool gripShown = false, gripLogged = false;
-    int gripScale = 0;                   // the size its dots are drawn at
+    float gripScale = 0;                 // the size its dots are drawn at (a percentage)
     float gripX = std::numeric_limits<float>::quiet_NaN(), gripY = std::numeric_limits<float>::quiet_NaN(); // its top-left written
     uint64_t hoverAt = 0;                // the next look at the cursor while no press goes on
     int64_t cursor = 0;                  // the cursor asked of the game's cursor manager for it (CursorOf); 0: none
@@ -700,15 +914,30 @@ struct Ui {
     bool pending = false;                // the mouse's place waits for the label's layout
     float horizontal = 0, vertical = 0;  // the values written on its anchored sides (those of its corner)
     Scales scales;                       // the sizes drawn: perfOverlayScaleX/Y, or a resize's in progress
-    bool rescaled = false;               // drawn at other sizes since the last frame: still laid out at the sizes before
-    std::string text;
-    // Its natural size (panel pixels at 100 %; 0 until its first layout): the
-    // widest and the tallest its text has been laid out, its box written at
-    // its sizes (BoxAt): its free edges stay still while the figures change.
-    // Provisional while it comes from a text without figures (Placeholder).
+    // Drawn at other sizes since the last frame (its box, or its text's
+    // size): still laid out, and its font still resolved, as before.
+    bool rescaled = false;
+    std::string text;                    // the text shown: its items on their lines
+    Items items;                         // the figures shown
+    float font = 1;                      // the factor its text, insets and corners are drawn at
+    size_t lines = 0;                    // the lines its items are on (0: their groups', not measured yet)
+    // Its items measured (1.18.1), with its own font as laid out, at 100 %:
+    // each shape once, the widest of each slot, the separator and the lines.
+    std::map<std::string, float> shapes;
+    std::array<float, SlotCount> widths{};
+    Metrics metrics;
+    bool learned = false;                // the separator and the lines measured
+    bool relayout = false;               // items to lay out once they can be measured (drawn again since the last frame)
+    bool estimated = false;              // a size estimated (MeasureTextSize unusable): logged once
+    // Its natural size (panel pixels at 100 %; 0 until its items are
+    // measured): the widest and the tallest its items have been on the lines
+    // of their groups, its box written at its sizes (BoxAt): its free edges
+    // stay still while the figures change. Provisional while it comes from a
+    // text without figures (Placeholder).
     float naturalWidth = 0, naturalHeight = 0;
     bool provisional = false;
-    uint64_t nextCheck = 0, nextRefresh = 0, settleAt = 0;
+    float boxWidth = 0, boxHeight = 0;   // its box written (its minimum width and height); 0: none
+    uint64_t nextCheck = 0, nextRefresh = 0, settleAt = 0, learnAt = 0;
 };
 struct Throttle { std::string last; uint64_t until = 0; };
 // sampling: the overlay on in a usable session (the frame call works);
@@ -780,6 +1009,8 @@ void Install() {
     const auto text = api.Class(UiImage, UiSpace, "TextElement");
     n.setText = api.FindVerified(text, "set_text", 1, 0x564B780);
     n.richText = api.FindVerified(text, "set_enableRichText", 1, 0x564B1E0);
+    // Its items measured with its own font (as the map info measures its tooltip).
+    n.measure = api.FindVerified(text, "MeasureTextSize", 5, 0x5645AF0);
     n.style = api.Class(UiImage, UiSpace, "InlineStyleAccess");
     const std::string accessor = "UnityEngine.UIElements.IStyle.";
     for (size_t i = 0; i < prop::Count; ++i) {
@@ -1068,13 +1299,10 @@ void Pixels(Obj style, Property property, float pixels) {
     Write(style, property, api.object_unbox(length.get()));
 }
 void Paint(Obj style, Property property, Rgba color) { Write(style, property, &color); }
-// The overlay at `scales`: its text, insets and corners at their smaller one;
-// its bottom-right corner left square while the mouse can move and resize it
-// (`grip`), where its grip shows while the cursor is over it; once its
-// natural size is known, its box at each one (its minimum width and height:
-// its text never shrinks it, and grows it if ever it needs more).
-void StyleScale(Obj style, const Scales& scales, bool grip, float naturalWidth, float naturalHeight) {
-    const float factor = static_cast<float>(scales.Text()) / static_cast<float>(BaseScale);
+// Its text, insets and corners at `factor` (FontPixels at 1); its
+// bottom-right corner left square while the mouse can move and resize it
+// (`grip`), where its grip shows while the cursor is over it.
+void StyleText(Obj style, float factor, bool grip) {
     Pixels(style, prop::PaddingLeft, PaddingX * factor);
     Pixels(style, prop::PaddingRight, PaddingX * factor);
     Pixels(style, prop::PaddingTop, PaddingY * factor);
@@ -1083,17 +1311,6 @@ void StyleScale(Obj style, const Scales& scales, bool grip, float naturalWidth, 
         Pixels(style, radius, Radius * factor);
     Pixels(style, prop::RadiusBottomRight, grip ? 0.f : Radius * factor);
     Pixels(style, prop::FontSize, FontPixels * factor);
-    if (naturalWidth > 0) Pixels(style, prop::MinWidth, BoxAt(naturalWidth, scales.x));
-    if (naturalHeight > 0) Pixels(style, prop::MinHeight, BoxAt(naturalHeight, scales.y));
-}
-// The label drawn at `scales`. The game lays it out again after the frame (its
-// panels' update comes after the compositor's): until the next frame, its
-// layout is that of the sizes before, which neither grows nor places it.
-void DrawAt(const Scales& scales) {
-    Ref style(StyleOf(ui.label.get()));
-    StyleScale(style.get(), scales, ui.picking == PickingPosition, ui.naturalWidth, ui.naturalHeight);
-    ui.scales = scales;
-    ui.rescaled = true;
 }
 void Enum(Obj style, Property property, int value) { Write(style, property, &value); }
 void SetText(Obj label, const std::string& text) {
@@ -1108,6 +1325,151 @@ bool Usable(const Rect& box) {
         box.width > .5f && box.height > .5f && box.width <= 16384 && box.height <= 16384;
 }
 void Remember(const Rect& box) { lastWidth = box.width; lastHeight = box.height; }
+
+// ------------------------------------------------------- its items' layout
+// A text's size as the label lays it out (TextElement.MeasureTextSize, no
+// width or height limit), with its font as resolved: drawn at `ui.font` and
+// not drawn again since the last frame (Learn). At 100 %. An estimate when
+// the game cannot tell (no font yet, an error): EstimateGlyph a character,
+// EstimateLine a line, logged once a label.
+constexpr float EstimateGlyph = 7, EstimateLine = 16;
+Point TextSize(const std::string& text) {
+    std::string problem = "invalid";
+    try {
+        Ref value(api.string_new(text.c_str()));
+        float none = 0;
+        int undefined = 0; // VisualElement.MeasureMode.Undefined
+        const auto size = api.Value<Point>(api.Invoke(n.measure, ui.label.get(), {value.get(), &none, &undefined, &none, &undefined}));
+        if (std::isfinite(size.x) && std::isfinite(size.y) && size.x > 0 && size.y > 0 && size.x < 16384 && size.y < 16384)
+            return {size.x / ui.font, size.y / ui.font};
+    } catch (const std::exception& error) {
+        problem = error.what();
+    }
+    if (!ui.estimated) {
+        ui.estimated = true;
+        Log("PERF_OVERLAY_MEASURE_ESTIMATED " + problem);
+    }
+    size_t glyphs = 0, longest = 0, lines = 1;
+    for (const unsigned char c : text) {
+        if (c == '\n') { ++lines; glyphs = 0; continue; }
+        if ((c & 0xC0) != 0x80) longest = std::max(longest, ++glyphs);
+    }
+    return {EstimateGlyph * static_cast<float>(longest), EstimateLine * static_cast<float>(lines)};
+}
+// The items shown, each its slot's widest shape.
+std::vector<float> WidthsOf(const Items& items) {
+    std::vector<float> widths;
+    widths.reserve(items.size());
+    for (const auto& item : items) widths.push_back(ui.widths[item.slot]);
+    return widths;
+}
+// The items shown measured: each new shape once, then the widest of each
+// slot kept (never narrower: no jitter while the figures change), and once a
+// label the separator and the lines. Only while its font is resolved at the
+// factor drawn: laid out since it was last drawn (ui.rescaled, cleared every
+// frame), with a usable layout; false otherwise (tried again next frame).
+bool Learn() {
+    bool known = ui.learned;
+    for (const auto& item : ui.items) known = known && ui.shapes.contains(Shape(item.text));
+    if (!known) {
+        if (ui.rescaled || !(ui.font > 0) || !Usable(LayoutOf(ui.label.get()))) return false;
+        if (!ui.learned) {
+            const Point one = TextSize("0"), two = TextSize("0\n0"), pair = TextSize(std::string("0") + Separator + "0");
+            ui.metrics.first = one.y;
+            ui.metrics.pitch = two.y > one.y ? two.y - one.y : one.y;
+            ui.metrics.separator = std::max(0.f, pair.x - 2 * one.x);
+            ui.learned = true;
+        }
+        for (const auto& item : ui.items) {
+            const auto shape = Shape(item.text);
+            if (!ui.shapes.contains(shape)) ui.shapes[shape] = TextSize(shape).x;
+        }
+    }
+    for (const auto& item : ui.items) ui.widths[item.slot] = std::max(ui.widths[item.slot], ui.shapes.at(Shape(item.text)));
+    return true;
+}
+bool Resizing() { return drag.resize && drag.phase != Drag::Idle; }
+// Its natural size from its items on the lines of their groups: unknown
+// until they are measured, then only ever growing, its free edges (the left
+// one in the right corners) still while the figures change width or a line
+// comes and goes; never during a resize (the sizes its handles follow). A
+// text without figures (Placeholder) sizes it only until its first figures
+// (provisional), which size it again from scratch, never after them. Kept at
+// 100 %: its sizes scale it.
+void Grow() {
+    const bool placeholder = Placeholder(ui.items);
+    const bool unknown = !(ui.naturalWidth > 0) || !(ui.naturalHeight > 0);
+    if (Resizing() && !unknown) return;
+    if (placeholder && !unknown && !ui.provisional) return;
+    if (!placeholder && ui.provisional) ui.naturalWidth = ui.naturalHeight = 0;
+    const Extent natural = NaturalOf(WidthsOf(ui.items), ui.items, ui.metrics);
+    ui.naturalWidth = std::max(ui.naturalWidth, natural.width);
+    ui.naturalHeight = std::max(ui.naturalHeight, natural.height);
+    if (unknown || ui.provisional) ui.provisional = placeholder;
+}
+// The overlay laid out (1.18.1): its natural size first (Grow), its box at
+// its sizes (BoxAt, its minimum width and height), then its items on the
+// lines that give its text the largest size its box holds (Fit), its text,
+// insets and corners drawn at that size. Each written only when it changes.
+// Another text size, or a box the label is not laid out at yet, is laid out
+// again after the frame (ui.rescaled): placed again then when at the mouse's
+// place.
+void Lay() {
+    Grow();
+    const float width = BoxAt(ui.naturalWidth, ui.scales.x), height = BoxAt(ui.naturalHeight, ui.scales.y);
+    const Flow flow = Fit(WidthsOf(ui.items), ui.metrics, width, height);
+    if (!(flow.factor > 0)) return;
+    ui.lines = flow.Lines();
+    Ref style(StyleOf(ui.label.get()));
+    if (flow.factor != ui.font) {
+        StyleText(style.get(), flow.factor, ui.picking == PickingPosition);
+        ui.font = flow.factor;
+        ui.rescaled = true;
+    }
+    if (width != ui.boxWidth || height != ui.boxHeight) {
+        Pixels(style.get(), prop::MinWidth, width);
+        Pixels(style.get(), prop::MinHeight, height);
+        ui.boxWidth = width;
+        ui.boxHeight = height;
+        const Rect laid = ui.rescaled ? Rect{} : LayoutOf(ui.label.get());
+        if (!Usable(laid) || std::fabs(laid.width - width) > .5f || std::fabs(laid.height - height) > .5f) {
+            ui.rescaled = true;
+            if (ui.spot.x >= 0 && drag.phase == Drag::Idle) ui.pending = true;
+        }
+    }
+    const auto text = Join(ui.items, flow.starts);
+    if (text != ui.text) {
+        SetText(ui.label.get(), text);
+        ui.text = text;
+    }
+}
+// The items shown measured, then laid out; when they cannot be measured yet
+// (drawn again since the last frame), at the next frame (FrameUi), the text
+// shown kept meanwhile.
+void Relayout() {
+    if (!Learn()) { ui.relayout = true; return; }
+    ui.relayout = false;
+    Lay();
+}
+// The label drawn at `scales`: laid out for its box at them once its items are
+// measured (new figures not measured yet: at the next frame, Relayout);
+// before, its text on its groups' lines at the smaller one. The game lays it
+// out again after the frame (its panels' update comes after the
+// compositor's): until the next frame, its layout is that of the sizes
+// before, which neither measures, grows nor places it.
+void DrawAt(const Scales& scales) {
+    ui.scales = scales;
+    if (ui.learned) {
+        if (Learn()) Lay();
+        else ui.relayout = true;
+    } else {
+        const float factor = static_cast<float>(scales.Text()) / static_cast<float>(BaseScale);
+        Ref style(StyleOf(ui.label.get()));
+        StyleText(style.get(), factor, ui.picking == PickingPosition);
+        ui.font = factor;
+    }
+    ui.rescaled = true;
+}
 
 // ---------------------------------------------------------------- its grip
 // A plain element of the grip, absolute, never picked: a press on it reaches
@@ -1125,8 +1487,8 @@ Ref GripElement() {
 // Its dots at `scale`: a triangle against the bottom-right corner of the
 // grip's own box (GripExtent a side), one dot in its top row, three in its
 // last.
-void StyleGrip(int scale) {
-    const float factor = static_cast<float>(scale) / static_cast<float>(BaseScale);
+void StyleGrip(float scale) {
+    const float factor = scale / static_cast<float>(BaseScale);
     Ref box(StyleOf(ui.grip.get()));
     Pixels(box.get(), prop::PaddingLeft, GripExtent * factor);
     Pixels(box.get(), prop::PaddingTop, GripExtent * factor);
@@ -1143,7 +1505,7 @@ void StyleGrip(int scale) {
 }
 // The grip, built hidden for the label at `scale`: its dots in its text's
 // colour, sized by their insets (no measure, no text).
-void BuildGrip(int scale) {
+void BuildGrip(float scale) {
     ui.grip = GripElement();
     Ref name(api.string_new(GripName));
     api.Invoke(n.setName, ui.grip.get(), {name.get()});
@@ -1161,10 +1523,10 @@ void BuildGrip(int scale) {
 // The grip against the bottom-right corner of the overlay drawn at (left,
 // top) with this size (panel pixels), at its text's size.
 void PlaceGrip(float left, float top, float width, float height) {
-    const int scale = ui.scales.Text();
+    const float scale = ui.font * static_cast<float>(BaseScale);
     const bool rescaled = ui.gripScale != scale;
     if (rescaled) StyleGrip(scale);
-    const float extent = Scaled(GripExtent, BaseScale, scale), x = left + width - extent, y = top + height - extent;
+    const float extent = GripExtent * ui.font, x = left + width - extent, y = top + height - extent;
     if (!rescaled && std::fabs(x - ui.gripX) < .25f && std::fabs(y - ui.gripY) < .25f) return;
     Ref style(StyleOf(ui.grip.get()));
     Pixels(style.get(), prop::Left, x);
@@ -1320,12 +1682,14 @@ void Create(Layer& found, int corner, const Parts& parts, uint64_t now) {
     Enum(style.get(), prop::Position, PositionAbsolute);
     Pixels(style.get(), placement.right ? prop::Right : prop::Left, horizontal);
     Pixels(style.get(), placement.bottom ? prop::Bottom : prop::Top, vertical);
-    StyleScale(style.get(), scales, picking == PickingPosition, 0, 0);
+    const float factor = static_cast<float>(scales.Text()) / static_cast<float>(BaseScale);
+    StyleText(style.get(), factor, picking == PickingPosition);
     Paint(style.get(), prop::Background, BackgroundTint);
     Paint(style.get(), prop::Color, TextTint);
     Enum(style.get(), prop::WhiteSpace, WhiteSpacePre);
     Enum(style.get(), prop::TextAlign, TextUpperLeft);
-    const auto text = Text(Measure(parts));
+    Items items = ItemsOf(Measure(parts));
+    const auto text = Join(items, GroupStarts(items));
     SetText(label.get(), text);
     ui = Ui{};
     ui.label = std::move(label);
@@ -1339,11 +1703,14 @@ void Create(Layer& found, int corner, const Parts& parts, uint64_t now) {
     ui.horizontal = horizontal;
     ui.vertical = vertical;
     ui.scales = scales;
+    ui.font = factor;
+    ui.rescaled = true; // not laid out yet: measured at the next frame
     ui.text = text;
+    ui.items = std::move(items);
     ui.nextCheck = now + CheckMs;
     ui.nextRefresh = now + RefreshMs;
     drag = Drag{};
-    BuildGrip(scales.Text());
+    BuildGrip(factor * static_cast<float>(BaseScale));
     int first = 0, above = 1;
     api.Invoke(n.insert, ui.layer.get(), {&first, ui.label.get()});
     api.Invoke(n.insert, ui.layer.get(), {&above, ui.grip.get()});
@@ -1378,7 +1745,7 @@ void UpdatePicking() {
     ShowGrip(false);
     PointAt(0);
     Ref style(StyleOf(ui.label.get()));
-    Pixels(style.get(), prop::RadiusBottomRight, picking == PickingPosition ? 0.f : Scaled(Radius, BaseScale, ui.scales.Text()));
+    Pixels(style.get(), prop::RadiusBottomRight, picking == PickingPosition ? 0.f : Radius * ui.font);
 }
 // Takes the label and its grip out of the game's layer (when still in it)
 // and forgets them; on a failure everything is kept for another try. Its
@@ -1398,81 +1765,27 @@ void RemoveUi() {
     if (ui.label.get() && api.Invoke(n.parent, ui.label.get())) api.Invoke(n.remove, ui.label.get());
     ui = Ui{};
 }
-// Its natural size is still to learn: its first layout (or its first
-// figures', Remeasure) not measured yet.
+// Its natural size is still to learn: its items not measured yet.
 bool Unmeasured() { return !(ui.naturalWidth > 0) || !(ui.naturalHeight > 0); }
-// Its text may size it: a text without figures (Placeholder) only until its
-// first figures (provisional), figures unless they are to be measured again.
-bool Sizing() { return Placeholder(ui.text) ? Unmeasured() || ui.provisional : !ui.provisional; }
-// Its natural size from its layout at the sizes drawn: unknown until its
-// first layout, then only ever growing, to the size its text was last laid
-// out at beyond its box (at its text's size): its free edges (the left one
-// in the right corners) stay still while the figures change width or a line
-// comes and goes. A text without figures (Placeholder) sizes it only until
-// its first figures (provisional: its box at its sizes all the same), never
-// after them. Kept at 100 %: a resize scales it with the rest. A box larger
-// than its text's (a width or a height of its own) is laid out again, then
-// placed for it.
-void Grow(const Rect& box) {
-    if (!Sizing() || !Usable(box) || box.width > 4096 || box.height > 4096) return;
-    const bool placeholder = Placeholder(ui.text), unknown = Unmeasured();
-    const bool wider = box.width > BoxAt(ui.naturalWidth, ui.scales.x) + .5f, taller = box.height > BoxAt(ui.naturalHeight, ui.scales.y) + .5f;
-    if (!wider && !taller) return;
-    const int scale = ui.scales.Text();
-    if (wider) ui.naturalWidth = Scaled(box.width, scale, BaseScale);
-    if (taller) ui.naturalHeight = Scaled(box.height, scale, BaseScale);
-    if (unknown) ui.provisional = placeholder;
-    const float width = BoxAt(ui.naturalWidth, ui.scales.x), height = BoxAt(ui.naturalHeight, ui.scales.y);
-    Ref style(StyleOf(ui.label.get()));
-    Pixels(style.get(), prop::MinWidth, width);
-    Pixels(style.get(), prop::MinHeight, height);
-    if (width <= box.width + .5f && height <= box.height + .5f) return;
-    ui.rescaled = true;
-    if (ui.spot.x >= 0) ui.pending = true;
-}
-// Its first figures after a text without any: its natural size forgotten and
-// its box laid out without its minimum sizes, to be measured again from them
-// at the next frame (Unmeasured).
-void Remeasure() {
-    ui.naturalWidth = ui.naturalHeight = 0;
-    ui.provisional = false;
-    Ref style(StyleOf(ui.label.get()));
-    Pixels(style.get(), prop::MinWidth, 0);
-    Pixels(style.get(), prop::MinHeight, 0);
-    ui.rescaled = true;
-    if (ui.spot.x >= 0) ui.pending = true;
-}
-// A resize pressed before its natural size is known: its box as seen, its
-// text's at its text's size on both sides (no minimum size written), is that
-// natural size at that size. Each side held starts from it (the edge held
-// stays under the cursor), the other keeps its size, drawn so at once.
-void Adopt(const Rect& box) {
-    if (!Unmeasured()) return;
-    const int scale = ui.scales.Text();
-    ui.naturalWidth = Scaled(box.width, scale, BaseScale);
-    ui.naturalHeight = Scaled(box.height, scale, BaseScale);
-    ui.provisional = Placeholder(ui.text);
-    drag.startScales = drag.scales = drag.seenScales = Scales{drag.handle == ResizeHandle::Bottom ? ui.scales.x : scale,
-        drag.handle == ResizeHandle::Right ? ui.scales.y : scale};
-    DrawAt(drag.scales);
-}
+// About twice a second: placed again at the mouse's place for the label's and
+// the panel's sizes (new figures, resolution or interface scale), then its
+// figures measured; new ones laid out (Relayout), on its groups' lines until
+// its items are measured.
 void Refresh(uint64_t now) {
     ui.nextRefresh = now + RefreshMs;
-    // Never during a resize, nor before the game lays it out at new sizes:
-    // its layout may still be that of the sizes before.
-    const bool resizing = drag.resize && drag.phase != Drag::Idle;
-    if (!ui.rescaled && !resizing && Sizing()) Grow(LayoutOf(ui.label.get()));
-    // At the mouse's place, placed again for the label's and the panel's
-    // sizes (new figures, resolution or interface scale).
     if (ui.spot.x >= 0 && drag.phase == Drag::Idle) Settle();
-    const auto text = Text(Measure(ui.parts));
+    Items items = ItemsOf(Measure(ui.parts));
+    if (items == ui.items) return;
+    ui.items = std::move(items);
+    if (ui.learned) {
+        Relayout();
+        return;
+    }
+    const auto text = Join(ui.items, GroupStarts(ui.items));
     if (text != ui.text) {
         SetText(ui.label.get(), text);
         ui.text = text;
     }
-    // Its first figures after a text without any: measured again from them
-    // (never during a resize, which draws its box from its natural size).
-    if (ui.provisional && !Placeholder(ui.text) && !resizing) Remeasure();
 }
 
 // -------------------------------------------------------- the mouse placement
@@ -1511,7 +1824,7 @@ void Hover(uint64_t now) {
         y >= box.y && y < box.y + box.height && Picked(x, y);
     if (over) PlaceGrip(box.x, box.y, box.width, box.height);
     ShowGrip(over);
-    PointAt(over ? CursorOf(HandleAt(box, x, y, ui.scales.Text(), pixels)) : 0);
+    PointAt(over ? CursorOf(HandleAt(box, x, y, ui.font * static_cast<float>(BaseScale), pixels)) : 0);
 }
 // The overlay's own settings (its place and size, perfOverlayShown and the
 // part its top-bar button ticks), saved once in the settings file, so they
@@ -1530,14 +1843,16 @@ void Commit(Settings next, const std::string& done, const char* failed) {
         Log(std::string(failed) + error.what());
     }
 }
-// A resize step: the overlay drawn at `scales`, its top-left kept where it
-// was at the press (a label anchored by its right or bottom side moved by
-// them, for its box at those scales), its grip at its new corner.
+// A resize step: the overlay drawn at `scales` (its items flowing again for
+// that box), the sides opposite its handle kept where they were at the press
+// (ResizedLeft and ResizedTop; a label anchored by its right or bottom side
+// moved by them), its grip at its new bottom-right corner.
 void Rescale(const Scales& scales, const Rect& layer) {
     if (!(scales == ui.scales)) DrawAt(scales);
     const float width = BoxAt(ui.naturalWidth, scales.x), height = BoxAt(ui.naturalHeight, scales.y);
-    MoveTo(drag.left, drag.top, layer, width, height);
-    PlaceGrip(drag.left, drag.top, width, height);
+    const float left = ResizedLeft(drag, width), top = ResizedTop(drag, height);
+    MoveTo(left, top, layer, width, height);
+    PlaceGrip(left, top, width, height);
 }
 // The drop, or the end of a resize: the place reached (perfOverlayX/Y) for
 // the box drawn then, and its sizes (perfOverlayScaleX/Y).
@@ -1545,7 +1860,8 @@ void SavePlace() {
     const Scales scales = drag.resize ? drag.scales : ui.scales;
     const float width = drag.resize ? BoxAt(ui.naturalWidth, scales.x) : drag.width;
     const float height = drag.resize ? BoxAt(ui.naturalHeight, scales.y) : drag.height;
-    const Spot spot{PlaceOfEdge(drag.left, width, drag.spaceWidth), PlaceOfEdge(drag.top, height, drag.spaceHeight)};
+    const float left = drag.resize ? ResizedLeft(drag, width) : drag.left, top = drag.resize ? ResizedTop(drag, height) : drag.top;
+    const Spot spot{PlaceOfEdge(left, width, drag.spaceWidth), PlaceOfEdge(top, height, drag.spaceHeight)};
     ui.spot = spot;
     ui.pending = false;
     const auto& saved = module->settings;
@@ -1591,7 +1907,7 @@ void DragFrame(uint64_t now) {
         const Point held = drag.phase == Drag::Idle ? Point{x, y} : HeldPoint(drag, box);
         reached = Picked(held.x, held.y);
     }
-    switch (Advance(drag, press, down, located, reached, x, y, box, layer.width, layer.height, ui.scales, pixels)) {
+    switch (Advance(drag, press, down, located, reached, x, y, box, layer.width, layer.height, ui.scales, pixels, ui.font * static_cast<float>(BaseScale))) {
     case DragStep::Move:
         Remember(box);
         MoveTo(drag.left, drag.top, layer, box.width, box.height);
@@ -1610,10 +1926,14 @@ void DragFrame(uint64_t now) {
     case DragStep::End:
         SavePlace();
         ui.hoverAt = 0; // whether the cursor is still over it (its grip, its cursor): at the next frame
+        if (drag.resize) ui.relayout = true; // its natural size grows again from the figures that came meanwhile
         break;
     case DragStep::None:
         if (drag.phase == Drag::Pressed) {
-            if (drag.resize) Adopt(box);
+            // Its first frame, its items not measured yet: no size to
+            // resize from, the press let go (the button seen down: no other
+            // press until released).
+            if (drag.resize && (!ui.learned || Unmeasured())) { drag.phase = Drag::Idle; break; }
             PlaceGrip(box.x, box.y, box.width, box.height);
             PointAt(CursorOf(drag.handle)); // the handle pressed, whatever the last look saw
         }
@@ -1622,16 +1942,20 @@ void DragFrame(uint64_t now) {
     if (drag.phase != Drag::Idle) ShowGrip(true);
 }
 // Never throws (the compositor's frame calls it): an error stops the drag. A
-// new label's natural size is learned at its first layout (its box then
-// written at its sizes), then the mouse's place is applied for that box.
+// new label's items are measured at its first layout (its box then written
+// at its sizes, its items laid out in it), and so are new figures that could
+// not be at once (Relayout); then the mouse's place is applied for that box.
 void FrameUi(uint64_t now) {
     ui.rescaled = false; // laid out since the last frame, at the sizes drawn
     try {
+        if ((ui.relayout || !ui.learned) && now >= ui.learnAt) {
+            ui.learnAt = ui.learned ? now : now + SettleMs; // a label not laid out yet: looked at again 50 ms later
+            Relayout();
+        }
         DragFrame(now);
-        if ((ui.pending || Unmeasured()) && drag.phase == Drag::Idle && !ui.rescaled && now >= ui.settleAt) {
+        if (ui.pending && drag.phase == Drag::Idle && !ui.rescaled && now >= ui.settleAt) {
             ui.settleAt = now + SettleMs;
-            if (Unmeasured()) Grow(LayoutOf(ui.label.get()));
-            if (ui.pending) Settle();
+            Settle();
         }
     } catch (const std::exception& error) {
         drag = Drag{};
