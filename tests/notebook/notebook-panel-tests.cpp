@@ -620,8 +620,30 @@ int main(){
         OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
         Check(NoHint(window)&&StatusText(window).empty()&&!Shown(Footer(window)),"Neither button nor the game's menu: still no hint, the status line takes no room");
         RestoreNotebookPanel();menusAvailable=true;owner.settings.notebookCopyButton=owner.settings.notebookTravelButton=true;owner.settings.notebookCompact=false;
+        // 1.20.2: the game leaves the world (an inactivity disconnection, a logout, a character selection):
+        // the notebook closes like the game's own windows and stays closed on reconnection.
+        OpenNotebookPanel();TickNotebookPanel();window=latestWindow;
+        Check(Panel(window)&&toolsUi::Visible("notebook"),"The notebook is open in the world");
+        CloseNotebookPanelOffWorld();
+        Check(!Panel(window)&&!toolsUi::Visible("notebook")&&!NotebookPanelCleanupPending()&&menuRows.empty(),"Leaving the world closes the notebook and releases its row menus");
+        TickNotebookPanel();Check(!Panel(window)&&latestWindow==window,"Back in the world, it does not reopen by itself");
+        CloseNotebookPanelOffWorld();Check(!Panel(window)&&latestWindow==window,"Closed, each further pump off the world does nothing");
+        // An unsaved draft closes too, unsaved, and comes back in its tab at the next opening.
+        OpenNotebookPanel();TickNotebookPanel();window=latestWindow;inputs=Inputs(window);ClickTab(window,"Notes");
+        Get(inputs[0]).text="Brouillon hors ligne";Get(inputs[3]).text="Tapé avant la déconnexion";
+        const auto savedCount=notebook::Read(path).entries.size();
+        CloseNotebookPanelOffWorld();CloseNotebookPanelOffWorld();
+        Check(!Panel(window)&&!toolsUi::Visible("notebook")&&notebook::Read(path).entries.size()==savedCount,"A notebook holding a draft closes too, without saving it");
+        TickNotebookPanel();Check(latestWindow==window,"Its draft does not reopen it");
+        OpenNotebookPanel();TickNotebookPanel();window=latestWindow;inputs=Inputs(window);
+        Check(Panel(window)&&TabOn(window,"Notes")&&Get(inputs[0]).text=="Brouillon hors ligne"&&Get(inputs[3]).text=="Tapé avant la déconnexion"&&
+            StatusText(window)=="Brouillon non enregistré retrouvé : enregistre-le pour le garder.","Reopened, the notebook gives the draft back in its tab");
+        Click(FindText(window,"Enregistrer"));Check(notebook::Read(path).entries.size()==savedCount+1,"The draft given back saves as a new note");
+        CloseNotebookPanelOffWorld();OpenNotebookPanel();TickNotebookPanel();window=latestWindow;inputs=Inputs(window);
+        Check(TabOn(window,"Positions")&&Get(inputs[0]).text.empty()&&StatusText(window).empty(),"A saved form leaves no draft: the next opening starts afresh");
+        RestoreNotebookPanel();
         toolsUi::Restore();owner.cached.reset();owner.compositor.reset();module=nullptr;Check(handles.empty(),"No GC handles leaked");
         std::filesystem::remove_all(directory);
-        std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text, map pin buttons, line buttons of positions, notes and messages, no counter nor hints, short-lived status line, row menus, automatic reload and cleanup\n";return 0;
+        std::cout<<"PASS: notebook native tabs/buttons/sections, draft protection, explicit travel/chat, literal text, map pin buttons, line buttons of positions, notes and messages, no counter nor hints, short-lived status line, row menus, automatic reload, closing off the world with its draft kept, and cleanup\n";return 0;
     }catch(const std::exception& error){std::cerr<<"FAIL: "<<error.what()<<'\n';for(const auto& message:logs)std::cerr<<message<<'\n';return 1;}
 }

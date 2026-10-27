@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
 namespace {
 using namespace managed;
 constexpr const char* Ui="UnityEngine.UIElementsModule.dll";
@@ -71,6 +72,14 @@ struct State {
     std::filesystem::path path;
 } state;
 bool installed=false,wanted=false;
+// The unsaved draft of a notebook the game closed by leaving the world
+// (CloseNotebookPanelOffWorld): given back in the form, as it was typed, the
+// next time the player opens the notebook in its full layout.
+struct Draft {
+    notebook::Kind kind=notebook::Kind::Position; notebook::Entry editing,captured;
+    std::string title,body,x,y; int world=1,channel=0;
+};
+std::optional<Draft> offWorldDraft;
 Method unsubscribe=nullptr;
 bool Session() {
     return module && module->ready && module->servicesReady && !module->stopped && !module->stopRequested;
@@ -645,6 +654,20 @@ void Retain(const char* field) {
     if(count<0 || count>32) throw std::runtime_error("Notebook native manipulator bounds");
     for(int i=0;i<count;++i) state.manipulators.emplace_back(api.Call(list.get(),"get_Item",{&i}));
 }
+// The kept draft back in the form: its tab, its entry and the fields as they
+// were typed. Its save meets the concurrent-modification check like any edit;
+// an entry deleted meanwhile becomes a new one, as in Refresh.
+void GiveBackDraft() {
+    if(!offWorldDraft||state.compact)return; // The compact layout has no form: the draft waits for the full one.
+    const Draft draft=std::move(*offWorldDraft);offWorldDraft.reset();
+    state.kind=draft.kind;state.offset=0;Fill(draft.editing);
+    const bool gone=state.readable&&draft.editing.id&&std::none_of(state.document.entries.begin(),state.document.entries.end(),
+        [&](const notebook::Entry& entry){return entry.id==draft.editing.id&&entry.kind==draft.kind;});
+    if(gone)state.editing.id=state.editing.version=0;
+    Text(state.title.get(),draft.title);Text(state.body.get(),draft.body);Text(state.x.get(),draft.x);Text(state.y.get(),draft.y);
+    SelectWorld(draft.world);state.channelChoice=draft.channel;ChannelLabel();state.captured=draft.captured;
+    ShowRows();Actions();Status("Brouillon non enregistré retrouvé : enregistre-le pour le garder.");
+}
 void Create(Obj root) {
     state.root.reset(root); state.dependencies.reset(module->FindService("fpt"));
     if(!state.dependencies.get() || api.object_get_class(state.dependencies.get())!=api.Class("Core.dll","","goc"))
@@ -735,7 +758,7 @@ void Create(Obj root) {
     state.path=notebook::DataPath(module->settingsPath);
     Fill({});
     try {Reload();}catch(...){} // An unreadable file: the status line warns below.
-    IdleStatus();
+    IdleStatus();GiveBackDraft();
     state.nextPoll=GetTickCount64()+PollMs;
     Add(root,state.window.get());Log("NOTEBOOK_PANEL_OPEN native=true");
 }
@@ -817,6 +840,20 @@ void RestoreNotebookPanel() {
     } catch(const std::exception& error) {Log(std::string("NOTEBOOK_PANEL_CLEANUP_ERROR ")+error.what());}
 }
 bool NotebookPanelCleanupPending() { return state.cleanup; }
+// The game left the world (inactivity disconnection, logout, character
+// selection): the notebook closes like the game's own windows and stays closed
+// on reconnection. Its entries are in the file; an unsaved draft is kept for
+// the next opening.
+void CloseNotebookPanelOffWorld(){
+    if(!installed||(!wanted&&!state.window.get()))return;
+    const bool shown=state.window.get()!=nullptr;
+    try{
+        if(shown&&Current()&&Dirty())
+            offWorldDraft=Draft{state.kind,state.editing,state.captured,Read(state.title.get()),Read(state.body.get()),Read(state.x.get()),Read(state.y.get()),state.worldChoice,state.channelChoice};
+    }catch(const std::exception& error){Log(std::string("NOTEBOOK_DRAFT_KEEP_ERROR ")+error.what());}
+    RestoreNotebookPanel();
+    if(shown&&!state.window.get())Log(std::string("NOTEBOOK_PANEL_CLOSED reason=world_left draft=")+(offWorldDraft?"1":"0"));
+}
 void TickNotebookPanel(){
     if(!installed)return;
     if(!wanted||!Session()||state.cleanup||(state.window.get()&&!Current())){RestoreNotebookPanel();return;}

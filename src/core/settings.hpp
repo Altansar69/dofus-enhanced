@@ -64,6 +64,10 @@ struct Settings {
     // mod gardées avec chaque affichage enregistré du jeu et remises comme elles
     // étaient quand il est appliqué (preset-windows.cpp), lu à chaque tick.
     bool presetModWindows = true;
+    // Reconnexion après une déconnexion (1.20.2, une case d'ExtraToggles) : la
+    // réponse du lanceur sans informations du compte laisse le jeu continuer sa
+    // connexion au lieu de charger sans fin (relogin-guard.cpp).
+    bool reloginGuard = true;
     // Jauges (1.18.1) : la longueur et la place de chaque jauge à la verticale
     // choisies à la souris, une par bit de fqd+GaugesType (à l'index du bit).
     // length : en pixels de l'interface, 0 pour sa largeur à l'horizontale ;
@@ -248,10 +252,11 @@ inline constexpr bool Settings::* GlowCategoryToggles[] = {
 // send buttons of the notebook's messages) and 1.18.0 (the gauges' « Afficher
 // à la verticale » row) and 1.19.0 (the party members' travel button, « Curseurs
 // du jeu aussi ») and 1.20.0 (the mod's windows kept in the game's saved
-// layouts), in the order of OptionsUi's extra rows.
+// layouts) and 1.20.2 (the relogin after an inactivity disconnection), in the
+// order of OptionsUi's extra rows.
 inline constexpr bool Settings::* ExtraToggles[] = {
     &Settings::resourceMiniMapBar, &Settings::miniMapZoneName,
     &Settings::notebookPingButton, &Settings::notebookCopyButton, &Settings::notebookTravelButton, &Settings::mapAddPosition, &Settings::perfOverlay,
     &Settings::perfOverlayGpu, &Settings::perfOverlayDisk, &Settings::perfOverlayDrag, &Settings::perfOverlayButton,
     &Settings::notebookSendButtons, &Settings::gaugeVerticalMenu, &Settings::partyTravelButton, &Settings::customCursorGame,
-    &Settings::presetModWindows};
+    &Settings::presetModWindows, &Settings::reloginGuard};

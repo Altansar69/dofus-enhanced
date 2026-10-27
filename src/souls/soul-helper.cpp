@@ -239,3 +239,12 @@ void RestoreSoulHelper() {
     soul::ResetLayout();
 }
 bool SoulHelperCleanupPending() { return soul::PanelCleanupPending(); }
+// The game left the world (logout, inactivity, character selection): the panel
+// goes with the game's windows, its fight being over. The option stays on and
+// the position stays in the game's layout: the next fight shows it again.
+void HideSoulHelper() {
+    using namespace soul_helper_detail;
+    if (!state.installed || state.busy) return;
+    if (state.shown.state == soul::CombatState::Hidden && !soul::PanelCleanupPending()) return;
+    try { Hide(); } catch (const std::exception& e) { Log(std::string("SOUL_PANEL_CLEANUP_ERROR ") + e.what()); }
+}

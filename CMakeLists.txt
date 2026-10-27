@@ -18,7 +18,7 @@ add_subdirectory(third_party/minhook EXCLUDE_FROM_ALL)
 # The in-game module. The source order is the link order of every previous
 # release; keep it and append new files at the end.
 add_library(DofusMiniatures SHARED
-  src/core/module.cpp src/core/runtime.cpp src/appearance/features.cpp
+  src/core/module.cpp src/core/runtime.cpp src/core/world-exit.cpp src/core/relogin-guard.cpp src/appearance/features.cpp
   src/animations/animations.cpp src/animations/movement.cpp src/animations/movement-dispatch.cpp
   src/animations/movement-waits.cpp src/animations/push-movement.cpp src/animations/throw-movement.cpp
   src/animations/jump-movement.cpp src/animations/instant-waits.cpp src/animations/script-waits.cpp
@@ -103,6 +103,8 @@ endfunction()
 # Core, loader and updater.
 dofus_test(OfflineTests tests/core/offline-tests.cpp src/core/settings.cpp src/core/common.cpp LIBS bcrypt minhook)
 dofus_test(RuntimeTests tests/core/runtime-tests.cpp src/core/runtime.cpp src/core/common.cpp LIBS bcrypt)
+dofus_test(WorldExitTests tests/core/world-exit-tests.cpp src/core/world-exit.cpp)
+dofus_test(ReloginGuardTests tests/core/relogin-guard-tests.cpp)
 dofus_test(ReleasePolicyTests tests/core/release-policy-tests.cpp src/core/common.cpp LIBS bcrypt advapi32)
 dofus_test(AutoLoadTests tests/loader/autoload-policy-tests.cpp)
 add_test(NAME GitHubUpdateTests COMMAND powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass

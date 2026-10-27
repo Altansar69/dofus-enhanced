@@ -73,7 +73,7 @@ struct OptionsUi {
     // « Affichages enregistrés », « Cartes », « Carnet », « Déplacements » and
     // « Performances » (no corner choice since 1.16.0: the overlay is placed
     // with the mouse).
-    std::array<managed::Ref, 16> extraSources, extraOptions;
+    std::array<managed::Ref, 17> extraSources, extraOptions;
     // « Dimension avec les coordonnées », a choice of three each: of shared
     // positions in « Chat », of the cell under the mouse on each map in « Cartes ».
     managed::Ref chatCoordsSource, chatCoordsOption;

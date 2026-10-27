@@ -38,6 +38,8 @@
 #include "souls/capture-detect.hpp"
 #include "maps/map-info.hpp"
 #include "ui/perf-overlay.hpp"
+#include "core/world-exit.hpp"
+#include "core/relogin-guard.hpp"
 #include "ui/custom-cursor.hpp"
 #include "ui/vertical-gauges.hpp"
 #include "ui/preset-windows.hpp"
@@ -263,12 +265,10 @@ void Module::Pump(Obj source) {
         if (bound) { previousCombat = InCombat(); Change(settings, false); }
     }
     if (!bound) {
-        // Off-game screens: no stale figures nor the last character's hunt or
-        // statistics window. Each is cheap when nothing is shown; the overlay
-        // comes back with the binding, the panels with their button.
-        // The notebook stays: its entries are the player's, not the character's,
-        // and a draft being typed must survive an automatic reconnection.
-        RestorePerfOverlay(); RestoreTreasurePanel(); RestoreStatsWindow(); RestorePresetWindows();
+        // Off-game screens: every window of the mod closes as the game's own do
+        // (world-exit.hpp). The notebook too (1.20.2): its entries are in its
+        // file and an unsaved draft comes back at its next opening.
+        CloseWindowsOffWorld();
         TickStats(); // the statistics counted until now are written at once
         return;
     }
@@ -569,6 +569,7 @@ static DWORD WINAPI Worker(void*) {
         InstallStatsEconomy();
         InstallStatsFights();
         InstallCustomCursor(); // never throws: CUSTOM_CURSOR_DISABLED leaves the Windows cursor
+        InstallReloginGuard(); // never throws: RELOGIN_GUARD_UNAVAILABLE leaves the game's login as it is
         for (auto target : hookTargets) {
             auto result = MH_QueueEnableHook(target);
             if (result != MH_OK) throw std::runtime_error(MH_StatusToString(result));

@@ -81,6 +81,7 @@ Everything is set up in the game’s options, the mod’s panels are built from 
 - **Top-bar buttons**: Capture d’âme, treasure hunt, personal notebook, statistics and performance, at the top right; each can be hidden in the options (**Bouton dans la barre du haut**, top-bar button) without changing what it controls. The notebook and the treasure hunt open only from their button.
 
 ### Updates
+- **Reconnexion après une déconnexion** (reconnection after a disconnection, ticked by default, in **Chargement et mises à jour**): after an inactivity disconnection, « Jouer » (play) no longer loads forever when the Ankama launcher sends back no account details; the game goes on with its login and asks the launcher for its token. No account data is read or made up. The mod’s windows also close like the game’s own on a disconnection.
 - **Automatic updates from GitHub** when the game starts: each archive is verified (SHA-256 and exact compatibility with your Dofus version) before it is installed. Offline, the compatible local version is used.
 
 ## 🔨 Installation

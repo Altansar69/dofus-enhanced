@@ -39,7 +39,7 @@ std::vector<std::filesystem::path> openedFolders;
 // Settings' ExtraToggles, by row (options-ui.cpp ExtraRow).
 enum ExtraIndex : size_t { MiniMapBarExtra, MiniMapZoneNameExtra, NotebookPingExtra, NotebookCopyExtra, NotebookTravelExtra, MapAddPositionExtra,
     PerfOverlayExtra, PerfGpuExtra, PerfDiskExtra, PerfDragExtra, PerfButtonExtra, NotebookSendExtra, GaugeVerticalExtra, PartyTravelExtra,
-    CursorGameExtra, PresetWindowsExtra };
+    CursorGameExtra, PresetWindowsExtra, ReloginGuardExtra };
 constexpr int SectionId(size_t index) { return ModId + 1 + static_cast<int>(index); }
 // The Metamob rows sit in « Pierre d’âme », after the two soul rows and Capture d’âme's top-bar button.
 constexpr int DisplayId = SectionId(AppearanceSection), SoulId = SectionId(SoulSection);
@@ -642,7 +642,7 @@ std::vector<Obj> AllSources(OptionsUi& ui) {
         ui.calendarKraloveSource.get(), ui.extraSources[PerfOverlayExtra].get(), ui.extraSources[PerfGpuExtra].get(),
         ui.extraSources[PerfDiskExtra].get(), ui.extraSources[PerfDragExtra].get(), ui.extraSources[PerfButtonExtra].get(),
         ui.statsSource.get(), ui.statsButtonSource.get(),
-        ui.autoLoadSource.get(), ui.githubSource.get()};
+        ui.autoLoadSource.get(), ui.githubSource.get(), ui.extraSources[ReloginGuardExtra].get()};
     appearance.insert(appearance.end(), rest.begin(), rest.end());
     return appearance;
 }
@@ -739,8 +739,10 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.extraOptions[PerfButtonExtra], ui.extraSources[PerfButtonExtra], "Bouton dans la barre du haut", true)}},
         statistics,
         {"Chargement et mises à jour", {CheckRow(ui.autoLoadOption, ui.autoLoadSource, "Chargement automatique", true),
-            CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.20.1 — par Altansar"), ButtonRow(ui.modFolderOption, "Dossier du mod")}}};
+            CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true),
+            // 1.20.2: the relogin after an inactivity disconnection, on by default.
+            CheckRow(ui.extraOptions[ReloginGuardExtra], ui.extraSources[ReloginGuardExtra], "Reconnexion après une déconnexion", true)}},
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.20.2 — par Altansar"), ButtonRow(ui.modFolderOption, "Dossier du mod")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -847,8 +849,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.20.1" && std::string(ModVersion) == "r125" &&
-        ModRevision == 125,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.20.2" && std::string(ModVersion) == "r126" &&
+        ModRevision == 126,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -895,14 +897,14 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.20.1") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.20.2") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r125") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r126") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
-    Check(sourceModels == 74 && optionModels == 74 + 4,
-        "The UI must create seventy-four private sources and seventy-eight rows");
+    Check(sourceModels == 75 && optionModels == 75 + 4,
+        "The UI must create seventy-five private sources and seventy-nine rows");
     Check(uiHooks == 4, "Only native page callbacks, the text button action and its view Init must be hooked");
     for (const uintptr_t rva : {uintptr_t{0x2D885A0}, uintptr_t{0x178E8F0}, uintptr_t{0x55E5710}, uintptr_t{0x55E7BD0}, uintptr_t{0x55D37F0},
         uintptr_t{0x55D1270}, uintptr_t{0x1721860}, uintptr_t{0x170D6F0}, uintptr_t{0x1593940}, uintptr_t{0x55DFAD0}})
@@ -1422,6 +1424,7 @@ Settings WithSectionDefaults(Settings settings, size_t index) {
         settings.statsEnabled = defaults.statsEnabled; settings.statsButton = defaults.statsButton;
     } else if (index == LoadingSection) {
         settings.autoLoad = defaults.autoLoad; settings.githubUpdates = defaults.githubUpdates;
+        settings.*ExtraToggles[ReloginGuardExtra] = defaults.*ExtraToggles[ReloginGuardExtra];
     }
     return settings;
 }
@@ -2845,7 +2848,7 @@ void ModFolderRow() {
         ui.modFolderMarker.get() != ui.metamobKeyMarker.get(), "« Dossier du mod » is an owned text button known by its own description reference");
     Check(Label(row) == "Dossier du mod" && ButtonText(row) == "Ouvrir", "Its button: « Ouvrir »");
     const auto text = Description(row);
-    for (const char* term : {"Ouvre dans l’Explorateur de Windows le dossier de cette version du mod", "DofusMiniatures-3.7.11.11-r125",
+    for (const char* term : {"Ouvre dans l’Explorateur de Windows le dossier de cette version du mod", "DofusMiniatures-3.7.11.11-r126",
             "DofusMiniatures.dll", "module.log", "DofusMiniatures-3.7.11.11-settings.ini", "dans le dossier au-dessus",
             "ne modifie ni ne supprime aucun fichier"})
         Check(text.find(term) != std::string::npos, std::string("« Dossier du mod » says: ") + term);

@@ -10,7 +10,27 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.20.1
+DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.20.2
+
+VERSION 1.20.2 : DÉCONNEXION ET RECONNEXION
+- Déconnexion : à une déconnexion ou un retour à l’écran de connexion,
+  les fenêtres du mod se ferment comme celles du jeu (carnet,
+  statistiques, chasse au trésor, pierre d’âme, performances). Leurs
+  réglages et leurs places sont gardés.
+- Carnet : il ne reste plus sur l’écran de connexion et ne se rouvre pas
+  seul. Une modification non enregistrée revient dans le formulaire à la
+  prochaine ouverture.
+- Reconnexion : après une déconnexion pour inactivité, « Jouer » pouvait
+  charger sans fin (le lanceur Ankama répondait sans les informations du
+  compte et le jeu s’arrêtait sur une erreur). Le mod donne au jeu des
+  informations vides : il demande alors son jeton au lanceur, comme pour
+  des informations incomplètes. Aucune donnée du compte n’est lue ni
+  inventée. Lignes RELOGIN_GUARD … dans module.log.
+- Option « Reconnexion après une déconnexion » (Chargement et mises à
+  jour, cochée par défaut). Si le chargement reste bloqué, relance le jeu
+  depuis le lanceur.
+- Les réglages, le carnet et la clé enregistrée sont conservés.
+- Validation hors jeu ; rendu en jeu à confirmer au prochain lancement.
 
 VERSION 1.20.1 : DOSSIER DU MOD, JAUGES VERTICALES
 - À propos : nouvelle ligne « Dossier du mod » avec un bouton « Ouvrir ».

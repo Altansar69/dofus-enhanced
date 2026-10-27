@@ -81,6 +81,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 - **Boutons de la barre du haut** : Capture d’âme, Chasse au trésor, Carnet personnel, Statistiques et Performances, en haut à droite ; chacun se masque dans les options (**Bouton dans la barre du haut**) sans rien changer à ce qu’il commande. Le carnet et la chasse au trésor ne s’ouvrent que par leur bouton.
 
 ### Mises à jour
+- **Reconnexion après une déconnexion** (cochée par défaut, dans **Chargement et mises à jour**) : après une déconnexion pour inactivité, « Jouer » ne charge plus sans fin quand le lanceur Ankama ne renvoie pas les informations du compte ; le jeu continue sa connexion et demande son jeton au lanceur. Aucune donnée du compte n’est lue ni inventée. Les fenêtres du mod se ferment aussi comme celles du jeu à la déconnexion.
 - **Mises à jour automatiques depuis GitHub** au lancement du jeu : chaque archive est vérifiée (SHA-256 et compatibilité exacte avec ta version de Dofus) avant d’être installée. Sans réseau, la version locale compatible est utilisée.
 
 ## 🔨 Installation

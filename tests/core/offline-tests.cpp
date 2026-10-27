@@ -313,7 +313,7 @@ int main() {
             defaults.perfOverlayCorner == 0 && !defaults.perfOverlayGpu && !defaults.perfOverlayDisk && defaults.perfOverlayDrag &&
             defaults.perfOverlayX == -1 && defaults.perfOverlayY == -1 && Settings{} == defaults,
             "The 1.13.0 and 1.14.0 additions start shown, the performance overlay hidden (no part ticked) in the top left corner");
-        static_assert(std::size(ExtraToggles) == 16); // with 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons), 1.18.0's (the gauges' vertical row), 1.19.0's (the party members' travel button, « Curseurs du jeu aussi ») and 1.20.0's (the mod's windows in the saved layouts)
+        static_assert(std::size(ExtraToggles) == 17); // with 1.20.2's (the relogin guard), 1.16.0's (the notebook's copy and travel buttons, the overlay's top-bar button), 1.17.1's (the notebook's send buttons), 1.18.0's (the gauges' vertical row), 1.19.0's (the party members' travel button, « Curseurs du jeu aussi ») and 1.20.0's (the mod's windows in the saved layouts)
         for (unsigned mask = 0; mask < 256; ++mask) {
             auto extra = defaults;
             // Every combination of the first five, many times; the others follow inverted bits.
@@ -766,6 +766,21 @@ int main() {
             { std::ofstream older(path, std::ios::trunc); older << "customCursorGame=0\nsmallHeaderStats=1\n"; }
             Require(Settings::Read(path).presetModWindows && !Settings::Read(path).customCursorGame && Settings::Read(path).smallHeaderStats,
                 "A file written before 1.20.0 keeps the mod's windows in the layouts and the rest as saved");
+            // 1.20.2 « Reconnexion après une déconnexion »: ticked by default, its
+            // own 0/1 line, kept by a file written before 1.20.2 (ticked), a
+            // malformed value ignored, the last valid line winning.
+            Require(defaults.reloginGuard && ExtraToggles[16] == &Settings::reloginGuard, "The relogin guard is on by default");
+            for (bool guarded : {false, true}) {
+                auto relogin = defaults; relogin.reloginGuard = guarded; relogin.Save(path);
+                Require(Settings::Read(path) == relogin && FileText(path).find(std::string("\nreloginGuard=") + (guarded ? "1" : "0")) != std::string::npos,
+                    "« Reconnexion après une déconnexion » persists on its own line");
+                { std::ofstream bad(path, std::ios::app); bad << "reloginGuard=2\nreloginGuard=-1\nreloginGuard=oui\nreloginGuard=\n"; }
+                Require(Settings::Read(path) == relogin, "A malformed relogin value keeps the saved choice");
+            }
+            { std::ofstream twice(path, std::ios::trunc); twice << "reloginGuard=1\nreloginGuard=0\n"; }
+            Require(!Settings::Read(path).reloginGuard, "The last valid relogin line wins");
+            { std::ofstream older(path, std::ios::trunc); older << "presetModWindows=0\n"; }
+            Require(Settings::Read(path).reloginGuard && !Settings::Read(path).presetModWindows, "A file written before 1.20.2 keeps the relogin guard on");
             { std::ofstream older(path, std::ios::trunc); older << "customCursor=1\nnotebookSendButtons=0\n"; }
             const auto older = Settings::Read(path);
             Require(older.gaugeVertical == 0 && older.gaugeVerticalMenu && older.customCursor && !older.notebookSendButtons,

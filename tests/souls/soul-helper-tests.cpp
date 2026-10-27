@@ -272,13 +272,24 @@ int main() {
         Check(requests==before,"Automatic option off must retain manual-only operation");
         fixture.settings.soulAutoEquip=true; TickSoulHelper();
         Check(requests==before+1,"Previously blocked placement must get one attempt once valid and enabled");
+        // 1.20.2: the game leaves the world (inactivity disconnection, logout): the
+        // panel shown goes with the game's windows; its option stays on.
+        fixture.settings.soulAutoEquip=false; TickSoulHelper();
+        const auto shownHides=hides, shownRenders=renders;
+        HideSoulHelper();
+        Check(hides==shownHides+1 && fixture.settings.soulReminder,"Leaving the world hides the shown panel, its option kept");
+        HideSoulHelper();
+        Check(hides==shownHides+1,"Hidden, each further pump off the world does nothing");
+        TickSoulHelper();
+        Check(renders==shownRenders+1,"A capturable fight back in the world shows it again");
+        fixture.settings.soulAutoEquip=true;
         ++combat.fightIdentity; before=requests;
         failRender=true; TickSoulHelper(); click();
         Check(requests==before,"UI failure must disable both manual and automatic action");
         RestoreSoulHelper(); RestoreSoulHelper();
         contents.equippedItem.reset();
         Check(handles.empty(),"Helper restore must release refs");
-        std::cout << "PASS: actual helper validates automatic/manual equip, one attempt per fight/tier, refusals, timeouts, confirmation, reentry and cleanup\n";
+        std::cout << "PASS: actual helper validates automatic/manual equip, one attempt per fight/tier, refusals, timeouts, confirmation, reentry, hiding off the world and cleanup\n";
         module=nullptr;
         return 0;
     } catch(const std::exception& e) { std::cerr<<e.what()<<'\n'; return 1; }

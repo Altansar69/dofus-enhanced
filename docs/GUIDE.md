@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.20.1**.
+Mod expérimental pour **Dofus Unity 3.7.12.12**, version **1.20.2**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -23,6 +23,23 @@ Dans **Options → Dofus Enhanced → Chargement et mises à jour** :
 - **Chargement automatique** charge le mod lors des prochains lancements.
 - **Mises à jour GitHub** recherche, télécharge et vérifie une version compatible
   avant le chargement. Activé par défaut. Aucun compte GitHub requis.
+- **Reconnexion après une déconnexion** (1.20.2, cochée par défaut) : après une
+  déconnexion pour inactivité, « Jouer » pouvait charger sans fin. C’est un
+  défaut du jeu : quand le lanceur Ankama répond sans les informations du
+  compte, le jeu s’arrête sur une erreur avant de lui demander son jeton de
+  connexion. Cochée, le mod donne au jeu des informations vides : le jeu suit
+  alors son propre chemin pour des informations incomplètes et demande le
+  jeton au lanceur. Aucune donnée du compte n’est lue ni inventée ; une
+  réponse complète n’est pas touchée. `module.log` note ces cas sur des lignes
+  `RELOGIN_GUARD …`. Si le chargement reste bloqué, relance le jeu depuis le
+  lanceur.
+
+Depuis la 1.20.2, à une déconnexion ou un retour à l’écran de connexion ou au
+choix du personnage, les fenêtres du mod se ferment comme celles du jeu : le
+carnet, les statistiques, la chasse au trésor, le panneau de la pierre d’âme et
+l’affichage des performances. Leurs réglages et leurs places sont gardés.
+L’affichage des performances revient avec la connexion, la pierre d’âme au
+prochain combat, les autres à leur bouton.
 
 Le lanceur conserve les anciennes versions et les réglages. En cas d’absence
 de réseau, il utilise une version locale compatible. Il ne remplace pas un module
@@ -119,6 +136,11 @@ disparaît et le carnet ne s’ouvre plus, faute d’autre raccourci : recoche l
 case pour le retrouver. Les entrées restent enregistrées, **Ajouter aux
 positions** continue de les compléter, et un carnet déjà ouvert le reste
 jusqu’à sa fermeture.
+Depuis la 1.20.2, le carnet se ferme à une déconnexion ou un retour à l’écran
+de connexion, au lieu d’y rester, et ne se rouvre pas seul. Une modification
+non enregistrée est gardée : elle revient dans le formulaire à la prochaine
+ouverture de la version complète, avec « Brouillon non enregistré retrouvé :
+enregistre-le pour le garder. ».
 La fenêtre se redimensionne avec les poignées du jeu, comme la carte ou le chat,
 et se raccourcit davantage depuis la 1.17.1 : aucune aide ne reste affichée
 sous les listes. Son menu ⋯ liste les deux dispositions comme des choix à puce
