@@ -251,29 +251,29 @@ void InstallSpousePartyMenu() {
     spouseClass = api.Class("Core.dll", "", "io"); memberClass = api.Class("Core.dll", "", "lg");
     companionClass = api.Class("Core.dll", "", "lf"); // lf : lg, the party's companion entities
     auto player = api.Class("Core.dll", MakerSpace, "PlayerMenuMaker");
-    // Checked offsets of the pinned 3.7.12.12 layout (contracts-new.json).
+    // Checked offsets of the pinned 3.7.14.18 layout (contracts-new.json).
     for (auto [type, name, offset] : {std::tuple{spouseClass, "dcys", size_t(0x10)}, {spouseClass, "dcyy", size_t(0x31)},
             {spouseClass, "dcyz", size_t(0x38)}, {memberClass, "ddkt", size_t(0x18)}, {memberClass, "ddku", size_t(0x20)},
             {player, "m_playerId", size_t(0xB8)}})
         if (api.field_get_offset(api.FieldInfo(type, name)) != offset)
             throw std::runtime_error(std::string("Spouse party field layout: ") + name);
-    getSpouse = api.FindVerified(socialClass, "bfou", 0, 0x752E20);
-    getMembers = api.FindVerified(partyClass, "bfmh", 0, 0x752E20);
-    memberId = api.FindVerified(memberClass, "oab", 0, 0x68D2B0);
+    getSpouse = api.FindVerified(socialClass, "bfou", 0, 0x748800);
+    getMembers = api.FindVerified(partyClass, "bfmh", 0, 0x748800);
+    memberId = api.FindVerified(memberClass, "oab", 0, 0x68E2B0);
     characterClass = api.Class("Core.dll", "", "esg");
     mapClass = api.Class("Core.dll", "", "tk");
-    currentMap = api.FindVerified(characterClass, "zeo", 0, 0x185C1E0);
+    currentMap = api.FindVerified(characterClass, "zeo", 0, 0x18516B0);
     constexpr const char* dataImage = "Ankama.Dofus.Core.DataCenter.dll", *dataSpace = "Core.DataCenter.Metadata.World";
     mapInfoClass = api.Class(dataImage, dataSpace, "MapInformationData");
     subareaClass = api.Class(dataImage, dataSpace, "SubAreaData");
-    mapInfo = api.FindVerified(mapInfoClass, "GetMapInformationById", 1, 0x7C4200);
-    subarea = api.FindVerified(mapInfoClass, "get_subArea", 0, 0x7C44B0);
-    world = api.FindVerified(subareaClass, "get_worldmapId", 0, 0x7D1040);
-    joinSpouse = api.FindVerified(player, "OnJoinSpouse", 0, 0x16F0DF0);
-    playerCtor = api.FindVerified(player, ".ctor", 13, 0x16F3950);
+    mapInfo = api.FindVerified(mapInfoClass, "GetMapInformationById", 1, 0x7B5980);
+    subarea = api.FindVerified(mapInfoClass, "get_subArea", 0, 0x7B5C30);
+    world = api.FindVerified(subareaClass, "get_worldmapId", 0, 0x7C27C0);
+    joinSpouse = api.FindVerified(player, "OnJoinSpouse", 0, 0x16E27E0);
+    playerCtor = api.FindVerified(player, ".ctor", 13, 0x16E5340);
     append = api.FindVerified(api.Class("Core.dll", "Core.UILogic.Components.ContextMenu", "DofusContextualMenu"),
-        "AppendDefaultItem", 13, 0x16D6C60);
-    auto create = api.FindVerified(player, "CreateMenu", 0, 0x16ECE90);
-    AddHook(create, 0x16ECE90, reinterpret_cast<void*>(&CreateHook), reinterpret_cast<void**>(&originalCreate));
+        "AppendDefaultItem", 13, 0x16C8650);
+    auto create = api.FindVerified(player, "CreateMenu", 0, 0x16DE880);
+    AddHook(create, 0x16DE880, reinterpret_cast<void*>(&CreateHook), reinterpret_cast<void**>(&originalCreate));
     installed = true;
 }

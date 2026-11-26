@@ -238,7 +238,7 @@ int64_t FakeGcUsed() { ++measureReads; return heapUsed; }
 int64_t FakeGcHeap() { ++measureReads; return heapSize; }
 FARPROC FakeLookup(const char* name) {
     const std::string exported = name;
-    const uintptr_t rva = exported == "il2cpp_gc_get_used_size" ? 0x5B9230 : exported == "il2cpp_gc_get_heap_size" ? 0x5B9210 : 0;
+    const uintptr_t rva = exported == "il2cpp_gc_get_used_size" ? 0x5B9400 : exported == "il2cpp_gc_get_heap_size" ? 0x5B93E0 : 0;
     if (!rva) return nullptr;
     return reinterpret_cast<FARPROC>(gameBase + rva + (lookupMatches ? 0 : 0x10));
 }
@@ -305,10 +305,10 @@ void* Api::NativeAt(uintptr_t rva) const {
     fixture::Check(fixture::Guarded(rva), "Native helper without a guard");
     fixture::natives.insert(rva);
     if (rva == fixture::nativeMismatch) throw std::runtime_error("Loaded method bytes differ from snapshot");
-    if (rva == 0x5B9230) return reinterpret_cast<void*>(&fixture::FakeGcUsed);
-    if (rva == 0x5B9210) return reinterpret_cast<void*>(&fixture::FakeGcHeap);
+    if (rva == 0x5B9400) return reinterpret_cast<void*>(&fixture::FakeGcUsed);
+    if (rva == 0x5B93E0) return reinterpret_cast<void*>(&fixture::FakeGcHeap);
     // The code behind the export thunks: checked only, never called directly.
-    if (rva == 0x5FE340 || rva == 0x5FDB20 || rva == 0x6194D0 || rva == 0x6194B0) return reinterpret_cast<void*>(gameBase + rva);
+    if (rva == 0x5FE510 || rva == 0x5FDCF0 || rva == 0x6196A0 || rva == 0x619680) return reinterpret_cast<void*>(gameBase + rva);
     throw std::runtime_error("Unexpected native helper");
 }
 Obj Api::Field(Obj obj, const char* name) const {
@@ -319,7 +319,7 @@ std::string Api::String(Obj obj) const { return obj ? fixture::Get(obj).text : s
 Obj Api::New(Klass klass, std::initializer_list<void*> args) const {
     using namespace fixture;
     const auto name = static_cast<fixture::Class*>(klass)->name;
-    Check(name == "Length" && args.size() == 2 && contracts.contains({"Length", ".ctor", 2, 0x561D3D0}), "Only verified Length values are built");
+    Check(name == "Length" && args.size() == 2 && contracts.contains({"Length", ".ctor", 2, 0x55E4BB0}), "Only verified Length values are built");
     auto o = Make(name);
     size_t i = 0;
     for (auto arg : args) { std::memcpy(Get(o).bytes.data() + i * 4, arg, 4); ++i; }
@@ -1365,7 +1365,7 @@ void Install() {
     Check(installed && !n.gcUsed && !n.gcHeap && Logged("PERF_OVERLAY_HEAP_UNAVAILABLE") == 1, "Managed heap optional");
     lookupMatches = true;
     // The code behind the thunks differing from the snapshot: the same.
-    for (const uintptr_t body : {0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0}) {
+    for (const uintptr_t body : {0x5FE510, 0x5FDCF0, 0x6196A0, 0x619680}) {
         ResetInstall();
         nativeMismatch = body;
         InstallPerfOverlay();
@@ -1377,7 +1377,7 @@ void Install() {
     InstallPerfOverlay();
     Check(installed && n.gcUsed == &FakeGcUsed && n.gcHeap == &FakeGcHeap && Logged("PERF_OVERLAY_HEAP_UNAVAILABLE") == 5 &&
         processors == 8 && frequency == Frequency, "Installed with the managed heap");
-    Check(natives == std::set<uintptr_t>{0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0},
+    Check(natives == std::set<uintptr_t>{0x5B9400, 0x5B93E0, 0x5FE510, 0x5FDCF0, 0x6196A0, 0x619680},
         "The two export thunks and the four functions behind them are checked");
     // Its top-bar button (1.16.0), registered with the overlay, as the treasure
     // hunt's and the notebook's: no layouts, no window.
@@ -1388,30 +1388,30 @@ void Install() {
     const auto registered = toolsFake::registrations.size();
     // Every contract at its pinned RVA (an independent copy of the snapshot's).
     std::set<std::tuple<std::string, std::string, int, uintptr_t>> expected{
-        {"VisualElement", "get_parent", 0, 0x55F7180}, {"VisualElement", "get_panel", 0, 0x55F7170}, {"VisualElement", "get_name", 0, 0x3158710},
-        {"VisualElement", "get_hierarchy", 0, 0x185C4A0}, {"VisualElement", "Insert", 2, 0x55E5710},
-        {"VisualElement", "RemoveFromHierarchy", 0, 0x55E7BD0}, {"VisualElement", "set_pickingMode", 1, 0x55F97B0},
-        {"VisualElement", "set_name", 1, 0x55F9670}, {"VisualElement", "get_style", 0, 0x55F74A0}, {"VisualElement", "get_layout", 0, 0x55F6930},
-        {"Hierarchy", "get_childCount", 0, 0x55FFA80}, {"Hierarchy", "get_Item", 1, 0x55FE670}, {"Focusable", "set_focusable", 1, 0x5777EF0},
-        {"Label", ".ctor", 0, 0x5729760}, {"TextElement", "set_text", 1, 0x564B780}, {"TextElement", "set_enableRichText", 1, 0x564B1E0},
-        {"Length", ".ctor", 2, 0x561D3D0}, {"BaseVisualElementPanel", "Pick", 1, 0x57A4050}, {"pq", "pbs", 0, 0x2E93CC0},
-        {"VisualElement", ".ctor", 0, 0x55F50B0}, {"VisualElement", "set_visible", 1, 0x55FA170},
-        {"DofusCursor", "SetCursor", 4, 0x280A070}, {"DofusCursor", "RemoveCursor", 2, 0x2809EA0},
-        {"TextElement", "MeasureTextSize", 5, 0x5645AF0}};
+        {"VisualElement", "get_parent", 0, 0x55BE960}, {"VisualElement", "get_panel", 0, 0x55BE950}, {"VisualElement", "get_name", 0, 0x31206D0},
+        {"VisualElement", "get_hierarchy", 0, 0x1851970}, {"VisualElement", "Insert", 2, 0x55ACEF0},
+        {"VisualElement", "RemoveFromHierarchy", 0, 0x55AF3B0}, {"VisualElement", "set_pickingMode", 1, 0x55C0F90},
+        {"VisualElement", "set_name", 1, 0x55C0E50}, {"VisualElement", "get_style", 0, 0x55BEC80}, {"VisualElement", "get_layout", 0, 0x55BE110},
+        {"Hierarchy", "get_childCount", 0, 0x55C7260}, {"Hierarchy", "get_Item", 1, 0x55C5E50}, {"Focusable", "set_focusable", 1, 0x573F6D0},
+        {"Label", ".ctor", 0, 0x56F0F40}, {"TextElement", "set_text", 1, 0x5612F60}, {"TextElement", "set_enableRichText", 1, 0x56129C0},
+        {"Length", ".ctor", 2, 0x55E4BB0}, {"BaseVisualElementPanel", "Pick", 1, 0x576B830}, {"pq", "pbs", 0, 0x2E5A350},
+        {"VisualElement", ".ctor", 0, 0x55BC890}, {"VisualElement", "set_visible", 1, 0x55C1950},
+        {"DofusCursor", "SetCursor", 4, 0x27C88D0}, {"DofusCursor", "RemoveCursor", 2, 0x27C8700},
+        {"TextElement", "MeasureTextSize", 5, 0x560D2D0}};
     const std::vector<std::tuple<std::string, uintptr_t, uintptr_t>> styles{
-        {"position", 0x55D1A30, 0x55D48B0}, {"left", 0x55D1610, 0x55D3EB0}, {"top", 0x55D1CD0, 0x55D4F70}, {"right", 0x55D1AC0, 0x55D4960},
-        {"bottom", 0x55D1190, 0x55D3530}, {"paddingLeft", 0x55D1970, 0x55D46D0}, {"paddingRight", 0x55D19B0, 0x55D4770},
-        {"paddingTop", 0x55D19F0, 0x55D4810}, {"paddingBottom", 0x55D1930, 0x55D4630}, {"borderTopLeftRadius", 0x55D1100, 0x55D33E0},
-        {"borderTopRightRadius", 0x55D1140, 0x55D3440}, {"borderBottomLeftRadius", 0x55D0F90, 0x55D3050},
-        {"borderBottomRightRadius", 0x55D0FD0, 0x55D30B0}, {"backgroundColor", 0x55D0D90, 0x55D2BA0}, {"color", 0x55D11D0, 0x55D35D0},
-        {"fontSize", 0x55D1500, 0x55D3D00}, {"whiteSpace", 0x55D26B0, 0x55D6370}, {"minWidth", 0x55D1850, 0x55D4410},
-        {"minHeight", 0x55D1810, 0x55D4370}, {"unityTextAlign", 0x55D23B0, 0x55D5ED0}};
+        {"position", 0x5599210, 0x559C090}, {"left", 0x5598DF0, 0x559B690}, {"top", 0x55994B0, 0x559C750}, {"right", 0x55992A0, 0x559C140},
+        {"bottom", 0x5598970, 0x559AD10}, {"paddingLeft", 0x5599150, 0x559BEB0}, {"paddingRight", 0x5599190, 0x559BF50},
+        {"paddingTop", 0x55991D0, 0x559BFF0}, {"paddingBottom", 0x5599110, 0x559BE10}, {"borderTopLeftRadius", 0x55988E0, 0x559ABC0},
+        {"borderTopRightRadius", 0x5598920, 0x559AC20}, {"borderBottomLeftRadius", 0x5598770, 0x559A830},
+        {"borderBottomRightRadius", 0x55987B0, 0x559A890}, {"backgroundColor", 0x5598570, 0x559A380}, {"color", 0x55989B0, 0x559ADB0},
+        {"fontSize", 0x5598CE0, 0x559B4E0}, {"whiteSpace", 0x5599E90, 0x559DB50}, {"minWidth", 0x5599030, 0x559BBF0},
+        {"minHeight", 0x5598FF0, 0x559BB50}, {"unityTextAlign", 0x5599B90, 0x559D6B0}};
     for (const auto& [property, get, set] : styles) {
         expected.insert({"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_" + property, 0, get});
         expected.insert({"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_" + property, 1, set});
     }
     Check(contracts == expected, "Exactly the pinned contracts: " + std::to_string(contracts.size()) + " of " + std::to_string(expected.size()));
-    for (const uintptr_t rva : {0x5B9230, 0x5B9210, 0x5FE340, 0x5FDB20, 0x6194D0, 0x6194B0, 0x57A4050, 0x55F50B0, 0x55FA170, 0x280A070, 0x2809EA0, 0x5645AF0})
+    for (const uintptr_t rva : {0x5B9400, 0x5B93E0, 0x5FE510, 0x5FDCF0, 0x6196A0, 0x619680, 0x576B830, 0x55BC890, 0x55C1950, 0x27C88D0, 0x27C8700, 0x560D2D0})
         Check(Guarded(rva), "The GC exports, the code behind them, the panel's pick, the grip's elements, the game's cursor manager and the text measure are guarded");
     InstallPerfOverlay();
     Check(contracts == expected && Logged("PERF_OVERLAY_DISABLED") == 2 && toolsFake::registrations.size() == registered, "Installed once");

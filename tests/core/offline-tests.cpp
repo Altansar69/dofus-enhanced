@@ -97,13 +97,13 @@ static void PolicyTests() {
     Require(RoleplayNpcMatters(Settings{}) && !MiniatureGroupEnabled(Settings{}, G::Npc),
         "By default NPCs keep their normal size, as before « PNJ »: they are told apart from the other entities");
     // « Animations »: every toggle combination against the reference.
-    const uintptr_t effectCaller = 0x1ECE82C, castCallers[] = {0x272E250, 0x2744303};
+    const uintptr_t effectCaller = 0x1EBC4CC, castCallers[] = {0x26E11AD, 0x26F17AA};
     for (unsigned mask = 0; mask < 64; ++mask) {
         Settings s;
         for (size_t i = 0; i < std::size(AnimationToggles); ++i) s.*AnimationToggles[i] = ((mask >> i) & 1) != 0;
         Require(OverrideSpellEffectsRead(s, effectCaller) == s.noSpellEffects, "biwv read follows Sans effets des sorts only");
         for (auto caller : castCallers) Require(OverrideSpellEffectsRead(s, caller) == s.shortSpellCasts, "Cast reads follow Lancers raccourcis only");
-        for (uintptr_t other : {uintptr_t{0}, effectCaller - 1, effectCaller + 1, uintptr_t{0x272E24B}, uintptr_t{0x2744304}, ~uintptr_t{0}})
+        for (uintptr_t other : {uintptr_t{0}, effectCaller - 1, effectCaller + 1, uintptr_t{0x26E11A8}, uintptr_t{0x26F17AB}, ~uintptr_t{0}})
             Require(!OverrideSpellEffectsRead(s, other), "Any other option read keeps the account value");
         const bool instant = s.instantMovements || s.noVisualWaits;
         Require(InstantCombatVisuals(s) == instant, "Instant visuals are movements or waits");

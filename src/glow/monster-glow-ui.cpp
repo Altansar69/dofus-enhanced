@@ -265,43 +265,43 @@ void InstallGlowUi() {
     if (state.installed) return;
     auto ui = api.Class(UiAssembly,UiSpace,"VisualElement");
     const std::tuple<const char*,int,uintptr_t> uiMethods[] = {
-        {".ctor",0,0x55F50B0},{"get_hierarchy",0,0x185C4A0},{"get_resolvedStyle",0,0x55F72E0},
-        {"get_worldBound",0,0x55F7CC0},{"get_worldBoundingBox",0,0x55F7E10},{"get_worldClip",0,0x55F7EE0},
-        {"get_visible",0,0x55F7BC0},{"get_panel",0,0x55F7170},{"get_parent",0,0x55F7180},
-        {"get_name",0,0x3158710},{"Add",1,0x55DFAD0},
-        {"BringToFront",0,0x55E08E0},{"RemoveFromHierarchy",0,0x55E7BD0},{"set_pickingMode",1,0x55F97B0}};
+        {".ctor",0,0x55BC890},{"get_hierarchy",0,0x1851970},{"get_resolvedStyle",0,0x55BEAC0},
+        {"get_worldBound",0,0x55BF4A0},{"get_worldBoundingBox",0,0x55BF5F0},{"get_worldClip",0,0x55BF6C0},
+        {"get_visible",0,0x55BF3A0},{"get_panel",0,0x55BE950},{"get_parent",0,0x55BE960},
+        {"get_name",0,0x31206D0},{"Add",1,0x55A72B0},
+        {"BringToFront",0,0x55A80C0},{"RemoveFromHierarchy",0,0x55AF3B0},{"set_pickingMode",1,0x55C0F90}};
     for (const auto& [name,count,rva] : uiMethods) Guard(ui,name,count,rva);
-    Guard(api.Class(UiAssembly,UiSpace,"Focusable"),"set_focusable",1,0x5777EF0);
+    Guard(api.Class(UiAssembly,UiSpace,"Focusable"),"set_focusable",1,0x573F6D0);
     auto hierarchy = api.NestedClass(ui,"Hierarchy");
-    Guard(hierarchy,"get_childCount",0,0x55FFA80); Guard(hierarchy,"get_Item",1,0x55FE670);
-    Guard(api.Class(UiAssembly,UiSpace,"Panel"),"get_visualTree",0,0x57AFA00);
+    Guard(hierarchy,"get_childCount",0,0x55C7260); Guard(hierarchy,"get_Item",1,0x55C5E50);
+    Guard(api.Class(UiAssembly,UiSpace,"Panel"),"get_visualTree",0,0x57771E0);
     auto resolved = api.Class(UiAssembly,UiSpace,"ResolvedStyleAccess");
     const std::pair<const char*,uintptr_t> styleMethods[] = {
-        {"get_display",0x55D9890},{"get_opacity",0x55D9CD0},{"get_backgroundColor",0x55D93B0},
-        {"get_backgroundImage",0x55D93F0},{"get_unityBackgroundImageTintColor",0x55DA050},
-        {"get_borderLeftColor",0x55D9650},{"get_borderLeftWidth",0x55D9690},
-        {"get_borderRightColor",0x55D96C0},{"get_borderRightWidth",0x55D9700},
-        {"get_borderTopColor",0x55D9730},{"get_borderTopWidth",0x55D97F0},
-        {"get_borderBottomColor",0x55D9560},{"get_borderBottomWidth",0x55D9620}};
+        {"get_display",0x55A1070},{"get_opacity",0x55A14B0},{"get_backgroundColor",0x55A0B90},
+        {"get_backgroundImage",0x55A0BD0},{"get_unityBackgroundImageTintColor",0x55A1830},
+        {"get_borderLeftColor",0x55A0E30},{"get_borderLeftWidth",0x55A0E70},
+        {"get_borderRightColor",0x55A0EA0},{"get_borderRightWidth",0x55A0EE0},
+        {"get_borderTopColor",0x55A0F10},{"get_borderTopWidth",0x55A0FD0},
+        {"get_borderBottomColor",0x55A0D40},{"get_borderBottomWidth",0x55A0E00}};
     for (auto [name,rva] : styleMethods) Guard(resolved,name,0,rva);
     state.imageClass = api.Class(UiAssembly,UiSpace,"Image");
     const std::tuple<const char*,int,uintptr_t> imageMethods[] = {
-        {".ctor",0,0x56D3750},{"set_image",1,0x56D3A70},{"set_scaleMode",1,0x56D3B80},{"set_tintColor",1,0x56D4080},
-        {"get_image",0,0x56D3910},{"get_sprite",0,0x56D39D0},{"get_vectorImage",0,0x56D3A20},{"get_tintColor",0,0x1581A50}};
+        {".ctor",0,0x569AF30},{"set_image",1,0x569B250},{"set_scaleMode",1,0x569B360},{"set_tintColor",1,0x569B860},
+        {"get_image",0,0x569B0F0},{"get_sprite",0,0x569B1B0},{"get_vectorImage",0,0x569B200},{"get_tintColor",0,0x1573650}};
     for (const auto& [name,count,rva] : imageMethods) Guard(state.imageClass,name,count,rva);
     auto utility = api.Class("Core.dll","","pq");
-    state.rootGetter = api.FindVerified(utility,"pbs",0,0x2E93CC0);
-    state.toPanel = api.FindVerified(utility,"pcf",2,0x2E94C60);
+    state.rootGetter = api.FindVerified(utility,"pbs",0,0x2E5A350);
+    state.toPanel = api.FindVerified(utility,"pcf",2,0x2E5B2A0);
     state.cameraServiceClass = api.Class("Core.dll","","eow");
-    state.cameraGetter = api.FindVerified(state.cameraServiceClass,"xhs",0,0x68D2C0);
+    state.cameraGetter = api.FindVerified(state.cameraServiceClass,"xhs",0,0x68E2C0);
     auto camera = api.Class(EngineAssembly,"UnityEngine","Camera");
-    state.toScreen = api.FindVerified(camera,"WorldToScreenPoint",1,0x53B65B0);
-    Guard(camera,"get_pixelRect",0,0x53B8AA0); Guard(camera,"get_targetTexture",0,0x53B9B50);
-    Guard(api.Class(EngineAssembly,"UnityEngine","Renderer"),"get_bounds",0,0x53F2220);
-    state.toLocal = api.FindVerified(api.Class(UiAssembly,UiSpace,"VisualElementExtensions"),"WorldToLocal",2,0x56776A0);
+    state.toScreen = api.FindVerified(camera,"WorldToScreenPoint",1,0x537DD90);
+    Guard(camera,"get_pixelRect",0,0x5380280); Guard(camera,"get_targetTexture",0,0x5381330);
+    Guard(api.Class(EngineAssembly,"UnityEngine","Renderer"),"get_bounds",0,0x53B9A00);
+    state.toLocal = api.FindVerified(api.Class(UiAssembly,UiSpace,"VisualElementExtensions"),"WorldToLocal",2,0x563EE80);
     auto screen = api.Class(EngineAssembly,"UnityEngine","Screen");
-    state.screenWidth = api.FindVerified(screen,"get_width",0,0x53F4060);
-    state.screenHeight = api.FindVerified(screen,"get_height",0,0x53F3DF0);
+    state.screenWidth = api.FindVerified(screen,"get_width",0,0x53BB840);
+    state.screenHeight = api.FindVerified(screen,"get_height",0,0x53BB5D0);
     state.layerServiceClass = api.Class("Core.dll","","gmo");
     state.layerRootClass = api.Class("Core.dll","","gmy");
     state.widgetClass = api.Class("Core.dll","Core.UILogic.Components","MagneticDragWindow");

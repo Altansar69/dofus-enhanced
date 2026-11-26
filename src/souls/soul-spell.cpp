@@ -58,15 +58,15 @@ bool CanCast(Selection& result) {
 }
 }
 void InstallSpell() {
-    controlled = Verify("fvj", "bfty", 0, 0x68D2B0);
-    list = Verify("fvu", "bhlm", 2, 0x1DBFCF0);
-    id = Verify("ht", "nhp", 0, 0x27106C0);
-    owner = Verify("ht", "nhs", 0, 0x681FE0);
-    level = Verify("ht", "nhm", 0, 0x68D2C0);
-    grade = Verify("hr", "ngl", 0, 0xF3D460);
-    range = Verify("ht", "nim", 0, 0x27110D0);
-    allowed = Verify("fvj", "bfua", 5, 0x1DAA6A0);
-    cast = Verify("fyc", "bgaf", 2, 0x1E5DF80);
+    controlled = Verify("fvj", "bfty", 0, 0x68E2B0);
+    list = Verify("fvu", "bhlm", 2, 0x1DA3DE0);
+    id = Verify("ht", "nhp", 0, 0x26C7A70);
+    owner = Verify("ht", "nhs", 0, 0x682FE0);
+    level = Verify("ht", "nhm", 0, 0x68E2C0);
+    grade = Verify("hr", "ngl", 0, 0xF2EBE0);
+    range = Verify("ht", "nim", 0, 0x26C8480);
+    allowed = Verify("fvj", "bfua", 5, 0x1D8AA70);
+    cast = Verify("fyc", "bgaf", 2, 0x1E4D410);
     SetSpellClick(CastCaptureSpell);
     installed = true;
 }

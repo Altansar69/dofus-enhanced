@@ -28,9 +28,9 @@ void ExpireScriptWaits(ULONGLONG now) {
 }
 bool ScriptWaitCaller(uintptr_t caller) {
     switch (caller - gameBase) {
-    case 0x2740093: // SpellScriptRunner.uwu, absent script data fallback.
-    case 0x27401A0: // SpellScriptRunner.uwv, same fallback.
-    case 0x274164F: // dzh.uxc, dedicated visual pause step.
+    case 0x26D696B: // SpellScriptRunner.uwu, absent script data fallback.
+    case 0x26D6A90: // SpellScriptRunner.uwv, same fallback.
+    case 0x26ED1FF: // dzh.uxc, dedicated visual pause step.
         return true;
     default: return false;
     }
@@ -126,10 +126,10 @@ void InstallScriptWaits() {
     scriptWaitClass = api.Class("Core.dll", "", "gqe");
     scriptFightClass = api.Class("Core.dll", "", "fyb");
     scriptContextClass = api.Class("Core.dll", "", "fws");
-    api.Native(api.Find(scriptWaitClass, ".ctor", 1), 0x2089970);
-    api.Native(api.Find(scriptWaitClass, "uia", 0), 0x2089A50);
-    completeScriptWait = reinterpret_cast<ScriptStepFn>(api.Native(api.Find(scriptWaitClass, "blye", 0), 0x20899A0));
-    for (auto rva : {0x274008E, 0x274019B, 0x274164A}) api.NativeAt(rva);
-    AddNativeHook(0x2089970, reinterpret_cast<void*>(ScriptCtorHook), reinterpret_cast<void**>(&originalScriptCtor));
-    AddNativeHook(0x2089A50, reinterpret_cast<void*>(ScriptStartHook), reinterpret_cast<void**>(&originalScriptStart));
+    api.Native(api.Find(scriptWaitClass, ".ctor", 1), 0x206F840);
+    api.Native(api.Find(scriptWaitClass, "uia", 0), 0x206F920);
+    completeScriptWait = reinterpret_cast<ScriptStepFn>(api.Native(api.Find(scriptWaitClass, "blye", 0), 0x206F870));
+    for (auto rva : {0x26D6966, 0x26D6A8B, 0x26ED1FA}) api.NativeAt(rva);
+    AddNativeHook(0x206F840, reinterpret_cast<void*>(ScriptCtorHook), reinterpret_cast<void**>(&originalScriptCtor));
+    AddNativeHook(0x206F920, reinterpret_cast<void*>(ScriptStartHook), reinterpret_cast<void**>(&originalScriptStart));
 }

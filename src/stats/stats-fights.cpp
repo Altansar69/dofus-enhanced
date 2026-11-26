@@ -45,7 +45,7 @@ constexpr int64_t MaxFightMs = 86400000, MaxTurns = 100000, MaxHit = 100000000;
 constexpr size_t MaxSeen = 8, MaxCharacters = 64, MaxCasts = 256;
 constexpr uint64_t PendingMs = 120000;
 
-// Pinned 3.7.12.12 offsets, each tied to its field name at installation.
+// Pinned 3.7.14.18 offsets, each tied to its field name at installation.
 struct Offsets {
     size_t info = 0, characterId = 0, position = 0, mapId = 0;           // esg.dpzj, z.dbrl, esg.dqab, WorldPoint.m_mapId
     size_t fight = 0, fighting = 0, history = 0, report = 0;             // exf.drih, fxc.dwan, fxc.<dwaq>, fzf.dwqq
@@ -496,8 +496,8 @@ void InstallStatsFights() {
             next.at.healed = RequireField(next.statistics, "dcbg", 0x20);
             // The item accessors capture-detect reads souls with (soul-inventory.cpp's RVAs).
             next.item = api.Class("Core.dll", "", "mc");
-            next.itemType = api.FindVerified(next.item, "mzb", 0, 0x2AAC720);
-            next.quantity = api.FindVerified(next.item, "myo", 0, 0x861E70);
+            next.itemType = api.FindVerified(next.item, "mzb", 0, 0x2933160);
+            next.quantity = api.FindVerified(next.item, "myo", 0, 0x8535F0);
             next.reports = true;
             contract = next;
         } catch (...) {
@@ -512,9 +512,9 @@ void InstallStatsFights() {
             next.point = api.Class(DataCenter, WorldSpace, "WorldPoint");
             next.at.mapId = RequireField(next.point, "m_mapId", 0x10);
             next.dataCenter = api.Class(DataCenter, "Core.DataCenter", "DataCenterModule");
-            next.dungeons = api.FindVerified(next.dataCenter, "get_dungeonsDataRoot", 0, 0x7BC7C0);
+            next.dungeons = api.FindVerified(next.dataCenter, "get_dungeonsDataRoot", 0, 0x7ADF40);
             next.dungeonRoot = api.Class(DataCenter, WorldSpace, "DungeonsDataRoot");
-            next.dungeonByMap = api.FindVerified(next.dungeonRoot, "GetDungeonByMapId", 1, 0x7C26B0);
+            next.dungeonByMap = api.FindVerified(next.dungeonRoot, "GetDungeonByMapId", 1, 0x7B3E30);
             next.dungeon = api.Class(DataCenter, WorldSpace, "DungeonData");
             next.at.dungeonId = RequireField(next.dungeon, "id", 0x10);
             next.at.bosses = RequireField(next.dungeon, "bosses", 0x50);
@@ -549,8 +549,8 @@ void InstallStatsFights() {
             next.at.target = RequireField(next.loss, "eqzf", 0x38);
             next.at.life = RequireField(next.loss, "eqzh", 0x40);
             next.handler = api.Class("Core.dll", "", "gau");
-            const auto listener = api.FindVerified(next.handler, "bixl", 1, 0x1EA0910);
-            AddHook(listener, 0x1EA0910, reinterpret_cast<void*>(&ActionHook), reinterpret_cast<void**>(&originalAction));
+            const auto listener = api.FindVerified(next.handler, "bixl", 1, 0x1E8CFB0);
+            AddHook(listener, 0x1E8CFB0, reinterpret_cast<void*>(&ActionHook), reinterpret_cast<void**>(&originalAction));
             next.actions = true;
             contract = next;
         } catch (...) {

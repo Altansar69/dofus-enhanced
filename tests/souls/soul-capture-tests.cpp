@@ -122,12 +122,12 @@ Method Api::Find(Klass klass, const char* name, int argc) const {
 void* Api::Native(Method method, uintptr_t rva) const {
     const auto& m = *static_cast<const fake::MethodInfo*>(method);
     static const std::map<std::string, std::pair<uintptr_t, int>> expected{
-        {"fxc.bfzw", {0x73E5E0, 0}}, {"fxc.bfzz", {0x11E7E80, 0}},
-        {"fxj.bhxx", {0x956680, 0}}, {"fxj.bhxv", {0x96A340, 0}},
-        {"esg.zcx", {0x18BB140, 0}}, {"evv.bamm", {0x1957A70, 2}},
-        {"EntityInfo.bajs", {0x19518F0, 1}}, {"EntityInfo.bake", {0x1951DB0, 1}},
-        {"EntityInfo.bajy", {0x1951B60, 2}}, {"ebs.vpl", {0x27855B0, 0}},
-        {"FightState.vuk", {0x2773360, 2}}
+        {"fxc.bfzw", {0x733FC0, 0}}, {"fxc.bfzz", {0x11D9600, 0}},
+        {"fxj.bhxx", {0x947E00, 0}}, {"fxj.bhxv", {0x95BAC0, 0}},
+        {"esg.zcx", {0x18B07F0, 0}}, {"evv.bamm", {0x1950980, 2}},
+        {"EntityInfo.bajs", {0x193E4A0, 1}}, {"EntityInfo.bake", {0x193E960, 1}},
+        {"EntityInfo.bajy", {0x193E710, 2}}, {"ebs.vpl", {0x2738320, 0}},
+        {"FightState.vuk", {0x2745940, 2}}
     };
     auto it = expected.find(m.klass->name + "." + m.name);
     fake::Check(it != expected.end() && it->second.first == rva && it->second.second == m.argc,

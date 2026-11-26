@@ -64,7 +64,7 @@ Obj Text(const std::string& value) { auto text = Make("String"); Get(text).text 
 Obj List(std::vector<Obj> items) { auto list = Make("List"); Get(list).items = std::move(items); return list; }
 void Initialize() {
     for (const auto name : {"Box", "String", "List", "Compositor", "Other"}) Define("", "", name);
-    // Pinned 3.7.12.12 contracts (work/r74-analysis/contracts-new.json).
+    // Pinned 3.7.14.18 contracts (work/r127-analysis/contracts-new.json).
     Define("Core.dll", "", "exf", {{"drih", 0x18}});
     Define("Core.dll", "", "fxc", {{"<dwaq>k__BackingField", 0xC8}});
     Define("Core.dll", "", "fzf", {{"dwqq", 0x18}});
@@ -176,9 +176,9 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
     auto& type = *static_cast<fake::Class*>(klass);
     const auto key = type.name + "." + name;
     static const std::map<std::string, std::pair<int, uintptr_t>> expected{
-        {"esg.zcx", {0, 0x18BB140}}, {"mc.myn", {0, 0xF20D40}}, {"mc.myo", {0, 0x861E70}}, {"mc.mzb", {0, 0x2AAC720}},
-        {"mc.myx", {0, 0x2AAC6B0}}, {"MonsterData.GetById", {1, 0x7E76B0}}, {"MonsterData.get_isBoss", {0, 0x7C43C0}},
-        {"MonsterData.get_isMiniBoss", {0, 0x7C43B0}}, {"MonsterData.get_name", {0, 0x7E7A30}}};
+        {"esg.zcx", {0, 0x18B07F0}}, {"mc.myn", {0, 0xF124C0}}, {"mc.myo", {0, 0x8535F0}}, {"mc.mzb", {0, 0x2933160}},
+        {"mc.myx", {0, 0x29330F0}}, {"MonsterData.GetById", {1, 0x7D8E30}}, {"MonsterData.get_isBoss", {0, 0x7B5B40}},
+        {"MonsterData.get_isMiniBoss", {0, 0x7B5B30}}, {"MonsterData.get_name", {0, 0x7D91B0}}};
     if (key == fake::fail) throw std::runtime_error("Verified method unavailable");
     const auto found = expected.find(key);
     fake::Check(found != expected.end() && found->second == std::pair(argc, rva), "Capture native outside the pinned contract");
@@ -297,7 +297,7 @@ void InstallContract() {
     Check(layouts == std::set<std::string>{"exf.drih", "fxc.<dwaq>k__BackingField", "fzf.dwqq", "fyz.dwou", "fze.dwpw", "fze.dwpy",
         "fze.dwqb", "fzg.dwqv", "esg.dpzj", "z.dbrm", "ItemData.possibleEffects", "EffectInstanceData.actionId", "EffectInstanceInteger.value"},
         "Every field read by name has its pinned offset checked");
-    Check(guarded == std::set<uintptr_t>{0x18BB140, 0xF20D40, 0x861E70, 0x2AAC720, 0x2AAC6B0, 0x7E76B0, 0x7C43C0, 0x7C43B0, 0x7E7A30},
+    Check(guarded == std::set<uintptr_t>{0x18B07F0, 0xF124C0, 0x8535F0, 0x2933160, 0x29330F0, 0x7D8E30, 0x7B5B40, 0x7B5B30, 0x7D91B0},
         "Exactly the soul-inventory item accessors, esg.zcx and MonsterData, each behind a signature guard");
     InstallCaptureDetect(Sink);
     Check(verifications == 9 && logs.empty(), "A second installation only replaces the sink");

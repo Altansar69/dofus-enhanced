@@ -1,7 +1,7 @@
 Français | [English](README_en.md)
 
 # 🐉 **Dofus Enhanced**
-![License](https://img.shields.io/badge/License-UNLICENSE-red) [![Version](https://img.shields.io/github/v/release/Altansar69/dofus-enhanced?label=Version&color=blue)](../../releases/latest) ![Dofus Unity](https://img.shields.io/badge/Dofus%20Unity-3.7.12.12-orange) ![OS](https://img.shields.io/badge/OS-Windows-green)
+![License](https://img.shields.io/badge/License-UNLICENSE-red) [![Version](https://img.shields.io/github/v/release/Altansar69/dofus-enhanced?label=Version&color=blue)](../../releases/latest) ![Dofus Unity](https://img.shields.io/badge/Dofus%20Unity-3.7.14.18-orange) ![OS](https://img.shields.io/badge/OS-Windows-green)
 
 > [!WARNING]
 > **Projet non officiel : à lire avant toute utilisation**
@@ -110,7 +110,7 @@ Pour trouver `Dofus.exe` : jeu lancé, Gestionnaire des tâches → clic droit s
 ## ❓ FAQ et remarques
 
 - **Windows uniquement** (64 bits).
-- **Une version de Dofus par version du mod** : actuellement **Dofus Unity 3.7.12.12**. Le mod vérifie les empreintes exactes du jeu avant de se charger.
+- **Une version de Dofus par version du mod** : actuellement **Dofus Unity 3.7.14.18**. Le mod vérifie les empreintes exactes du jeu avant de se charger.
 - **Mise à jour de Dofus par Ankama ?** Le mod peut devoir être adapté : tant qu’aucune version compatible n’est publiée, il ne se charge pas et le jeu reste intact. Dès qu’elle sort, la mise à jour automatique l’installe.
 - **Version antérieure à 1.13.1 ?** Depuis le renommage du dépôt en `dofus-enhanced` et les publications nommées par version (`v1.15.0`…), sa mise à jour automatique ne trouve plus les nouvelles versions. Télécharge la dernière, extrais-la dans le dossier qui contient déjà `DofusMiniatures-3.7.11.11-rN` (pas dans un sous-dossier), puis décoche et recoche **Chargement automatique** en jeu (ou lance `.\ModuleLoader.exe --enable-auto "C:\chemin\vers\Dofus.exe"` depuis le nouveau dossier). Tes réglages sont conservés.
 - **Journaux** : `module.log` dans le dossier de la version chargée (`DofusMiniatures-3.7.11.11-rN`), `autoload.log` dans celui de l’assistant de chargement automatique. **Options → Dofus Enhanced → À propos → Dossier du mod** (bouton **Ouvrir**) ouvre le dossier de la version chargée dans l’Explorateur de Windows ; les réglages partagés et les statistiques sont dans le dossier au-dessus.

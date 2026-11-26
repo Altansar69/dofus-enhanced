@@ -422,28 +422,28 @@ void InstallPartyTravelWidget() {
         subAreaClass = api.Class(DataImage, WorldSpace, "SubAreaData");
         dataCenterClass = api.Class(DataImage, "Core.DataCenter", "DataCenterModule");
         tooltipClass = api.Class("Core.dll", Tooltips, "TooltipManipulator");
-        // Checked offsets of the pinned 3.7.12.12 layout (contracts-new.json).
+        // Checked offsets of the pinned 3.7.14.18 layout (contracts-new.json).
         RequireField(memberClass, "ddkt", 0x18); RequireField(memberClass, "ddku", 0x20);
         RequireField(memberClass, "ddll", 0x68); RequireField(memberClass, "ddlm", 0x6C); RequireField(memberClass, "ddln", 0x70);
         RequireField(mapInfoClass, "posX", 0x18); RequireField(mapInfoClass, "posY", 0x1A);
-        getRoot = api.FindVerified(bindingClass, "get_member", 0, 0x2F8A5F0);
-        getPortrait = api.FindVerified(bindingClass, "get_parentMember", 0, 0x2F8A6A0);
-        tooltipCtor = api.FindVerified(tooltipClass, ".ctor", 6, 0x15DFAE0);
-        hideTooltip = api.FindVerified(api.Class("Core.dll", Tooltips, "BaseTooltipManipulator"), "HideTooltip", 0, 0x15CD030);
+        getRoot = api.FindVerified(bindingClass, "get_member", 0, 0x2F52590);
+        getPortrait = api.FindVerified(bindingClass, "get_parentMember", 0, 0x2F52640);
+        tooltipCtor = api.FindVerified(tooltipClass, ".ctor", 6, 0x15D16E0);
+        hideTooltip = api.FindVerified(api.Class("Core.dll", Tooltips, "BaseTooltipManipulator"), "HideTooltip", 0, 0x15BEC30);
         auto extensions = api.Class("UnityEngine.UIElementsModule.dll", Ui, "VisualElementExtensions");
-        addManipulator = api.FindVerified(extensions, "AddManipulator", 2, 0x56755F0);
-        removeManipulator = api.FindVerified(extensions, "RemoveManipulator", 2, 0x5676A90);
-        memberId = api.FindVerified(memberClass, "oab", 0, 0x68D2B0);
-        playerId = api.FindVerified(characterClass, "zcx", 0, 0x18BB140);
-        autopilot = api.FindVerified(characterClass, "zhy", 4, 0x18BD470);
-        resolve = api.FindVerified(characterClass, "zid", 3, 0x18BD8B0);
-        currentMap = api.FindVerified(characterClass, "zeo", 0, 0x185C1E0);
-        mapInfo = api.FindVerified(mapInfoClass, "GetMapInformationById", 1, 0x7C4200);
-        mapSubArea = api.FindVerified(mapInfoClass, "get_subArea", 0, 0x7C44B0);
-        subAreas = api.FindVerified(dataCenterClass, "get_subAreasDataRoot", 0, 0x7C1A40);
-        subAreaById = api.FindVerified(subRootClass, "GetSubAreaById", 1, 0x7D1060);
-        subAreaWorld = api.FindVerified(subAreaClass, "get_worldmapId", 0, 0x7D1040);
-        subAreaName = api.FindVerified(subAreaClass, "get_name", 0, 0x7D0F60);
+        addManipulator = api.FindVerified(extensions, "AddManipulator", 2, 0x563CDD0);
+        removeManipulator = api.FindVerified(extensions, "RemoveManipulator", 2, 0x563E270);
+        memberId = api.FindVerified(memberClass, "oab", 0, 0x68E2B0);
+        playerId = api.FindVerified(characterClass, "zcx", 0, 0x18B07F0);
+        autopilot = api.FindVerified(characterClass, "zhy", 4, 0x18B2B20);
+        resolve = api.FindVerified(characterClass, "zid", 3, 0x18B2F60);
+        currentMap = api.FindVerified(characterClass, "zeo", 0, 0x18516B0);
+        mapInfo = api.FindVerified(mapInfoClass, "GetMapInformationById", 1, 0x7B5980);
+        mapSubArea = api.FindVerified(mapInfoClass, "get_subArea", 0, 0x7B5C30);
+        subAreas = api.FindVerified(dataCenterClass, "get_subAreasDataRoot", 0, 0x7B31C0);
+        subAreaById = api.FindVerified(subRootClass, "GetSubAreaById", 1, 0x7C27E0);
+        subAreaWorld = api.FindVerified(subAreaClass, "get_worldmapId", 0, 0x7C27C0);
+        subAreaName = api.FindVerified(subAreaClass, "get_name", 0, 0x7C26E0);
         // The single shared Toggle hook is installed by SoulWidget, which hands this button's clicks here.
         installed = true;
     } catch (const std::exception& e) { installed = false; Log(std::string("PARTY_TRAVEL_WIDGET_UNAVAILABLE ") + e.what()); }

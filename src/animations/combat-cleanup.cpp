@@ -11,7 +11,7 @@ namespace {
 // Keep every constructor argument, including the trailing MethodInfo.
 using AnimationCtorFn = void(*)(Obj, Obj, Obj, bool, bool, int, int, Obj, bool, Obj, bool, Method);
 AnimationCtorFn originalAnimationCtor;
-constexpr uintptr_t DeathAnimationCtorReturn = 0x26CFAA9;
+constexpr uintptr_t DeathAnimationCtorReturn = 0x2689E09;
 constexpr size_t MaxRetainedAnimations = 512;
 struct RecordedAnimation {
     Ref step;
@@ -82,9 +82,9 @@ void PumpCombatCleanup(bool inCombat) {
 }
 
 void InstallCombatCleanup() {
-    api.NativeAt(0x26CFAA4); // Exact dwp.uia constructor call, not a shared ctor alias.
+    api.NativeAt(0x2689E04); // Exact dwp.uia constructor call, not a shared ctor alias.
     auto animationClass = api.Class("Core.dll", "", "gpy");
-    api.Native(api.Find(animationClass, ".ctor", 10), 0x2081890);
-    AddNativeHook(0x2081890, reinterpret_cast<void*>(AnimationCtorHook),
+    api.Native(api.Find(animationClass, ".ctor", 10), 0x2067830);
+    AddNativeHook(0x2067830, reinterpret_cast<void*>(AnimationCtorHook),
                   reinterpret_cast<void**>(&originalAnimationCtor));
 }

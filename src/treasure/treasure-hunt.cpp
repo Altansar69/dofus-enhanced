@@ -31,10 +31,10 @@ void InstallHunt() {
     RequireField(huntClass, "dcmw", 0x20);
     RequireField(stepClass, "dcmj", 0x10); RequireField(stepClass, "dcmk", 0x14); RequireField(stepClass, "dcml", 0x18);
     RequireField(stepClass, "dcmn", 0x20); RequireField(stepClass, "dcmp", 0x28);
-    hunts = api.FindVerified(serviceClass, "bdbm", 0, 0x69F1E0);
+    hunts = api.FindVerified(serviceClass, "bdbm", 0, 0x6A01D0);
     poiClass = api.Class(DataCenter, "Core.DataCenter.Metadata.Quest.TreasureHunt", "PointOfInterestData");
-    poiName = api.FindVerified(poiClass, "get_name", 0, 0x7C7FC0);
-    poiRoot = api.FindVerified(api.Class(DataCenter, "Core.DataCenter", "DataCenterModule"), "get_pointsOfInterestDataRoot", 0, 0x7BFD80);
+    poiName = api.FindVerified(poiClass, "get_name", 0, 0x7B9740);
+    poiRoot = api.FindVerified(api.Class(DataCenter, "Core.DataCenter", "DataCenterModule"), "get_pointsOfInterestDataRoot", 0, 0x7B1500);
     installed = true;
 }
 Step CurrentStep() {

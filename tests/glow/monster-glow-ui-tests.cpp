@@ -194,7 +194,7 @@ void NativeContractsAndProjection(){
  Check(Get(clip).styles["overflow"]==1&&Get(clip).styles["left"]==450&&Get(images.front()).styles["left"]==-14,"Exact clipping wrapper geometry");
  Check(writesToNative==0,"No native input/layout property changes");
  for(const auto& object:objects)if(object->owned)Check(object->picking==1&&!object->focusable,"Every owned element ignores input/focus");
- Check(guards.at("VisualElementExtensions.WorldToLocal")==0x56776A0&&guards.at("pq.pcf")==0x2E94C60&&guards.at("Camera.WorldToScreenPoint")==0x53B65B0,"Exact projection overload guards");
+ Check(guards.at("VisualElementExtensions.WorldToLocal")==0x563EE80&&guards.at("pq.pcf")==0x2E5B2A0&&guards.at("Camera.WorldToScreenPoint")==0x537DD90,"Exact projection overload guards");
 }
 void ResolvedOverlayDiagnostics(){
  Fixture f;Painted({450,350,100,100});auto frame=monsterGlow::BeginGlowUi(1000);

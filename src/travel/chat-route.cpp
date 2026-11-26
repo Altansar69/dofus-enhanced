@@ -18,7 +18,7 @@ constexpr const char* Space="Core.PathFinding.WorldPathfinding";
 // first tick.
 std::chrono::microseconds tickBudget{6000};
 
-// IL2CPP layouts of the supported client (3.7.12.12). Fields are checked against
+// IL2CPP layouts of the supported client (3.7.14.18). Fields are checked against
 // the metadata (Install, and the first List`1 of each kind); dictionary entries,
 // a generic layout the metadata does not give, against the game's own lookups
 // before any value is used. Objects: fields from 0x10. Arrays: length at 0x18,
@@ -380,13 +380,13 @@ void Install() {
     wrapperClass=api.Class("Core.dll",Space,"EdgeListWrapper");transitionClass=api.Class("Core.dll",Space,"Transition");
     verticesClass=api.Class("Core.dll",Space,"DictionaryMapIdVertices");zonesClass=api.Class("Core.dll",Space,"DictionaryZoneVertex");
     outgoingClass=api.Class("Core.dll",Space,"DictionaryUlongEdgeList");stringClass=api.Class("mscorlib.dll","System","String");
-    getGraph=api.FindVerified(loaderClass,"bbno",0,0x19B7A00);
-    init=api.FindVerified(loaderClass,"bbnn",0,0x19B7970);
-    api.FindVerified(loaderClass,".ctor",0,0x19B7910);
-    api.FindVerified(filterClass,".ctor",0,0x17E38E0);
-    initFilter=api.FindVerified(filterClass,"wvo",0,0x17E5FB0);
-    edgeAllowed=api.FindVerified(filterClass,"wvs",1,0x17E6C60);
-    areaAllowed=api.FindVerified(filterClass,"wvt",1,0x17E6E70);
+    getGraph=api.FindVerified(loaderClass,"bbno",0,0x19D27F0);
+    init=api.FindVerified(loaderClass,"bbnn",0,0x19D2760);
+    api.FindVerified(loaderClass,".ctor",0,0x19D2700);
+    api.FindVerified(filterClass,".ctor",0,0x17D5A10);
+    initFilter=api.FindVerified(filterClass,"wvo",0,0x17D8B90);
+    edgeAllowed=api.FindVerified(filterClass,"wvs",1,0x17D9840);
+    areaAllowed=api.FindVerified(filterClass,"wvt",1,0x17D9A50);
     RequireField(graphClass,"m_vertices",GraphVertices);RequireField(graphClass,"m_outgoingEdges",GraphOutgoing);
     RequireField(vertexClass,"m_mapId",VertexMap);RequireField(vertexClass,"m_zoneId",VertexZone);RequireField(vertexClass,"m_uid",VertexUid);
     RequireField(edgeClass,"m_to",EdgeDestination);RequireField(edgeClass,"m_transitions",EdgeTransitions);

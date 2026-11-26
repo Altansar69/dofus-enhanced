@@ -75,7 +75,7 @@ public:
             RequireField(character, "dpzj", 0x128);
             info = api.Class("Core.dll", "", "z");
             RequireField(info, "dbrm", 0x18);
-            localId = api.FindVerified(character, "zcx", 0, 0x18BB140);
+            localId = api.FindVerified(character, "zcx", 0, 0x18B07F0);
             characterReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_CHARACTER_DISABLED ") + error.what()); }
         try {
@@ -87,8 +87,8 @@ public:
         } catch (const std::exception& error) { Log(std::string("STATS_CHARACTER_CLASS_DISABLED ") + error.what()); }
         try {
             spellData = api.Class(DataCenter, "Core.DataCenter.Metadata.Spell", "SpellData");
-            spellById = api.FindVerified(spellData, "GetById", 1, 0x7CCE20);
-            spellName = api.FindVerified(spellData, "get_name", 0, 0x7CD300);
+            spellById = api.FindVerified(spellData, "GetById", 1, 0x7BE5A0);
+            spellName = api.FindVerified(spellData, "get_name", 0, 0x7BEA80);
             spellsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_SPELL_NAMES_DISABLED ") + error.what()); }
         try {
@@ -101,14 +101,14 @@ public:
             // triggers (Court-circuit 13872, the Steamer's variant of Ancrage,
             // triggers « Court-circuit » 29594, type 627 « Déclenchés Steamer »).
             if (!spellsReady) throw std::runtime_error("No spell data");
-            spellVariant = api.FindVerified(spellData, "get_spellVariant", 0, 0x7CD6B0);
+            spellVariant = api.FindVerified(spellData, "get_spellVariant", 0, 0x7BEE30);
             variantData = api.Class(DataCenter, "Core.DataCenter.Metadata.Spell", "SpellVariantData");
             variantClass = RequireField(variantData, "breedId", 0x14);
             kindsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_SPELL_KINDS_DISABLED ") + error.what()); }
         try {
             auto dataCenter = api.Class(DataCenter, "Core.DataCenter", "DataCenterModule");
-            dungeonsRoot = api.FindVerified(dataCenter, "get_dungeonsDataRoot", 0, 0x7BC7C0);
+            dungeonsRoot = api.FindVerified(dataCenter, "get_dungeonsDataRoot", 0, 0x7ADF40);
             auto dungeonRoot = api.Class(DataCenter, WorldSpace, "DungeonsDataRoot");
             // DungeonsDataRoot has no lookup by id of its own, and its base's
             // (MetadataRoot<DungeonData>.GetObjectById, which 1.15.0 used) can
@@ -122,16 +122,16 @@ public:
             // the dungeon of an id is found in that list.
             const auto base = api.class_get_parent(dungeonRoot);
             if (!base || std::string(api.class_get_name(base)) != "MetadataRoot`1") throw std::runtime_error("Dungeon data root base changed");
-            dungeonList = api.FindVerified(base, "GetObjects", 0, 0x3874CB0);
+            dungeonList = api.FindVerified(base, "GetObjects", 0, 0x383CCB0);
             dungeonData = api.Class(DataCenter, WorldSpace, "DungeonData");
             dungeonId = RequireField(dungeonData, "id", 0x10);
-            dungeonName = api.FindVerified(dungeonData, "get_name", 0, 0x7C24C0);
+            dungeonName = api.FindVerified(dungeonData, "get_name", 0, 0x7B3C40);
             dungeonsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_DUNGEON_NAMES_DISABLED ") + error.what()); }
         try {
             worldData = api.Class(DataCenter, WorldSpace, "WorldMapData");
-            worldById = api.FindVerified(worldData, "GetWorldMapById", 1, 0x7D3D50);
-            worldName = api.FindVerified(worldData, "get_name", 0, 0x7D3DE0);
+            worldById = api.FindVerified(worldData, "GetWorldMapById", 1, 0x7C54D0);
+            worldName = api.FindVerified(worldData, "get_name", 0, 0x7C5560);
             worldsReady = true;
         } catch (const std::exception& error) { Log(std::string("STATS_WORLD_NAMES_DISABLED ") + error.what()); }
     }

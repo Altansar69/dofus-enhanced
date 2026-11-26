@@ -17,7 +17,7 @@ void Check(bool value, const char* message) { if (!value) throw std::runtime_err
 struct Type { const char* name; };
 struct MethodInfo { uintptr_t rva; };
 Type entityClass{"AnimatedEntity"};
-MethodInfo movement{0x2616140};
+MethodInfo movement{0x25DC9E0};
 MoveFn hook{};
 std::function<bool()> nativeBody;
 std::vector<std::string> events, logs;
@@ -76,7 +76,7 @@ Method Api::Find(Klass klass, const char* name, int argc) const {
     return &fake::movement;
 }
 void* Api::Native(Method method, uintptr_t rva) const {
-    fake::Check(method == &fake::movement && rva == 0x2616140, "Unexpected rfw RVA");
+    fake::Check(method == &fake::movement && rva == 0x25DC9E0, "Unexpected rfw RVA");
     return reinterpret_cast<void*>(fake::Original);
 }
 }
@@ -85,7 +85,7 @@ Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string& message) { fake::logs.push_back(message); }
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    fake::Check(rva == 0x2616140, "Unexpected dispatch hook target");
+    fake::Check(rva == 0x25DC9E0, "Unexpected dispatch hook target");
     fake::hook = reinterpret_cast<fake::MoveFn>(replacement);
     *original = reinterpret_cast<void*>(fake::Original);
 }

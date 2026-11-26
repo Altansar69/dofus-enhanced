@@ -27,7 +27,7 @@ std::map<std::string, Type> classes;
 std::vector<std::unique_ptr<Object>> objects;
 std::map<GCHandle, Obj> handles;
 GCHandle nextHandle = 0x123456780000ULL;
-MethodInfo lookup{"vkq", 0x27695E0}, fighter{"bamm", 0x1957A70}, flags{"bajs", 0x19518F0};
+MethodInfo lookup{"vkq", 0x2723DF0}, fighter{"bamm", 0x1950980}, flags{"bajs", 0x193E4A0};
 StepFn hook{};
 unsigned starts = 0, completions = 0, remembered = 0, getterCalls = 0;
 bool reenter = false, throwCompletion = false, throwLookup = false;
@@ -82,7 +82,7 @@ void* Api::Native(Method method, uintptr_t rva) const {
     return reinterpret_cast<void*>(rva);
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x205E360, "Unexpected completion RVA");
+    fake::Check(rva == 0x2044380, "Unexpected completion RVA");
     return reinterpret_cast<void*>(fake::Complete);
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
@@ -119,11 +119,11 @@ AnimationStepKind ClassifyAnimationStep(managed::Obj) { return fake::kind; }
 void RememberSkippedAnimation(managed::Obj) { ++fake::remembered; }
 void ClearInstantWaits() {}
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    if (rva == 0x20853E0) {
+    if (rva == 0x206A040) {
         fake::hook = reinterpret_cast<fake::StepFn>(replacement);
         *original = reinterpret_cast<void*>(fake::Original);
     } else {
-        fake::Check(rva == 0x39005D0, "Unexpected hook RVA");
+        fake::Check(rva == 0x38C85D0, "Unexpected hook RVA");
         *original = reinterpret_cast<void*>(fake::OriginalGetter);
     }
 }
@@ -218,7 +218,7 @@ int main() {
         // exactly when its toggle is ticked; any other read keeps the account value.
         auto option = Make("AccountOptionJson`1");
         state.spellEffectsOption.reset(option);
-        const uintptr_t callers[] = {0x1ECE82C, 0x272E250, 0x2744303, 0x1ECE827, 0x272E24B, 0x2744304, 0x39005D0};
+        const uintptr_t callers[] = {0x1EBC4CC, 0x26E11AD, 0x26F17AA, 0x1EBC4C7, 0x26E11A8, 0x26F17AB, 0x38C85D0};
         for (unsigned mask = 0; mask < 64; ++mask) for (auto caller : callers) for (int account : {0, 1}) {
             Reset(); Toggles(mask); accountValue = static_cast<unsigned char>(account);
             unsigned char result = 0xAA;
@@ -228,15 +228,15 @@ int main() {
         }
         Reset(); state.settings.ApplyLegacyAnimationMode(1); accountValue = 1;
         unsigned char result = 0xAA;
-        OptionGetterAt(Make("OtherOption"), &result, nullptr, gameBase + 0x1ECE82C);
+        OptionGetterAt(Make("OtherOption"), &result, nullptr, gameBase + 0x1EBC4CC);
         Check(getterCalls == 1 && result == 1, "Another option's read keeps its value");
         Put(fight, 0xB0, false); result = 0xAA;
-        OptionGetterAt(option, &result, nullptr, gameBase + 0x2744303);
+        OptionGetterAt(option, &result, nullptr, gameBase + 0x26F17AA);
         Check(result == 1, "Out of combat the account value stays"); Put(fight, 0xB0, true);
         state.stopRequested = true; result = 0xAA;
-        OptionGetterAt(option, &result, nullptr, gameBase + 0x272E250);
+        OptionGetterAt(option, &result, nullptr, gameBase + 0x26E11AD);
         Check(result == 1, "A stopping module keeps the account value"); state.stopRequested = false;
-        OptionGetterAt(option, nullptr, nullptr, gameBase + 0x1ECE82C);
+        OptionGetterAt(option, nullptr, nullptr, gameBase + 0x1EBC4CC);
         Check(getterCalls == 4, "Every read runs the native getter once, even without a result buffer");
         module = nullptr;
         std::cout << "PASS: actual animation hooks for all 64 toggle combinations x step provenance (skip, waiter release), "

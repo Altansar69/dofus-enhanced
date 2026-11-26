@@ -238,19 +238,19 @@ void InstallSpousePartyWidget() {
     displayClass = api.Class("Core.dll", "Core.UILogic.Party", "PartyDisplayUi");
     slotClass = api.Class("Core.dll", "Core.UILogic.Party", "PartyMember");
     bindingClass = api.Class("Core.dll", "Core.UILogic.Bindings", "PartyMemberItemBinding");
-    getRoot = api.FindVerified(bindingClass, "get_member", 0, 0x2F8A5F0);
-    getPortrait = api.FindVerified(bindingClass, "get_parentMember", 0, 0x2F8A6A0);
+    getRoot = api.FindVerified(bindingClass, "get_member", 0, 0x2F52590);
+    getPortrait = api.FindVerified(bindingClass, "get_parentMember", 0, 0x2F52640);
     toggleClass = api.Class("Core.dll", Figma, "DofusToggleButtonCustom");
     iconClass = api.Class("Core.dll", Figma, "DofusIcon");
     tooltipClass = api.Class("Core.dll", "Core.UILogic.Components.Tooltips", "TooltipManipulator");
-    tooltipCtor = api.FindVerified(tooltipClass, ".ctor", 6, 0x15DFAE0);
-    hideTooltip = api.FindVerified(api.Class("Core.dll", "Core.UILogic.Components.Tooltips", "BaseTooltipManipulator"), "HideTooltip", 0, 0x15CD030);
+    tooltipCtor = api.FindVerified(tooltipClass, ".ctor", 6, 0x15D16E0);
+    hideTooltip = api.FindVerified(api.Class("Core.dll", "Core.UILogic.Components.Tooltips", "BaseTooltipManipulator"), "HideTooltip", 0, 0x15BEC30);
     auto extensions = api.Class("UnityEngine.UIElementsModule.dll", Ui, "VisualElementExtensions");
-    addManipulator = api.FindVerified(extensions, "AddManipulator", 2, 0x56755F0);
-    removeManipulator = api.FindVerified(extensions, "RemoveManipulator", 2, 0x5676A90);
-    api.FindVerified(iconClass, ".ctor", 0, 0x170EBD0);
-    api.FindVerified(iconClass, "set_icon", 1, 0x170F480);
-    api.FindVerified(iconClass, "set_color", 1, 0x170F230);
+    addManipulator = api.FindVerified(extensions, "AddManipulator", 2, 0x563CDD0);
+    removeManipulator = api.FindVerified(extensions, "RemoveManipulator", 2, 0x563E270);
+    api.FindVerified(iconClass, ".ctor", 0, 0x17005C0);
+    api.FindVerified(iconClass, "set_icon", 1, 0x1700E70);
+    api.FindVerified(iconClass, "set_color", 1, 0x1700C20);
     // The single shared Toggle hook is installed by SoulWidget, avoiding a second detour.
     state.installed = true;
 }

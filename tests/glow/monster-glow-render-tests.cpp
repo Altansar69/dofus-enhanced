@@ -175,16 +175,16 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     const auto& type = m.klass->name;
     if (type == "Shader") {
         if (m.name == "GetGlobalMatrix") {
-            fake::Check(self == nullptr && m.rva == 0x53F6BE0, "Wrong global matrix getter");
+            fake::Check(self == nullptr && m.rva == 0x53BE3C0, "Wrong global matrix getter");
             return fake::Box(fake::globals.at(fake::Get(args[0]).text));
         }
-        fake::Check(self == nullptr && m.rva == 0x53F5EF0, "Wrong Shader.Find ABI");
+        fake::Check(self == nullptr && m.rva == 0x53BD6D0, "Wrong Shader.Find ABI");
         const auto name = fake::Get(args.at(0)).text;
         if (name == fake::missingShader) return nullptr;
         auto shader = fake::Make("Shader"); fake::Get(shader).text = name; return shader;
     }
     if (type == "GL") {
-        fake::Check(self == nullptr && m.rva == 0x53CFA60 && *static_cast<bool*>(args[1]), "Expected GPU texture projection");
+        fake::Check(self == nullptr && m.rva == 0x5397240 && *static_cast<bool*>(args[1]), "Expected GPU texture projection");
         auto matrix = *static_cast<fake::Matrix*>(args[0]);
         for (int c = 0; c < 4; ++c) {
             matrix.v[c*4+1] = -matrix.v[c*4+1];
@@ -193,23 +193,23 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         return fake::Box(matrix);
     }
     if (type == "RenderingUtils") {
-        fake::Check(self == nullptr && m.rva == 0x5210E80, "Wrong shared fullscreen method");
+        fake::Check(self == nullptr && m.rva == 0x51D8610, "Wrong shared fullscreen method");
         return fake::fullscreen;
     }
     if (type == "RenderTargetIdentifier") {
         fake::Identifier value;
-        if (m.rva == 0x5474090) std::memcpy(value.data, &args[0], sizeof(Obj));
-        else { fake::Check(m.rva == 0x5473FF0 && *static_cast<int*>(args[0]) == 2, "Wrong built-in target"); }
+        if (m.rva == 0x543B870) std::memcpy(value.data, &args[0], sizeof(Obj));
+        else { fake::Check(m.rva == 0x543B7D0 && *static_cast<int*>(args[0]) == 2, "Wrong built-in target"); }
         return fake::Box(value);
     }
     if (type == "Object") {
-        fake::Check(m.rva == 0x5435EA0 && self == nullptr, "Wrong Unity destroy ABI");
+        fake::Check(m.rva == 0x53FD680 && self == nullptr, "Wrong Unity destroy ABI");
         auto& target = fake::Get(args[0]);
         fake::Check(target.owned && fake::nativeOwned.erase(args[0]) == 1, "Destroyed shared/source Unity object");
         target.destroyed = true; ++fake::destroys; return nullptr;
     }
     if (type == "Graphics") {
-        fake::Check(m.rva == 0x53D4200 && self == nullptr, "Wrong execute ABI");
+        fake::Check(m.rva == 0x539B9E0 && self == nullptr, "Wrong execute ABI");
         auto commands = fake::Get(args[0]).commands;
         fake::executions.push_back(commands);
         Obj target = fake::active;
@@ -247,7 +247,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     if (type == "RenderTexture" && m.name == "get_active") return fake::active;
     if (type == "RenderTexture" && m.name == "set_active") { fake::active = args[0]; return nullptr; }
     if (type == "Texture2D" && m.name == "get_whiteTexture") {
-        fake::Check(self == nullptr && m.argc == 0 && m.rva == 0x5412100,
+        fake::Check(self == nullptr && m.argc == 0 && m.rva == 0x53D98E0,
             "HUD coverage must read the verified shared white texture getter");
         return fake::whiteTexture;
     }
@@ -255,12 +255,12 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     if (type == "Texture2D") {
         fake::Check(object.owned,"Readback must use owned CPU texture");
         if (m.name == ".ctor") {
-            fake::Check(m.rva == 0x5410E20 && *static_cast<int*>(args[2]) == 4 &&
+            fake::Check(m.rva == 0x53D8600 && *static_cast<int*>(args[2]) == 4 &&
                 !*static_cast<bool*>(args[3]) && *static_cast<bool*>(args[4]),"Incorrect readback format/overload");
             object.width = *static_cast<int*>(args[0]); object.height = *static_cast<int*>(args[1]); return nullptr;
         }
         if (m.name == "ReadPixels") {
-            fake::Check(m.rva == 0x540EAF0 && fake::active && fake::Get(fake::active).owned &&
+            fake::Check(m.rva == 0x53D62D0 && fake::active && fake::Get(fake::active).owned &&
                 fake::Get(fake::active).klass->name == "RenderTexture","Must never read the screen/camera target");
             const auto rect = *static_cast<fake::ScreenRect*>(args[0]);
             fake::Check(rect.width == object.width && rect.height == object.height && !*static_cast<bool*>(args[3]),"Readback bounds/mipmaps");
@@ -268,7 +268,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
             return nullptr;
         }
         if (m.name == "GetPixels32") {
-            fake::Check(m.rva == 0x540D5E0,"GetPixels32 overload");
+            fake::Check(m.rva == 0x53D4DC0,"GetPixels32 overload");
             const auto result = fake::Make("Color32[]"); auto& array = fake::Get(result);
             const size_t size = static_cast<size_t>(object.width)*object.height;
             array.raw.resize(32+4*size);
@@ -284,7 +284,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         if (m.name == "get_projectionMatrix") return fake::Box(object.projection);
     }
     if (type == "MaterialPropertyBlock") {
-        if (m.name == ".ctor") { fake::Check(m.rva==0x53D9F90,"Wrong property-block constructor"); return nullptr; }
+        if (m.name == ".ctor") { fake::Check(m.rva==0x53A1770,"Wrong property-block constructor"); return nullptr; }
         const auto name=fake::Get(args[0]).text;
         if (m.name=="SetFloat") object.floats[name]=*static_cast<float*>(args[1]);
         else if (m.name=="SetVector") object.vectors[name]=*static_cast<fake::Vec*>(args[1]);
@@ -298,9 +298,9 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         fake::Check(object.owned, "Source material was modified");
         if (m.name == ".ctor") {
             const auto& source = fake::Get(args[0]);
-            if (m.rva == 0x53E49B0) { fake::Check(source.klass->name == "Shader", "Shader ctor overload wrong"); object.shader = source.text; }
+            if (m.rva == 0x53AC190) { fake::Check(source.klass->name == "Shader", "Shader ctor overload wrong"); object.shader = source.text; }
             else {
-                fake::Check(m.rva == 0x53E4B30 && source.klass->name == "Material", "Material copy overload wrong");
+                fake::Check(m.rva == 0x53AC310 && source.klass->name == "Material", "Material copy overload wrong");
                 object.shader = source.shader; object.floats = source.floats; object.integers = source.integers;
                 object.vectors = source.vectors; object.textures = source.textures;
             }
@@ -319,7 +319,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
     }
     if (type == "RenderTexture") {
         if (m.name == ".ctor") {
-            fake::Check(m.rva == 0x54078E0 && *static_cast<int*>(args[3]) == 0 && *static_cast<int*>(args[4]) == 1,
+            fake::Check(m.rva == 0x53CF0C0 && *static_cast<int*>(args[3]) == 0 && *static_cast<int*>(args[4]) == 1,
                 "Wrong render texture format/constructor");
             object.width = *static_cast<int*>(args[0]); object.height = *static_cast<int*>(args[1]); object.depth = *static_cast<int*>(args[2]);
             fake::allocations.push_back({object.width, object.height, object.depth}); return nullptr;
@@ -328,7 +328,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         if (m.name == "Release") { object.released = true; return nullptr; }
     }
     if (type == "Renderer") {
-        fake::Check(m.name == "GetSharedMaterials" && m.rva == 0x53F1AD0, "Wrong shared materials accessor");
+        fake::Check(m.name == "GetSharedMaterials" && m.rva == 0x53B92B0, "Wrong shared materials accessor");
         fake::Get(args[0]).items = object.items; return nullptr;
     }
     if (type == "CommandBuffer") {
@@ -341,7 +341,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         if (m.name == "SetRenderTarget") {
             command.name = "target"; std::memcpy(&command.first, args[0], sizeof(Obj));
         } else if (m.name == "CopyTexture") {
-            fake::Check(m.rva == 0x5450CA0,"Diagnostic CopyTexture overload");
+            fake::Check(m.rva == 0x5418480,"Diagnostic CopyTexture overload");
             command.name = "copy";
             std::memcpy(&command.first,args[0],sizeof(Obj)); std::memcpy(&command.second,args[1],sizeof(Obj));
         } else if (m.name == "ClearRenderTarget") {
@@ -355,7 +355,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
         } else if (m.name == "SetViewProjectionMatrices") {
             command.name = "matrices"; command.view = *static_cast<fake::Matrix*>(args[0]); command.projection = *static_cast<fake::Matrix*>(args[1]);
         } else if (m.name == "SetGlobalMatrix") {
-            fake::Check(m.rva == 0x5462620, "Wrong command-buffer matrix overload");
+            fake::Check(m.rva == 0x5429E00, "Wrong command-buffer matrix overload");
             command.name = "global-matrix"; command.property = fake::Get(args[0]).text;
             command.projection = *static_cast<fake::Matrix*>(args[1]);
         } else if (m.name == "DrawRenderer") {
@@ -363,18 +363,18 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> arguments)
             command.submesh = *static_cast<int*>(args[2]); command.pass = *static_cast<int*>(args[3]);
             fake::Check(!fake::Get(command.second).owned && command.pass == 0, "Source capture must use original material/pass0");
         } else if (m.name == "DrawMesh") {
-            fake::Check(args.size()==6 && m.rva==0x54532D0 && args[5], "Fullscreen draw requires an explicit property block");
+            fake::Check(args.size()==6 && m.rva==0x541AAB0 && args[5], "Fullscreen draw requires an explicit property block");
             command.parameters=static_cast<const fake::Properties&>(fake::Get(args[5]));
             command.name = "mesh"; command.first = args[0]; command.second = args[2];
             command.view = *static_cast<fake::Matrix*>(args[1]);
             command.submesh = *static_cast<int*>(args[3]); command.pass = *static_cast<int*>(args[4]);
             fake::Check(command.first == fake::fullscreen && command.submesh == 0, "Wrong mask/fullscreen geometry");
         } else if (m.name == "DrawProcedural") {
-            fake::Check(args.size()==7 && m.rva==0x5454D30 && *static_cast<int*>(args[5])==1 && args[6], "Knockout draw requires an explicit property block");
+            fake::Check(args.size()==7 && m.rva==0x541C510 && *static_cast<int*>(args[5])==1 && args[6], "Knockout draw requires an explicit property block");
             command.parameters=static_cast<const fake::Properties&>(fake::Get(args[6]));
             command.name = "procedural"; command.second = args[1]; command.pass = *static_cast<int*>(args[2]);
             command.view = *static_cast<fake::Matrix*>(args[0]);
-            fake::Check(m.rva == 0x5454D30 && *static_cast<int*>(args[3]) == 0 && *static_cast<int*>(args[4]) == 3,
+            fake::Check(m.rva == 0x541C510 && *static_cast<int*>(args[3]) == 0 && *static_cast<int*>(args[4]) == 3,
                 "Knockout requires 3-vertex fullscreen triangle");
         } else throw std::runtime_error("Unexpected command buffer call");
         object.commands.push_back(command); return nullptr;

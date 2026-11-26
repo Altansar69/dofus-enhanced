@@ -144,21 +144,21 @@ void InstallSoulWidget() {
     managerClass=api.Class("Core.dll","Core.UILogic.Common","WidgetManager");
     toggleClass=api.Class("Core.dll",Figma,"DofusToggleButtonCustom");
     bindingClass=api.Class("Core.dll","Core.UILogic.Bindings","WidgetManagerBinding");
-    menuToggle=api.FindVerified(bindingClass,"get_tg_modules",0,0x154D420);
-    getSize=api.FindVerified(toggleClass,"get_toggleSize",0,0x1702100);
+    menuToggle=api.FindVerified(bindingClass,"get_tg_modules",0,0x153EFD0);
+    getSize=api.FindVerified(toggleClass,"get_toggleSize",0,0x16F3AF0);
     tooltipClass=api.Class("Core.dll","Core.UILogic.Components.Tooltips","TooltipManipulator");
-    tooltipCtor=api.FindVerified(tooltipClass,".ctor",6,0x15DFAE0);
-    hideTooltip=api.FindVerified(api.Class("Core.dll","Core.UILogic.Components.Tooltips","BaseTooltipManipulator"),"HideTooltip",0,0x15CD030);
+    tooltipCtor=api.FindVerified(tooltipClass,".ctor",6,0x15D16E0);
+    hideTooltip=api.FindVerified(api.Class("Core.dll","Core.UILogic.Components.Tooltips","BaseTooltipManipulator"),"HideTooltip",0,0x15BEC30);
     auto extensions=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElementExtensions");
-    addManipulator=api.FindVerified(extensions,"AddManipulator",2,0x56755F0);
-    removeManipulator=api.FindVerified(extensions,"RemoveManipulator",2,0x5676A90);
-    api.FindVerified(api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElement"),"PlaceBehind",1,0x55E69D0);
+    addManipulator=api.FindVerified(extensions,"AddManipulator",2,0x563CDD0);
+    removeManipulator=api.FindVerified(extensions,"RemoveManipulator",2,0x563E270);
+    api.FindVerified(api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElement"),"PlaceBehind",1,0x55AE1B0);
     const std::pair<const char*,uintptr_t> calls[]={
-        {"set_iconValue",0x1716690},{"set_mainStyle",0x1716C40},{"set_mainColor",0x1716B70},
-        {"set_toggleSize",0x1716DB0},{"SetValueWithoutNotify",0x1714F40}};
-    api.FindVerified(toggleClass,".ctor",0,0x1715D00);
+        {"set_iconValue",0x1708080},{"set_mainStyle",0x1708630},{"set_mainColor",0x1708560},
+        {"set_toggleSize",0x17087A0},{"SetValueWithoutNotify",0x1706930}};
+    api.FindVerified(toggleClass,".ctor",0,0x17076F0);
     for(auto [name,rva]:calls)api.FindVerified(toggleClass,name,1,rva);
-    AddHook(api.Find(toggleClass,"Toggle",0),0x1715030,reinterpret_cast<void*>(&ToggleHook),reinterpret_cast<void**>(&originalToggle));
+    AddHook(api.Find(toggleClass,"Toggle",0),0x1706A20,reinterpret_cast<void*>(&ToggleHook),reinterpret_cast<void**>(&originalToggle));
     installed=true;
 }
 void RestoreSoulWidget() {

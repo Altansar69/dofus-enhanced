@@ -133,29 +133,29 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         return Box(m.name=="LocalToWorld"?Vec2{root.origin.x+p.x*root.scale.x,root.origin.y+p.y*root.scale.y}:Vec2{(p.x-root.origin.x)/root.scale.x,(p.y-root.origin.y)/root.scale.y});
     }
     if(m.name=="bepx"){
-        Check(m.rva==0x1C4EB30,"Map to pixel RVA");const auto zoom=*static_cast<double*>(a[3]);
+        Check(m.rva==0x1C3D080,"Map to pixel RVA");const auto zoom=*static_cast<double*>(a[3]);
         return Box(Vec2{float((*static_cast<float*>(a[0])+.5)*100*zoom),float((*static_cast<float*>(a[1])+.5)*100*zoom)});
     }
     if(m.name=="bepv"){
-        Check(m.rva==0x1C4E8D0,"Pixel to map RVA");auto p=*static_cast<Vec2*>(a[0]);auto& root=Get(a[2]);
+        Check(m.rva==0x1C3CE20,"Pixel to map RVA");auto p=*static_cast<Vec2*>(a[0]);auto& root=Get(a[2]);
         auto result=Box(Vec2{float(std::floor((p.x-root.origin.x)/root.scale.x/(100*root.zoom))),float(std::floor((p.y-root.origin.y)/root.scale.y/(100*root.zoom)))});
         if(onConvert)onConvert();return result;
     }
     auto& o=Get(self);
     if(m.name=="beus"){
-        Check(m.rva==0x1BFA370&&a.size()==1&&*static_cast<bool*>(a[0]),"Native centering must request current player position");
+        Check(m.rva==0x1BEA540&&a.size()==1&&*static_cast<bool*>(a[0]),"Native centering must request current player position");
         Check(o.type->name=="CartographyBannerView","Never center the full map from the mini-map control");
         centeredViews.push_back(self);return nullptr;
     }
-    if(m.name=="bedd"){Check(m.rva==0x1B92EF0&&a.empty(),"Native hint size ABI");return Box(32.0f);} // fhw.bedd: the game's hint size, both views
+    if(m.name=="bedd"){Check(m.rva==0x1B89290&&a.empty(),"Native hint size ABI");return Box(32.0f);} // fhw.bedd: the game's hint size, both views
     if(m.name=="bexb"){
         // fhw.bexb: the game's layer of a hint category, created on demand as a child of the map content.
-        Check(m.rva==0x1C04C70&&*static_cast<int*>(a[0])==24,"Only the game's position group layer is requested");
+        Check(m.rva==0x1BF4EE0&&*static_cast<int*>(a[0])==24,"Only the game's position group layer is requested");
         if(!o.refs["layer24"]){auto layer=Make("VisualElement");Attach(o.refs["dugq"],layer);o.refs["layer24"]=layer;Get(o.refs["<dugk>k__BackingField"]).refs["groupLayer"]=layer;}
         return o.refs["layer24"];
     }
     if(m.name==".ctor"&&m.type->name=="fgm"){
-        Check(m.rva==0x1C40D70&&a.size()==15&&*static_cast<int*>(a[6])==-1,"Native icon marker ctor ABI");
+        Check(m.rva==0x1C2F1F0&&a.size()==15&&*static_cast<int*>(a[6])==-1,"Native icon marker ctor ABI");
         const float width=*static_cast<float*>(a[3]),height=*static_cast<float*>(a[4]);
         Check(width==32&&height==32,"The constructor receives the game's own hint size (fhw.bedd): the native placement sizes the root from it");
         o.numbers["size"]=width;
@@ -169,10 +169,10 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         o.origin={*static_cast<float*>(a[1]),*static_cast<float*>(a[2])};o.zoom=*static_cast<double*>(a[5]);
         Get(Group(a[9],Get(a[8]).text,true)).strings[Get(a[0]).text]=self;++creates;return nullptr;
     }
-    if(m.name=="beem"){Check(m.rva==0x1B9F530,"Native group enable ABI");Get(o.refs["dttx"]).strings[Get(a[0]).text]=a[0];return nullptr;}
+    if(m.name=="beem"){Check(m.rva==0x1B94B20,"Native group enable ABI");Get(o.refs["dttx"]).strings[Get(a[0]).text]=a[0];return nullptr;}
     if(m.name=="beec"){auto group=Group(self,Get(a[1]).text);return group?Get(group).strings[Get(a[0]).text]:nullptr;}
     if(m.name=="bedx"){
-        Check(m.rva==0x1B9E370&&o.type->name=="fga","Native position group registration ABI");
+        Check(m.rva==0x1B938F0&&o.type->name=="fga","Native position group registration ABI");
         auto& marker=Get(a[1]);Check(marker.clusterable,"Position groups accept only opted-in markers");
         Check(Key(*static_cast<Vec2*>(a[0]))==Key(Vec2{float(std::round(marker.origin.x/100-.5)),float(std::round(marker.origin.y/100-.5))}),"Group key must be the marker's map coordinates");
         Check(a[2]==o.refs["groupLayer"]&&a[2]!=nullptr,"Position groups live in the game's own group layer");
@@ -183,18 +183,18 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         Get(cluster).strings[Get(marker.refs["id"]).text]=a[1];marker.refs["cluster"]=cluster;++groupJoins;return nullptr;
     }
     if(m.name=="bedz"){
-        Check(m.rva==0x1B9E780&&o.type->name=="fga","Native position group lookup ABI");
+        Check(m.rva==0x1B93D00&&o.type->name=="fga","Native position group lookup ABI");
         auto& groups=Get(o.refs["dtty"]).strings;auto it=groups.find(Key(*static_cast<Vec2*>(a[0])));return it==groups.end()?nullptr:it->second;
     }
     if(m.name=="bedy"){
-        Check(m.rva==0x1B9E5C0&&o.type->name=="fga","Native position group removal ABI");
+        Check(m.rva==0x1B93B40&&o.type->name=="fga","Native position group removal ABI");
         auto& marker=Get(a[0]);auto cluster=marker.refs["cluster"];if(!cluster)return nullptr; // native: no group contains it, nothing to do
         Get(cluster).strings.erase(Get(marker.refs["id"]).text);marker.refs["cluster"]=nullptr;++groupLeaves;
         if(Get(cluster).strings.empty()){Detach(cluster);std::erase_if(Get(o.refs["dtty"]).strings,[&](const auto& entry){return entry.second==cluster;});}
         return nullptr;
     }
     if(m.name=="beft"){
-        Check(m.rva==0x1C410D0&&o.type->name=="fgm"&&a.size()==3,"Native icon marker placement ABI");
+        Check(m.rva==0x1C2F550&&o.type->name=="fgm"&&a.size()==3,"Native icon marker placement ABI");
         Check(o.refs["cluster"]!=nullptr,"Position after joining the group so the group is placed too");
         Check(a[0]==o.refs["layer"],"The placement layer is the one given to the constructor (the native code ignores any other)");
         const double zoom=*static_cast<double*>(a[1]),scale=*static_cast<double*>(a[2]);
@@ -203,7 +203,7 @@ Obj Api::Invoke(Method method,Obj self,std::initializer_list<void*> args)const{
         Attach(a[0],o.refs["<dtwe>k__BackingField"]);return nullptr;
     }
     if(m.name=="begd"){
-        Check(m.rva==0x1C411D0&&o.type->name=="fgm","Native icon marker dispose ABI");
+        Check(m.rva==0x1C2F650&&o.type->name=="fgm","Native icon marker dispose ABI");
         if(nativeRemoveFails)throw std::runtime_error("Synthetic dispose failure");
         Check(!o.refs["cluster"],"Dispose must follow position group removal");
         auto root=o.refs["<dtwe>k__BackingField"];Detach(root);

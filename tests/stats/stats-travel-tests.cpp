@@ -19,8 +19,8 @@
 
 // The real stats-travel.cpp (included below, so the tests drive its clock)
 // against an in-memory IL2CPP fixture and a recording store: no game, process,
-// file or network. Layouts and natives are the pinned 3.7.12.12 contracts
-// (work/r74-analysis/contracts-new.json); maps, worlds, items and names are
+// file or network. Layouts and natives are the pinned 3.7.14.18 contracts
+// (work/r127-analysis/contracts-new.json); maps, worlds, items and names are
 // labels for these tests.
 namespace fake {
 using namespace managed;
@@ -213,10 +213,10 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
     auto& type = *static_cast<fake::Class*>(klass);
     const auto key = type.name + "." + name;
     static const std::map<std::string, std::pair<int, uintptr_t>> expected{
-        {"epf.xkj", {0, 0x18389C0}}, {"MapInformationData.GetMapInformationById", {1, 0x7C4200}},
-        {"MapInformationData.get_subArea", {0, 0x7C44B0}}, {"SubAreaData.get_worldmapId", {0, 0x7D1040}},
-        {"DataCenterModule.get_havenBagThemesDataRoot", {0, 0x7BDF80}}, {"HavenbagThemesDataRoot.IsMapIdInHavenbag", {1, 0x7E41B0}},
-        {"fbq.bcla", {1, 0x1A4A5E0}}, {"mc.myn", {0, 0xF20D40}}, {"mc.myx", {0, 0x2AAC6B0}}, {"feh.bdsh", {2, 0x1B57D20}}};
+        {"epf.xkj", {0, 0x1831020}}, {"MapInformationData.GetMapInformationById", {1, 0x7B5980}},
+        {"MapInformationData.get_subArea", {0, 0x7B5C30}}, {"SubAreaData.get_worldmapId", {0, 0x7C27C0}},
+        {"DataCenterModule.get_havenBagThemesDataRoot", {0, 0x7AF700}}, {"HavenbagThemesDataRoot.IsMapIdInHavenbag", {1, 0x7D5930}},
+        {"fbq.bcla", {1, 0x1A4E790}}, {"mc.myn", {0, 0xF124C0}}, {"mc.myx", {0, 0x29330F0}}, {"feh.bdsh", {2, 0x1B4A880}}};
     if (key == fake::fail) throw std::runtime_error("Verified method unavailable");
     const auto found = expected.find(key);
     fake::Check(found != expected.end() && found->second == std::pair(argc, rva), "Statistics native outside the pinned contract");
@@ -283,8 +283,8 @@ managed::Obj Module::FindService(const char* name) const {
 void Log(const std::string& line) { fake::logs.push_back(line); }
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original) {
     const auto& m = *static_cast<const fake::MethodInfo*>(method);
-    if (rva == 0x1A4A5E0) { fake::Check(m.name == "bcla", "The teleport hook is fbq.bcla"); *original = reinterpret_cast<void*>(&fake::TeleportOriginal); }
-    else if (rva == 0x1B57D20) { fake::Check(m.name == "bdsh", "The item hook is feh.bdsh"); *original = reinterpret_cast<void*>(&fake::UseOriginal); }
+    if (rva == 0x1A4E790) { fake::Check(m.name == "bcla", "The teleport hook is fbq.bcla"); *original = reinterpret_cast<void*>(&fake::TeleportOriginal); }
+    else if (rva == 0x1B4A880) { fake::Check(m.name == "bdsh", "The item hook is feh.bdsh"); *original = reinterpret_cast<void*>(&fake::UseOriginal); }
     else throw std::runtime_error("Unexpected statistics hook");
     fake::hooks[rva] = replacement;
 }
@@ -332,8 +332,8 @@ void Pump(int times = 1) {
     }
 }
 bool Logged(const std::string& line) { return std::find(logs.begin(), logs.end(), line) != logs.end(); }
-TeleportFn Teleport() { return reinterpret_cast<TeleportFn>(hooks.at(0x1A4A5E0)); }
-UseFn Use() { return reinterpret_cast<UseFn>(hooks.at(0x1B57D20)); }
+TeleportFn Teleport() { return reinterpret_cast<TeleportFn>(hooks.at(0x1A4E790)); }
+UseFn Use() { return reinterpret_cast<UseFn>(hooks.at(0x1B4A880)); }
 // A new scenario: nothing remembered by the statistics or the store.
 void Fresh() {
     RestoreStatsTravel();
@@ -355,13 +355,13 @@ void Install() {
     Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=places"} && stats_travel::walkStep,
           "An unverified Havre-Sac test turns off the worlds and Havre-Sac entries only");
     attempt("fbq.bcla");
-    Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=teleports"} && hooks.size() == 1 && hooks.contains(0x1B57D20),
+    Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=teleports"} && hooks.size() == 1 && hooks.contains(0x1B4A880),
           "An unverified teleport request leaves the recall potions");
     attempt("fbq.dspa");
-    Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=teleports"} && hooks.size() == 1 && hooks.contains(0x1B57D20),
+    Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=teleports"} && hooks.size() == 1 && hooks.contains(0x1B4A880),
           "Without the character service a request's cost is checked with, no teleport hook");
     attempt("EffectInstanceData.actionId");
-    Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=recall"} && hooks.size() == 1 && hooks.contains(0x1A4A5E0),
+    Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=recall"} && hooks.size() == 1 && hooks.contains(0x1A4E790),
           "A moved effect field turns off the recall potions only, before their hook is created");
     attempt("z.dbrl");
     Check(logs == std::vector<std::string>{"STATS_TRAVEL_DISABLED stage=character"} && hooks.empty() &&
@@ -378,8 +378,8 @@ void Install() {
         "xm.dhkb", "enw.<dodg>k__BackingField", "MapPoint.docz", "Animated.fhtc", "dhc.dipi", "dhc.dipj", "dhc.dipk", "dhc.dipl",
         "gb.dcjl", "fbq.dspa", "SubAreaData.id", "fbq.<dspb>k__BackingField", "ItemData.possibleEffects", "EffectInstanceData.actionId"},
         "Every field read has its pinned offset checked by name");
-    Check(guarded == std::set<uintptr_t>{0x18389C0, 0x7C4200, 0x7C44B0, 0x7D1040, 0x7BDF80, 0x7E41B0, 0x1A4A5E0, 0xF20D40,
-        0x2AAC6B0, 0x1B57D20}, "Exactly the verified natives, each behind a signature guard");
+    Check(guarded == std::set<uintptr_t>{0x1831020, 0x7B5980, 0x7B5C30, 0x7C27C0, 0x7AF700, 0x7D5930, 0x1A4E790, 0xF124C0,
+        0x29330F0, 0x1B4A880}, "Exactly the verified natives, each behind a signature guard");
     Check(hooks.size() == 2 && stats_travel::walkStep && stats_travel::modTrip, "Both hooks and both calls are installed");
 }
 void CountingOff() {

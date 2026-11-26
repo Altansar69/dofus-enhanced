@@ -19,7 +19,7 @@
 #include <vector>
 
 // Real stats-fights.cpp linked against a managed fixture laid out as IL2CPP
-// lays its objects (the class first, then the fields at their pinned 3.7.12.12
+// lays its objects (the class first, then the fields at their pinned 3.7.14.18
 // offsets): no game, process, file or network. The store is a fake that
 // records what the tracker would count; the hook is called as the game would.
 namespace fake {
@@ -104,7 +104,7 @@ template<class T> Obj Box(T value) { auto box = Make("Box"); Set<T>(box, 0x10, v
 Obj List(std::vector<Obj> items) { auto list = Make("List"); lists[list] = std::move(items); return list; }
 void Initialize() {
     for (const auto name : {"Box", "List", "Compositor", "Other"}) Define("", "", name);
-    // Pinned 3.7.12.12 contracts (work/r74-analysis/contracts-new.json).
+    // Pinned 3.7.14.18 contracts (work/r127-analysis/contracts-new.json).
     Define("Core.dll", "", "esg", {{"dpzj", 0x128}, {"dqab", 0x1A0}});
     Define("Core.dll", "", "z", {{"dbrl", 0x10}, {"dbrm", 0x18}, {"dbrn", 0x20}});
     Define("Core.dll", "", "exf", {{"drih", 0x18}});
@@ -249,8 +249,8 @@ Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva)
     auto& type = *static_cast<fake::Class*>(klass);
     const auto key = type.name + "." + name;
     static const std::map<std::string, std::pair<int, uintptr_t>> expected{
-        {"mc.mzb", {0, 0x2AAC720}}, {"mc.myo", {0, 0x861E70}}, {"DataCenterModule.get_dungeonsDataRoot", {0, 0x7BC7C0}},
-        {"DungeonsDataRoot.GetDungeonByMapId", {1, 0x7C26B0}}, {"gau.bixl", {1, 0x1EA0910}}};
+        {"mc.mzb", {0, 0x2933160}}, {"mc.myo", {0, 0x8535F0}}, {"DataCenterModule.get_dungeonsDataRoot", {0, 0x7ADF40}},
+        {"DungeonsDataRoot.GetDungeonByMapId", {1, 0x7B3E30}}, {"gau.bixl", {1, 0x1E8CFB0}}};
     if (key == fake::fail) throw std::runtime_error("Verified method unavailable");
     const auto found = expected.find(key);
     fake::Check(found != expected.end() && found->second == std::pair(argc, rva), "Statistics native outside the pinned contract");
@@ -305,7 +305,7 @@ void Log(const std::string& line) { fake::logs.push_back(line); }
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original) {
     using namespace fake;
     const auto& m = *static_cast<const MethodInfo*>(method);
-    Check(rva == 0x1EA0910 && m.klass->name == "gau" && m.name == "bixl" && m.argc == 1, "Only gau.bixl, through its verified method");
+    Check(rva == 0x1E8CFB0 && m.klass->name == "gau" && m.name == "bixl" && m.argc == 1, "Only gau.bixl, through its verified method");
     if (failHook) throw std::runtime_error("Injected hook failure");
     ++hooks;
     listener = method;
@@ -414,7 +414,7 @@ void InstallContract() {
         "fze.dwqd", "fzg.dwqv", "dt.dcbc", "dt.dcbd", "dt.dcbg", "esg.dqab", "WorldPoint.m_mapId", "DungeonData.id",
         "DungeonData.bosses", "jsq.ercs", "jsq.ered", "jsq.eree", "jrw.eqwy", "jrw.eqxm", "jrw.eqxn", "jrq.eqvk", "jrz.eqyd", "jsd.eqyu", "jsd.eqyz",
         "jsd.eqzd", "jsd.eqzf", "jsd.eqzh"}, "Every field read has its pinned offset checked by name, never the fight's experience");
-    Check(guarded == std::set<uintptr_t>{0x2AAC720, 0x861E70, 0x7BC7C0, 0x7C26B0, 0x1EA0910},
+    Check(guarded == std::set<uintptr_t>{0x2933160, 0x8535F0, 0x7ADF40, 0x7B3E30, 0x1E8CFB0},
           "Exactly the item accessors, the dungeon lookups and gau.bixl, each behind a signature guard");
     const auto verified = verifications;
     InstallStatsFights();

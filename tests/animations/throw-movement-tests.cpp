@@ -34,8 +34,8 @@ struct Object {
 };
 struct MethodInfo { std::string name; uintptr_t rva; };
 // Exact declarations: movement-r6-yd.cs and special-r7-ye.cs.
-MethodInfo start{"rjn", 0x264A8D0}, kill{"rmd", 0x264FC80}, arrive{"rlz", 0x264B480}, lookup{"TryGetValue", 0};
-MethodInfo finish{"rmb", 0x264B810}, cancel{"rma", 0x264B6D0}, contains{"Contains", 0};
+MethodInfo start{"rjn", 0x2608530}, kill{"rmd", 0x260C960}, arrive{"rlz", 0x26090E0}, lookup{"TryGetValue", 0};
+MethodInfo finish{"rmb", 0x2609470}, cancel{"rma", 0x2609330}, contains{"Contains", 0};
 std::map<std::string, Type> classes;
 std::vector<std::unique_ptr<Object>> objects;
 std::map<GCHandle, Obj> handles;
@@ -298,12 +298,12 @@ bool DeferInstantMovement(std::function<void()> finish) {
     return true;
 }
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    if (rva == 0x264B810) {
+    if (rva == 0x2609470) {
         fake::finishHook = reinterpret_cast<fake::FinishFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeFinish);
         return;
     }
-    fake::Check(rva == 0x264A8D0, "Unexpected throw hook target");
+    fake::Check(rva == 0x2608530, "Unexpected throw hook target");
     fake::hook = reinterpret_cast<fake::StartFn>(replacement);
     *original = reinterpret_cast<void*>(fake::Original);
 }

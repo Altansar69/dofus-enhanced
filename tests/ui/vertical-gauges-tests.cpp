@@ -53,7 +53,7 @@ struct Object : Raw {
     // the UXML), and the properties whose code-set value was removed since its
     // last full style update: those resolve from the style sheets' cached style
     // (StyleCache, else InitialStyle), not from that rule (RemoveInlineStyle
-    // 0x55CDFC0), until IncrementVersion(StyleSheet) or a class change.
+    // 0x55957A0), until IncrementVersion(StyleSheet) or a class change.
     std::map<std::string, std::array<unsigned char, 12>> uxml;
     std::set<std::string> stale;
     // Its parent as get_parent reads it (m_LogicalParent) and the element whose
@@ -174,7 +174,7 @@ void Fail(Obj o, const std::string& method) {
 }
 // ------------------------------------------------------------------ elements
 Obj Element(const std::string& type, const std::string& name) { auto o = Make(type); Get(o).name = name; return o; }
-// VisualElement.Add (0x55DFAD0), as the UXML's clone adds each child: into
+// VisualElement.Add (0x55A72B0), as the UXML's clone adds each child: into
 // the parent's content container (`into`: a window's content element, else
 // the parent itself), its parent the parent itself. Without `into`, both are
 // the parent, as Hierarchy.Add makes them.
@@ -264,7 +264,7 @@ std::vector<Gauge> gauges;
 bool Flag(Obj window, size_t offset) { bool value = false; std::memcpy(&value, Get(window).fields + offset - 0x10, 1); return value; }
 // ResizeHandler: the corners 0 to 3, Right 4, Left 5, Bottom 6, Top 7.
 constexpr int BottomHandle = 6, TopHandle = 7;
-// ResizableWindow.UpdateResizeHandlers (0x15BE8A0), run by each resize flag's
+// ResizableWindow.UpdateResizeHandlers (0x15B04A0), run by each resize flag's
 // setter when it changes: the left and right handles follow
 // m_horizontalResizable, the top and bottom ones m_verticalResizable, the
 // corners m_cornerResizable; none while the interface is locked (m_isUILocked).
@@ -397,15 +397,15 @@ void GameKeepOnScreen(Obj window, const KeptBox& box) {
     if (top > 0) GameWrite(window, "top", box.y + top);
     else if (bottom > 0) GameWrite(window, "top", box.y - bottom);
 }
-// goz`1.blxe (0x3C13A10) for one gauge as blxd runs it: once laid out first,
+// goz`1.blxe (0x3BDC180) for one gauge as blxd runs it: once laid out first,
 // then at each re-placement (the container's geometry: the screen's size, the
 // interface scale; a layout preset chosen; a fight's layout at its start and
 // end; a reset of the positions), hidden gauges included (gom slot 5,
 // ignoreSavedSizeAndPosition, is false for every gauge). The box the hub keeps;
-// blxi (0x3C15BD0: its saved size, inline too) only while one of the window's
-// resize flags is on; blxh (0x3C15240: its saved place, per-mille of the
+// blxi (0x3BDE330: its saved size, inline too) only while one of the window's
+// resize flags is on; blxh (0x3BDD9A0: its saved place, per-mille of the
 // screen through pq.paf, or flush with its right or bottom edge at the box's
-// size; inline left and top only); with neither, blxg (0x3C14EA0: blxf's
+// size; inline left and top only); with neither, blxg (0x3BDD610: blxf's
 // default for the character's gauge, a 706 x 34 box centred at the bottom,
 // written 707 x 35; none for the others); then blxl on that box.
 void GameReplace(const Gauge& g) {
@@ -443,8 +443,8 @@ void GameReplace(const Gauge& g) {
     }
     GameKeepOnScreen(g.window, box);
 }
-// UiPresetOptionsContainer.SaveUiPositionById (0x2092DE0) and
-// SaveUiDimensionById (0x2092A80) as the game runs them: into the current
+// UiPresetOptionsContainer.SaveUiPositionById (0x2078BC0) and
+// SaveUiDimensionById (0x2078860) as the game runs them: into the current
 // layout, through the module's detours once it has installed them.
 void NativeSavePosition(Obj, Obj id, Obj coordinates, bool right, bool bottom, Method) {
     ++positionSaves;
@@ -470,14 +470,14 @@ void GameSavePosition(const Gauge& g, float x, float y) {
 void GameSaveDimension(const Gauge& g, float width, float height) {
     (dimensionHook ? dimensionHook : NativeSaveDimension)(presets, String(Id(g.type)), Coordinates(width, height), nullptr);
 }
-// pq.pae (0x2E8FE80): a window's place as the game saves it, per-mille of the
+// pq.pae (0x2E56440): a window's place as the game saves it, per-mille of the
 // screen from its header's world place (the gauges' header is display none:
 // the window's own top-left corner; its size 0, never against an edge).
 void GameSavePlace(const Gauge& g) {
     GameSavePosition(g, PixelsOr(g.window, "left", 546) / screenWidth * 1000.f, PixelsOr(g.window, "top", 860) / screenHeight * 1000.f);
 }
 // A drag of the window by its drag handle (ctr_main, the whole window):
-// ElementDraggerWithBounds.SetNewPosition (0x1671500) writes its inline left
+// ElementDraggerWithBounds.SetNewPosition (0x1662EF0) writes its inline left
 // and top, kept on the screen (ClampToRemainInAllowedScreenSpace), then
 // ElementDragger.onDraggedAction: gob`1.WindowDragged -> pq.pae -> cnt ->
 // goz`1.blwv -> SaveUiPositionById.
@@ -488,10 +488,10 @@ void GameDrag(const Gauge& g, float dx, float dy) {
     GameSavePlace(g);
 }
 // A press on the window's top or bottom edge, pulled by dy: its resize handle
-// when shown (ElementResizer.Top 0x167B0A0 / Bottom 0x1674F00: the height,
+// when shown (ElementResizer.Top 0x166CA90 / Bottom 0x16668F0: the height,
 // and the top for the top edge, between the minimum and maximum height its
 // resolved style had at the press and inside the screen; then
-// NotifyEndOfResize 0x16777C0 -> onResizeDoneAction -> gob`1.blry -> cnx ->
+// NotifyEndOfResize 0x16691B0 -> onResizeDoneAction -> gob`1.blry -> cnx ->
 // goz`1.blwu: SaveUiPositionById and SaveUiDimensionById). A hidden handle is
 // not picked: the press lands on ctr_main, the drag handle, and drags the
 // window instead.
@@ -593,7 +593,7 @@ Obj GameRow(Obj menu, const std::string& type, const std::string& text, bool che
     Rows(menu).push_back(row);
     return row;
 }
-// The game's CreateGenericGaugeSection (0x2815820): the gauge's title, « Limiter… »
+// The game's CreateGenericGaugeSection (0x27D21C0): the gauge's title, « Limiter… »
 // for the character, « Couleur de jauge », « Masquer le module », the separator,
 // then the hub's « Gestion des jauges » (gfc.bfrw): its title, five checkboxes
 // and the jobs' sub-menu, no separator.
@@ -631,7 +631,7 @@ void Show(Obj menu) {
     }
     openMenu = menu;
 }
-// OpenGaugeMenu (0x2817500): a new menu, CreateGenericGaugeSection, DisplayMenu.
+// OpenGaugeMenu (0x27D3EA0): a new menu, CreateGenericGaugeSection, DisplayMenu.
 Obj OpenMenu(const Gauge& g, bool shown = true, const std::string& type = "DofusContextualMenu") {
     auto menu = NewMenu(type);
     Check(sectionHook != nullptr, "The gauge menu's builder is hooked");
@@ -705,7 +705,7 @@ void* Api::FieldAddress(Obj self, const char* name) const {
 Obj Api::New(Klass klass, std::initializer_list<void*> args) const {
     using namespace fixture;
     const auto type = static_cast<fixture::Class*>(klass)->name;
-    Check(type == "Length" && args.size() == 2 && contracts.contains({"Length", ".ctor", 2, 0x561D3D0}), "Only verified Length values are built");
+    Check(type == "Length" && args.size() == 2 && contracts.contains({"Length", ".ctor", 2, 0x55E4BB0}), "Only verified Length values are built");
     auto o = Make("Length");
     std::memcpy(Get(o).bytes.data(), *args.begin(), 4);
     std::memcpy(Get(o).bytes.data() + 4, *(args.begin() + 1), 4);
@@ -1090,65 +1090,65 @@ void CheckVertical(const Gauge& g, float length, const std::string& what) {
 void InstallResolvesEveryContract() {
     Fixture f;
     Check(LoggedLine("VERTICAL_GAUGES_READY") && Logged("VERTICAL_GAUGES_DISABLED") == 0, "Installed and ready");
-    Check(hooks == 3 && hookRva == 0x2815820 && sectionHook != nullptr && positionHook != nullptr && dimensionHook != nullptr,
+    Check(hooks == 3 && hookRva == 0x27D21C0 && sectionHook != nullptr && positionHook != nullptr && dimensionHook != nullptr,
         "Three detours: the layout's two saves, then CreateGenericGaugeSection");
     const std::set<std::tuple<std::string, std::string, int, uintptr_t>> expected{
-        {"WidgetProgressGaugeUi", "CreateGenericGaugeSection", 1, 0x2815820},
-        {"WidgetProgressGaugeBinding", "get_widgetProgressGauge", 0, 0x154DFD0}, {"WidgetProgressGaugeBinding", "get_ctr_main", 0, 0x154D9A0},
-        {"WidgetProgressGaugeBinding", "get_gaugeContainer", 0, 0x154DA50}, {"WidgetProgressGaugeBinding", "get_gauge", 0, 0x154DB00},
-        {"WidgetProgressGaugeBinding", "get_level", 0, 0x154DE70}, {"WidgetProgressGaugeBinding", "get_lbl_value", 0, 0x154DDC0},
-        {"WidgetProgressGaugeBinding", "get_omega", 0, 0x154DF20}, {"WidgetProgressGaugeBinding", "get_lbl_omegaValue", 0, 0x154DC60},
-        {"WidgetProgressGaugeBinding", "get_btn_settings", 0, 0x154D8F0},
-        {"BaseProgressBar`2", "set_gaugeOrientation", 1, 0x3C94C70}, {"BaseProgressBar`2", "get_gaugeOrientation", 0, 0x3925FB0},
-        {"ResizableWindow", "set_verticalResizable", 1, 0x15BFCF0}, {"ResizableWindow", "set_horizontalResizable", 1, 0x15BFC40},
-        {"ResizableWindow", "set_cornerResizable", 1, 0x15BF930}, {"ResizableWindow", "EnableResizeHandler", 1, 0x15BCB60},
-        {"ResizableWindow", "DisableResizeHandler", 1, 0x15BC990},
-        {"DofusContextualMenu", "AppendCheckboxItem", 9, 0x16D63D0}, {"DofusContextualMenu", "RemoveItemAt", 1, 0x16D8BF0},
-        {"DofusContextualMenu", "InsertItem", 2, 0x16D8850}, {"DofusContextualMenu", "get_menuItems", 0, 0x68D2B0},
-        {"ContextMenuItem", "get_m_callback", 0, 0x16CF040}, {"ContextMenuItem", "get_disabled", 0, 0x16CF020},
-        {"ContextMenuItemView", "get_itemData", 0, 0x157EFD0}, {"DofusContextualMenuRoot", "get_menuData", 0, 0x157EFE0},
-        {"DofusContextualMenuRoot", "RemoveMenu", 1, 0x16D2AB0},
-        {"VisualElement", "get_parent", 0, 0x55F7180}, {"VisualElement", "get_panel", 0, 0x55F7170}, {"VisualElement", "get_layout", 0, 0x55F6930},
-        {"VisualElement", "get_name", 0, 0x3158710}, {"VisualElement", "get_style", 0, 0x55F74A0},
-        {"VisualElement", "IncrementVersion", 1, 0x55E5580}, {"VisualElement", "ClassListContains", 1, 0x55E1840},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_width", 0, 0x55EF140},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_height", 0, 0x55EDA70},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_minWidth", 0, 0x55EDE90},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_minHeight", 0, 0x55EDE30},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_maxHeight", 0, 0x55EDD70},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_flexDirection", 0, 0x55ED890},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingLeft", 0, 0x55EDFB0},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingTop", 0, 0x55EE070},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingBottom", 0, 0x55EDF50},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_marginLeft", 0, 0x55EDC50},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_marginTop", 0, 0x55EDD10},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_left", 0, 0x55EDB30},
-        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_top", 0, 0x55EE3B0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_width", 0, 0x55D2740}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_width", 1, 0x55D63F0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_height", 0, 0x55D1540}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_height", 1, 0x55D3D60},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x55D1850}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x55D4410},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minHeight", 0, 0x55D1810},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minHeight", 1, 0x55D4370},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_maxHeight", 0, 0x55D1790},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_maxHeight", 1, 0x55D4230},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x55D13C0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x55D3A80},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingLeft", 0, 0x55D1970},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_paddingLeft", 1, 0x55D46D0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingTop", 0, 0x55D19F0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_paddingTop", 1, 0x55D4810},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingBottom", 0, 0x55D1930},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_paddingBottom", 1, 0x55D4630},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_marginLeft", 0, 0x55D16D0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_marginLeft", 1, 0x55D4050},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_marginTop", 0, 0x55D1750},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_marginTop", 1, 0x55D4190},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_left", 0, 0x55D1610}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_left", 1, 0x55D3EB0},
-        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_top", 0, 0x55D1CD0}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_top", 1, 0x55D4F70},
-        {"Length", ".ctor", 2, 0x561D3D0}, {"StyleLength", "set_value", 1, 0x5623940},
-        {"CachedDataService", "get_uiPresetOptionsContainer", 0, 0x7E0890}, {"UiPresetOptionsContainer", "LoadUiDimensionById", 1, 0x20918C0},
-        {"UiPresetOptionsContainer", "LoadUiPositionById", 1, 0x2091B60}, {"UiPresetOptionsContainer", "SaveUiPositionById", 4, 0x2092DE0},
-        {"UiPresetOptionsContainer", "SaveUiDimensionById", 2, 0x2092A80}};
+        {"WidgetProgressGaugeUi", "CreateGenericGaugeSection", 1, 0x27D21C0},
+        {"WidgetProgressGaugeBinding", "get_widgetProgressGauge", 0, 0x153FB80}, {"WidgetProgressGaugeBinding", "get_ctr_main", 0, 0x153F550},
+        {"WidgetProgressGaugeBinding", "get_gaugeContainer", 0, 0x153F600}, {"WidgetProgressGaugeBinding", "get_gauge", 0, 0x153F6B0},
+        {"WidgetProgressGaugeBinding", "get_level", 0, 0x153FA20}, {"WidgetProgressGaugeBinding", "get_lbl_value", 0, 0x153F970},
+        {"WidgetProgressGaugeBinding", "get_omega", 0, 0x153FAD0}, {"WidgetProgressGaugeBinding", "get_lbl_omegaValue", 0, 0x153F810},
+        {"WidgetProgressGaugeBinding", "get_btn_settings", 0, 0x153F4A0},
+        {"BaseProgressBar`2", "set_gaugeOrientation", 1, 0x3C5C3A0}, {"BaseProgressBar`2", "get_gaugeOrientation", 0, 0x38EDFB0},
+        {"ResizableWindow", "set_verticalResizable", 1, 0x15B18F0}, {"ResizableWindow", "set_horizontalResizable", 1, 0x15B1840},
+        {"ResizableWindow", "set_cornerResizable", 1, 0x15B1530}, {"ResizableWindow", "EnableResizeHandler", 1, 0x15AE760},
+        {"ResizableWindow", "DisableResizeHandler", 1, 0x15AE590},
+        {"DofusContextualMenu", "AppendCheckboxItem", 9, 0x16C7DC0}, {"DofusContextualMenu", "RemoveItemAt", 1, 0x16CA5E0},
+        {"DofusContextualMenu", "InsertItem", 2, 0x16CA240}, {"DofusContextualMenu", "get_menuItems", 0, 0x68E2B0},
+        {"ContextMenuItem", "get_m_callback", 0, 0x16C0A30}, {"ContextMenuItem", "get_disabled", 0, 0x16C0A10},
+        {"ContextMenuItemView", "get_itemData", 0, 0x1570BD0}, {"DofusContextualMenuRoot", "get_menuData", 0, 0x1570BE0},
+        {"DofusContextualMenuRoot", "RemoveMenu", 1, 0x16C44A0},
+        {"VisualElement", "get_parent", 0, 0x55BE960}, {"VisualElement", "get_panel", 0, 0x55BE950}, {"VisualElement", "get_layout", 0, 0x55BE110},
+        {"VisualElement", "get_name", 0, 0x31206D0}, {"VisualElement", "get_style", 0, 0x55BEC80},
+        {"VisualElement", "IncrementVersion", 1, 0x55ACD60}, {"VisualElement", "ClassListContains", 1, 0x55A9020},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_width", 0, 0x55B6920},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_height", 0, 0x55B5250},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_minWidth", 0, 0x55B5670},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_minHeight", 0, 0x55B5610},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_maxHeight", 0, 0x55B5550},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_flexDirection", 0, 0x55B5070},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingLeft", 0, 0x55B5790},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingTop", 0, 0x55B5850},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_paddingBottom", 0, 0x55B5730},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_marginLeft", 0, 0x55B5430},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_marginTop", 0, 0x55B54F0},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_left", 0, 0x55B5310},
+        {"VisualElement", "UnityEngine.UIElements.IResolvedStyle.get_top", 0, 0x55B5B90},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_width", 0, 0x5599F20}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_width", 1, 0x559DBD0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_height", 0, 0x5598D20}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_height", 1, 0x559B540},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x5599030}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x559BBF0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_minHeight", 0, 0x5598FF0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_minHeight", 1, 0x559BB50},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_maxHeight", 0, 0x5598F70},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_maxHeight", 1, 0x559BA10},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x5598BA0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x559B260},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingLeft", 0, 0x5599150},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_paddingLeft", 1, 0x559BEB0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingTop", 0, 0x55991D0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_paddingTop", 1, 0x559BFF0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_paddingBottom", 0, 0x5599110},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_paddingBottom", 1, 0x559BE10},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_marginLeft", 0, 0x5598EB0},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_marginLeft", 1, 0x559B830},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_marginTop", 0, 0x5598F30},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_marginTop", 1, 0x559B970},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_left", 0, 0x5598DF0}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_left", 1, 0x559B690},
+        {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.get_top", 0, 0x55994B0}, {"InlineStyleAccess", "UnityEngine.UIElements.IStyle.set_top", 1, 0x559C750},
+        {"Length", ".ctor", 2, 0x55E4BB0}, {"StyleLength", "set_value", 1, 0x55EB120},
+        {"CachedDataService", "get_uiPresetOptionsContainer", 0, 0x7D2010}, {"UiPresetOptionsContainer", "LoadUiDimensionById", 1, 0x20776A0},
+        {"UiPresetOptionsContainer", "LoadUiPositionById", 1, 0x2077940}, {"UiPresetOptionsContainer", "SaveUiPositionById", 4, 0x2078BC0},
+        {"UiPresetOptionsContainer", "SaveUiDimensionById", 2, 0x2078860}};
     Check(contracts == expected, "Every native method verified at its pinned RVA, and nothing else");
     Check(fieldsChecked == std::set<std::string>{"WidgetProgressGaugeUi.m_gaugeType", "gfc.dyfh", "ResizableWindow.<content>k__BackingField",
         "ResizableWindow.m_verticalResizable", "ResizableWindow.m_horizontalResizable", "ResizableWindow.m_cornerResizable",

@@ -21,17 +21,17 @@ Api api{};
 uintptr_t gameBase = 0x180000000;
 Klass Api::Class(const char*, const char*, const char*) const { return reinterpret_cast<Klass>(1); }
 Method Api::Find(Klass, const char* name, int argc) const {
-    if (std::string(name) == "qgp" && argc == 1) return reinterpret_cast<Method>(0x1F83E30);
-    if (std::string(name) == "dbbg" && argc == 0) return reinterpret_cast<Method>(0x785ED0);
+    if (std::string(name) == "qgp" && argc == 1) return reinterpret_cast<Method>(0x1F4AB60);
+    if (std::string(name) == "dbbg" && argc == 0) return reinterpret_cast<Method>(0x77F820);
     fake::Check(std::string(name) == "daso" && argc == 0, "Unknown wait predicate");
-    return reinterpret_cast<Method>(0x779910);
+    return reinterpret_cast<Method>(0x773090);
 }
 void* Api::Native(Method method, uintptr_t rva) const {
     fake::Check(reinterpret_cast<uintptr_t>(method) == rva, "Wait predicate RVA mismatch");
     return reinterpret_cast<void*>(fake::Original);
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x26B9E02 || rva == 0x26B9E1A || rva == 0x205FD3E, "Unknown wait caller guard"); return nullptr;
+    fake::Check(rva == 0x2674FD2 || rva == 0x2674FEA || rva == 0x2045C4E, "Unknown wait caller guard"); return nullptr;
 }
 }
 Module* module = nullptr;
@@ -43,7 +43,7 @@ bool IsCurrentFightEntity(Obj entity) {
     return fake::member && entity == fake::entity;
 }
 void AddNativeHook(uintptr_t rva, void* hook, void** original) {
-    fake::Check(rva == 0x1F83E30 || rva == 0x779910 || rva == 0x785ED0, "Unknown wait hook");
+    fake::Check(rva == 0x1F4AB60 || rva == 0x773090 || rva == 0x77F820, "Unknown wait hook");
     fake::hooks[rva] = reinterpret_cast<PredicateFn>(hook);
     *original = reinterpret_cast<void*>(fake::Original);
 }
@@ -59,7 +59,7 @@ int main() {
                 Check(hook(entity, passed) == value && calls == 1, "Unrelated caller must preserve native predicate exactly once");
             }
         }
-        for (uintptr_t caller : {0x26B9E07, 0x26B9E1F}) {
+        for (uintptr_t caller : {0x2674FD7, 0x2674FEF}) {
             enabled = member = true; fail = false; module->stopRequested = false;
             Check(!MovementAnimationWait(entity, true, gameBase + caller, caller), "Known visual wait must use immediate native start");
             Check(!MovementAnimationWait(entity, false, gameBase + caller, caller), "False native predicate changed");
@@ -74,16 +74,16 @@ int main() {
                   "Validation failure must preserve result and stop module");
         }
         enabled = member = true; fail = false; module->stopRequested = false;
-        Check(AppearanceReady(entity, false, gameBase + 0x205FD43), "Known appearance wait must take native idle/completion branch");
-        Check(AppearanceReady(entity, true, gameBase + 0x205FD43), "Already ready appearance changed");
-        Check(!AppearanceReady(entity, false, gameBase + 0x205FD44), "Other appearance caller changed");
-        Check(!AppearanceReady(nullptr, false, gameBase + 0x205FD43), "Missing appearance entity changed");
+        Check(AppearanceReady(entity, false, gameBase + 0x2045C53), "Known appearance wait must take native idle/completion branch");
+        Check(AppearanceReady(entity, true, gameBase + 0x2045C53), "Already ready appearance changed");
+        Check(!AppearanceReady(entity, false, gameBase + 0x2045C54), "Other appearance caller changed");
+        Check(!AppearanceReady(nullptr, false, gameBase + 0x2045C53), "Missing appearance entity changed");
         member = false;
-        Check(!AppearanceReady(entity, false, gameBase + 0x205FD43), "Replaced appearance entity changed");
+        Check(!AppearanceReady(entity, false, gameBase + 0x2045C53), "Replaced appearance entity changed");
         member = true; enabled = false;
-        Check(!AppearanceReady(entity, false, gameBase + 0x205FD43), "Old appearance mode changed");
+        Check(!AppearanceReady(entity, false, gameBase + 0x2045C53), "Old appearance mode changed");
         enabled = true; fail = true;
-        Check(!AppearanceReady(entity, false, gameBase + 0x205FD43) && module->stopRequested,
+        Check(!AppearanceReady(entity, false, gameBase + 0x2045C53) && module->stopRequested,
               "Appearance validation error must preserve native result and stop");
         module = nullptr;
         std::cout << "PASS: native movement animation-read ABI, exact callers, eligibility and failure fallback\n";

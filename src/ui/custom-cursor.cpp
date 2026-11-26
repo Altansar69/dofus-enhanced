@@ -20,11 +20,11 @@ constexpr const char* CoreImage = "UnityEngine.CoreModule.dll";
 constexpr const char* UiImage = "UnityEngine.UIElementsModule.dll";
 constexpr const char* UiSpace = "UnityEngine.UIElements";
 // DofusCursor.UpdateCursorTexture stores its decision in m_currentCursor, then
-// calls ApplyCursor here (0x280A73C); every path of ApplyCursor ends with a
-// tail jump to UnityEngine.Cursor.SetCursor (0x28088F9). A DofusCursor request
+// calls ApplyCursor here (0x27C8F9C); every path of ApplyCursor ends with a
+// tail jump to UnityEngine.Cursor.SetCursor (0x27C7159). A DofusCursor request
 // thus reaches SetCursor with the return address after that 5-byte call. Both
 // sites are guarded.
-constexpr uintptr_t ApplyCursorCall = 0x280A73C, ApplyCursorJump = 0x28088F9;
+constexpr uintptr_t ApplyCursorCall = 0x27C8F9C, ApplyCursorJump = 0x27C7159;
 constexpr uintptr_t ApplyCursorReturn = ApplyCursorCall + 5;
 // TextureFormat.RGBA32; HideFlags.DontUnloadUnusedAsset (the game unloads its
 // unused assets: never the mod's cursors); CursorMode.Auto (a Windows cursor,
@@ -311,7 +311,7 @@ void SetCursorHook(Obj texture, Vector2 hotspot, int32_t mode, Method method);
 void Install() {
     // Required: the game's requests and their refresh, the textures.
     n.dofusCursor = api.Class("Core.dll", "Core.UILogic", "DofusCursor");
-    n.update = api.FindVerified(n.dofusCursor, "UpdateCursorTexture", 0, 0x280A4C0);
+    n.update = api.FindVerified(n.dofusCursor, "UpdateCursorTexture", 0, 0x27C8D20);
     RequireField(n.dofusCursor, "m_currentCursor", 0x8);
     n.currentCursor = api.class_get_field_from_name(n.dofusCursor, "m_currentCursor");
     api.NativeAt(ApplyCursorCall);
@@ -321,14 +321,14 @@ void Install() {
     n.type = RequireField(n.cursor, "cursorType", 0x18);
     n.state = RequireField(n.cursor, "cursorState", 0x20);
     n.texture = api.Class(CoreImage, "UnityEngine", "Texture2D");
-    n.textureCtor = api.FindVerified(n.texture, ".ctor", 5, 0x5410E20); // (width, height, format, mipChain, linear)
-    n.loadRaw = api.FindVerified(n.texture, "LoadRawTextureData", 2, 0x540E4C0); // (IntPtr, Int32)
-    n.apply = api.FindVerified(n.texture, "Apply", 2, 0x540BCE0); // (updateMipmaps, makeNoLongerReadable)
+    n.textureCtor = api.FindVerified(n.texture, ".ctor", 5, 0x53D8600); // (width, height, format, mipChain, linear)
+    n.loadRaw = api.FindVerified(n.texture, "LoadRawTextureData", 2, 0x53D5CA0); // (IntPtr, Int32)
+    n.apply = api.FindVerified(n.texture, "Apply", 2, 0x53D34C0); // (updateMipmaps, makeNoLongerReadable)
     n.object = api.Class(CoreImage, "UnityEngine", "Object");
-    n.hideFlags = api.FindVerified(n.object, "set_hideFlags", 1, 0x5439360);
-    n.destroy = api.FindVerified(n.object, "Destroy", 1, 0x5435EA0);
+    n.hideFlags = api.FindVerified(n.object, "set_hideFlags", 1, 0x5400B40);
+    n.destroy = api.FindVerified(n.object, "Destroy", 1, 0x53FD680);
     n.cachedPtr = RequireField(n.object, "m_CachedPtr", 0x10);
-    n.setCursor = api.FindVerified(api.Class(CoreImage, "UnityEngine", "Cursor"), "SetCursor", 3, 0x54024F0);
+    n.setCursor = api.FindVerified(api.Class(CoreImage, "UnityEngine", "Cursor"), "SetCursor", 3, 0x53C9CD0);
     // Optional: the UIDocument's root and the parents, then the text cursor over
     // the inputs the game does not mark (the chat, the searches: every input is
     // a TextField) and the theme's colours; the closed hand while an item is
@@ -336,21 +336,21 @@ void Install() {
     bool ui = false;
     Optional("ui", ui, [] {
         n.element = api.Class(UiImage, UiSpace, "VisualElement");
-        n.parent = api.FindVerified(n.element, "get_parent", 0, 0x55F7180);
-        n.documentRoot = api.FindVerified(api.Class("Core.dll", "", "pq"), "pbs", 0, 0x2E93CC0);
+        n.parent = api.FindVerified(n.element, "get_parent", 0, 0x55BE960);
+        n.documentRoot = api.FindVerified(api.Class("Core.dll", "", "pq"), "pbs", 0, 0x2E5A350);
     });
     if (ui) {
         Optional("text", n.textHover, [] {
-            n.panelOf = api.FindVerified(n.element, "get_panel", 0, 0x55F7170);
-            n.enabled = api.FindVerified(n.element, "get_enabledInHierarchy", 0, 0x55F5EF0);
+            n.panelOf = api.FindVerified(n.element, "get_panel", 0, 0x55BE950);
+            n.enabled = api.FindVerified(n.element, "get_enabledInHierarchy", 0, 0x55BD6D0);
             n.panel = api.Class(UiImage, UiSpace, "BaseVisualElementPanel");
-            n.topElement = api.FindVerified(n.panel, "GetTopElementUnderPointer", 1, 0x57A3FC0);
+            n.topElement = api.FindVerified(n.panel, "GetTopElementUnderPointer", 1, 0x576B7A0);
             n.textField = api.Class(UiImage, UiSpace, "TextField");
         });
         Optional("theme", n.theme, [] {
-            n.customStyle = api.FindVerified(n.element, "get_customStyle", 0, 0x55F5C30);
+            n.customStyle = api.FindVerified(n.element, "get_customStyle", 0, 0x55BD410);
             n.styleAccess = api.NestedClass(n.element, "CustomStyleAccess");
-            n.readColor = api.FindVerified(n.styleAccess, "TryGetValue", 2, 0x55FCCB0); // (CustomStyleProperty<Color>, out Color)
+            n.readColor = api.FindVerified(n.styleAccess, "TryGetValue", 2, 0x55C4490); // (CustomStyleProperty<Color>, out Color)
         });
     }
     // Any game theme's colours without the UI (1.18.1), as the game's own
@@ -358,15 +358,15 @@ void Install() {
     // the panel's while the game shows that theme, the Standard theme's otherwise.
     Optional("figma", n.figma, [] {
         n.figmaStyles = api.Class("Core.dll", "Core.UILogic.Figma.ScriptableObject.Script", "FigmaStylesScriptableObject");
-        n.figmaInstance = api.FindVerified(n.figmaStyles, "GetInstance", 0, 0x2CA7EA0);
-        n.figmaColor = api.FindVerified(n.figmaStyles, "GetColorByVarName", 2, 0x2CA7C90); // (ThemeEnum, String)
+        n.figmaInstance = api.FindVerified(n.figmaStyles, "GetInstance", 0, 0x2C6D9F0);
+        n.figmaColor = api.FindVerified(n.figmaStyles, "GetColorByVarName", 2, 0x2C6D7E0); // (ThemeEnum, String)
     });
     Optional("drag", n.drag, [] {
         n.dragService = api.Class("Core.dll", "Core.UILogic.Components.DragAndDrop", "DragAndDropService");
         n.dragging = RequireField(n.dragService, "<isDragging>k__BackingField", 0x10);
     });
     // Last of the game's: once applied, SetCursor's bytes no longer match its guard.
-    AddHook(n.setCursor, 0x54024F0, reinterpret_cast<void*>(SetCursorHook), reinterpret_cast<void**>(&originalSetCursor));
+    AddHook(n.setCursor, 0x53C9CD0, reinterpret_cast<void*>(SetCursorHook), reinterpret_cast<void**>(&originalSetCursor));
     // Optional, once the detour exists (never without it): the player loads the
     // mod's cursors at their own size, its loading checked first
     // (custom-cursor-player.hpp). Without it, they keep Windows' size.

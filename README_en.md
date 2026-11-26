@@ -1,7 +1,7 @@
 [Français](README.md) | English
 
 # 🐉 **Dofus Enhanced**
-![License](https://img.shields.io/badge/License-UNLICENSE-red) [![Version](https://img.shields.io/github/v/release/Altansar69/dofus-enhanced?label=Version&color=blue)](../../releases/latest) ![Dofus Unity](https://img.shields.io/badge/Dofus%20Unity-3.7.12.12-orange) ![OS](https://img.shields.io/badge/OS-Windows-green)
+![License](https://img.shields.io/badge/License-UNLICENSE-red) [![Version](https://img.shields.io/github/v/release/Altansar69/dofus-enhanced?label=Version&color=blue)](../../releases/latest) ![Dofus Unity](https://img.shields.io/badge/Dofus%20Unity-3.7.14.18-orange) ![OS](https://img.shields.io/badge/OS-Windows-green)
 
 > [!WARNING]
 > **Unofficial project: please read before using it**
@@ -110,7 +110,7 @@ To find `Dofus.exe`: with the game running, Task Manager → right-click Dofus �
 ## ❓ FAQ and notes
 
 - **Windows only** (64-bit).
-- **One Dofus version per mod version**: currently **Dofus Unity 3.7.12.12**. The mod checks the game’s exact fingerprints before loading.
+- **One Dofus version per mod version**: currently **Dofus Unity 3.7.14.18**. The mod checks the game’s exact fingerprints before loading.
 - **Ankama updated Dofus?** The mod may need an update: until a compatible version is published, it does not load and the game is left untouched. As soon as it is out, the automatic update installs it.
 - **On a version older than 1.13.1?** Since the repository was renamed to `dofus-enhanced` and releases are named by version (`v1.15.0`…), its automatic update no longer finds new versions. Download the latest one, extract it into the folder that already contains `DofusMiniatures-3.7.11.11-rN` (not into a subfolder), then untick and tick **Chargement automatique** in game (or run `.\ModuleLoader.exe --enable-auto "C:\path\to\Dofus.exe"` from the new folder). Your settings are kept.
 - **Logs**: `module.log` in the folder of the loaded version (`DofusMiniatures-3.7.11.11-rN`), `autoload.log` in the folder of the automatic loading helper. **Options → Dofus Enhanced → À propos → Dossier du mod** (mod folder, **Ouvrir** button) opens the loaded version’s folder in Windows Explorer; the shared settings and the statistics are in the folder above.

@@ -167,11 +167,11 @@ void InstallInstantThrowMovement() {
     throwClass = api.Class("Core.dll", "", "yd");
     routeClass = api.Class("Core.dll", "", "enw");
     stateClass = api.Class("Core.dll", "", "ye");
-    api.Native(api.Find(throwClass, "rjn", 8), 0x264A8D0);
-    stopFlight = reinterpret_cast<StateFn>(api.Native(api.Find(stateClass, "rmd", 0), 0x264FC80));
-    arrive = reinterpret_cast<FinishFn>(api.Native(api.Find(throwClass, "rlz", 1), 0x264B480));
-    cancel = reinterpret_cast<FinishFn>(api.Native(api.Find(throwClass, "rma", 1), 0x264B6D0));
-    api.Native(api.Find(throwClass, "rmb", 1), 0x264B810);
-    AddNativeHook(0x264B810, reinterpret_cast<void*>(FinishHook), reinterpret_cast<void**>(&originalFinish));
-    AddNativeHook(0x264A8D0, reinterpret_cast<void*>(StartHook), reinterpret_cast<void**>(&originalStart));
+    api.Native(api.Find(throwClass, "rjn", 8), 0x2608530);
+    stopFlight = reinterpret_cast<StateFn>(api.Native(api.Find(stateClass, "rmd", 0), 0x260C960));
+    arrive = reinterpret_cast<FinishFn>(api.Native(api.Find(throwClass, "rlz", 1), 0x26090E0));
+    cancel = reinterpret_cast<FinishFn>(api.Native(api.Find(throwClass, "rma", 1), 0x2609330));
+    api.Native(api.Find(throwClass, "rmb", 1), 0x2609470);
+    AddNativeHook(0x2609470, reinterpret_cast<void*>(FinishHook), reinterpret_cast<void**>(&originalFinish));
+    AddNativeHook(0x2608530, reinterpret_cast<void*>(StartHook), reinterpret_cast<void**>(&originalStart));
 }

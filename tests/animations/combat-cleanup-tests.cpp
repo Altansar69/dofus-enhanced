@@ -14,7 +14,7 @@ using namespace managed;
 void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 struct Object { alignas(16) std::array<unsigned char, 0x100> memory{}; };
 struct Type {} animationClass;
-struct MethodInfo { uintptr_t rva; } constructor{0x2081890};
+struct MethodInfo { uintptr_t rva; } constructor{0x2067830};
 std::vector<std::unique_ptr<Object>> objects;
 std::map<GCHandle, Obj> handles;
 GCHandle nextHandle = 0x123456780000ULL;
@@ -70,7 +70,7 @@ void* Api::Native(Method method, uintptr_t rva) const {
     return reinterpret_cast<void*>(fake::OriginalCtor);
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x26CFAA4, "Wrong death animation provenance guard");
+    fake::Check(rva == 0x2689E04, "Wrong death animation provenance guard");
     return reinterpret_cast<void*>(gameBase + rva);
 }
 }
@@ -82,12 +82,12 @@ Module* module = nullptr;
 Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    fake::Check(rva == 0x2081890 && replacement, "Unexpected cleanup hook");
+    fake::Check(rva == 0x2067830 && replacement, "Unexpected cleanup hook");
     *original = reinterpret_cast<void*>(fake::OriginalCtor);
 }
 
 namespace fake {
-Obj Construct(uintptr_t returnRva = 0x26CFAA9) {
+Obj Construct(uintptr_t returnRva = 0x2689E09) {
     auto step = Make();
     AnimationCtorAt(step, expectedEntity, expectedName, false, true, -7, 23,
                     expectedSuffix, true, expectedServices, false, expectedMethod, gameBase + returnRva);
@@ -117,7 +117,7 @@ int main() {
     try {
         Module instance(L"."); module = &instance; InitializeApi(); InstallCombatCleanup();
         using Kind = AnimationStepKind;
-        Reset(); auto death = Construct(), ordinary = Construct(0x26CFAA8);
+        Reset(); auto death = Construct(), ordinary = Construct(0x2689E08);
         Check(constructors == 2 && ClassifyAnimationStep(death) == Kind::Death && ClassifyAnimationStep(ordinary) == Kind::Ordinary &&
               !Skipped(death) && Skipped(ordinary),
               "Exact dwp provenance must stay native while a known neighboring call site may skip");
@@ -132,7 +132,7 @@ int main() {
               "Later pumping must not redispatch native cleanup or completion");
 
         for (int previousMode : {0, 1, 2}) {
-            Reset(); module->settings.ApplyLegacyAnimationMode(previousMode); death = Construct(); ordinary = Construct(0x26CFAA8);
+            Reset(); module->settings.ApplyLegacyAnimationMode(previousMode); death = Construct(); ordinary = Construct(0x2689E08);
             Check(ClassifyAnimationStep(death) == Kind::Death && ClassifyAnimationStep(ordinary) == Kind::Ordinary,
                   "Provenance is recorded whatever the animation toggles");
             Check(Skipped(death) == (previousMode == 2) && Skipped(ordinary) == (previousMode == 2),
@@ -146,7 +146,7 @@ int main() {
         for (int config = 0; config < 4; ++config) {
             Reset(); module->settings.ApplyLegacyAnimationMode(0); module->settings.noDeathAnimations = true;
             module->settings.instantMovements = (config & 1) != 0; module->settings.noVisualWaits = (config & 2) != 0;
-            death = Construct(); ordinary = Construct(0x26CFAA8);
+            death = Construct(); ordinary = Construct(0x2689E08);
             StartAsParentWould(death); StartAsParentWould(ordinary);
             Check(nativeStarts == (config == 0 ? 1u : 2u) && completions == 2,
                   "A death is skipped alone only without instant movements or waits; ordinary steps follow their own toggle");
@@ -164,7 +164,7 @@ int main() {
               "Native constructor failure must propagate without capture or retry");
 
         Reset();
-        for (size_t i = 0; i <= MaxRetainedAnimations; ++i) Construct(i % 2 ? 0x26CFAA8 : 0x26CFAA9);
+        for (size_t i = 0; i <= MaxRetainedAnimations; ++i) Construct(i % 2 ? 0x2689E08 : 0x2689E09);
         Check(module->stopRequested && handles.size() == MaxRetainedAnimations &&
               constructors == MaxRetainedAnimations + 1,
               "Capacity exhaustion must stop acceleration instead of evicting pending provenance");

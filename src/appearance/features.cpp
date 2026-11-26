@@ -95,7 +95,7 @@ void Features::Install() {
     entityLookClass = look;
     lookEntityRegistryClass = api.Class("Core.dll", "", "evv");
     clearCreatureLook = api.Find(lookAnimatedEntityClass, "rfa", 0);
-    api.Native(clearCreatureLook, 0x2615260);
+    api.Native(clearCreatureLook, 0x25DBB00);
     cloneLook = api.Find(look, "dbfj", 0);
     scaleX = api.Find(look, "dbev", 1);
     scaleY = api.Find(look, "dbex", 1);
@@ -105,40 +105,40 @@ void Features::Install() {
     fighterTryGet = api.Find(api.Class("Core.dll", "", "evv"), "bamm", 2);
     localIdGet = api.Find(api.Class("Core.dll", "", "esg"), "zcx", 0);
     refreshCreatures = api.Find(converter, "baza", 1);
-    api.Native(cloneLook, 0x79A3D0); api.Native(scaleX, 0x799F70); api.Native(scaleY, 0x79A060);
-    api.Native(flagsTest, 0x19518F0); api.Native(excludedTest, 0x1951DB0);
-    api.Native(refreshCreatures, 0x1975060);
-    api.Native(teamTryGet, 0x1951B60);
-    api.Native(fighterTryGet, 0x1957A70);
-    api.Native(localIdGet, 0x18BB140);
+    api.Native(cloneLook, 0x78DB50); api.Native(scaleX, 0x78D6F0); api.Native(scaleY, 0x78D7E0);
+    api.Native(flagsTest, 0x193E4A0); api.Native(excludedTest, 0x193E960);
+    api.Native(refreshCreatures, 0x1970B80);
+    api.Native(teamTryGet, 0x193E710);
+    api.Native(fighterTryGet, 0x1950980);
+    api.Native(localIdGet, 0x18B07F0);
     // « Apparence » categories. EntityInfo.bajh is the entity ID; balc reads
     // long metadata, where gwg.bmnt stores the summoner under key 2 next to the
     // summoned flag (bool key 1). Party (fti, service fne): bfmh lists its lg
     // members, oab is a member's ID and lg.ddku marks an accepted member.
-    infoIdGet = api.FindVerified(info, "bajh", 0, 0x1951440);
-    summonerTryGet = api.FindVerified(info, "balc", 2, 0x1952710);
+    infoIdGet = api.FindVerified(info, "bajh", 0, 0x193DFF0);
+    summonerTryGet = api.FindVerified(info, "balc", 2, 0x193F2C0);
     characterClass = api.Class("Core.dll", "", "esg");
     partyClass = api.Class("Core.dll", "", "fti");
     partyMemberClass = api.Class("Core.dll", "", "lg");
-    partyMembersGet = api.FindVerified(partyClass, "bfmh", 0, 0x752E20);
-    partyMemberIdGet = api.FindVerified(partyMemberClass, "oab", 0, 0x68D2B0);
+    partyMembersGet = api.FindVerified(partyClass, "bfmh", 0, 0x748800);
+    partyMemberIdGet = api.FindVerified(partyMemberClass, "oab", 0, 0x68E2B0);
     RequireField(partyMemberClass, "ddku", 0x20);
     // « PNJ »: EntityInfo.baks reads integer metadata, where gwu.bmpa and
     // gwz.bmni store an NPC's ID under key 15. An NPC's look is the creature
     // look cache AnimatedEntity.dhhm (+0x310) of its root, found by its ID
     // Animated.fhtc (+0x1C8).
-    npcIdTryGet = api.FindVerified(info, "baks", 2, 0x1952330);
+    npcIdTryGet = api.FindVerified(info, "baks", 2, 0x193EEE0);
     RequireField(lookAnimatedEntityClass, "dhhm", 0x310);
     RequireField(api.Class("Ankama.Dofus.Core.Characters.dll", "CoreAnimated", "Animated"), "fhtc", 0x1C8);
     sizes.Install();
-    AddHook(api.Find(converter, "bazg", 2), 0x19755D0, reinterpret_cast<void*>(ConvertHook), reinterpret_cast<void**>(&originalConvert));
-    AddHook(api.Find(lookAnimatedEntityClass, "rez", 0), 0x2614FF0, reinterpret_cast<void*>(CreatureLookHook), reinterpret_cast<void**>(&originalCreatureLook));
+    AddHook(api.Find(converter, "bazg", 2), 0x1971160, reinterpret_cast<void*>(ConvertHook), reinterpret_cast<void**>(&originalConvert));
+    AddHook(api.Find(lookAnimatedEntityClass, "rez", 0), 0x25DB890, reinterpret_cast<void*>(CreatureLookHook), reinterpret_cast<void**>(&originalCreatureLook));
     // These native predicates suppress attached renderers specifically for the
     // flattened creature appearance. Miniatures retains the attached looks.
     auto visibilityPolicy = api.Class("Core.dll", "", "yh");
-    api.Native(api.Find(lookAnimatedEntityClass, "rgx", 0), 0x26173C0);
-    AddHook(api.Find(visibilityPolicy, "rmo", 1), 0x2652CF0, reinterpret_cast<void*>(CreatureHideHook), reinterpret_cast<void**>(&originalCreatureHide));
-    AddHook(api.Find(visibilityPolicy, "rmp", 1), 0x2652E50, reinterpret_cast<void*>(CreatureForcedHideHook), reinterpret_cast<void**>(&originalCreatureForcedHide));
+    api.Native(api.Find(lookAnimatedEntityClass, "rgx", 0), 0x25DDC60);
+    AddHook(api.Find(visibilityPolicy, "rmo", 1), 0x260F010, reinterpret_cast<void*>(CreatureHideHook), reinterpret_cast<void**>(&originalCreatureHide));
+    AddHook(api.Find(visibilityPolicy, "rmp", 1), 0x260CBF0, reinterpret_cast<void*>(CreatureForcedHideHook), reinterpret_cast<void**>(&originalCreatureForcedHide));
     InstallCombatAppearanceRefresh();
     InstallAnimation();
 }
@@ -232,7 +232,7 @@ bool Features::PreserveMiniatureAttachmentVisibility(Obj entity, uintptr_t calle
     // rmp is called by ric to set its creature-only forced-hidden flag. Other
     // callers and all native modes keep the original predicates unchanged.
     if (!module || !module->ready.load() || module->stopped ||
-        (caller != gameBase + 0x2617618 && caller != gameBase + 0x2619FDB)) return false;
+        (caller != gameBase + 0x25DDEB8 && caller != gameBase + 0x25E088B)) return false;
     return SubentityLook(entity) != nullptr;
 }
 bool Features::Convert(Obj service, Obj info, Obj* look) {

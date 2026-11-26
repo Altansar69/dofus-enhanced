@@ -72,13 +72,13 @@ Method Api::Find(Klass type, const char* name, int argc) const {
 }
 void* Api::Native(Method m, uintptr_t rva) const {
     if (m == &fake::delayType) {
-        fake::Check(rva == 0x208A1A0, "Wrong delay constructor RVA"); return reinterpret_cast<void*>(fake::OriginalDelay);
+        fake::Check(rva == 0x2070070, "Wrong delay constructor RVA"); return reinterpret_cast<void*>(fake::OriginalDelay);
     }
-    fake::Check(m == &fake::waiter && rva == 0x208A020, "Wrong verified RVA");
+    fake::Check(m == &fake::waiter && rva == 0x206FEF0, "Wrong verified RVA");
     return reinterpret_cast<void*>(fake::Original);
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x1E59C1F, "Wrong visual-delay callsite guard"); return reinterpret_cast<void*>(rva);
+    fake::Check(rva == 0x1E470AF, "Wrong visual-delay callsite guard"); return reinterpret_cast<void*>(rva);
 }
 }
 // Compile the actual hook here so expiry and capacity can be checked without
@@ -96,11 +96,11 @@ bool IsCurrentFightEntity(managed::Obj e) {
     return fake::member && e == fake::entity;
 }
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    if (rva == 0x208A1A0) {
+    if (rva == 0x2070070) {
         fake::delayHook = reinterpret_cast<decltype(fake::delayHook)>(replacement);
         *original = reinterpret_cast<void*>(fake::OriginalDelay); return;
     }
-    fake::Check(rva == 0x208A020, "Wrong hook RVA");
+    fake::Check(rva == 0x206FEF0, "Wrong hook RVA");
     fake::hook = reinterpret_cast<fake::Fn>(replacement);
     *original = reinterpret_cast<void*>(fake::Original);
 }
@@ -147,11 +147,11 @@ int main() {
         ResetCounts(); hook(Waiter(a), nullptr);
         Check(calls == 1 && completed == 0, "Evicted animation must not match a new allocation");
         ClearInstantWaits(); Check(handles.empty(), "Stop cleanup must release every root");
-        Check(VisualStaggerDelay(900, gameBase + 0x1E59C24) == 0, "Verified visual stagger should be removed");
-        Check(VisualStaggerDelay(900, gameBase + 0x1E59C23) == 900, "Other timer caller must keep duration");
-        Check(VisualStaggerDelay(-1, gameBase + 0x1E59C24) == -1, "Special negative timer value must remain unchanged");
+        Check(VisualStaggerDelay(900, gameBase + 0x1E470B4) == 0, "Verified visual stagger should be removed");
+        Check(VisualStaggerDelay(900, gameBase + 0x1E470B3) == 900, "Other timer caller must keep duration");
+        Check(VisualStaggerDelay(-1, gameBase + 0x1E470B4) == -1, "Special negative timer value must remain unchanged");
         enabled = false;
-        Check(VisualStaggerDelay(900, gameBase + 0x1E59C24) == 900, "Older modes must keep visual stagger");
+        Check(VisualStaggerDelay(900, gameBase + 0x1E470B4) == 900, "Older modes must keep visual stagger");
         enabled = true; delayHook(Make(&delayType), 600, nullptr);
         Check(delayCalls == 1 && lastDelay == 600, "Real constructor hook must preserve unrelated caller and call original once");
         std::cout << "PASS: actual wait hook eligibility, identity history, cleanup, bounds and callback safety\n";

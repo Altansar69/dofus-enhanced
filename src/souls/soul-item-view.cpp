@@ -98,7 +98,7 @@ void ShowTooltip(ItemState& state) {
     auto positionClass = api.Class("Core.dll", PositionSpace, "TooltipPositioning");
     // Metadata order selects the (VisualElement) positioning constructor and
     // the factory overload taking TooltipPositioning; verify both exact RVAs.
-    api.Native(api.Find(positionClass, ".ctor", 1), 0x1666720);
+    api.Native(api.Find(positionClass, ".ctor", 1), 0x1658110);
     Ref position(api.New(positionClass, {state.slot.get()}));
     if(state.spell) {
         int source=1,tooltip=7; // TopCenter of slot, BottomCenter of tooltip.
@@ -108,15 +108,15 @@ void ShowTooltip(ItemState& state) {
     Ref builder;
     if (state.spell) {
         auto infoClass = api.Class("Core.dll", BuilderSpace, "SpellTooltipInfo");
-        auto infoCtor = api.FindVerified(infoClass, ".ctor", 2, 0x1647FD0);
+        auto infoCtor = api.FindVerified(infoClass, ".ctor", 2, 0x16399C0);
         Ref info(api.object_new(infoClass));
         api.Invoke(infoCtor, info.get(), {state.item.get(), nullptr});
-        auto ctor = api.FindVerified(builderClass, ".ctor", 4, 0x1647AC0);
+        auto ctor = api.FindVerified(builderClass, ".ctor", 4, 0x16394B0);
         builder.reset(api.object_new(builderClass));
         api.Invoke(ctor, builder.get(), {info.get(), dependencies.get(), criteria.get(), position.get()});
     } else {
         auto factory = api.Find(builderClass, "CreateItemTooltip", 9);
-        api.Native(factory, 0x1610130);
+        api.Native(factory, 0x1601D30);
         bool no = false;
         builder.reset(api.Invoke(factory, nullptr, {dependencies.get(), criteria.get(), state.item.get(),
             position.get(), &no, &no, &no, nullptr, &no}));
@@ -172,32 +172,32 @@ void RefreshHook(Obj owner, Method method) {
 void InstallItemView() {
     if (itemState.installed) return;
     auto position=api.Class("Core.dll",PositionSpace,"TooltipPositioning");
-    api.Native(api.Find(position,"set_sourcePlacementOrigin",1),0x7D2B60);
-    api.Native(api.Find(position,"set_tooltipPlacementOrigin",1),0x758DE0);
+    api.Native(api.Find(position,"set_sourcePlacementOrigin",1),0x7C42E0);
+    api.Native(api.Find(position,"set_tooltipPlacementOrigin",1),0x74F210);
     auto cursor = api.Class("Core.dll", "Core.UILogic", "DofusCursor");
-    setCursor = api.FindVerified(cursor, "SetCursor", 4, 0x280A070);
-    removeCursor = api.FindVerified(cursor, "RemoveCursor", 2, 0x2809EA0);
+    setCursor = api.FindVerified(cursor, "SetCursor", 4, 0x27C88D0);
+    removeCursor = api.FindVerified(cursor, "RemoveCursor", 2, 0x27C8700);
     auto slot = api.Class("Core.dll", SlotSpace, "Slot");
-    api.Native(api.Find(slot, ".ctor", 0), 0x165E8E0);
-    api.Native(api.Find(slot, "set_data", 1), 0x165EC60);
-    api.Native(api.Find(slot, "set_slotSize", 1), 0x165F4F0);
-    api.Native(api.Find(slot, "set_slotType", 1), 0x165F5F0);
-    api.Native(api.Find(slot, "DisableDrag", 0), 0x165ADC0);
+    api.Native(api.Find(slot, ".ctor", 0), 0x16502D0);
+    api.Native(api.Find(slot, "set_data", 1), 0x1650650);
+    api.Native(api.Find(slot, "set_slotSize", 1), 0x1650EE0);
+    api.Native(api.Find(slot, "set_slotType", 1), 0x1650FE0);
+    api.Native(api.Find(slot, "DisableDrag", 0), 0x164C7B0);
     auto service = api.Class("Core.dll", "", "gbr");
-    api.Native(api.Find(service, "bfpo", 1), 0x1EEE490);
-    api.Native(api.Find(service, "bfps", 2), 0x1EEF050);
-    api.Native(api.Find(service, "bfqc", 1), 0x1EEFF60);
+    api.Native(api.Find(service, "bfpo", 1), 0x1EDA940);
+    api.Native(api.Find(service, "bfps", 2), 0x1EDB4A0);
+    api.Native(api.Find(service, "bfqc", 1), 0x1EDC3B0);
     auto builder = api.Class("Core.dll", BuilderSpace, "ItemTooltipBuilder");
-    api.Native(api.Find(builder, "UpdateContent", 2), 0x1617AA0);
-    AddHook(api.Find(slot, "OnMouseEnter", 1), 0x165C170,
+    api.Native(api.Find(builder, "UpdateContent", 2), 0x16096A0);
+    AddHook(api.Find(slot, "OnMouseEnter", 1), 0x164DB60,
         reinterpret_cast<void*>(&EnterHook), reinterpret_cast<void**>(&originalEnter));
-    AddHook(api.Find(slot, "OnMouseLeave", 1), 0x165C200,
+    AddHook(api.Find(slot, "OnMouseLeave", 1), 0x164DBF0,
         reinterpret_cast<void*>(&LeaveHook), reinterpret_cast<void**>(&originalLeave));
-    AddHook(api.Find(slot, "OnDetachedFromPanel", 1), 0x165BDF0,
+    AddHook(api.Find(slot, "OnDetachedFromPanel", 1), 0x164D7E0,
         reinterpret_cast<void*>(&DetachHook), reinterpret_cast<void**>(&originalDetach));
-    AddHook(api.Find(slot, "OnClick", 1), 0x165B840,
+    AddHook(api.Find(slot, "OnClick", 1), 0x164D230,
         reinterpret_cast<void*>(&ClickHook), reinterpret_cast<void**>(&originalClick));
-    AddHook(api.Find(slot, "Refresh", 0), 0x165CF10,
+    AddHook(api.Find(slot, "Refresh", 0), 0x164E900,
         reinterpret_cast<void*>(&RefreshHook), reinterpret_cast<void**>(&originalRefresh));
     itemState.installed = true;
 }

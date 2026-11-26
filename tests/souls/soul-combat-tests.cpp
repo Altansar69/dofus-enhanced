@@ -181,7 +181,7 @@ Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> values) co
 }
 }
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
-    fake::Check(rva == 0x1E05670, "Unexpected combat hook");
+    fake::Check(rva == 0x1E18FF0, "Unexpected combat hook");
     fake::phaseHook = reinterpret_cast<fake::PhaseFn>(replacement);
     *original = reinterpret_cast<void*>(fake::NativePhase);
 }

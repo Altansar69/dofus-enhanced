@@ -22,7 +22,7 @@ static DWORD ChooseClient() {
         if (_wcsicmp(entry.szExeFile, L"Dofus.exe") == 0) clients.push_back(entry.th32ProcessID);
     } while (Process32NextW(snapshot.value, &entry));
     if (clients.empty()) throw std::runtime_error("Aucun client Dofus lance. Lance le jeu toi-meme puis reessaie.");
-    std::cout << ModDisplayName << " " << ModSemanticVersion << " - lanceur pour 3.7.12.12\n"
+    std::cout << ModDisplayName << " " << ModSemanticVersion << " - lanceur pour 3.7.14.18\n"
                  "Le module sera charge en memoire dans le client choisi.\n"
                  "La compilation est verifiee, les fonctions en jeu restent a tester.\n"
                  "Aucun clic, touche ou changement de fenetre ne sera effectue.\n\nClients trouves (PID) :";
@@ -279,7 +279,7 @@ int wmain(int argc, wchar_t** argv) {
         if (argc == 4 && std::wstring(argv[1]) == L"--verify-files") {
             if (FileHash(argv[2]) != ExpectedGameHash || FileHash(argv[3]) != ExpectedMetadataHash)
                 throw std::runtime_error("Unsupported snapshot: no process accessed");
-            std::cout << "Supported snapshot 3.7.12.12. Files only; no process accessed.\n";
+            std::cout << "Supported snapshot 3.7.14.18. Files only; no process accessed.\n";
             return 0;
         }
         if (argc == 3 && (std::wstring(argv[1]) == L"--check-updates" ||

@@ -478,7 +478,7 @@ void Install() {
     Contract next;
     const char* stage = "character";
     try {
-        // Pinned 3.7.12.12 layouts (work/r74-analysis/contracts-new.json), each checked by name.
+        // Pinned 3.7.14.18 layouts (work/r127-analysis/contracts-new.json), each checked by name.
         next.character = api.Class("Core.dll", "", "esg");
         next.infoField = RequireField(next.character, "dpzj", 0x128);
         next.sheetField = RequireField(next.character, "<dpzm>k__BackingField", 0x130);
@@ -494,7 +494,7 @@ void Install() {
         stage = "map";
         next.scene = api.Class("Core.dll", "", "epf");
         next.sceneDataField = RequireField(next.scene, "<doqb>k__BackingField", 0x118);
-        next.sceneReady = api.FindVerified(next.scene, "xkj", 0, 0x18389C0);
+        next.sceneReady = api.FindVerified(next.scene, "xkj", 0, 0x1831020);
         next.sceneData = api.Class("AleCore.dll", "AleCore.Data.UnityClient", "ClientMapData");
         next.sceneId = RequireField(next.sceneData, "id", 0x18);
         next.core = true;
@@ -509,15 +509,15 @@ void Install() {
     };
     next.places = part("places", [&] {
         next.mapInfo = api.Class(DataCenter, WorldNs, "MapInformationData");
-        next.mapInfoById = api.FindVerified(next.mapInfo, "GetMapInformationById", 1, 0x7C4200);
-        next.mapSubArea = api.FindVerified(next.mapInfo, "get_subArea", 0, 0x7C44B0);
+        next.mapInfoById = api.FindVerified(next.mapInfo, "GetMapInformationById", 1, 0x7B5980);
+        next.mapSubArea = api.FindVerified(next.mapInfo, "get_subArea", 0, 0x7B5C30);
         next.subArea = api.Class(DataCenter, WorldNs, "SubAreaData");
-        next.subAreaWorld = api.FindVerified(next.subArea, "get_worldmapId", 0, 0x7D1040);
+        next.subAreaWorld = api.FindVerified(next.subArea, "get_worldmapId", 0, 0x7C27C0);
         next.subAreaId = RequireField(next.subArea, "id", 0x10);
         next.dataCenter = api.Class(DataCenter, "Core.DataCenter", "DataCenterModule");
-        next.havenbagRoot = api.FindVerified(next.dataCenter, "get_havenBagThemesDataRoot", 0, 0x7BDF80);
+        next.havenbagRoot = api.FindVerified(next.dataCenter, "get_havenBagThemesDataRoot", 0, 0x7AF700);
         next.havenbags = api.Class(DataCenter, "Core.DataCenter.Metadata.House", "HavenbagThemesDataRoot");
-        next.inHavenbag = api.FindVerified(next.havenbags, "IsMapIdInHavenbag", 1, 0x7E41B0);
+        next.inHavenbag = api.FindVerified(next.havenbags, "IsMapIdInHavenbag", 1, 0x7D5930);
     });
     next.walk = part("walk", [&] {
         next.walkState = api.NestedClass(api.Class("Core.dll", "", "xq"), "xm");
@@ -541,7 +541,7 @@ void Install() {
         next.kamasField = RequireField(next.sheet, "dcjl", 0x30);
         next.teleporter = api.Class("Core.dll", "", "fbq");
         next.teleporterCharacter = RequireField(next.teleporter, "dspa", 0x28);
-        AddHook(api.FindVerified(next.teleporter, "bcla", 1, 0x1A4A5E0), 0x1A4A5E0,
+        AddHook(api.FindVerified(next.teleporter, "bcla", 1, 0x1A4E790), 0x1A4E790,
             reinterpret_cast<void*>(&TeleportHook), reinterpret_cast<void**>(&originalTeleport));
     });
     // A recall potion counts at its arrival on the saved zaap.
@@ -549,14 +549,14 @@ void Install() {
         next.zaaps = api.Class("Core.dll", "", "fbq");
         next.savedZaap = RequireField(next.zaaps, "<dspb>k__BackingField", 0x30);
         next.item = api.Class("Core.dll", "", "mc");
-        next.itemId = api.FindVerified(next.item, "myn", 0, 0xF20D40);
-        next.itemDataOf = api.FindVerified(next.item, "myx", 0, 0x2AAC6B0);
+        next.itemId = api.FindVerified(next.item, "myn", 0, 0xF124C0);
+        next.itemDataOf = api.FindVerified(next.item, "myx", 0, 0x29330F0);
         next.itemData = api.Class(DataCenter, "Core.DataCenter.Metadata.Item", "ItemData");
         next.itemEffects = RequireField(next.itemData, "possibleEffects", 0x68);
         next.effect = api.Class(DataCenter, "Core.DataCenter.Metadata.Effect", "EffectInstanceData");
         next.effectAction = RequireField(next.effect, "actionId", 0x1A);
         next.inventory = api.Class("Core.dll", "", "feh");
-        AddHook(api.FindVerified(next.inventory, "bdsh", 2, 0x1B57D20), 0x1B57D20,
+        AddHook(api.FindVerified(next.inventory, "bdsh", 2, 0x1B4A880), 0x1B4A880,
             reinterpret_cast<void*>(&UseHook), reinterpret_cast<void**>(&originalUse));
     });
     contract = next;

@@ -114,15 +114,15 @@ Rect LayoutOf(Obj element) {
 }
 
 const std::map<uintptr_t, std::pair<std::string, int>> Verified = {
-    {0x7E0890, {"get_uiPresetOptionsContainer", 0}}, {0x20939D0, {"get_isUsingFightPreset", 0}},
-    {0x55F7180, {"get_parent", 0}}, {0x55F6930, {"get_layout", 0}}, {0x55F74A0, {"get_style", 0}},
-    {0x55D1610, {"UnityEngine.UIElements.IStyle.get_left", 0}}, {0x55D3EB0, {"UnityEngine.UIElements.IStyle.set_left", 1}},
-    {0x55D1CD0, {"UnityEngine.UIElements.IStyle.get_top", 0}}, {0x55D4F70, {"UnityEngine.UIElements.IStyle.set_top", 1}},
-    {0x55D2740, {"UnityEngine.UIElements.IStyle.get_width", 0}}, {0x55D63F0, {"UnityEngine.UIElements.IStyle.set_width", 1}},
-    {0x55D1540, {"UnityEngine.UIElements.IStyle.get_height", 0}}, {0x55D3D60, {"UnityEngine.UIElements.IStyle.set_height", 1}},
-    {0x561D3D0, {".ctor", 2}}, {0x5623940, {"set_value", 1}},
-    {0x20926E0, {"SavePreset", 1}}, {0x2090D40, {"AddPreset", 1}}, {0x2091F60, {"RemovePreset", 1}},
-    {0x2090E40, {"ApplyPreset", 1}}, {0x20916A0, {"EditPreset", 3}}};
+    {0x7D2010, {"get_uiPresetOptionsContainer", 0}}, {0x20797B0, {"get_isUsingFightPreset", 0}},
+    {0x55BE960, {"get_parent", 0}}, {0x55BE110, {"get_layout", 0}}, {0x55BEC80, {"get_style", 0}},
+    {0x5598DF0, {"UnityEngine.UIElements.IStyle.get_left", 0}}, {0x559B690, {"UnityEngine.UIElements.IStyle.set_left", 1}},
+    {0x55994B0, {"UnityEngine.UIElements.IStyle.get_top", 0}}, {0x559C750, {"UnityEngine.UIElements.IStyle.set_top", 1}},
+    {0x5599F20, {"UnityEngine.UIElements.IStyle.get_width", 0}}, {0x559DBD0, {"UnityEngine.UIElements.IStyle.set_width", 1}},
+    {0x5598D20, {"UnityEngine.UIElements.IStyle.get_height", 0}}, {0x559B540, {"UnityEngine.UIElements.IStyle.set_height", 1}},
+    {0x55E4BB0, {".ctor", 2}}, {0x55EB120, {"set_value", 1}},
+    {0x20784C0, {"SavePreset", 1}}, {0x2076B20, {"AddPreset", 1}}, {0x2077D40, {"RemovePreset", 1}},
+    {0x2076C20, {"ApplyPreset", 1}}, {0x2077480, {"EditPreset", 3}}};
 std::map<std::string, size_t> FieldOffsets = {{"savedPresets", 0x48}, {"fightPresetId", 0x30}, {"presetName", 0x18}, {"uid", 0xA8}};
 int StyleIndex(const std::string& name) {
     for (int i = 0; i < 4; ++i)
@@ -207,11 +207,11 @@ void Log(const std::string& text) { fake::logs.push_back(text); }
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original) {
     const auto& m = *static_cast<const fake::MethodData*>(method);
     fake::Check(m.rva == rva, "Hook at its guarded method");
-    if (rva == 0x20926E0) { fake::saveHook = reinterpret_cast<fake::IntFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeSave); }
-    else if (rva == 0x2090D40) { fake::addHook = reinterpret_cast<fake::AddFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeAdd); }
-    else if (rva == 0x2091F60) { fake::removeHook = reinterpret_cast<fake::IntFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeRemove); }
-    else if (rva == 0x2090E40) { fake::applyHook = reinterpret_cast<fake::IntFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeApply); }
-    else if (rva == 0x20916A0) { fake::editHook = reinterpret_cast<fake::EditFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeEdit); }
+    if (rva == 0x20784C0) { fake::saveHook = reinterpret_cast<fake::IntFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeSave); }
+    else if (rva == 0x2076B20) { fake::addHook = reinterpret_cast<fake::AddFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeAdd); }
+    else if (rva == 0x2077D40) { fake::removeHook = reinterpret_cast<fake::IntFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeRemove); }
+    else if (rva == 0x2076C20) { fake::applyHook = reinterpret_cast<fake::IntFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeApply); }
+    else if (rva == 0x2077480) { fake::editHook = reinterpret_cast<fake::EditFn>(replacement); *original = reinterpret_cast<void*>(&fake::NativeEdit); }
     else throw std::runtime_error("Unexpected hook");
 }
 namespace toolsUi {

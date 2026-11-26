@@ -63,6 +63,6 @@ bool DeferInstantMovement(std::function<void()> finish) {
 
 void InstallMovementDispatch() {
     auto entity = api.Class("Core.dll", "Core.Rendering.Entity.CoreAnimatedEntity", "AnimatedEntity");
-    api.Native(api.Find(entity, "rfw", 5), 0x2616140);
-    AddNativeHook(0x2616140, reinterpret_cast<void*>(MoveHook), reinterpret_cast<void**>(&originalMove));
+    api.Native(api.Find(entity, "rfw", 5), 0x25DC9E0);
+    AddNativeHook(0x25DC9E0, reinterpret_cast<void*>(MoveHook), reinterpret_cast<void**>(&originalMove));
 }

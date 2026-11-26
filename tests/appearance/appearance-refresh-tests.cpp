@@ -64,8 +64,8 @@ Api api{};
 Klass Api::Class(const char*, const char*, const char* name) const { return fake::Type(name); }
 Method Api::Find(Klass klass, const char* name, int argc) const {
     static const std::map<std::string, uintptr_t> rvas = {
-        {"baml", 0x19579E0}, {"bamm", 0x1957A70}, {"bajh", 0x1951440},
-        {"bajs", 0x19518F0}, {"vkq", 0x27695E0}, {"ric", 0x2619F70}
+        {"baml", 0x19508F0}, {"bamm", 0x1950980}, {"bajh", 0x193DFF0},
+        {"bajs", 0x193E4A0}, {"vkq", 0x2723DF0}, {"ric", 0x25E0820}
     };
     auto item = std::make_unique<fake::MethodInfo>(fake::MethodInfo{
         static_cast<fake::Class*>(klass), name, argc, rvas.at(name)});

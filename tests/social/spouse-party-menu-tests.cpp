@@ -324,7 +324,7 @@ Obj Api::New(Klass c, std::initializer_list<void*> args) const { auto o = fake::
 Obj Api::Field(Obj self, const char* name) const { return fake::Get(self).fields[name]; }
 void* Api::FieldAddress(Obj self, const char* name) const { return &fake::Get(self).numbers[name]; }
 std::string Api::String(Obj self) const { return self ? fake::Get(self).text : std::string(); }
-// Field layout of the pinned 3.7.12.12 metadata (contracts-new.json); unknown fields fail.
+// Field layout of the pinned 3.7.14.18 metadata (contracts-new.json); unknown fields fail.
 void* Api::FieldInfo(Klass c, const char* name) const {
     static const std::unordered_map<std::string, size_t> layout{
         {"io.dcys", 0x10}, {"io.dcyy", 0x31}, {"io.dcyz", 0x38}, {"lg.ddkt", 0x18}, {"lg.ddku", 0x20},
@@ -339,7 +339,7 @@ bool Module::InCombat() const { return fake::combat; }
 managed::Obj Module::FindService(const char* name) const { return fake::services[name]; }
 void Log(const std::string& s) { fake::logs.push_back(s); }
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
-    fake::Check(rva == 0x16ECE90, "Only PlayerMenuMaker.CreateMenu is hooked");
+    fake::Check(rva == 0x16DE880, "Only PlayerMenuMaker.CreateMenu is hooked");
     fake::createHook = reinterpret_cast<decltype(fake::createHook)>(replacement); *original = reinterpret_cast<void*>(&fake::OriginalCreate);
 }
 int main() { using namespace fake; try {

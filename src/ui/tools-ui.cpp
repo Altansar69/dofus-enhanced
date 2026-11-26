@@ -197,22 +197,22 @@ void ApplyHeaderSizes(){if(!Ready())return;for(size_t i=0;i<std::size(HeaderPane
 bool Toggle(const char* key){return Ready()&&Find(key).toggle();}
 void Install(){if(installed)return;
     auto scroll=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","ScrollView");
-    api.FindVerified(scroll,".ctor",0,0x5742BD0);api.FindVerified(scroll,"get_contentContainer",0,0x5742BE0);
+    api.FindVerified(scroll,".ctor",0,0x570A3B0);api.FindVerified(scroll,"get_contentContainer",0,0x570A3C0);
     auto klass=api.Class("Core.dll",Menus,"DofusContextualMenu");
-    appendTitle=api.FindVerified(klass,"AppendTitle",1,0x16D7F70);appendSeparator=api.FindVerified(klass,"AppendSeparator",0,0x16D76E0);appendItem=api.FindVerified(klass,"AppendDefaultItem",13,0x16D6C60);
-    appendCheckbox=api.FindVerified(klass,"AppendCheckboxItem",9,0x16D63D0);
-    appendRadio=api.FindVerified(klass,"AppendRadioButtonItem",12,0x16D72F0);
+    appendTitle=api.FindVerified(klass,"AppendTitle",1,0x16C9960);appendSeparator=api.FindVerified(klass,"AppendSeparator",0,0x16C90D0);appendItem=api.FindVerified(klass,"AppendDefaultItem",13,0x16C8650);
+    appendCheckbox=api.FindVerified(klass,"AppendCheckboxItem",9,0x16C7DC0);
+    appendRadio=api.FindVerified(klass,"AppendRadioButtonItem",12,0x16C8CE0);
     // "Réduire les titres des modules": the mod's rows move up before the game's separator.
-    insertItem=api.FindVerified(klass,"InsertItem",2,0x16D8850);removeItemAt=api.FindVerified(klass,"RemoveItemAt",1,0x16D8BF0);
+    insertItem=api.FindVerified(klass,"InsertItem",2,0x16CA240);removeItemAt=api.FindVerified(klass,"RemoveItemAt",1,0x16CA5E0);
     separatorItem=api.Class("Core.dll",Menus,"ContextMenuSeparatorItem");
-    auto extensions=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElementExtensions");add=api.FindVerified(extensions,"AddManipulator",2,0x56755F0);remove=api.FindVerified(extensions,"RemoveManipulator",2,0x5676A90);
+    auto extensions=api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","VisualElementExtensions");add=api.FindVerified(extensions,"AddManipulator",2,0x563CDD0);remove=api.FindVerified(extensions,"RemoveManipulator",2,0x563E270);
     auto window=api.Class("Core.dll","Core.UILogic.Components","MagneticDragWindow");
-    setHeaderSize=api.FindVerified(window,"SetHeaderSize",1,0x15B27B0);
+    setHeaderSize=api.FindVerified(window,"SetHeaderSize",1,0x15A43B0);
     // The native widget list ("…" in the top bar) receives no owned entries;
     // only its "Réduire les titres des modules" sub-menu lists the mod panels.
     auto manager=api.Class("Core.dll","Core.UILogic.Common","WidgetManager");
-    AddHook(api.FindVerified(manager,"CreateHeaderSubMenu",0,0x17D9B00),0x17D9B00,reinterpret_cast<void*>(&SubMenuHook),reinterpret_cast<void**>(&originalSubMenu));
-    AddHook(api.FindVerified(manager,"SetAllHeaderState",1,0x17DDDD0),0x17DDDD0,reinterpret_cast<void*>(&AllHeadersHook),reinterpret_cast<void**>(&originalAll));
+    AddHook(api.FindVerified(manager,"CreateHeaderSubMenu",0,0x17CB760),0x17CB760,reinterpret_cast<void*>(&SubMenuHook),reinterpret_cast<void**>(&originalSubMenu));
+    AddHook(api.FindVerified(manager,"SetAllHeaderState",1,0x17CFA30),0x17CFA30,reinterpret_cast<void*>(&AllHeadersHook),reinterpret_cast<void**>(&originalAll));
     soul::SetAuxiliaryPanelMenus(Populate,Callback);installed=true;
 }
 managed::Obj ScrollBody(managed::Obj window,managed::Obj root,bool resizable){

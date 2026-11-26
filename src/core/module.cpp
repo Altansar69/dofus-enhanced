@@ -504,7 +504,7 @@ static DWORD WINAPI Worker(void*) {
     logPath = ModulePath(selfModule).parent_path() / L"module.log";
     void* attached = nullptr;
     try {
-        Log(std::string("START version=3.7.12.12 mod=") + ModVersion + " release=" + ModSemanticVersion + " prototype=" + std::to_string(ModRevision));
+        Log(std::string("START version=3.7.14.18 mod=") + ModVersion + " release=" + ModSemanticVersion + " prototype=" + std::to_string(ModRevision));
         WriteStartupStatus(ModulePath(selfModule).parent_path(), GetCurrentProcessId(), "STARTING");
         if (!SupportedClient(ModulePath(nullptr))) throw std::runtime_error("Unsupported client; hooks refused");
         auto game = GetModuleHandleW(L"GameAssembly.dll");
@@ -520,10 +520,10 @@ static DWORD WINAPI Worker(void*) {
         module = new Module(ModulePath(selfModule).parent_path());
         if (MH_Initialize() != MH_OK) throw std::runtime_error("Cannot initialize hook library");
         auto compositor = api.Class("Core.dll", "Core.Engine.Compositor", "Compositor");
-        AddHook(api.Find(compositor, "Update", 0), 0x20F9080, reinterpret_cast<void*>(UpdateHook), reinterpret_cast<void**>(&originalUpdate));
+        AddHook(api.Find(compositor, "Update", 0), 0x20E0030, reinterpret_cast<void*>(UpdateHook), reinterpret_cast<void**>(&originalUpdate));
         try {
             auto panels = api.Class("UnityEngine.UIElementsModule.dll", "UnityEngine.UIElements", "UIElementsRuntimeUtility");
-            AddHook(api.FindVerified(panels, "RepaintPanels", 1, 0x5660750), 0x5660750,
+            AddHook(api.FindVerified(panels, "RepaintPanels", 1, 0x5627F30), 0x5627F30,
                 reinterpret_cast<void*>(RepaintPanelsHook), reinterpret_cast<void**>(&originalRepaintPanels));
             glowFrameHook = true;
             Log("GLOW_FRAME_HOOK RepaintPanels");

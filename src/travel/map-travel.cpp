@@ -519,13 +519,13 @@ void InstallMapTravel() {
     const auto verify=[](const char* type,const char* name,int argc,uintptr_t rva) {
         return api.FindVerified(api.Class("Core.dll","",type),name,argc,rva);
     };
-    inBag=verify("esg","zfr",0,0x18BBA00); currentMap=verify("esg","zeo",0,0x185C1E0);
-    currentWorld=verify("fhw","beqx",0,0x682030);
-    resolve=verify("esg","zid",3,0x18BD8B0); known=verify("esg","zhr",1,0x18BCB30);
-    append=api.FindVerified(api.Class("Core.dll","Core.UILogic.Components.ContextMenu","DofusContextualMenu"),"AppendDefaultItem",13,0x16D6C60);
-    AddHook(verify("fhw","betw",3,0x1BF78A0),0x1BF78A0,reinterpret_cast<void*>(&MenuHook),reinterpret_cast<void**>(&originalMenu));
-    AddHook(verify("fhw","betn",3,0x1BF5E50),0x1BF5E50,reinterpret_cast<void*>(&WalkHook),reinterpret_cast<void**>(&originalWalk));
-    AddHook(verify("fhw","beuf",1,0x1BF8F40),0x1BF8F40,reinterpret_cast<void*>(&AutoHook),reinterpret_cast<void**>(&originalAuto));
+    inBag=verify("esg","zfr",0,0x18B10B0); currentMap=verify("esg","zeo",0,0x18516B0);
+    currentWorld=verify("fhw","beqx",0,0x683030);
+    resolve=verify("esg","zid",3,0x18B2F60); known=verify("esg","zhr",1,0x18B21E0);
+    append=api.FindVerified(api.Class("Core.dll","Core.UILogic.Components.ContextMenu","DofusContextualMenu"),"AppendDefaultItem",13,0x16C8650);
+    AddHook(verify("fhw","betw",3,0x1BE7DB0),0x1BE7DB0,reinterpret_cast<void*>(&MenuHook),reinterpret_cast<void**>(&originalMenu));
+    AddHook(verify("fhw","betn",3,0x1BE62A0),0x1BE62A0,reinterpret_cast<void*>(&WalkHook),reinterpret_cast<void**>(&originalWalk));
+    AddHook(verify("fhw","beuf",1,0x1BE9120),0x1BE9120,reinterpret_cast<void*>(&AutoHook),reinterpret_cast<void**>(&originalAuto));
     installed=true;
     // Map double-click: the game's mouse-down handler, its clock and the
     // panel-to-map conversion it uses itself. The mouse getters (button,
@@ -533,11 +533,11 @@ void InstallMapTravel() {
     // by name on the event's own class. Optional: without it, the double-click
     // stays the game's and the rest of map travel keeps working.
     try {
-        pixelToMap=verify("fhl","bepv",3,0x1C4E8D0);
-        timeNow=api.FindVerified(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Time"),"get_time",0,0x54414E0);
-        api.FindVerified(api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","EventBase"),"StopPropagation",0,0x576D9C0);
+        pixelToMap=verify("fhl","bepv",3,0x1C3CE20);
+        timeNow=api.FindVerified(api.Class("UnityEngine.CoreModule.dll","UnityEngine","Time"),"get_time",0,0x5408CC0);
+        api.FindVerified(api.Class("UnityEngine.UIElementsModule.dll","UnityEngine.UIElements","EventBase"),"StopPropagation",0,0x57351A0);
         auto view=api.Class("Core.dll","","fhw"); RequireField(view,"dugt",0x80);
-        AddHook(verify("fhw","beud",1,0x1BF88F0),0x1BF88F0,reinterpret_cast<void*>(&MouseDownHook),reinterpret_cast<void**>(&originalMouseDown));
+        AddHook(verify("fhw","beud",1,0x1BE8E00),0x1BE8E00,reinterpret_cast<void*>(&MouseDownHook),reinterpret_cast<void**>(&originalMouseDown));
     } catch (const std::exception& e) { Log(std::string("MAP_DOUBLE_CLICK_UNAVAILABLE ")+e.what()); }
     // « Réglages des cartes au clic droit »: both maps' menu builders, the two
     // views (exact classes, as map-info checks them) and the native rows that
@@ -554,17 +554,17 @@ void InstallMapTravel() {
         itemViewClass=api.NestedClass(item,"ContextMenuItemView");
         callbackClass=api.NestedClass(item,"ClickCallbackHandler");
         const auto root=api.NestedClass(menuClass,"DofusContextualMenuRoot");
-        api.FindVerified(menuClass,".ctor",0,0x16D8CC0);
-        appendSeparator=api.FindVerified(menuClass,"AppendSeparator",0,0x16D76E0);
-        appendCheckbox=api.FindVerified(menuClass,"AppendCheckboxItem",9,0x16D63D0);
-        appendRadio=api.FindVerified(menuClass,"AppendRadioButtonItem",12,0x16D72F0);
-        appendSubMenu=api.FindVerified(menuClass,"AppendSubMenu",6,0x16D7CF0);
-        setItemOn=api.FindVerified(item,"set_isOn",1,0x11ECD70);
-        setViewOn=api.FindVerified(itemViewClass,"set_isOn",1,0x16CE970);
-        childViews=api.FindVerified(root,"GetChildItemsInMenu",0,0x16D18C0);
-        AddHook(api.FindVerified(miniMapView,"bedm",1,0x1B93460),0x1B93460,
+        api.FindVerified(menuClass,".ctor",0,0x16CA6B0);
+        appendSeparator=api.FindVerified(menuClass,"AppendSeparator",0,0x16C90D0);
+        appendCheckbox=api.FindVerified(menuClass,"AppendCheckboxItem",9,0x16C7DC0);
+        appendRadio=api.FindVerified(menuClass,"AppendRadioButtonItem",12,0x16C8CE0);
+        appendSubMenu=api.FindVerified(menuClass,"AppendSubMenu",6,0x16C96E0);
+        setItemOn=api.FindVerified(item,"set_isOn",1,0x11DE4F0);
+        setViewOn=api.FindVerified(itemViewClass,"set_isOn",1,0x16C0360);
+        childViews=api.FindVerified(root,"GetChildItemsInMenu",0,0x16C32B0);
+        AddHook(api.FindVerified(miniMapView,"bedm",1,0x1B89800),0x1B89800,
             reinterpret_cast<void*>(&MiniMapMenuHook),reinterpret_cast<void**>(&originalMiniMapMenu));
-        AddHook(verify("fhw","bedm",1,0x1BECC50),0x1BECC50,reinterpret_cast<void*>(&BigMapMenuHook),reinterpret_cast<void**>(&originalBigMapMenu));
+        AddHook(verify("fhw","bedm",1,0x1BDD1C0),0x1BDD1C0,reinterpret_cast<void*>(&BigMapMenuHook),reinterpret_cast<void**>(&originalBigMapMenu));
         settingsInstalled=true;
     } catch (const std::exception& e) { Log(std::string("MAP_MENU_SETTINGS_UNAVAILABLE ")+e.what()); }
 }

@@ -184,12 +184,12 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
     if(n=="get_panel")return Get(self).fields["panel"];
     if(n=="CreateTooltipPosition")return Make("TooltipPositioning");
     if(n==".ctor" && Get(self).type->name=="TextTooltipBuilder") {
-        Check(m.rva==0x164A2F0 && args.size()==7 && Get(args[1]).type->name=="TooltipPositioning",
+        Check(m.rva==0x163BCE0 && args.size()==7 && Get(args[1]).type->name=="TooltipPositioning",
             "TP tooltip must use the native positioned text-builder overload");
         Get(self).text=Get(args[0]).text;return nullptr;
     }
     if(n==".ctor" && Get(self).type->name=="HyperlinkShowQuest") {
-        Check(m.rva==0x16A6E70&&args.size()==7,"Quest opening must use the verified seven-argument native constructor");
+        Check(m.rva==0x1698860&&args.size()==7,"Quest opening must use the verified seven-argument native constructor");
         const auto& parameters=Get(args[1]).items;
         Check(parameters.size()==1&&Get(parameters[0]).text=="439","Ocre action must always target quest439, not the monster ID");
         Check(args[2]==service&&args[3]==service&&args[4]==service,"Quest action must retain the clicked link native services");
@@ -197,13 +197,13 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
         Get(self).ints["questId"]=439;return nullptr;
     }
     if(n=="OnHyperlinkLeftClick" && Get(self).type->name=="HyperlinkShowQuest") {
-        Check(m.rva==0x16A6C60&&args.size()==1&&Get(self).ints.at("questId")==439,"Only the verified native show-quest action may run");
+        Check(m.rva==0x1698650&&args.size()==1&&Get(self).ints.at("questId")==439,"Only the verified native show-quest action may run");
         if(questFailure)throw std::runtime_error("Injected quest opening failure");
         ++questOpens;return nullptr;
     }
     if(n=="CreateInstance") { auto p=Make("Array");Get(p).items.resize(*static_cast<int*>(args[1]));return p; }
     if(n=="SetValue") {Get(self).items.at(*static_cast<int*>(args[1]))=args[0];return nullptr;}
-    if(n=="AddToSequence") {if(m.rva==0x167EBA0)Link(self,args[0]);else Text(self,args[0]);return nullptr;}
+    if(n=="AddToSequence") {if(m.rva==0x1670590)Link(self,args[0]);else Text(self,args[0]);return nullptr;}
     if(n=="BuildText")return Build(self);
     if(n=="TryParseMapLinks") {
         ++parses;auto input=Get(args[0]).text;auto spans=ChatCoordinateSpans(input);
@@ -215,19 +215,19 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> arguments) {
         *static_cast<Obj*>(args[1])=Build(result);return Box(true);
     }
     if(n=="get_textFromData") {
-        Check(m.rva==0x3C88A00&&args.empty(),"A link's native text comes from the verified get_textFromData");
+        Check(m.rva==0x3C50130&&args.empty(),"A link's native text comes from the verified get_textFromData");
         if(dimensionFails)throw std::runtime_error("Injected link text failure");
         return Str(NativeLinkText(self));
     }
     if(n=="GetWorldMapById") {
-        Check(m.rva==0x7D3D50&&!self&&args.size()==1,"Worlds come from the verified static WorldMapData lookup");
+        Check(m.rva==0x7C54D0&&!self&&args.size()==1,"Worlds come from the verified static WorldMapData lookup");
         const int id=*static_cast<int*>(args[0]);
         if(!worldNames.contains(id))return nullptr;
         auto& world=worlds[id];
         if(!world){world=Make("WorldMapData");Get(world).text=worldNames.at(id);}
         return world;
     }
-    if(n=="get_name") { Check(m.rva==0x7D3DE0&&Get(self).type->name=="WorldMapData","The verified WorldMapData name");return Str(Get(self).text); }
+    if(n=="get_name") { Check(m.rva==0x7C5560&&Get(self).type->name=="WorldMapData","The verified WorldMapData name");return Str(Get(self).text); }
     if(n=="OnPointerOutLinkTagEvent"||n=="OnRollOutCallback") {
         ++rollouts;if(n=="OnPointerOutLinkTagEvent")Get(self).fields["m_hoveredHyperlinkManager"]=nullptr;return nullptr;
     }
@@ -1054,11 +1054,11 @@ void WantMetamobCatalog(){++fake::metamobWants;}
 }
 void AddHook(managed::Method,uintptr_t rva,void* hook,void** original){
     using namespace fake;
-    if(rva==0x2D8E4C0){bindHook=reinterpret_cast<BindFn>(hook);*original=reinterpret_cast<void*>(&NativeBind);}
-    else if(rva==0x168D990){textHook=reinterpret_cast<TextFn>(hook);*original=reinterpret_cast<void*>(&NativeText);}
-    else if(rva==0x169CE90){decodeHook=reinterpret_cast<DecodeFn>(hook);*original=reinterpret_cast<void*>(&NativeDecode);}
-    else if(rva==0x168E880){clickHook=reinterpret_cast<ClickFn>(hook);*original=reinterpret_cast<void*>(&NativeClick);}
-    else if(rva==0x168E760){tooltipHook=reinterpret_cast<TooltipFn>(hook);*original=reinterpret_cast<void*>(&NativeTooltip);}
+    if(rva==0x2D54870){bindHook=reinterpret_cast<BindFn>(hook);*original=reinterpret_cast<void*>(&NativeBind);}
+    else if(rva==0x167F380){textHook=reinterpret_cast<TextFn>(hook);*original=reinterpret_cast<void*>(&NativeText);}
+    else if(rva==0x168E880){decodeHook=reinterpret_cast<DecodeFn>(hook);*original=reinterpret_cast<void*>(&NativeDecode);}
+    else if(rva==0x1680270){clickHook=reinterpret_cast<ClickFn>(hook);*original=reinterpret_cast<void*>(&NativeClick);}
+    else if(rva==0x1680150){tooltipHook=reinterpret_cast<TooltipFn>(hook);*original=reinterpret_cast<void*>(&NativeTooltip);}
     else throw std::runtime_error("Unexpected chat hook");
 }
 int main(int argc,char** argv){

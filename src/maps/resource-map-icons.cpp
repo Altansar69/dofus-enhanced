@@ -18,9 +18,9 @@ void InstallIcons() {
     // mc.mlu constructs the normal item image using rz's entry type at 0x60.
     if (!itemTypeField || api.field_get_offset(itemTypeField) != 0x60)
         throw std::runtime_error("Resource item icon catalog layout mismatch");
-    initialize = api.FindVerified(addresses, "qbk", 0, 0x1E2A0D0);
-    construct = api.FindVerified(entry, ".ctor", 2, 0x68D5C0);
-    load = api.FindVerified(api.Class("Core.dll", "", "pq"), "paw", 7, 0x2E91370);
+    initialize = api.FindVerified(addresses, "qbk", 0, 0x1DEFC60);
+    construct = api.FindVerified(entry, ".ctor", 2, 0x68E5C0);
+    load = api.FindVerified(api.Class("Core.dll", "", "pq"), "paw", 7, 0x2E57A00);
 }
 managed::Obj IconAddress(void* typeField,int iconId) {
     if (!load || iconId <= 0) throw std::runtime_error("Invalid resource icon");

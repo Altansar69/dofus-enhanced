@@ -320,8 +320,8 @@ void Module::Change(Settings value,bool){++fake::changes;if(fake::rejectChange)t
 void Log(const std::string& text){fake::logs.push_back(text);}
 void AddHook(managed::Method method,uintptr_t rva,void* replacement,void** original){
     const auto& info=*static_cast<const fake::MethodData*>(method);fake::guards["fhi."+info.name]=rva;
-    if(info.name=="OnEnable"){fake::Check(rva==0x1BAEA20,"Enable RVA");fake::enableHook=reinterpret_cast<fake::LifeFn>(replacement);*original=reinterpret_cast<void*>(fake::OriginalEnable);}
-    else if(info.name=="OnDisable"){fake::Check(rva==0x1BAE560,"Disable RVA");fake::disableHook=reinterpret_cast<fake::LifeFn>(replacement);*original=reinterpret_cast<void*>(fake::OriginalDisable);}
+    if(info.name=="OnEnable"){fake::Check(rva==0x1BA4760,"Enable RVA");fake::enableHook=reinterpret_cast<fake::LifeFn>(replacement);*original=reinterpret_cast<void*>(fake::OriginalEnable);}
+    else if(info.name=="OnDisable"){fake::Check(rva==0x1BA42A0,"Disable RVA");fake::disableHook=reinterpret_cast<fake::LifeFn>(replacement);*original=reinterpret_cast<void*>(fake::OriginalDisable);}
     else throw std::runtime_error("Unexpected hook");
 }
 namespace fake {
@@ -400,14 +400,14 @@ void NativeTreeAndDuplicateOpen(){
     f.Open();Check(f.Scroll()==scroll&&f.Tab()==tab&&nativeEnable==2,"Duplicate native OnEnable must not duplicate controls");
     Check(Get(f.buttons).children.size()==5&&Get(f.root).children.size()==5,"One square and one window per map window");
     Check(resourceMap::CartographyWindow()==f.owner,"The open big map window is shared with the Ocre mode");
-    Check(guards.at("SectionHeader..ctor")==0x1745F00&&guards.at("ScrollView..ctor")==0x5741C70&&guards.at("CheckboxCustom.SetValueWithoutNotify")==0x17044F0,"Verified exact constructor/value contracts");
-    Check(guards.at("CartographyMapUIBinding.get_btn_anomaly")==0x2EA0940&&guards.at("CartographyMapUIBinding.get_ctr_locTreeAnomaly")==0x2EA2530&&
-        guards.at("CartographyMapUIBinding.get_btn_conquest")==0x2EA0A00&&guards.at("CartographyMapUIBinding.get_ctr_worldmapButtons")==0x2EA2830&&
-        guards.at("fhi.bejv")==0x1BB4090&&guards.at("WindowFigma..ctor")==0x17987B0&&guards.at("WindowFigma.get_closeButton")==0x1798CF0&&
-        guards.at("TooltipManipulator..ctor")==0x15DFAE0&&guards.at("BaseTooltipManipulator.HideTooltip")==0x15CD030&&
-        guards.at("VisualElementExtensions.AddManipulator")==0x56755F0&&guards.at("VisualElementExtensions.RemoveManipulator")==0x5676A90&&
-        guards.at("DofusButtonCustom.set_mainStyle")==0x170E210&&guards.at("DofusButtonCustom.set_enableRichText")==0x170DEE0&&
-        guards.at("VisualElement.IndexOf")==0x55E55B0&&guards.at("VisualElement.AddToClassList")==0x55DF820&&guards.at("VisualElement.RemoveFromHierarchy")==0x55E7BD0,
+    Check(guards.at("SectionHeader..ctor")==0x1737930&&guards.at("ScrollView..ctor")==0x5709450&&guards.at("CheckboxCustom.SetValueWithoutNotify")==0x16F5EE0,"Verified exact constructor/value contracts");
+    Check(guards.at("CartographyMapUIBinding.get_btn_anomaly")==0x2E688E0&&guards.at("CartographyMapUIBinding.get_ctr_locTreeAnomaly")==0x2E6A4D0&&
+        guards.at("CartographyMapUIBinding.get_btn_conquest")==0x2E689A0&&guards.at("CartographyMapUIBinding.get_ctr_worldmapButtons")==0x2E6A7D0&&
+        guards.at("fhi.bejv")==0x1BAA520&&guards.at("WindowFigma..ctor")==0x178A3F0&&guards.at("WindowFigma.get_closeButton")==0x178A930&&
+        guards.at("TooltipManipulator..ctor")==0x15D16E0&&guards.at("BaseTooltipManipulator.HideTooltip")==0x15BEC30&&
+        guards.at("VisualElementExtensions.AddManipulator")==0x563CDD0&&guards.at("VisualElementExtensions.RemoveManipulator")==0x563E270&&
+        guards.at("DofusButtonCustom.set_mainStyle")==0x16FFC00&&guards.at("DofusButtonCustom.set_enableRichText")==0x16FF8D0&&
+        guards.at("VisualElement.IndexOf")==0x55ACD90&&guards.at("VisualElement.AddToClassList")==0x55A7000&&guards.at("VisualElement.RemoveFromHierarchy")==0x55AF3B0,
         "Verified exact mode tab contracts");
     for(const auto& [key,rva]:guards)
         Check(std::any_of(std::begin(Signatures),std::end(Signatures),[&](const NativeSignature& guard){return guard.rva==rva;}),
@@ -829,7 +829,7 @@ int main(){
         resourceMap::InstallIcons();
         auto icon=fake::Make("VisualElement",true);resourceMap::LoadItemIcon(icon,39401);
         fake::Check(fake::Get(icon).size==39401,"New ores use the native item catalog");
-        fake::Check(fake::guards.at("AddressableEntry..ctor")==0x68D5C0&&fake::guards.at("pq.paw")==0x2E91370,"Native image methods pinned");
+        fake::Check(fake::guards.at("AddressableEntry..ctor")==0x68E5C0&&fake::guards.at("pq.paw")==0x2E57A00,"Native image methods pinned");
         fake::NativeTreeAndDuplicateOpen();std::cout<<"native lifecycle passed\n";
         fake::TabLikeTheGame();std::cout<<"mode tab made as the game's passed\n";
         fake::TabExclusiveWithGameModes();std::cout<<"mode tab exclusive with the game's modes passed\n";

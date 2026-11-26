@@ -140,16 +140,16 @@ void InstallGlowInteractives() {
     RequireField(methods.animator, "colorModifier", 0x34); // Color.a is +12.
     RequireField(methods.element, "meshRenderer", 0x20);
     RequireField(methods.map, "id", 0x18);
-    methods.list = api.FindVerified(methods.service, "qyb", 0, 0x2629090);
-    methods.find = api.FindVerified(methods.service, "qyg", 2, 0x2629380);
-    methods.ready = api.FindVerified(methods.mapService, "xkj", 0, 0x18389C0);
-    methods.mapData = api.FindVerified(methods.mapService, "xkd", 0, 0x11ECD00);
-    methods.children = api.FindVerified(methods.animated, "dayr", 0, 0x782BE0);
+    methods.list = api.FindVerified(methods.service, "qyb", 0, 0x25D3A20);
+    methods.find = api.FindVerified(methods.service, "qyg", 2, 0x25D3D10);
+    methods.ready = api.FindVerified(methods.mapService, "xkj", 0, 0x1831020);
+    methods.mapData = api.FindVerified(methods.mapService, "xkd", 0, 0x11DE480);
+    methods.children = api.FindVerified(methods.animated, "dayr", 0, 0x77C3D0);
     auto unity = [](const char* type) { return api.Class("UnityEngine.CoreModule.dll", "UnityEngine", type); };
-    methods.exists = api.FindVerified(unity("Object"), "op_Implicit", 1, 0x5439190);
-    methods.enabled = api.FindVerified(unity("Renderer"), "get_enabled", 0, 0x53F2300);
-    methods.gameObject = api.FindVerified(unity("Component"), "get_gameObject", 0, 0x5429D00);
-    methods.active = api.FindVerified(unity("GameObject"), "get_activeInHierarchy", 0, 0x5432080);
+    methods.exists = api.FindVerified(unity("Object"), "op_Implicit", 1, 0x5400970);
+    methods.enabled = api.FindVerified(unity("Renderer"), "get_enabled", 0, 0x53B9AE0);
+    methods.gameObject = api.FindVerified(unity("Component"), "get_gameObject", 0, 0x53F14E0);
+    methods.active = api.FindVerified(unity("GameObject"), "get_activeInHierarchy", 0, 0x53F9860);
     methods.installed = true;
 }
 

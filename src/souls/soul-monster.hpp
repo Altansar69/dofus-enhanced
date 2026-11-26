@@ -14,10 +14,10 @@ public:
         const auto verify = [&](const char* name,int argc,uintptr_t rva) {
             auto method = api.Find(type,name,argc); api.Native(method,rva); return method;
         };
-        find = verify("GetById",1,0x7E76B0);
-        forbidden = verify("get_soulCaptureForbidden",0,0x7C4310);
-        boss = verify("get_isBoss",0,0x7C43C0);
-        arch = verify("get_isMiniBoss",0,0x7C43B0);
+        find = verify("GetById",1,0x7D8E30);
+        forbidden = verify("get_soulCaptureForbidden",0,0x7B5A90);
+        boss = verify("get_isBoss",0,0x7B5B40);
+        arch = verify("get_isMiniBoss",0,0x7B5B30);
     }
     managed::Obj Find(int64_t id) const {
         return id > 0 ? managed::api.Invoke(find,nullptr,{&id}) : nullptr;

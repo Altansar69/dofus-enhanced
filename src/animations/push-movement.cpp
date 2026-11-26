@@ -148,8 +148,8 @@ void InstallInstantPushMovement() {
     pushClass = api.Class("Core.dll", "", "xy");
     routeClass = api.Class("Core.dll", "", "enw");
     auto entityClass = api.Class("Core.dll", "Core.Rendering.Entity.CoreAnimatedEntity", "AnimatedEntity");
-    api.Native(api.Find(pushClass, "rjn", 8), 0x2646B60);
-    finishCell = reinterpret_cast<PositionFn>(api.Native(api.Find(entityClass, "rfv", 3), 0x2616050));
-    nextCell = reinterpret_cast<NextFn>(api.Native(api.Find(pushClass, "rkv", 1), 0x2647140));
-    AddNativeHook(0x2646B60, reinterpret_cast<void*>(StartHook), reinterpret_cast<void**>(&originalStart));
+    api.Native(api.Find(pushClass, "rjn", 8), 0x2604CF0);
+    finishCell = reinterpret_cast<PositionFn>(api.Native(api.Find(entityClass, "rfv", 3), 0x25DC8F0));
+    nextCell = reinterpret_cast<NextFn>(api.Native(api.Find(pushClass, "rkv", 1), 0x26052D0));
+    AddNativeHook(0x2604CF0, reinterpret_cast<void*>(StartHook), reinterpret_cast<void**>(&originalStart));
 }

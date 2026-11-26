@@ -28,7 +28,7 @@ struct Object {
 };
 struct MethodInfo { std::string name; uintptr_t rva; };
 struct NativeFailure {};
-MethodInfo start{"rjn", 0x2646B60}, position{"rfv", 0x2616050}, next{"rkv", 0x2647140}, lookup{"TryGetValue", 0};
+MethodInfo start{"rjn", 0x2604CF0}, position{"rfv", 0x25DC8F0}, next{"rkv", 0x26052D0}, lookup{"TryGetValue", 0};
 std::map<std::string, Type> classes;
 std::vector<std::unique_ptr<Object>> objects;
 std::map<GCHandle, Obj> handles;
@@ -186,7 +186,7 @@ bool DeferInstantMovement(std::function<void()> finish) {
     return true;
 }
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    fake::Check(rva == 0x2646B60, "Unexpected push hook target");
+    fake::Check(rva == 0x2604CF0, "Unexpected push hook target");
     fake::hook = reinterpret_cast<fake::StartFn>(replacement); *original = reinterpret_cast<void*>(fake::Original);
 }
 

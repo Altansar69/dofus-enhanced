@@ -68,9 +68,9 @@ std::string Api::String(Obj o) const { return o ? fake::Get(o).text : std::strin
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
     using namespace fake; const auto& m = *static_cast<const MethodInfo*>(method); std::vector<void*> a(args);
     Check(int(a.size()) == m.argc, "Native arity mismatch");
-    if (m.name == "bdbm") { Check(m.rva == 0x69F1E0 && self == service, "Hunt table getter on the pinned service"); return Get(self).refs["hunts"]; }
-    if (m.name == "get_pointsOfInterestDataRoot") { Check(m.rva == 0x7BFD80 && !self, "Static metadata root"); return poiRoot; }
-    if (m.name == "get_name") { Check(m.rva == 0x7C7FC0, "Point of interest name"); return Get(self).refs["name"]; }
+    if (m.name == "bdbm") { Check(m.rva == 0x6A01D0 && self == service, "Hunt table getter on the pinned service"); return Get(self).refs["hunts"]; }
+    if (m.name == "get_pointsOfInterestDataRoot") { Check(m.rva == 0x7B1500 && !self, "Static metadata root"); return poiRoot; }
+    if (m.name == "get_name") { Check(m.rva == 0x7B9740, "Point of interest name"); return Get(self).refs["name"]; }
     throw std::runtime_error("Unexpected fake invocation: " + m.name);
 }
 Obj Api::Call(Obj self, const char* n, std::initializer_list<void*> args) const {
@@ -109,7 +109,7 @@ int main() {
     try {
         fake::Initialize();
         treasure::InstallHunt(); treasure::InstallHunt();
-        Check(guards.at("fdl.bdbm") == 0x69F1E0 && guards.at("PointOfInterestData.get_name") == 0x7C7FC0 && guards.at("DataCenterModule.get_pointsOfInterestDataRoot") == 0x7BFD80, "Pinned native hunt contracts");
+        Check(guards.at("fdl.bdbm") == 0x6A01D0 && guards.at("PointOfInterestData.get_name") == 0x7B9740 && guards.at("DataCenterModule.get_pointsOfInterestDataRoot") == 0x7B1500, "Pinned native hunt contracts");
         {
             Fixture f;
             Check(!treasure::CurrentStep().active, "No known step means no active hunt");

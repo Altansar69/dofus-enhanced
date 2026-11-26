@@ -30,7 +30,7 @@ struct Object {
 };
 struct MethodInfo { std::string name; uintptr_t rva; };
 struct NativeFailure {};
-MethodInfo start{"rjn", 0x2643FE0}, advance{"rko", 0x2644F50}, next{"rkj", 0x2644790},
+MethodInfo start{"rjn", 0x2601AA0}, advance{"rko", 0x2602A10}, next{"rkj", 0x2602250},
     lookup{"TryGetValue", 0};
 std::map<std::string, Type> classes;
 std::vector<std::unique_ptr<Object>> objects;
@@ -174,7 +174,7 @@ void* Api::Native(Method method, uintptr_t rva) const {
     Check(rva == next.rva, "Unexpected native target"); return reinterpret_cast<void*>(Next);
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x263E800, "Unexpected native clock RVA");
+    fake::Check(rva == 0x25FC360, "Unexpected native clock RVA");
     return reinterpret_cast<void*>(fake::Clock);
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
@@ -196,10 +196,10 @@ bool DeferInstantMovement(std::function<void()> finish) {
     return true;
 }
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    if (rva == 0x2643FE0) {
+    if (rva == 0x2601AA0) {
         fake::hook = reinterpret_cast<fake::StartFn>(replacement); *original = reinterpret_cast<void*>(fake::Original);
     } else {
-        fake::Check(rva == 0x2644790, "Unexpected jump hook target");
+        fake::Check(rva == 0x2602250, "Unexpected jump hook target");
         fake::nextHook = reinterpret_cast<fake::NextFn>(replacement); *original = reinterpret_cast<void*>(fake::Next);
     }
 }

@@ -125,13 +125,13 @@ void* Api::Native(Method method, uintptr_t rva) const {
     using namespace fake;
     const auto& m = *static_cast<const MethodInfo*>(method);
     static const std::map<std::string, std::pair<int, uintptr_t>> expected{
-        {"feh.bdoq", {0, 0x11EDC80}},
-        {"Inventory.get_content", {0, 0x68D2B0}}, {"Inventory.GetItem", {1, 0x2AECC70}},
-        {"mc.mym", {0, 0x2AAC140}}, {"mc.myn", {0, 0xF20D40}}, {"mc.myo", {0, 0x861E70}},
-        {"mc.nag", {0, 0x2AACF80}}, {"mc.mzb", {0, 0x2AAC720}}, {"mc.nan", {1, 0x2AAD790}},
-        {"mc.nac", {0, 0x2AACE80}},
-        {"mq.onc", {0, 0x2BFDAB0}}, {"EquipmentBehavior..ctor", {8, 0x2B62A60}},
-        {"EquipmentBehavior.EquipItem", {1, 0x2B60FE0}}
+        {"feh.bdoq", {0, 0x11DF400}},
+        {"Inventory.get_content", {0, 0x68E2B0}}, {"Inventory.GetItem", {1, 0x2AC1690}},
+        {"mc.mym", {0, 0x2932B80}}, {"mc.myn", {0, 0xF124C0}}, {"mc.myo", {0, 0x8535F0}},
+        {"mc.nag", {0, 0x29339A0}}, {"mc.mzb", {0, 0x2933160}}, {"mc.nan", {1, 0x29341B0}},
+        {"mc.nac", {0, 0x29338A0}},
+        {"mq.onc", {0, 0x2A8E810}}, {"EquipmentBehavior..ctor", {8, 0x2B37480}},
+        {"EquipmentBehavior.EquipItem", {1, 0x2B35A00}}
     };
     Check(expected.at(m.klass->name + "." + m.name) == std::pair(m.argc, rva), "Native inventory ABI changed");
     return reinterpret_cast<void*>(rva);

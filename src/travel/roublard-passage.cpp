@@ -389,15 +389,15 @@ public:
         info = api.Class("Core.dll", entities, "EntityInfo");
         // The entity registry of the current map and its NPC id (integer property
         // 15, read by NpcMenuMaker), as the monster glow reads them.
-        list = api.FindVerified(registry, "baml", 0, 0x19579E0);
-        find = api.FindVerified(registry, "bamm", 2, 0x1957A70);
-        id = api.FindVerified(info, "bajh", 0, 0x1951440);
-        intTry = api.FindVerified(info, "baks", 2, 0x1952330);
+        list = api.FindVerified(registry, "baml", 0, 0x19508F0);
+        find = api.FindVerified(registry, "bamm", 2, 0x1950980);
+        id = api.FindVerified(info, "bajh", 0, 0x193DFF0);
+        intTry = api.FindVerified(info, "baks", 2, 0x193EEE0);
         // The NPC context menu: OnNPCMenuClick(view, entity, action) posts the
         // game's own action message (dgr) on m_messageBus, sent by fcl.bcsn.
         maker = api.Class("Core.dll", menus, "NpcMenuMaker");
-        makerCtor = api.FindVerified(maker, ".ctor", 6, 0x16E8A40);
-        menuClick = api.FindVerified(maker, "OnNPCMenuClick", 3, 0x16E89A0);
+        makerCtor = api.FindVerified(maker, ".ctor", 6, 0x16DA430);
+        menuClick = api.FindVerified(maker, "OnNPCMenuClick", 3, 0x16DA390);
         RequireField(maker, "m_entityId", 0x14);
         RequireField(maker, "m_messageBus", 0x18);
         // The dialog: the service fky (ghd) keeps its UI in goz.eabq under key 0;
@@ -409,8 +409,8 @@ public:
         dialogs = api.Class("Core.dll", "", "ghd");
         RequireField(dialogs, "eabq", 0x48);
         dialog = api.Class("Core.dll", "Core.UILogic.NpcDialog", "NpcDialog");
-        select = api.FindVerified(dialog, "SelectReply", 1, 0x2A64DB0);
-        close = api.FindVerified(dialog, "OnClose", 0, 0x2A61860);
+        select = api.FindVerified(dialog, "SelectReply", 1, 0x2A378D0);
+        close = api.FindVerified(dialog, "OnClose", 0, 0x2A34380);
         RequireField(dialog, "m_npc", 0x1D0);
         RequireField(dialog, "m_currentMsg", 0x1E0);
         RequireField(dialog, "m_repliesIdFromBtn", 0x1E8);
@@ -420,9 +420,9 @@ public:
         npcData = api.Class("Ankama.Dofus.Core.DataCenter.dll", "Core.DataCenter.Metadata.Npc", "NpcData");
         RequireField(npcData, "id", 0x10);
         character = api.Class("Core.dll", "", "esg");
-        localId = api.FindVerified(character, "zcx", 0, 0x18BB140);
+        localId = api.FindVerified(character, "zcx", 0, 0x18B07F0);
         mapInfo = api.FindVerified(api.Class("Ankama.Dofus.Core.DataCenter.dll", "Core.DataCenter.Metadata.World", "MapInformationData"),
-            "GetMapInformationById", 1, 0x7C4200);
+            "GetMapInformationById", 1, 0x7B5980);
     }
     void Release() { marked.reset(); }
     int64_t Character() override {

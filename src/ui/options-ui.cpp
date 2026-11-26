@@ -563,7 +563,7 @@ bool EnsureModels(OptionsUi& ui, Obj page) {
     // Section « À propos »: credits, then « Dossier du mod », owned text buttons (see TextButtonHook).
     const std::string creditsTitle = std::string(ModDisplayName) + " " + ModSemanticVersion + " — par Altansar";
     const std::string creditsText = std::string("Mod créé par Altansar. Code source, versions et signalements : ") + ProjectUrl +
-        " (Dofus 3.7.12.12). Le bouton ouvre la page du projet dans le navigateur.";
+        " (Dofus 3.7.14.18). Le bouton ouvre la page du projet dans le navigateur.";
     prepared.creditsOption.reset(MakeTextButtonOption(tooltip.get(), creditsTitle.c_str(), creditsText.c_str(), "Ouvrir GitHub", 0, prepared.creditsMarker));
     // Then « Dossier du mod »: the folder of this version, named as installed.
     const std::string modFolderText = std::string("Ouvre dans l’Explorateur de Windows le dossier de cette version du mod, "
@@ -1081,62 +1081,62 @@ void InitHook(Obj self, bool justCreated, bool connected, int category, Method m
 void OptionsUi::Install() {
     generalClass = api.Class("Core.dll", Config, "OptionGeneralUi");
     auto tab = api.Class("Core.dll", Config, "OptionTabUi");
-    AddHook(api.Find(generalClass, "OnEnable", 0), 0x2D80470,
+    AddHook(api.Find(generalClass, "OnEnable", 0), 0x2D46820,
             reinterpret_cast<void*>(EnableHook), reinterpret_cast<void**>(&originalEnable));
-    AddHook(api.Find(tab, "Init", 3), 0x2D84EC0,
+    AddHook(api.Find(tab, "Init", 3), 0x2D4B270,
             reinterpret_cast<void*>(InitHook), reinterpret_cast<void**>(&originalInit));
     auto textButton = api.Class("Core.dll", Config, "TextButtonOptionElement");
-    textButtonModelGetter = api.FindVerified(textButton, "get_m_textButtonOption", 0, 0x2D88930);
-    openUrl = api.FindVerified(api.Class("UnityEngine.CoreModule.dll", "UnityEngine", "Application"), "OpenURL", 1, 0x53ACA50);
-    AddHook(api.Find(textButton, "<Init>b__3_0", 1), 0x2D88800,
+    textButtonModelGetter = api.FindVerified(textButton, "get_m_textButtonOption", 0, 0x2D4ECE0);
+    openUrl = api.FindVerified(api.Class("UnityEngine.CoreModule.dll", "UnityEngine", "Application"), "OpenURL", 1, 0x5374230);
+    AddHook(api.Find(textButton, "<Init>b__3_0", 1), 0x2D4EBB0,
             reinterpret_cast<void*>(TextButtonHook), reinterpret_cast<void**>(&originalTextButton));
     // Metamob key row: the game's masked TextInput, buttons and label, kept in the row view.
-    AddHook(api.FindVerified(textButton, "Init", 1, 0x2D885A0), 0x2D885A0,
+    AddHook(api.FindVerified(textButton, "Init", 1, 0x2D4E950), 0x2D4E950,
             reinterpret_cast<void*>(TextButtonInitHook), reinterpret_cast<void**>(&originalTextButtonInit));
     auto inputClass = api.Class("Core.dll", Figma, "TextInput");
-    api.FindVerified(inputClass, ".ctor", 0, 0x178DC90);
-    api.FindVerified(inputClass, "get_text", 0, 0x178DDA0);
-    api.FindVerified(inputClass, "set_text", 1, 0x178EC50);
-    api.FindVerified(inputClass, "set_placeholderText", 1, 0x178EAA0);
-    api.FindVerified(inputClass, "set_maxLength", 1, 0x178E9B0);
-    setPassword = api.FindVerified(inputClass, "set_isPassword", 1, 0x178E8F0);
+    api.FindVerified(inputClass, ".ctor", 0, 0x177F8D0);
+    api.FindVerified(inputClass, "get_text", 0, 0x177F9E0);
+    api.FindVerified(inputClass, "set_text", 1, 0x1780890);
+    api.FindVerified(inputClass, "set_placeholderText", 1, 0x17806E0);
+    api.FindVerified(inputClass, "set_maxLength", 1, 0x17805F0);
+    setPassword = api.FindVerified(inputClass, "set_isPassword", 1, 0x1780530);
     // The saved key's stars: a disabled field (DofusVisualElement hides VisualElement.SetEnabled).
     auto dofusElementClass = api.Class("Core.dll", Figma, "DofusVisualElement");
-    setEnabled = api.FindVerified(dofusElementClass, "SetEnabled", 1, 0x1721860);
+    setEnabled = api.FindVerified(dofusElementClass, "SetEnabled", 1, 0x1713290);
     auto elementClass = api.Class(UiModule, UiSpace, "VisualElement");
-    api.FindVerified(elementClass, ".ctor", 0, 0x55F50B0);
-    api.FindVerified(elementClass, "Add", 1, 0x55DFAD0);
-    api.FindVerified(elementClass, "get_parent", 0, 0x55F7180);
-    api.FindVerified(elementClass, "IndexOf", 1, 0x55E55B0);
-    api.FindVerified(elementClass, "Insert", 2, 0x55E5710);
-    api.FindVerified(elementClass, "RemoveFromHierarchy", 0, 0x55E7BD0);
-    api.FindVerified(elementClass, "get_style", 0, 0x55F74A0);
+    api.FindVerified(elementClass, ".ctor", 0, 0x55BC890);
+    api.FindVerified(elementClass, "Add", 1, 0x55A72B0);
+    api.FindVerified(elementClass, "get_parent", 0, 0x55BE960);
+    api.FindVerified(elementClass, "IndexOf", 1, 0x55ACD90);
+    api.FindVerified(elementClass, "Insert", 2, 0x55ACEF0);
+    api.FindVerified(elementClass, "RemoveFromHierarchy", 0, 0x55AF3B0);
+    api.FindVerified(elementClass, "get_style", 0, 0x55BEC80);
     // Inline styles of the row's controls, and the native Enregistrer button's display, kept and put back.
     auto styleClass = api.Class(UiModule, UiSpace, "InlineStyleAccess");
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_display", 0, 0x55D1270);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_display", 1, 0x55D37F0);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x55D13C0);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x55D3A80);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_alignItems", 0, 0x55D0C60);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_alignItems", 1, 0x55D2870);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_whiteSpace", 0, 0x55D26B0);
-    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_whiteSpace", 1, 0x55D6370);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_display", 0, 0x5598A50);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_display", 1, 0x559AFD0);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x5598BA0);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x559B260);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_alignItems", 0, 0x5598440);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_alignItems", 1, 0x559A050);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.get_whiteSpace", 0, 0x5599E90);
+    api.FindVerified(styleClass, "UnityEngine.UIElements.IStyle.set_whiteSpace", 1, 0x559DB50);
     auto buttonClass = api.Class("Core.dll", Figma, "DofusButtonCustom");
-    api.FindVerified(buttonClass, ".ctor", 0, 0x170D6F0);
-    api.FindVerified(buttonClass, "set_size", 1, 0x170E330);
-    api.FindVerified(buttonClass, "set_mainStyle", 1, 0x170E210);
-    api.FindVerified(buttonClass, "set_status", 1, 0x170E400);
-    api.FindVerified(buttonClass, "set_icon", 1, 0x170DFE0);
-    api.FindVerified(buttonClass, "set_text", 1, 0x170E5F0);
+    api.FindVerified(buttonClass, ".ctor", 0, 0x16FF0E0);
+    api.FindVerified(buttonClass, "set_size", 1, 0x16FFD20);
+    api.FindVerified(buttonClass, "set_mainStyle", 1, 0x16FFC00);
+    api.FindVerified(buttonClass, "set_status", 1, 0x16FFDF0);
+    api.FindVerified(buttonClass, "set_icon", 1, 0x16FF9D0);
+    api.FindVerified(buttonClass, "set_text", 1, 0x16FFFE0);
     auto labelClass = api.Class("Core.dll", "Core.UILogic.Components", "DofusLabel");
-    api.FindVerified(labelClass, ".ctor", 0, 0x1593940);
-    api.FindVerified(labelClass, "set_text", 1, 0x1594570);
+    api.FindVerified(labelClass, ".ctor", 0, 0x1585540);
+    api.FindVerified(labelClass, "set_text", 1, 0x1586170);
     // Clicks on the row's own buttons (the key status indicator, trash, « Oui », « Non »).
     nativeClick::AddHandler(KeyButtonClick);
     // « Défaut (…) » renamed on screen at once (1.18.1). Without its contract,
     // the new label shows at the row's next view only.
     try {
-        setNeedRebuild = api.FindVerified(api.Class("Core.dll", Elements, "MultipleChoiceOption"), "set_needRebuild", 1, 0x2DA3A00);
+        setNeedRebuild = api.FindVerified(api.Class("Core.dll", Elements, "MultipleChoiceOption"), "set_needRebuild", 1, 0x2D69DB0);
     } catch (const std::exception& error) {
         setNeedRebuild = nullptr;
         Log(std::string("UI_CURSOR_THEME_REBUILD_UNAVAILABLE ") + error.what());

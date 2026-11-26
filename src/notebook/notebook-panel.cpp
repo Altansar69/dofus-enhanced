@@ -765,28 +765,28 @@ void Create(Obj root) {
 }
 void InstallNotebookPanel(){
     auto inputClass=api.Class("Core.dll",Figma,"TextInput");
-    api.FindVerified(inputClass,"set_isMultiline",1,0x178E150);
-    api.FindVerified(api.Class(Ui,UiSpace,"TextElement"),"set_enableRichText",1,0x564B1E0);
-    unsubscribe=api.FindVerified(api.Class("Core.dll","Core.Engine.Inputs.Events","InputCustomEvent"),"UnSubscribe",1,0x20FF620);
+    api.FindVerified(inputClass,"set_isMultiline",1,0x177FD90);
+    api.FindVerified(api.Class(Ui,UiSpace,"TextElement"),"set_enableRichText",1,0x56129C0);
+    unsubscribe=api.FindVerified(api.Class("Core.dll","Core.Engine.Inputs.Events","InputCustomEvent"),"UnSubscribe",1,0x20E65D0);
     auto tab=api.Class("Core.dll",Figma,"DofusTab");
-    api.FindVerified(tab,".ctor",0,0x1712DC0);api.FindVerified(tab,"set_text",1,0x17136F0);api.FindVerified(tab,"set_size",1,0x1713550);
-    api.FindVerified(tab,"set_fontCase",1,0x1712FC0);api.FindVerified(tab,"get_isOn",0,0x1712F50);api.FindVerified(tab,"SetValueWithoutNotify",1,0x1711970);
+    api.FindVerified(tab,".ctor",0,0x17047B0);api.FindVerified(tab,"set_text",1,0x17050E0);api.FindVerified(tab,"set_size",1,0x1704F40);
+    api.FindVerified(tab,"set_fontCase",1,0x17049B0);api.FindVerified(tab,"get_isOn",0,0x1704940);api.FindVerified(tab,"SetValueWithoutNotify",1,0x1703360);
     auto button=api.Class("Core.dll",Figma,"DofusButtonCustom");
-    api.FindVerified(button,".ctor",0,0x170D6F0);api.FindVerified(button,"set_icon",1,0x170DFE0);api.FindVerified(button,"set_text",1,0x170E5F0);
-    api.FindVerified(button,"set_mainStyle",1,0x170E210);api.FindVerified(button,"set_size",1,0x170E330);api.FindVerified(button,"set_status",1,0x170E400);
+    api.FindVerified(button,".ctor",0,0x16FF0E0);api.FindVerified(button,"set_icon",1,0x16FF9D0);api.FindVerified(button,"set_text",1,0x16FFFE0);
+    api.FindVerified(button,"set_mainStyle",1,0x16FFC00);api.FindVerified(button,"set_size",1,0x16FFD20);api.FindVerified(button,"set_status",1,0x16FFDF0);
     auto section=api.Class("Core.dll",Figma,"SectionHeader");
-    api.FindVerified(section,".ctor",5,0x1745F00);api.FindVerified(section,"set_title",1,0x17467B0);api.FindVerified(section,"set_icon",1,0x1746200);
-    api.FindVerified(section,"set_isOpen",1,0x17462F0);api.FindVerified(section,"set_canBeOpened",1,0x1746090);api.FindVerified(section,"AddSubContent",1,0x1744360);
+    api.FindVerified(section,".ctor",5,0x1737930);api.FindVerified(section,"set_title",1,0x17381E0);api.FindVerified(section,"set_icon",1,0x1737C30);
+    api.FindVerified(section,"set_isOpen",1,0x1737D20);api.FindVerified(section,"set_canBeOpened",1,0x1737AC0);api.FindVerified(section,"AddSubContent",1,0x1735D90);
     auto divider=api.Class("Core.dll",Figma,"Divider");
-    api.FindVerified(divider,".ctor",0,0x170BC10);api.FindVerified(divider,"set_componentStyle",1,0x170BDC0);
-    api.FindVerified(divider,"set_orientation",1,0x170C160);api.FindVerified(divider,"set_inlineText",1,0x170C0C0);
+    api.FindVerified(divider,".ctor",0,0x16FD600);api.FindVerified(divider,"set_componentStyle",1,0x16FD7B0);
+    api.FindVerified(divider,"set_orientation",1,0x16FDB50);api.FindVerified(divider,"set_inlineText",1,0x16FDAB0);
     auto listElement=api.Class("Core.dll",Figma,"ListElementBase");
-    api.FindVerified(listElement,"set_icon",1,0x1733BD0);api.FindVerified(listElement,"set_isActivated",1,0x1733BF0);
+    api.FindVerified(listElement,"set_icon",1,0x1725600);api.FindVerified(listElement,"set_isActivated",1,0x1725620);
     auto dropdown=api.Class("Core.dll",Figma,"Dropdown");
-    api.FindVerified(dropdown,".ctor",0,0x17282C0);api.FindVerified(dropdown,"set_dropdownType",1,0x1728730);api.FindVerified(dropdown,"set_dropdownSize",1,0x1728620);
-    api.FindVerified(dropdown,"AddListElementBasic",6,0x1724840);api.FindVerified(dropdown,"SelectItemIdWithoutNotify",1,0x17265B0);
-    api.FindVerified(dropdown,"get_selectedElement",0,0x155DB30);api.FindVerified(dropdown,"set_choiceText",1,0x1728550);
-    api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15BFB50);
+    api.FindVerified(dropdown,".ctor",0,0x1719CF0);api.FindVerified(dropdown,"set_dropdownType",1,0x171A160);api.FindVerified(dropdown,"set_dropdownSize",1,0x171A050);
+    api.FindVerified(dropdown,"AddListElementBasic",6,0x1716270);api.FindVerified(dropdown,"SelectItemIdWithoutNotify",1,0x1717FE0);
+    api.FindVerified(dropdown,"get_selectedElement",0,0x154F730);api.FindVerified(dropdown,"set_choiceText",1,0x1719F80);
+    api.FindVerified(api.Class("Core.dll","Core.UILogic.Components","ResizableWindow"),"set_headerShowCloseButton",1,0x15B1750);
     notebook::InstallNative();notebook::SetRowMenu({RowEntry,RowDone});
     soul::SetAuxiliaryPanelAction(Action);nativeClick::AddHandler(Action);
     // The panel's ⋯ menu lists its two layouts as the game's radio rows
@@ -816,7 +816,7 @@ void RestoreNotebookPanel() {
             *static_cast<bool*>(api.FieldAddress(state.dragger.get(),"m_active"))=false;
             api.Invoke(api.Find(mouse,"ReleaseMouse",1),nullptr,{state.header.get()});
             // Only the window that still owns capture may clear the drag flag.
-            reinterpret_cast<void(*)(bool,Method)>(api.NativeAt(0x166DF30))(false,nullptr);
+            reinterpret_cast<void(*)(bool,Method)>(api.NativeAt(0x165F920))(false,nullptr);
         }
         if(state.dragger.get()) api.Call(state.dragger.get(),"RemoveSnapPreview");
         bool locked=true; int none=0;

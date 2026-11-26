@@ -22,7 +22,7 @@ std::deque<Skipped> skipped;
 int VisualStaggerDelay(int delay, uintptr_t caller) {
     // fxz.bfva's per-entity visual stagger only. Other delay steps, including
     // all loading waits and watchdogs, retain their duration and scheduler.
-    return delay > 0 && caller == gameBase + 0x1E59C24 && InstantWaitsEnabled() ? 0 : delay;
+    return delay > 0 && caller == gameBase + 0x1E470B4 && InstantWaitsEnabled() ? 0 : delay;
 }
 void DelayCtorHook(Obj step, int delay, Method method) {
     const auto caller = reinterpret_cast<uintptr_t>(_ReturnAddress());
@@ -100,12 +100,12 @@ void PumpInstantWaits(bool inCombat) {
 void InstallInstantWaits() {
     waiterClass = api.Class("Core.dll", "", "gqf");
     animationClass = api.Class("Core.dll", "", "gpy");
-    api.Native(api.Find(waiterClass, "uia", 0), 0x208A020);
-    AddNativeHook(0x208A020, reinterpret_cast<void*>(WaitStartHook),
+    api.Native(api.Find(waiterClass, "uia", 0), 0x206FEF0);
+    AddNativeHook(0x206FEF0, reinterpret_cast<void*>(WaitStartHook),
                   reinterpret_cast<void**>(&originalWaitStart));
     auto delay = api.Class("Core.dll", "", "gqg");
-    api.Native(api.Find(delay, ".ctor", 1), 0x208A1A0);
-    api.NativeAt(0x1E59C1F); // Exact constructor call in the verified visual path.
-    AddNativeHook(0x208A1A0, reinterpret_cast<void*>(DelayCtorHook),
+    api.Native(api.Find(delay, ".ctor", 1), 0x2070070);
+    api.NativeAt(0x1E470AF); // Exact constructor call in the verified visual path.
+    AddNativeHook(0x2070070, reinterpret_cast<void*>(DelayCtorHook),
                   reinterpret_cast<void**>(&originalDelayCtor));
 }

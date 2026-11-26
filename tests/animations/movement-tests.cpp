@@ -27,9 +27,9 @@ struct Object {
     size_t next = 0;
 };
 struct MethodInfo { std::string name; uintptr_t rva; };
-MethodInfo start{"rjn", 0x263E860}, position{"rfv", 0x2616050}, next{"rjr", 0x263EE10}, lookup{"TryGetValue", 0};
-MethodInfo appearance{"daxp", 0x781A20}, landing{"dbdk", 0x78F5D0};
-MethodInfo finish{"rjw", 0x263FA00};
+MethodInfo start{"rjn", 0x25FC3C0}, position{"rfv", 0x25DC8F0}, next{"rjr", 0x25FC970}, lookup{"TryGetValue", 0};
+MethodInfo appearance{"daxp", 0x77B210}, landing{"dbdk", 0x7883B0};
+MethodInfo finish{"rjw", 0x25FD560};
 std::map<std::string, Type> classes;
 std::vector<std::unique_ptr<Object>> objects;
 std::map<GCHandle, Obj> handles;
@@ -118,28 +118,28 @@ bool Landing(int bone, Method method) {
 }
 void Finish(Obj behavior, Obj state, Method method) {
     Check(method == nullptr, "Native finish ABI changed");
-    if (state == probeState) { probeResult = ProbeLanding(0x263FB17); return; }
+    if (state == probeState) { probeResult = ProbeLanding(0x25FD677); return; }
     ++finishCalls;
     if (insideFinish) { auto run = std::move(insideFinish); insideFinish = {}; run(); }
-    if (Read<int>(behavior, 0x48) != 5 || !ProbeLanding(0x263FB17)) Put(activeEntity, 0xB4, 6);
+    if (Read<int>(behavior, 0x48) != 5 || !ProbeLanding(0x25FD677)) Put(activeEntity, 0xB4, 6);
     Get(Read<Obj>(behavior, 0x38)).entries.erase(entityId);
     ++completions;
     if (reenterOnEnd) { reenterOnEnd = false; Dispatch(nestedRoute); }
 }
 void Next(Obj behavior, Obj state, bool restart, Method method) {
     Check(restart && method == nullptr, "Native next ABI changed");
-    if (state == probeState) { probeResult = ProbeLanding(0x263F03C); return; }
+    if (state == probeState) { probeResult = ProbeLanding(0x25FCB9C); return; }
     if (initialNext) {
         ++initialNextCalls;
         if (insideInitialNext) { auto run = std::move(insideInitialNext); insideInitialNext = {}; run(); }
-        if (engageLandingAtStart && Read<int>(behavior, 0x48) == 5 && ProbeLanding(0x263F03C)) {
+        if (engageLandingAtStart && Read<int>(behavior, 0x48) == 5 && ProbeLanding(0x25FCB9C)) {
             ++landingStarts; Put(activeEntity, 0xB8, true);
         }
         return;
     }
     if (insideNext) { auto run = std::move(insideNext); insideNext = {}; run(); }
     if (Read<int>(behavior, 0x48) == 5) {
-        const bool nativeLanding = ProbeLanding(0x263F03C);
+        const bool nativeLanding = ProbeLanding(0x25FCB9C);
         if (afterLandingPredicate) { auto run = std::move(afterLandingPredicate); afterLandingPredicate = {}; run(); }
         if (nativeLanding) { ++landingStarts; Put(activeEntity, 0xB8, true); return; }
     }
@@ -202,7 +202,7 @@ void* Api::Native(Method method, uintptr_t rva) const {
     Check(rva == next.rva, "Unexpected native target"); return reinterpret_cast<void*>(Next);
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x263F037 || rva == 0x263FB12, "Unexpected landing call-site guard");
+    fake::Check(rva == 0x25FCB97 || rva == 0x25FD672, "Unexpected landing call-site guard");
     return reinterpret_cast<void*>(rva);
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
@@ -232,16 +232,16 @@ bool DeferInstantMovement(std::function<void()> action) {
     return true;
 }
 void AddNativeHook(uintptr_t rva, void* replacement, void** original) {
-    if (rva == 0x263EE10) {
+    if (rva == 0x25FC970) {
         fake::nextHook = reinterpret_cast<fake::NextFn>(replacement); *original = reinterpret_cast<void*>(fake::Next); return;
     }
-    if (rva == 0x263FA00) {
+    if (rva == 0x25FD560) {
         fake::finishHook = reinterpret_cast<fake::FinishFn>(replacement); *original = reinterpret_cast<void*>(fake::Finish); return;
     }
-    if (rva == 0x78F5D0) {
+    if (rva == 0x7883B0) {
         fake::landingHook = reinterpret_cast<fake::LandingFn>(replacement); *original = reinterpret_cast<void*>(fake::Landing); return;
     }
-    fake::Check(rva == 0x263E860, "Unexpected hook target");
+    fake::Check(rva == 0x25FC3C0, "Unexpected hook target");
     fake::hook = reinterpret_cast<fake::StartFn>(replacement); *original = reinterpret_cast<void*>(fake::Original);
 }
 
@@ -259,7 +259,7 @@ void PrepareScopeProbe(bool otherEntity, bool otherBehavior, bool unknownClass =
 }
 void LandingIsolation() {
     Reset(); landingBody = true;
-    Check(ProbeLanding(0x263F03C) && ProbeLanding(0x263FB17) && landingHook(42, nullptr),
+    Check(ProbeLanding(0x25FCB9C) && ProbeLanding(0x25FD677) && landingHook(42, nullptr),
         "Recognized callers without a movement scope and all other callers must retain native landing");
     for (int config : {0, 1, 2, 3}) {
         // The former modes 0-2, then every other toggle on but Déplacements instantanés.
@@ -282,25 +282,25 @@ void LandingIsolation() {
     for (int nestedKind : {0, 1, 2, 3}) {
         Reset(); landingBody = true; Put(activeBehavior, 0x48, 5);
         insideInitialNext = [] {
-            Check(ProbeLanding(0x263F03C), "Original rjn landing setup must be entirely preserved");
+            Check(ProbeLanding(0x25FCB9C), "Original rjn landing setup must be entirely preserved");
         };
         PrepareScopeProbe(nestedKind == 0, nestedKind == 1, nestedKind == 3);
         insideNext = [] {
             nextHook(probeBehavior, probeState, true, nullptr);
             Check(probeResult, "Nested unrelated or stale state with the same bone inherited landing suppression");
-            Check(!ProbeLanding(0x263F03C), "Nested rjr failed to restore the enclosing landing scope");
-            Check(ProbeLanding(0x263F03D) && ProbeLanding(0x263FB12) && landingHook(42, nullptr),
+            Check(!ProbeLanding(0x25FCB9C), "Nested rjr failed to restore the enclosing landing scope");
+            Check(ProbeLanding(0x25FCB9D) && ProbeLanding(0x25FD672) && landingHook(42, nullptr),
                 "Only the two exact native return addresses may change the landing predicate");
         };
         insideFinish = [] {
             finishHook(probeBehavior, probeState, nullptr);
             Check(probeResult, "Nested native finish inherited another state's landing suppression");
-            Check(!ProbeLanding(0x263FB17), "Nested rjw failed to restore the enclosing landing scope");
+            Check(!ProbeLanding(0x25FD677), "Nested rjw failed to restore the enclosing landing scope");
         };
         Dispatch(activeRoute);
         Check(starts == 1 && positions == 3 && completions == 1 && landingStarts == 0 && Read<int>(activeEntity, 0xB4) == 6,
             "Scoped landing suppression must preserve the primary movement's cells and idle restoration");
-        Check(ProbeLanding(0x263F03C) && ProbeLanding(0x263FB17), "Landing scope leaked after the native calls returned");
+        Check(ProbeLanding(0x25FCB9C) && ProbeLanding(0x25FD677), "Landing scope leaked after the native calls returned");
     }
     Reset(); landingBody = true; Put(activeBehavior, 0x48, 5); retainJobs = true; Dispatch(activeRoute);
     Check(starts == 1 && initialNextCalls == 1 && landingStarts == 0 && positions == 0 && jobs.size() == 1,
@@ -330,14 +330,14 @@ void LandingIsolation() {
     for (auto& job : pending) job();
     pending.clear();
     Check(starts == 1 && positions == 0 && completions == 0 && !Read<bool>(activeEntity, 0xB8) &&
-        ProbeLanding(0x263F03C) && ProbeLanding(0x263FB17),
+        ProbeLanding(0x25FCB9C) && ProbeLanding(0x25FD677),
         "Before commitment, a mode change must leave all native landing behavior available");
     Reset(); landingBody = true; Put(activeBehavior, 0x48, 5);
     insideFinish = [] { throw 7; };
     bool propagated = false;
     try { Dispatch(activeRoute); } catch (int value) { propagated = value == 7; }
     Check(propagated && starts == 1 && finishCalls == 1 && completions == 0 && module->stopRequested &&
-        ProbeLanding(0x263F03C) && ProbeLanding(0x263FB17),
+        ProbeLanding(0x25FCB9C) && ProbeLanding(0x25FD677),
         "Native finish exception must propagate once and unwind all landing scopes");
 }
 }

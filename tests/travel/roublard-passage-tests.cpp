@@ -931,9 +931,9 @@ void NativeTests() {
     fake::verified.clear(); fake::logs.clear();
     Install({});
     Check(Available() && fake::Logged("ROUBLARD_PASSAGE_INSTALL npc=1422 astrub=67372032 temple=0 amakna=67373056"), "Native contracts installed");
-    for (const char* contract : {"evv.baml/0@0x19579E0", "evv.bamm/2@0x1957A70", "EntityInfo.bajh/0@0x1951440", "EntityInfo.baks/2@0x1952330",
-            "NpcMenuMaker..ctor/6@0x16E8A40", "NpcMenuMaker.OnNPCMenuClick/3@0x16E89A0", "NpcDialog.SelectReply/1@0x2A64DB0",
-            "NpcDialog.OnClose/0@0x2A61860", "esg.zcx/0@0x18BB140", "MapInformationData.GetMapInformationById/1@0x7C4200"})
+    for (const char* contract : {"evv.baml/0@0x19508F0", "evv.bamm/2@0x1950980", "EntityInfo.bajh/0@0x193DFF0", "EntityInfo.baks/2@0x193EEE0",
+            "NpcMenuMaker..ctor/6@0x16DA430", "NpcMenuMaker.OnNPCMenuClick/3@0x16DA390", "NpcDialog.SelectReply/1@0x2A378D0",
+            "NpcDialog.OnClose/0@0x2A34380", "esg.zcx/0@0x18B07F0", "MapInformationData.GetMapInformationById/1@0x7B5980"})
         Check(std::find(fake::verified.begin(), fake::verified.end(), contract) != fake::verified.end(), "Each native method is verified at its snapshot RVA");
     for (const auto& contract : fake::verified) {
         const auto at = contract.find("@0x");

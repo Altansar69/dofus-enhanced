@@ -73,10 +73,10 @@ Api api{};
 Klass Api::Class(const char*,const char*,const char* name) const { return fake::Type(name); }
 Method Api::FindVerified(Klass,const char* name,int argc,uintptr_t rva) const {
     static const std::map<std::string,uintptr_t> expected={
-        {"baml",0x19579E0},{"bamm",0x1957A70},{"bajh",0x1951440},{"bajs",0x19518F0},
-        {"baks",0x1952330},{"bakd",0x1951D50},{"bajy",0x1951B60},{"vkq",0x27695E0},{"zzm",0x190FE40},
-        {"qfv",0x260F8D0},{"rgq",0x26172B0},{"dayr",0x782BE0},{"op_Implicit",0x5439190},
-        {"get_enabled",0x53F2300},{"get_gameObject",0x5429D00},{"get_activeInHierarchy",0x5432080}};
+        {"baml",0x19508F0},{"bamm",0x1950980},{"bajh",0x193DFF0},{"bajs",0x193E4A0},
+        {"baks",0x193EEE0},{"bakd",0x193E900},{"bajy",0x193E710},{"vkq",0x2723DF0},{"zzm",0x19208B0},
+        {"qfv",0x25D6060},{"rgq",0x25DDB50},{"dayr",0x77C3D0},{"op_Implicit",0x5400970},
+        {"get_enabled",0x53B9AE0},{"get_gameObject",0x53F14E0},{"get_activeInHierarchy",0x53F9860}};
     fake::Check(expected.at(name)==rva,"Unexpected glow method RVA");
     auto value=std::make_unique<fake::MethodInfo>(fake::MethodInfo{name,argc});
     auto result=value.get(); fake::methods.push_back(std::move(value)); return result;

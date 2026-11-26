@@ -212,8 +212,8 @@ void Module::Change(Settings value,bool){settings=std::move(value);++fake::chang
 void Log(const std::string& message){fake::logs.push_back(message);}
 void AddHook(managed::Method method,uintptr_t rva,void* replacement,void** original){
     const auto& m=*static_cast<const fake::MethodData*>(method);++fake::installs;
-    if(rva==0x17D9B00){fake::Check(m.name=="CreateHeaderSubMenu"&&m.argc==0,"Header sub-menu hook ABI");fake::subMenuHook=reinterpret_cast<fake::SubMenuFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalSubMenu);return;}
-    if(rva==0x17DDDD0){fake::Check(m.name=="SetAllHeaderState"&&m.argc==1,"All-headers hook ABI");fake::allHeadersHook=reinterpret_cast<fake::AllFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalAllHeaders);return;}
+    if(rva==0x17CB760){fake::Check(m.name=="CreateHeaderSubMenu"&&m.argc==0,"Header sub-menu hook ABI");fake::subMenuHook=reinterpret_cast<fake::SubMenuFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalSubMenu);return;}
+    if(rva==0x17CFA30){fake::Check(m.name=="SetAllHeaderState"&&m.argc==1,"All-headers hook ABI");fake::allHeadersHook=reinterpret_cast<fake::AllFn>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalAllHeaders);return;}
     throw std::runtime_error("The tool menu hooks only the header sub-menu and the all-headers toggle");
 }
 namespace soul {
@@ -500,8 +500,8 @@ int main(){
         fake::Check(refused,"Layouts need their current and choose callbacks");
         toolsUi::Install();toolsUi::Install();
         fake::Check(fake::installs==2&&fake::menuRegistrations==1&&fake::subMenuHook&&fake::allHeadersHook,"Install registers header menus once and hooks the native header sub-menu");
-        fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15B27B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17D9B00&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17DDDD0&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16D63D0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16D72F0&&
-            fake::guards.at("DofusContextualMenu.InsertItem")==0x16D8850&&fake::guards.at("DofusContextualMenu.RemoveItemAt")==0x16D8BF0,"Native header entry points are pinned");
+        fake::Check(fake::guards.at("MagneticDragWindow.SetHeaderSize")==0x15A43B0&&fake::guards.at("WidgetManager.CreateHeaderSubMenu")==0x17CB760&&fake::guards.at("WidgetManager.SetAllHeaderState")==0x17CFA30&&fake::guards.at("DofusContextualMenu.AppendCheckboxItem")==0x16C7DC0&&fake::guards.at("DofusContextualMenu.AppendRadioButtonItem")==0x16C8CE0&&
+            fake::guards.at("DofusContextualMenu.InsertItem")==0x16CA240&&fake::guards.at("DofusContextualMenu.RemoveItemAt")==0x16CA5E0,"Native header entry points are pinned");
         for(auto test:{fake::ToolbarUsesRegisteredActions,fake::ToolButtonFollowsItsOption,fake::NativeWidgetListKeepsNativeRows,fake::HeaderTitleAndHide,fake::HideHelpNamesTheWayBack,
                 fake::StaleHeaderCallbacks,fake::RestoreAndFailures,fake::HeaderCloseFailure,
                 fake::HeaderMenuReplacement,fake::StopClosesHeaderMenus,fake::HeaderSubMenuListsPanels,fake::HeaderRowsKeepTheirClicks,

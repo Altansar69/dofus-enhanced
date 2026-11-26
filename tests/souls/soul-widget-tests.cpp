@@ -121,7 +121,7 @@ Module::Module(std::filesystem::path p):folder(p){}
 managed::Obj Module::FindService(const char* n)const{if(std::string(n)=="fou")return fake::tipService;fake::Check(std::string(n)=="frm","Only widget or tooltip service expected");return fake::service;}
 void Module::Change(Settings s,bool save){fake::Check(save,"Widget choice must persist");settings=s;++fake::changes;}
 void Log(const std::string& m){fake::logs.push_back(m);}
-void AddHook(managed::Method,uintptr_t rva,void* h,void** original){fake::Check(rva==0x1715030,"Toggle ABI");fake::toggle=reinterpret_cast<fake::ToggleFn>(h);*original=reinterpret_cast<void*>(&fake::Native);}
+void AddHook(managed::Method,uintptr_t rva,void* h,void** original){fake::Check(rva==0x1706A20,"Toggle ABI");fake::toggle=reinterpret_cast<fake::ToggleFn>(h);*original=reinterpret_cast<void*>(&fake::Native);}
 int main(){using namespace fake;try{Init();InstallSoulWidget();{
     Module owner{"offline"};module=&owner;owner.ready=true;owner.servicesReady=true;owner.compositor.reset(Make("Compositor"));Setup();
     TickSoulWidget();auto b=Owned();TickSoulWidget();Check(Owned()==b,"No duplicated toggle per tick");

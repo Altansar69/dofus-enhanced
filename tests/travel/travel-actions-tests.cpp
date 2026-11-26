@@ -173,7 +173,7 @@ Obj Invoke(Method method,Obj self,std::initializer_list<void*> args) {
     if (name=="zhx") return Box(eligible);
     if (name=="zid") {resolvedFor={*static_cast<int*>(a[0]),*static_cast<int*>(a[1]),*static_cast<int*>(a[2])};auto result=List();if(mapValid)for(auto map:resolvedMaps)Get(result).items.push_back(Box<int64_t>(map));return result;}
     if (name=="zdc") return n.fields["money"];
-    // zch/0x11EDC80 reads +0xF8, not the known-zaap list at +0x120.
+    // zch/0x11DF400 reads +0xF8, not the known-zaap list at +0x120.
     if (name=="zch") return n.fields["otherMaps"];
     if (name=="zhr") return Box(directKnown);
     if (name=="zcx") return Box<int64_t>(localId);
@@ -303,15 +303,15 @@ void Module::Change(Settings next,bool){++fake::changes;settings=next;} // Saved
 managed::Obj Module::FindService(const char* name)const{return fake::services[name];}
 void Log(const std::string& text){fake::logs.push_back(text);}
 void AddHook(managed::Method,uintptr_t rva,void* replacement,void** original){
-    if(rva==0x1A4AA10){fake::receiveHook=reinterpret_cast<decltype(fake::receiveHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalList);}
-    else if(rva==0x1C4A5D0){fake::quoteHook=reinterpret_cast<decltype(fake::quoteHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalList);}
-    else if(rva==0x16E72F0){fake::createHook=reinterpret_cast<decltype(fake::createHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalCreate);}
-    else if(rva==0x1BF78A0){fake::mapMenuHook=reinterpret_cast<decltype(fake::mapMenuHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMenu);}
-    else if(rva==0x1BF5E50){fake::mapWalkHook=reinterpret_cast<decltype(fake::mapWalkHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapWalk);}
-    else if(rva==0x1BF8F40){fake::mapAutoHook=reinterpret_cast<decltype(fake::mapAutoHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapAuto);}
-    else if(rva==0x1BF88F0){fake::mapMouseDownHook=reinterpret_cast<decltype(fake::mapMouseDownHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMouseDown);}
-    else if(rva==0x1B93460){fake::miniBuildHook=reinterpret_cast<decltype(fake::miniBuildHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalBuild);}
-    else if(rva==0x1BECC50){fake::bigBuildHook=reinterpret_cast<decltype(fake::bigBuildHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalBuild);}
+    if(rva==0x1A4EBC0){fake::receiveHook=reinterpret_cast<decltype(fake::receiveHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalList);}
+    else if(rva==0x1C388A0){fake::quoteHook=reinterpret_cast<decltype(fake::quoteHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalList);}
+    else if(rva==0x16D8CE0){fake::createHook=reinterpret_cast<decltype(fake::createHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalCreate);}
+    else if(rva==0x1BE7DB0){fake::mapMenuHook=reinterpret_cast<decltype(fake::mapMenuHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMenu);}
+    else if(rva==0x1BE62A0){fake::mapWalkHook=reinterpret_cast<decltype(fake::mapWalkHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapWalk);}
+    else if(rva==0x1BE9120){fake::mapAutoHook=reinterpret_cast<decltype(fake::mapAutoHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapAuto);}
+    else if(rva==0x1BE8E00){fake::mapMouseDownHook=reinterpret_cast<decltype(fake::mapMouseDownHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalMapMouseDown);}
+    else if(rva==0x1B89800){fake::miniBuildHook=reinterpret_cast<decltype(fake::miniBuildHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalBuild);}
+    else if(rva==0x1BDD1C0){fake::bigBuildHook=reinterpret_cast<decltype(fake::bigBuildHook)>(replacement);*original=reinterpret_cast<void*>(&fake::OriginalBuild);}
     else throw std::runtime_error("Unexpected hook");
 }
 namespace soul {

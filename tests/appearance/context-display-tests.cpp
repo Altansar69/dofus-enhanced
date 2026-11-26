@@ -328,9 +328,9 @@ Method Api::Find(Klass klass, const char* name, int argc) const {
 void* Api::Native(Method method, uintptr_t rva) const {
     fake::Check(rva != 0 && method, "Unpinned context native method");
     const auto& m = *static_cast<const fake::MethodInfo*>(method);
-    if (m.name == "AppendRadioButtonItem") fake::Check(m.argc == 12 && rva == 0x16D72F0,
+    if (m.name == "AppendRadioButtonItem") fake::Check(m.argc == 12 && rva == 0x16C8CE0,
         "Glow must reuse the verified native radio overload");
-    if (m.name == "AppendCheckboxItem") fake::Check(m.argc == 9 && rva == 0x16D63D0,"Exact native checkbox ABI");
+    if (m.name == "AppendCheckboxItem") fake::Check(m.argc == 9 && rva == 0x16C7DC0,"Exact native checkbox ABI");
     return reinterpret_cast<void*>(rva);
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
@@ -467,13 +467,13 @@ void Module::Change(Settings next, bool save) {
 void Log(const std::string& text) { fake::logs.push_back(text); }
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original) {
     const auto& m = *static_cast<const fake::MethodInfo*>(method);
-    if (m.name == "CreateMenu" && m.klass->name == "WorldMenuMaker" && rva == 0x1700070) {
+    if (m.name == "CreateMenu" && m.klass->name == "WorldMenuMaker" && rva == 0x16F1A60) {
         fake::worldHook = reinterpret_cast<fake::CreateFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeCreate);
-    } else if (m.name == "CreateMenu" && m.klass->name == "FightWorldMenuMaker" && rva == 0x16DC360) {
+    } else if (m.name == "CreateMenu" && m.klass->name == "FightWorldMenuMaker" && rva == 0x16CDD50) {
         fake::fightHook = reinterpret_cast<fake::CreateFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeCreate);
-    } else if (m.name == "InvokeCallback" && m.klass->name == "ClickCallbackHandler" && rva == 0x16CA600) {
+    } else if (m.name == "InvokeCallback" && m.klass->name == "ClickCallbackHandler" && rva == 0x16BBFF0) {
         fake::callbackHook = reinterpret_cast<fake::CallbackFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeCallback);
     } else throw std::runtime_error("Unexpected context hook ABI");

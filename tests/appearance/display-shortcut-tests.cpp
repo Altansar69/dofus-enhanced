@@ -308,12 +308,12 @@ void* Api::Native(Method method, uintptr_t rva) const {
     const auto& info = *static_cast<const fake::MethodInfo*>(method);
     const auto& name = info.name;
     fake::Check(rva != 0 && !name.empty(), "Native shortcut method must be pinned");
-    if (name=="bfsu") fake::Check(info.klass->name=="ghz" && info.argc==2 && rva==0x1FBBC70,
+    if (name=="bfsu") fake::Check(info.klass->name=="ghz" && info.argc==2 && rva==0x1F9F140,
         "Persistent UI lookup must match the saved native contract");
     return reinterpret_cast<void*>(rva);
 }
 Method Api::FindVerified(Klass klass, const char* name, int argc, uintptr_t rva) const {
-    fake::Check(std::string(name)=="TryGetValue" && argc==2 && rva==0x55FCCB0, "Theme lookup must use the Color overload");
+    fake::Check(std::string(name)=="TryGetValue" && argc==2 && rva==0x55C4490, "Theme lookup must use the Color overload");
     auto method=Find(klass,name,argc); Native(method,rva); return method;
 }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
@@ -500,18 +500,18 @@ managed::Obj Module::FindService(const char* name) const {
 }
 void Log(const std::string& message) { fake::logs.push_back(message); }
 void AddHook(managed::Method, uintptr_t rva, void* replacement, void** original) {
-    if (rva == 0x1726AE0) {
+    if (rva == 0x1718510) {
         fake::showHook=reinterpret_cast<fake::NoArgFn>(replacement);*original=reinterpret_cast<void*>(fake::NativeShow);
-    } else if (rva == 0x2C63890) {
+    } else if (rva == 0x2C293E0) {
         fake::enableHook = reinterpret_cast<fake::NoArgFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeEnable);
-    } else if (rva == 0x2C63540) {
+    } else if (rva == 0x2C29090) {
         fake::contextHook = reinterpret_cast<fake::EventFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeContext);
-    } else if (rva == 0x2C65410) {
+    } else if (rva == 0x2C2AF60) {
         fake::refreshHook = reinterpret_cast<fake::EventFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeRefresh);
-    } else if (rva == 0x2C63270) {
+    } else if (rva == 0x2C28DC0) {
         fake::clickHook = reinterpret_cast<fake::NoArgFn>(replacement);
         *original = reinterpret_cast<void*>(fake::NativeClick);
     } else throw std::runtime_error("Unexpected shortcut hook address");

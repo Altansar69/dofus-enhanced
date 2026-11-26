@@ -314,14 +314,14 @@ void InstallCaptureDetect(std::function<void(metamob::Capture)> sink) {
         stage = "character";
         next.character = api.Class("Core.dll", "", "esg"); Layout(next.character, "dpzj", 0x128);
         next.characterInfo = api.Class("Core.dll", "", "z"); Layout(next.characterInfo, "dbrm", 0x18);
-        next.localId = api.FindVerified(next.character, "zcx", 0, 0x18BB140);
+        next.localId = api.FindVerified(next.character, "zcx", 0, 0x18B07F0);
         stage = "item";
         // The item accessors and RVAs of soul-inventory.cpp.
         next.item = api.Class("Core.dll", "", "mc");
-        next.genericId = api.FindVerified(next.item, "myn", 0, 0xF20D40);
-        next.quantity = api.FindVerified(next.item, "myo", 0, 0x861E70);
-        next.itemType = api.FindVerified(next.item, "mzb", 0, 0x2AAC720);
-        next.data = api.FindVerified(next.item, "myx", 0, 0x2AAC6B0);
+        next.genericId = api.FindVerified(next.item, "myn", 0, 0xF124C0);
+        next.quantity = api.FindVerified(next.item, "myo", 0, 0x8535F0);
+        next.itemType = api.FindVerified(next.item, "mzb", 0, 0x2933160);
+        next.data = api.FindVerified(next.item, "myx", 0, 0x29330F0);
         next.itemData = api.Class(DataCenter, "Core.DataCenter.Metadata.Item", "ItemData");
         Layout(next.itemData, "possibleEffects", 0x68);
         Layout(api.Class(DataCenter, "Core.DataCenter.Metadata.Effect", "EffectInstanceData"), "actionId", 0x1A);
@@ -329,10 +329,10 @@ void InstallCaptureDetect(std::function<void(metamob::Capture)> sink) {
         Layout(next.integerEffect, "value", 0x78);
         stage = "monster";
         next.monster = api.Class(DataCenter, "Core.DataCenter.Metadata.Monster", "MonsterData");
-        next.byId = api.FindVerified(next.monster, "GetById", 1, 0x7E76B0);
-        next.isBoss = api.FindVerified(next.monster, "get_isBoss", 0, 0x7C43C0);
-        next.isArch = api.FindVerified(next.monster, "get_isMiniBoss", 0, 0x7C43B0);
-        next.name = api.FindVerified(next.monster, "get_name", 0, 0x7E7A30);
+        next.byId = api.FindVerified(next.monster, "GetById", 1, 0x7D8E30);
+        next.isBoss = api.FindVerified(next.monster, "get_isBoss", 0, 0x7B5B40);
+        next.isArch = api.FindVerified(next.monster, "get_isMiniBoss", 0, 0x7B5B30);
+        next.name = api.FindVerified(next.monster, "get_name", 0, 0x7D91B0);
         next.installed = true;
         contract = next;
     } catch (...) {

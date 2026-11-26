@@ -610,69 +610,69 @@ void InstallChatTpLinks(void (*clicked)(ChatTpTarget)) {
     state.clicked = clicked;
     if (state.installed) return;
     auto chat = api.Class("Core.dll","Core.UILogic.Chat","ChatView");
-    state.getBinding = api.FindVerified(chat,"GetBinding",1,0x2D91870);
+    state.getBinding = api.FindVerified(chat,"GetBinding",1,0x2D57C20);
     auto binding = api.Class("Core.dll","Core.UILogic.Bindings","ChatItemBinding");
-    api.FindVerified(binding,"get_content",0,0x2EB8790);
-    api.FindVerified(binding,"get_subContent",0,0x2EB89A0);
+    api.FindVerified(binding,"get_content",0,0x2E80730);
+    api.FindVerified(binding,"get_subContent",0,0x2E80940);
     state.mapClass = api.Class("Core.dll",Space,"HyperlinkMapInformation");
     state.groupClass = api.Class("Core.dll",Space,"HyperlinkLocalizeMonsterGroup");
-    api.FindVerified(state.groupClass,"get_m_dataContext",0,0x68D2C0);
-    api.FindVerified(state.mapClass,"get_m_dataContext",0,0x68D2C0);
-    auto ctor = api.FindVerified(state.mapClass,".ctor",7,0x168FA80);
+    api.FindVerified(state.groupClass,"get_m_dataContext",0,0x68E2C0);
+    api.FindVerified(state.mapClass,"get_m_dataContext",0,0x68E2C0);
+    auto ctor = api.FindVerified(state.mapClass,".ctor",7,0x1681470);
     state.questLinkClass = api.Class("Core.dll",Space,"HyperlinkShowQuest");
-    state.questCtor = api.FindVerified(state.questLinkClass,".ctor",7,0x16A6E70);
-    state.questOpen = api.FindVerified(state.questLinkClass,"OnHyperlinkLeftClick",1,0x16A6C60);
-    state.parseMapLinks = api.FindVerified(state.mapClass,"TryParseMapLinks",2,0x168EBE0);
+    state.questCtor = api.FindVerified(state.questLinkClass,".ctor",7,0x1698860);
+    state.questOpen = api.FindVerified(state.questLinkClass,"OnHyperlinkLeftClick",1,0x1698650);
+    state.parseMapLinks = api.FindVerified(state.mapClass,"TryParseMapLinks",2,0x16805D0);
     InitializeColors(ctor);
     auto wrapper = api.NestedClass(state.mapClass,"MapHyperlinkTextWrapper");
-    api.FindVerified(api.Class("Core.dll",Space,"BaseHyperlinkTextWrapper"),"get_id",0,0x68D2B0);
-    api.FindVerified(wrapper,"get_posX",0,0x753E30);
-    api.FindVerified(wrapper,"get_posY",0,0xAD8DF0);
-    api.FindVerified(wrapper,"get_worldMapId",0,0x9CD220);
-    api.FindVerified(wrapper,"get_elementName",0,0x748D50);
+    api.FindVerified(api.Class("Core.dll",Space,"BaseHyperlinkTextWrapper"),"get_id",0,0x68E2B0);
+    api.FindVerified(wrapper,"get_posX",0,0x749810);
+    api.FindVerified(wrapper,"get_posY",0,0xACA570);
+    api.FindVerified(wrapper,"get_worldMapId",0,0x9BE9A0);
+    api.FindVerified(wrapper,"get_elementName",0,0x73E730);
     auto groupWrapper=api.NestedClass(state.groupClass,"LocalizeMonsterGroupHyperlinkTextWrapper");
-    api.FindVerified(groupWrapper,"get_x",0,0x753E30);
-    api.FindVerified(groupWrapper,"get_y",0,0xAD8DF0);
-    api.FindVerified(groupWrapper,"get_worldMapId",0,0x9CD220);
-    api.FindVerified(groupWrapper,"get_leaderId",0,0x956730);
-    state.tooltipPosition=api.FindVerified(state.mapClass,"CreateTooltipPosition",1,0x3CA37C0);
+    api.FindVerified(groupWrapper,"get_x",0,0x749810);
+    api.FindVerified(groupWrapper,"get_y",0,0xACA570);
+    api.FindVerified(groupWrapper,"get_worldMapId",0,0x9BE9A0);
+    api.FindVerified(groupWrapper,"get_leaderId",0,0x947EB0);
+    state.tooltipPosition=api.FindVerified(state.mapClass,"CreateTooltipPosition",1,0x3C6AEF0);
     state.tooltipClass=api.Class("Core.dll","Core.UILogic.Components.Tooltips.Builder","TextTooltipBuilder");
-    state.tooltipCtor=api.FindVerified(state.tooltipClass,".ctor",7,0x164A2F0);
+    state.tooltipCtor=api.FindVerified(state.tooltipClass,".ctor",7,0x163BCE0);
     state.resultClass = api.Class("Core.dll",Space,"HyperlinkDecodeResult");
-    api.FindVerified(state.resultClass,".ctor",0,0x167FF30);
-    api.FindVerified(state.resultClass,"get_m_sequence",0,0x68D2C0);
-    api.FindVerified(state.resultClass,"BuildText",1,0x167ECE0);
-    state.addText = api.FindVerified(state.resultClass,"AddToSequence",1,0x167EC50);
-    state.addLink = api.FindVerified(state.resultClass,"AddToSequence",1,0x167EBA0);
+    api.FindVerified(state.resultClass,".ctor",0,0x1671920);
+    api.FindVerified(state.resultClass,"get_m_sequence",0,0x68E2C0);
+    api.FindVerified(state.resultClass,"BuildText",1,0x16706D0);
+    state.addText = api.FindVerified(state.resultClass,"AddToSequence",1,0x1670640);
+    state.addLink = api.FindVerified(state.resultClass,"AddToSequence",1,0x1670590);
     auto array = api.Class("mscorlib.dll","System","Array");
-    state.createArray = api.FindVerified(array,"CreateInstance",2,0x43005E0);
-    state.setArray = api.FindVerified(array,"SetValue",2,0x4302FD0);
+    state.createArray = api.FindVerified(array,"CreateInstance",2,0x42C7D70);
+    state.setArray = api.FindVerified(array,"SetValue",2,0x42CA760);
     state.stringType.reset(api.type_get_object(api.class_get_type(api.Class("mscorlib.dll","System","String"))));
     auto manipulator = api.Class("Core.dll",Space,"HyperlinkManipulator");
-    state.pointerOut = api.FindVerified(manipulator,"OnPointerOutLinkTagEvent",1,0x168C810);
-    state.setTarget = api.FindVerified(manipulator,"set_m_targetText",1,0x168DF30);
+    state.pointerOut = api.FindVerified(manipulator,"OnPointerOutLinkTagEvent",1,0x167E200);
+    state.setTarget = api.FindVerified(manipulator,"set_m_targetText",1,0x167F920);
     // « Dimension avec les coordonnées dans le chat » is optional: a mismatch
     // leaves the positions' text native and keeps TP and the statuses. The
     // link's text is its wrapper's (BaseHyperlinkTextWrapper.text), else the
     // game's CreateTextFromData; GetTextContent caches it in m_cachedTextContent.
     state.dimensions = false;
     try {
-        state.mapText = api.FindVerified(state.mapClass,"get_textFromData",0,0x3C88A00);
-        state.groupText = api.FindVerified(state.groupClass,"get_textFromData",0,0x3C88A00);
+        state.mapText = api.FindVerified(state.mapClass,"get_textFromData",0,0x3C50130);
+        state.groupText = api.FindVerified(state.groupClass,"get_textFromData",0,0x3C50130);
         RequireField(api.Class("Core.dll",Space,"BaseHyperlinkTextWrapper"),"<text>k__BackingField",0x20);
         RequireField(state.mapClass,"m_cachedTextContent",0x20);
         RequireField(state.groupClass,"m_cachedTextContent",0x20);
         auto world = api.Class("Ankama.Dofus.Core.DataCenter.dll","Core.DataCenter.Metadata.World","WorldMapData");
-        state.worldById = api.FindVerified(world,"GetWorldMapById",1,0x7D3D50);
-        state.worldName = api.FindVerified(world,"get_name",0,0x7D3DE0);
+        state.worldById = api.FindVerified(world,"GetWorldMapById",1,0x7C54D0);
+        state.worldName = api.FindVerified(world,"get_name",0,0x7C5560);
         state.dimensions = true;
     } catch (const std::exception& e) { Log(std::string("CHAT_DIMENSION_DISABLED ") + e.what()); }
-    AddHook(api.Find(chat,"BindItem",2),0x2D8E4C0,reinterpret_cast<void*>(&BindHook),reinterpret_cast<void**>(&originalBind));
-    AddHook(api.Find(manipulator,"TryDecodeText",1),0x168D990,reinterpret_cast<void*>(&TextHook),reinterpret_cast<void**>(&originalText));
-    AddHook(api.Find(api.Class("Core.dll",Space,"HyperlinkService"),"TryDecode",3),0x169CE90,
+    AddHook(api.Find(chat,"BindItem",2),0x2D54870,reinterpret_cast<void*>(&BindHook),reinterpret_cast<void**>(&originalBind));
+    AddHook(api.Find(manipulator,"TryDecodeText",1),0x167F380,reinterpret_cast<void*>(&TextHook),reinterpret_cast<void**>(&originalText));
+    AddHook(api.Find(api.Class("Core.dll",Space,"HyperlinkService"),"TryDecode",3),0x168E880,
         reinterpret_cast<void*>(&DecodeHook),reinterpret_cast<void**>(&originalDecode));
-    AddHook(api.Find(state.mapClass,"OnHyperlinkLeftClick",1),0x168E880,reinterpret_cast<void*>(&ClickHook),reinterpret_cast<void**>(&originalClick));
-    AddHook(api.Find(state.mapClass,"CreateTooltipBuilder",1),0x168E760,reinterpret_cast<void*>(&TooltipHook),reinterpret_cast<void**>(&originalTooltip));
+    AddHook(api.Find(state.mapClass,"OnHyperlinkLeftClick",1),0x1680270,reinterpret_cast<void*>(&ClickHook),reinterpret_cast<void**>(&originalClick));
+    AddHook(api.Find(state.mapClass,"CreateTooltipBuilder",1),0x1680150,reinterpret_cast<void*>(&TooltipHook),reinterpret_cast<void**>(&originalTooltip));
     state.installed = true;
 }
 void TickChatTpLinks() {

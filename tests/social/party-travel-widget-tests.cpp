@@ -202,7 +202,7 @@ Obj Api::New(Klass c, std::initializer_list<void*> args) const { auto o = fake::
 Obj Api::Field(Obj self, const char* name) const { return fake::Get(self).fields[name]; }
 void* Api::FieldAddress(Obj self, const char* name) const { return &fake::Get(self).numbers[name]; }
 std::string Api::String(Obj self) const { return self ? fake::Get(self).text : std::string(); }
-// Field layout of the pinned 3.7.12.12 metadata (contracts-new.json); unknown fields fail.
+// Field layout of the pinned 3.7.14.18 metadata (contracts-new.json); unknown fields fail.
 void* Api::FieldInfo(Klass c, const char* name) const {
     static const std::unordered_map<std::string, size_t> layout{
         {"lg.ddkt", 0x18}, {"lg.ddku", 0x20}, {"lg.ddll", 0x68}, {"lg.ddlm", 0x6C}, {"lg.ddln", 0x70},

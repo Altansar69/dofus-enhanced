@@ -10,7 +10,17 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.12.12 — VERSION 1.20.2
+DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.21.0
+
+VERSION 1.21.0 : DOFUS 3.7.14.18
+- Adaptation au client 3.7.14.18 (mise à jour du jeu de novembre 2026).
+  Les adresses natives et leurs signatures de contrôle sont recalculées
+  pour ce client exact ; les classes, méthodes et champs utilisés par le
+  mod y sont vérifiés un à un.
+- Aucune nouveauté et aucun réglage modifié : tes préférences, le carnet
+  et les statistiques sont conservés.
+- Une version de Dofus par version du mod : la 1.21.0 ne se charge que sur
+  3.7.14.18, et les versions précédentes restent liées à 3.7.12.12.
 
 VERSION 1.20.2 : DÉCONNEXION ET RECONNEXION
 - Déconnexion : à une déconnexion ou un retour à l’écran de connexion,
@@ -2344,7 +2354,7 @@ https://github.com/Altansar69/dofus-enhanced. Recompiler avec Visual Studio
 C++ x64, CMake et Ninja : build.ps1, puis ctest --test-dir build
 --output-on-failure. Les binaires propriétaires de Dofus ne sont pas fournis.
 
-Version ciblée : 3.7.12.12
+Version ciblée : 3.7.14.18
 GameAssembly.dll SHA256 :
 70b3861ded2ffa4a963bb6eaac8ff3c470c2f062e641601628c95f60411e8663
 global-metadata.dat SHA256 :

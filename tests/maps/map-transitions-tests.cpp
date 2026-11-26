@@ -41,7 +41,7 @@ Klass Api::Class(const char* image,const char* space,const char* name)const {
     fake::Check(!std::strcmp(image,"DOTween.Modules.dll")&&!std::strcmp(space,"DG.Tweening")&&!std::strcmp(name,"DOTweenModuleSprite"),"Use exact native tween module");return reinterpret_cast<Klass>(1);
 }
 Method Api::FindVerified(Klass klass,const char* name,int count,uintptr_t rva)const {
-    fake::Check(klass==reinterpret_cast<Klass>(1)&&!std::strcmp(name,"DOColor")&&count==3&&rva==0x30AAEC0,"Verify native three-parameter sprite tween overload");return reinterpret_cast<Method>(2);
+    fake::Check(klass==reinterpret_cast<Klass>(1)&&!std::strcmp(name,"DOColor")&&count==3&&rva==0x3072E70,"Verify native three-parameter sprite tween overload");return reinterpret_cast<Method>(2);
 }
 void* Api::NativeAt(uintptr_t rva)const {
     fake::Check(rva==FadeOutCall||rva==FadeInCall,"Verify both exact native callsites");return reinterpret_cast<void*>(gameBase+rva);
@@ -52,7 +52,7 @@ Module::Module(std::filesystem::path) {}
 bool Module::InCombat()const {if(fake::lookupFails)throw std::runtime_error("fight unavailable");return fake::combat;}
 void Log(const std::string& text) {fake::logs.push_back(text);}
 void AddHook(managed::Method method,uintptr_t rva,void* replacement,void** original) {
-    fake::Check(method==reinterpret_cast<managed::Method>(2)&&rva==0x30AAEC0,"Only the guarded tween function is hooked");
+    fake::Check(method==reinterpret_cast<managed::Method>(2)&&rva==0x3072E70,"Only the guarded tween function is hooked");
     fake::installedHook=reinterpret_cast<ColorFn>(replacement);*original=reinterpret_cast<void*>(&fake::Original);++fake::hooks;
 }
 int main() {

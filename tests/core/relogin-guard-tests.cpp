@@ -32,7 +32,7 @@ int handlerClass, replyClass, detailsClass, handlerMethod, ctorMethod, errorFiel
 std::map<managed::GCHandle, Obj> handles;
 managed::GCHandle serial = 0;
 void Check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
-// pw.phz as the snapshot has it (0x19F22F0): the details read without a null
+// pw.phz as the snapshot has it (0x19B9280): the details read without a null
 // check, then dhze tested: without it a warning; in both branches the token
 // request (eog.xbs) follows.
 void Original(Obj self, Obj reply, managed::Method method) {
@@ -55,13 +55,13 @@ Klass Api::Class(const char* image, const char* space, const char* name) const {
 }
 Method Api::FindVerified(Klass klass, const char* name, int count, uintptr_t rva) const {
     if (klass == &fake::handlerClass) {
-        fake::Check(!std::strcmp(name, "phz") && count == 1 && rva == 0x19F22F0, "Verify the account-details handler");
+        fake::Check(!std::strcmp(name, "phz") && count == 1 && rva == 0x19B9280, "Verify the account-details handler");
         return &fake::handlerMethod;
     }
-    fake::Check(klass == &fake::detailsClass && !std::strcmp(name, ".ctor") && count == 0 && rva == 0x65AD00, "Verify the details' empty constructor");
+    fake::Check(klass == &fake::detailsClass && !std::strcmp(name, ".ctor") && count == 0 && rva == 0x65BD00, "Verify the details' empty constructor");
     return &fake::ctorMethod;
 }
-void* Api::NativeAt(uintptr_t rva) const { fake::Check(rva == 0x65AD00, "Guard the details' constructor"); return reinterpret_cast<void*>(gameBase + rva); }
+void* Api::NativeAt(uintptr_t rva) const { fake::Check(rva == 0x65BD00, "Guard the details' constructor"); return reinterpret_cast<void*>(gameBase + rva); }
 Obj Api::Invoke(Method method, Obj self, std::initializer_list<void*> args) const {
     fake::Check(method == &fake::ctorMethod && self && args.size() == 0, "Only the details' constructor is invoked");
     ++fake::ctorCalls;
@@ -72,7 +72,7 @@ Module* module = nullptr;
 Module::Module(std::filesystem::path) {}
 void Log(const std::string& text) { fake::logs.push_back(text); }
 void AddHook(managed::Method method, uintptr_t rva, void* replacement, void** original) {
-    fake::Check(method == &fake::handlerMethod && rva == 0x19F22F0, "Only the guarded handler is hooked");
+    fake::Check(method == &fake::handlerMethod && rva == 0x19B9280, "Only the guarded handler is hooked");
     fake::installedHook = reinterpret_cast<reloginGuard::HandlerFn>(replacement);
     *original = reinterpret_cast<void*>(&fake::Original);
     ++fake::hooks;

@@ -10,7 +10,7 @@ void Check(bool value, const char* message) { if (!value) throw std::runtime_err
 std::string ManifestText(int revision, const std::array<std::string, 3>& hashes,
     const std::string& game = ExpectedGameHash, const std::string& metadata = ExpectedMetadataHash) {
     std::ostringstream text;
-    text << "format=1\nclientVersion=3.7.12.12\nrevision=" << revision << "\ngameHash=" << game
+    text << "format=1\nclientVersion=3.7.14.18\nrevision=" << revision << "\ngameHash=" << game
          << "\nmetadataHash=" << metadata << '\n';
     for (size_t i = 0; i != hashes.size(); ++i) text << LocalRelease::BinaryNames[i] << '=' << hashes[i] << '\n';
     return text.str();
@@ -70,7 +70,7 @@ void PolicyTests() {
     Check(!LocalRelease::Parse(text + "revision=9\n"), "Duplicate keys must fail");
     Check(!LocalRelease::Parse(text + "unexpected=1\n"), "Unknown schema keys must fail");
     auto future = text;
-    future.replace(future.find("3.7.12.12"), 9, "9.9.9.9");
+    future.replace(future.find("3.7.14.18"), 9, "9.9.9.9");
     Check(LocalRelease::Parse(future).has_value(), "Bootstrap must parse future client versions without granting compatibility");
     Check(!LocalRelease::Version("3.7.12") && !LocalRelease::Version("3..12.12") &&
         !LocalRelease::Version("https://example.com") && LocalRelease::Version("3.8.1.42"),
@@ -177,7 +177,7 @@ void CrossVersionTests() {
     const auto next = MakeRelease(files.root, 76, FileHash(files.root / "GameAssembly.dll"));
     auto manifest = Read(next / "release.ini");
     manifest.replace(manifest.find(ExpectedMetadataHash), 64, FileHash(metadata));
-    manifest.replace(manifest.find("3.7.12.12"), 9, "9.9.9.9");
+    manifest.replace(manifest.find("3.7.14.18"), 9, "9.9.9.9");
     Write(next / "release.ini", manifest);
     Check(LatestReleaseForClient(old, client).folder == next,
         "Old bootstrap must select a future client's package by actual file hashes");

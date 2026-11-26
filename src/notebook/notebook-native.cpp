@@ -53,11 +53,11 @@ void InstallPins() {
     // the Phoenix flag of a ghost, which fhw.beuw then uses for any new flag.
     Field(api.Class("Core.dll", "", "fhw"), "duiw", 0x1F8);
     Field(api.Class("Core.dll", "", "fhw"), "duix", 0x200);
-    flagCtor = api.FindVerified(flagClass, ".ctor", 10, 0x267D110);
-    unflagCtor = api.FindVerified(unflagClass, ".ctor", 2, 0x267D290);
-    addFlag = api.FindVerified(cartographyClass, "beoo", 1, 0x1C49250);
-    removeFlag = api.FindVerified(cartographyClass, "beon", 1, 0x1C49100);
-    mapView = api.FindVerified(cartographyClass, "beop", 1, 0x1C49400);
+    flagCtor = api.FindVerified(flagClass, ".ctor", 10, 0x2637270);
+    unflagCtor = api.FindVerified(unflagClass, ".ctor", 2, 0x26373F0);
+    addFlag = api.FindVerified(cartographyClass, "beoo", 1, 0x1C37520);
+    removeFlag = api.FindVerified(cartographyClass, "beon", 1, 0x1C373D0);
+    mapView = api.FindVerified(cartographyClass, "beop", 1, 0x1C376D0);
 }
 bool PopulateRowMenu(Obj owner, Obj event);
 bool RowMenuCallback(Obj callback, Obj view);
@@ -66,16 +66,16 @@ void InstallRowMenus() {
     constexpr const char* ui = "UnityEngine.UIElementsModule.dll";
     constexpr const char* uiSpace = "UnityEngine.UIElements";
     manipulatorClass = api.Class("Core.dll", menus, "DofusContextualMenuManipulator");
-    manipulatorCtor = api.FindVerified(manipulatorClass, ".ctor", 4, 0x16D0BB0);
+    manipulatorCtor = api.FindVerified(manipulatorClass, ".ctor", 4, 0x16C25A0);
     auto extensions = api.Class(ui, uiSpace, "VisualElementExtensions");
-    addManipulator = api.FindVerified(extensions, "AddManipulator", 2, 0x56755F0);
-    removeManipulator = api.FindVerified(extensions, "RemoveManipulator", 2, 0x5676A90);
-    menuOf = api.FindVerified(api.Class("Core.dll", menus, "DofusContextualMenuPopulateEvent"), "get_menu", 0, 0x11E7EC0);
+    addManipulator = api.FindVerified(extensions, "AddManipulator", 2, 0x563CDD0);
+    removeManipulator = api.FindVerified(extensions, "RemoveManipulator", 2, 0x563E270);
+    menuOf = api.FindVerified(api.Class("Core.dll", menus, "DofusContextualMenuPopulateEvent"), "get_menu", 0, 0x11D9640);
     auto menuClass = api.Class("Core.dll", menus, "DofusContextualMenu");
-    appendTitle = api.FindVerified(menuClass, "AppendTitle", 1, 0x16D7F70);
-    appendItem = api.FindVerified(menuClass, "AppendDefaultItem", 13, 0x16D6C60);
-    itemCallback = api.FindVerified(api.Class("Core.dll", menus, "ContextMenuItem"), "get_m_callback", 0, 0x16CF040);
-    stopPropagation = api.FindVerified(api.Class(ui, uiSpace, "EventBase"), "StopPropagation", 0, 0x576D9C0);
+    appendTitle = api.FindVerified(menuClass, "AppendTitle", 1, 0x16C9960);
+    appendItem = api.FindVerified(menuClass, "AppendDefaultItem", 13, 0x16C8650);
+    itemCallback = api.FindVerified(api.Class("Core.dll", menus, "ContextMenuItem"), "get_m_callback", 0, 0x16C0A30);
+    stopPropagation = api.FindVerified(api.Class(ui, uiSpace, "EventBase"), "StopPropagation", 0, 0x57351A0);
     soul::SetAuxiliaryPanelMenus(PopulateRowMenu, RowMenuCallback);
 }
 }
@@ -86,27 +86,27 @@ void InstallNative() {
     inputClass = api.Class("Core.dll", "Core.UILogic.Components.Figma", "TextInput");
     bindingClass = api.Class("Core.dll", "Core.UILogic.Bindings", "ChatviewBinding");
     Field(windowsClass, "dyvx", 0x258);
-    currentMap = api.FindVerified(characterClass, "zeo", 0, 0x185C1E0);
+    currentMap = api.FindVerified(characterClass, "zeo", 0, 0x18516B0);
     constexpr const char* image = "Ankama.Dofus.Core.DataCenter.dll";
     constexpr const char* space = "Core.DataCenter.Metadata.World";
     auto info = api.Class(image, space, "MapInformationData");
     Field(info, "posX", 0x18); Field(info, "posY", 0x1A);
     Field(api.Class(image, space, "WorldPoint"), "m_mapId", 0x10);
-    mapInfo = api.FindVerified(info, "GetMapInformationById", 1, 0x7C4200);
-    subarea = api.FindVerified(info, "get_subArea", 0, 0x7C44B0);
-    world = api.FindVerified(api.Class(image, space, "SubAreaData"), "get_worldmapId", 0, 0x7D1040);
+    mapInfo = api.FindVerified(info, "GetMapInformationById", 1, 0x7B5980);
+    subarea = api.FindVerified(info, "get_subArea", 0, 0x7B5C30);
+    world = api.FindVerified(api.Class(image, space, "SubAreaData"), "get_worldmapId", 0, 0x7C27C0);
     auto worldClass = api.Class(image, space, "WorldMapData");
-    worldById = api.FindVerified(worldClass, "GetWorldMapById", 1, 0x7D3D50);
-    worldName = api.FindVerified(worldClass, "get_name", 0, 0x7D3DE0);
-    inputGetter = api.FindVerified(bindingClass, "get_ti_chatInput", 0, 0x2EB8FD0);
-    lengthValid = api.FindVerified(chatClass, "IsTextLengthValid", 1, 0x2D92630);
-    append = api.FindVerified(chatClass, "AppendTextToInputAndFocus", 1, 0x2D8E010);
+    worldById = api.FindVerified(worldClass, "GetWorldMapById", 1, 0x7C54D0);
+    worldName = api.FindVerified(worldClass, "get_name", 0, 0x7C5560);
+    inputGetter = api.FindVerified(bindingClass, "get_ti_chatInput", 0, 0x2E80F70);
+    lengthValid = api.FindVerified(chatClass, "IsTextLengthValid", 1, 0x2D589E0);
+    append = api.FindVerified(chatClass, "AppendTextToInputAndFocus", 1, 0x2D543C0);
     // The channel ChatView's own SendToGuild/Party/TeamShortcut set before
     // validating the input, read back by TrySendMessage.
     Field(chatClass, "m_sendingChannel", 0x1EC);
-    trySend = api.FindVerified(chatClass, "TrySendMessage", 1, 0x2D9D300);
+    trySend = api.FindVerified(chatClass, "TrySendMessage", 1, 0x2D636B0);
     // Optional parts: each one that does not match disables only itself.
-    try { zoneName = api.FindVerified(api.Class(image, space, "SubAreaData"), "get_name", 0, 0x7D0F60); }
+    try { zoneName = api.FindVerified(api.Class(image, space, "SubAreaData"), "get_name", 0, 0x7C26E0); }
     catch (const std::exception& error) { zoneName = nullptr; Log(std::string("NOTEBOOK_ZONE_NAME_UNAVAILABLE ") + error.what()); }
     try { InstallPins(); pinsReady = true; }
     catch (const std::exception& error) { pinsReady = false; Log(std::string("NOTEBOOK_PIN_UNAVAILABLE ") + error.what()); }
@@ -454,7 +454,7 @@ bool RowMenuCallback(Obj callback, Obj view) {
     return true;
 }
 // The rows' populate event reaches this module only through the soul panel's
-// hook on DofusContextualMenuManipulator.OnContextualMenuEvent (0x16D04D0).
+// hook on DofusContextualMenuManipulator.OnContextualMenuEvent (0x16C1EC0).
 // Without that hook a right-click would bring an empty menu (the game then
 // throws adding its null root): the rows get no menu.
 bool PopulateHooked() { return soul::PanelMenusReady(); }

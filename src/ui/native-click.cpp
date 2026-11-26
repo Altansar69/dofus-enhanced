@@ -37,11 +37,11 @@ void Install() {
     auto clickable = api.Class(UiAssembly, UiSpace, "Clickable");
     auto manipulator = api.Class(UiAssembly, UiSpace, "Manipulator");
     auto extended = api.Class("Core.dll", "Core.UILogic.Components.Figma", "ExtendedClickable");
-    getActive = api.FindVerified(clickable, "get_active", 0, 0x752840);
-    containsPointer = api.FindVerified(clickable, "ContainsPointer", 1, 0x5590600);
-    getTarget = api.FindVerified(manipulator, "get_target", 0, 0x30D6960);
-    api.FindVerified(api.Class(UiAssembly, UiSpace, "VisualElement"), "get_enabledInHierarchy", 0, 0x55F5EF0);
-    AddHook(api.FindVerified(extended, "ProcessUpEvent", 3, 0x172B6A0), 0x172B6A0, reinterpret_cast<void*>(&UpHook), reinterpret_cast<void**>(&originalUp));
+    getActive = api.FindVerified(clickable, "get_active", 0, 0x748220);
+    containsPointer = api.FindVerified(clickable, "ContainsPointer", 1, 0x5557DE0);
+    getTarget = api.FindVerified(manipulator, "get_target", 0, 0x309E910);
+    api.FindVerified(api.Class(UiAssembly, UiSpace, "VisualElement"), "get_enabledInHierarchy", 0, 0x55BD6D0);
+    AddHook(api.FindVerified(extended, "ProcessUpEvent", 3, 0x171D0D0), 0x171D0D0, reinterpret_cast<void*>(&UpHook), reinterpret_cast<void**>(&originalUp));
     installed = true;
 }
 void AddHandler(bool (*handler)(Obj)) {

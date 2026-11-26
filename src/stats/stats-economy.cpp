@@ -74,7 +74,7 @@ HandlerFn originalQuest = nullptr, originalAchievement = nullptr;
 TradeFn originalTrade = nullptr;
 HarvestFn originalHarvest = nullptr;
 
-// Pinned 3.7.12.12 classes and offsets, each offset tied to its field name at installation.
+// Pinned 3.7.14.18 classes and offsets, each offset tied to its field name at installation.
 struct Contract {
     Klass character{}, info{};                                      // esg, z
     size_t characterInfo = 0, characterId = 0, exchanging = 0;     // esg.dpzj, z.dbrl, esg.<dqai> (an exchange is open)
@@ -581,27 +581,27 @@ void InstallKamas() {
     contract.frame = RequireField(storageHandler, "dqpb", 0x10);
     contract.frameInventories = RequireField(storageFrame, "dqpe", 0x28);
     contract.frameCharacter = RequireField(storageFrame, "dqpg", 0x38);
-    const auto setKamas = api.FindVerified(playerInventory, "SetKamas", 1, 0x2AF6F20);
-    const auto content = api.FindVerified(contentHandler, "bdmu", 1, 0x1B07A50);
-    const auto storage = api.FindVerified(storageHandler, "zyv", 1, 0x190B360);
+    const auto setKamas = api.FindVerified(playerInventory, "SetKamas", 1, 0x2ACB940);
+    const auto content = api.FindVerified(contentHandler, "bdmu", 1, 0x1B234E0);
+    const auto storage = api.FindVerified(storageHandler, "zyv", 1, 0x18FF5C0);
     contract.storageInventory = storageInventory; contract.playerInventory = playerInventory;
     contract.contentHandler = contentHandler; contract.inventories = inventories;
     contract.storageHandler = storageHandler; contract.storageFrame = storageFrame;
-    AddHook(setKamas, 0x2AF6F20, reinterpret_cast<void*>(&SetKamasHook), reinterpret_cast<void**>(&originalSetKamas));
-    AddHook(content, 0x1B07A50, reinterpret_cast<void*>(&ContentHook), reinterpret_cast<void**>(&originalContent));
-    AddHook(storage, 0x190B360, reinterpret_cast<void*>(&StorageHook), reinterpret_cast<void**>(&originalStorage));
+    AddHook(setKamas, 0x2ACB940, reinterpret_cast<void*>(&SetKamasHook), reinterpret_cast<void**>(&originalSetKamas));
+    AddHook(content, 0x1B234E0, reinterpret_cast<void*>(&ContentHook), reinterpret_cast<void**>(&originalContent));
+    AddHook(storage, 0x18FF5C0, reinterpret_cast<void*>(&StorageHook), reinterpret_cast<void**>(&originalStorage));
 }
 void InstallTrade() {
     const auto exchangeFrame = api.Class(Core, "", "faj");
     contract.exchangeCharacter = RequireField(exchangeFrame, "dsgo", 0x38);
-    const auto started = api.FindVerified(exchangeFrame, "bcan", 7, 0x1A05F60);
+    const auto started = api.FindVerified(exchangeFrame, "bcan", 7, 0x1A0A7E0);
     contract.exchangeFrame = exchangeFrame;
-    AddHook(started, 0x1A05F60, reinterpret_cast<void*>(&TradeHook), reinterpret_cast<void**>(&originalTrade));
+    AddHook(started, 0x1A0A7E0, reinterpret_cast<void*>(&TradeHook), reinterpret_cast<void**>(&originalTrade));
 }
 void InstallHarvest() {
     const auto harvestFrame = api.Class(Core, "", "fcp");
-    const auto shown = api.FindVerified(harvestFrame, "bctq", 3, 0x1A87B60);
-    AddHook(shown, 0x1A87B60, reinterpret_cast<void*>(&HarvestHook), reinterpret_cast<void**>(&originalHarvest));
+    const auto shown = api.FindVerified(harvestFrame, "bctq", 3, 0x1A84850);
+    AddHook(shown, 0x1A84850, reinterpret_cast<void*>(&HarvestHook), reinterpret_cast<void**>(&originalHarvest));
 }
 void InstallCraft() {
     const auto craftFrame = api.Class(Core, "", "ezt");
@@ -620,20 +620,20 @@ void InstallCraft() {
     contract.object = RequireField(craftDescription, "ettv", 0x30);
     contract.quantity = RequireField(craftObject, "fade", 0x28);
     contract.uid = RequireField(craftObject, "fadg", 0x2C);
-    const auto crafted = api.FindVerified(craftFrame, "bbvb", 1, 0x19D18D0);
+    const auto crafted = api.FindVerified(craftFrame, "bbvb", 1, 0x19ED4E0);
     contract.craftFrame = craftFrame; contract.craftParty = craftParty; contract.craftResult = craftResult;
     contract.craftObject = craftObject; contract.craftDescription = craftDescription;
-    AddHook(crafted, 0x19D18D0, reinterpret_cast<void*>(&CraftHook), reinterpret_cast<void**>(&originalCraft));
+    AddHook(crafted, 0x19ED4E0, reinterpret_cast<void*>(&CraftHook), reinterpret_cast<void**>(&originalCraft));
 }
 void InstallQuest() {
     const auto questFrame = api.Class(Core, "", "fde");
     const auto questValidated = api.Class(Protocol, "", "ibc");
     contract.questCharacter = RequireField(questFrame, "dtcf", 0x20);
     contract.questId = RequireField(questValidated, "ehbe", 0x18);
-    const auto validated = api.FindVerified(questFrame, "bcys", 1, 0x1AA7380);
+    const auto validated = api.FindVerified(questFrame, "bcys", 1, 0x1AA6FA0);
     contract.questFrame = questFrame;
     contract.questValidated = questValidated;
-    AddHook(validated, 0x1AA7380, reinterpret_cast<void*>(&QuestHook), reinterpret_cast<void**>(&originalQuest));
+    AddHook(validated, 0x1AA6FA0, reinterpret_cast<void*>(&QuestHook), reinterpret_cast<void**>(&originalQuest));
 }
 void InstallAchievement() {
     const auto achievementFrame = api.Class(Core, "", "fcv");
@@ -643,11 +643,11 @@ void InstallAchievement() {
     contract.finished = RequireField(achievementFinished, "fgqo", 0x28);
     contract.achievementId = RequireField(achievement, "fgrh", 0x1C);
     contract.achievedBy = RequireField(achievement, "fgrj", 0x20);
-    const auto unlocked = api.FindVerified(achievementFrame, "bcvg", 1, 0x1A90D70);
+    const auto unlocked = api.FindVerified(achievementFrame, "bcvg", 1, 0x1A8D990);
     contract.achievementFrame = achievementFrame;
     contract.achievementFinished = achievementFinished;
     contract.achievement = achievement;
-    AddHook(unlocked, 0x1A90D70, reinterpret_cast<void*>(&AchievementHook), reinterpret_cast<void**>(&originalAchievement));
+    AddHook(unlocked, 0x1A8D990, reinterpret_cast<void*>(&AchievementHook), reinterpret_cast<void**>(&originalAchievement));
 }
 // One part: ready once its hooks are prepared; a failure leaves it off (its
 // hooks, if any was prepared, only call the game's code).

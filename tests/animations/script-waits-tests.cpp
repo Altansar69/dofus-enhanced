@@ -51,7 +51,7 @@ void Reset() {
     module->stopRequested = false;
     Put(service, 0x18, fight); Put(fight, 0xE0, context);
 }
-void Track(Obj step, uintptr_t caller = 0x2740093) { RememberScriptWait(step, context, gameBase + caller); }
+void Track(Obj step, uintptr_t caller = 0x26D696B) { RememberScriptWait(step, context, gameBase + caller); }
 }
 namespace managed {
 Api api{};
@@ -63,17 +63,17 @@ Klass Api::Class(const char*, const char*, const char* name) const {
 }
 Method Api::Find(Klass type, const char* name, int argc) const {
     fake::Check(type == &fake::waitType, "Wrong script wait method owner");
-    if (std::strcmp(name, ".ctor") == 0 && argc == 1) return reinterpret_cast<Method>(0x2089970);
-    if (std::strcmp(name, "uia") == 0 && argc == 0) return reinterpret_cast<Method>(0x2089A50);
+    if (std::strcmp(name, ".ctor") == 0 && argc == 1) return reinterpret_cast<Method>(0x206F840);
+    if (std::strcmp(name, "uia") == 0 && argc == 0) return reinterpret_cast<Method>(0x206F920);
     fake::Check(std::strcmp(name, "blye") == 0 && argc == 0, "Wrong script completion method");
-    return reinterpret_cast<Method>(0x20899A0);
+    return reinterpret_cast<Method>(0x206F870);
 }
 void* Api::Native(Method m, uintptr_t rva) const {
     fake::Check(reinterpret_cast<uintptr_t>(m) == rva, "Wrong script wait RVA");
-    return rva == 0x20899A0 ? reinterpret_cast<void*>(fake::Complete) : nullptr;
+    return rva == 0x206F870 ? reinterpret_cast<void*>(fake::Complete) : nullptr;
 }
 void* Api::NativeAt(uintptr_t rva) const {
-    fake::Check(rva == 0x274008E || rva == 0x274019B || rva == 0x274164A, "Wrong script constructor caller"); return nullptr;
+    fake::Check(rva == 0x26D6966 || rva == 0x26D6A8B || rva == 0x26ED1FA, "Wrong script constructor caller"); return nullptr;
 }
 }
 Module* module = nullptr;
@@ -81,9 +81,9 @@ Module::Module(std::filesystem::path path) : folder(std::move(path)) {}
 void Log(const std::string&) {}
 bool InstantWaitsEnabled() { return fake::enabled && !module->stopRequested; }
 void AddNativeHook(uintptr_t rva, void* hook, void** original) {
-    if (rva == 0x2089970) { fake::ctorHook = reinterpret_cast<ScriptCtorFn>(hook); *original = reinterpret_cast<void*>(fake::Ctor); }
+    if (rva == 0x206F840) { fake::ctorHook = reinterpret_cast<ScriptCtorFn>(hook); *original = reinterpret_cast<void*>(fake::Ctor); }
     else {
-        fake::Check(rva == 0x2089A50, "Unknown script hook");
+        fake::Check(rva == 0x206F920, "Unknown script hook");
         fake::startHook = reinterpret_cast<ScriptStepFn>(hook); *original = reinterpret_cast<void*>(fake::Start);
     }
 }
@@ -105,13 +105,13 @@ int main() {
         state.fight.reset(service); Reset(); InstallScriptWaits();
         auto step = Wait(); ctorHook(step, context, passed); startHook(step, passed);
         Check(ctors == 1 && starts == 1 && completions == 0 && scriptWaits.empty(), "Unknown real caller must keep native constructor/start");
-        for (auto caller : {0x2740093, 0x27401A0, 0x274164F}) {
+        for (auto caller : {0x26D696B, 0x26D6A90, 0x26ED1FF}) {
             Reset(); step = Wait(); Track(step, caller); Track(step, caller);
             Check(scriptWaits.size() == 1, "Duplicate script wait tracked");
             startHook(step, passed); startHook(step, passed);
             Check(starts == 0 && completions == 1 && Read<bool>(step, 0x1D), "Known pause must complete once without scheduling timer");
         }
-        Reset(); step = Wait(); Track(step, 0x2740094); startHook(step, passed);
+        Reset(); step = Wait(); Track(step, 0x26D696C); startHook(step, passed);
         Check(starts == 1 && completions == 0, "Adjacent caller must remain native");
         Reset(); step = Wait(); enabled = false; Track(step); enabled = true; startHook(step, passed);
         Check(starts == 1 && completions == 0, "Creation in older modes must not track");

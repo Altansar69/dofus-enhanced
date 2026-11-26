@@ -245,9 +245,9 @@ managed::Obj Module::FindService(const char* name)const{
 }
 void Log(const std::string& message){fixture::logs.push_back(message);}
 void AddHook(managed::Method,uintptr_t rva,void*,void** original){
-    if(rva==0x2AF67C0)*original=reinterpret_cast<void*>(fixture::NativeEnable);
-    else if(rva==0x2AF6780)*original=reinterpret_cast<void*>(fixture::NativeDisable);
-    else if(rva==0x2ABC770)*original=reinterpret_cast<void*>(fixture::NativeSwitch);
+    if(rva==0x2ACB1E0)*original=reinterpret_cast<void*>(fixture::NativeEnable);
+    else if(rva==0x2ACB1A0)*original=reinterpret_cast<void*>(fixture::NativeDisable);
+    else if(rva==0x2A91190)*original=reinterpret_cast<void*>(fixture::NativeSwitch);
     else throw std::runtime_error("Unexpected hook");
 }
 namespace soul {void SetAuxiliaryPanelAction(bool(*fn)(managed::Obj)){fixture::action=fn;}}

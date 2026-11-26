@@ -11,7 +11,7 @@
 
 // Pure local-release policy. No registry, process access or filesystem actions.
 namespace LocalRelease {
-inline constexpr std::string_view ClientVersion = "3.7.12.12";
+inline constexpr std::string_view ClientVersion = "3.7.14.18";
 // Historical installation family: retain shared preferences and owned startup identity.
 inline constexpr std::string_view FolderPrefix = "DofusMiniatures-3.7.11.11-r";
 inline constexpr std::array<std::string_view, 3> BinaryNames{

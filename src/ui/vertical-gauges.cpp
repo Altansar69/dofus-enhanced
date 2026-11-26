@@ -64,27 +64,27 @@ constexpr unsigned MaxFailures = 3, MaxRestoreAttempts = 20;
 enum Part : size_t { Window, Main, GaugeBox, Gauge, Level, LevelValue, Omega, OmegaBox, Button, PartCount };
 struct Contract { const char* name; int argc; uintptr_t rva; };
 constexpr Contract PartGetters[PartCount] = {
-    {"get_widgetProgressGauge", 0, 0x154DFD0}, {"get_ctr_main", 0, 0x154D9A0}, {"get_gaugeContainer", 0, 0x154DA50},
-    {"get_gauge", 0, 0x154DB00}, {"get_level", 0, 0x154DE70}, {"get_lbl_value", 0, 0x154DDC0},
-    {"get_omega", 0, 0x154DF20}, {"get_lbl_omegaValue", 0, 0x154DC60}, {"get_btn_settings", 0, 0x154D8F0}};
+    {"get_widgetProgressGauge", 0, 0x153FB80}, {"get_ctr_main", 0, 0x153F550}, {"get_gaugeContainer", 0, 0x153F600},
+    {"get_gauge", 0, 0x153F6B0}, {"get_level", 0, 0x153FA20}, {"get_lbl_value", 0, 0x153F970},
+    {"get_omega", 0, 0x153FAD0}, {"get_lbl_omegaValue", 0, 0x153F810}, {"get_btn_settings", 0, 0x153F4A0}};
 // The inline styles written, through InlineStyleAccess's IStyle accessors.
 enum Property : size_t { Width, Height, MinWidth, MinHeight, MaxHeight, Direction, PaddingLeft, PaddingTop, PaddingBottom, MarginLeft,
     MarginTop, Left, Top, PropertyCount };
 struct Accessor { Contract get, set; };
 constexpr Accessor Accessors[PropertyCount] = {
-    {{"UnityEngine.UIElements.IStyle.get_width", 0, 0x55D2740}, {"UnityEngine.UIElements.IStyle.set_width", 1, 0x55D63F0}},
-    {{"UnityEngine.UIElements.IStyle.get_height", 0, 0x55D1540}, {"UnityEngine.UIElements.IStyle.set_height", 1, 0x55D3D60}},
-    {{"UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x55D1850}, {"UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x55D4410}},
-    {{"UnityEngine.UIElements.IStyle.get_minHeight", 0, 0x55D1810}, {"UnityEngine.UIElements.IStyle.set_minHeight", 1, 0x55D4370}},
-    {{"UnityEngine.UIElements.IStyle.get_maxHeight", 0, 0x55D1790}, {"UnityEngine.UIElements.IStyle.set_maxHeight", 1, 0x55D4230}},
-    {{"UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x55D13C0}, {"UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x55D3A80}},
-    {{"UnityEngine.UIElements.IStyle.get_paddingLeft", 0, 0x55D1970}, {"UnityEngine.UIElements.IStyle.set_paddingLeft", 1, 0x55D46D0}},
-    {{"UnityEngine.UIElements.IStyle.get_paddingTop", 0, 0x55D19F0}, {"UnityEngine.UIElements.IStyle.set_paddingTop", 1, 0x55D4810}},
-    {{"UnityEngine.UIElements.IStyle.get_paddingBottom", 0, 0x55D1930}, {"UnityEngine.UIElements.IStyle.set_paddingBottom", 1, 0x55D4630}},
-    {{"UnityEngine.UIElements.IStyle.get_marginLeft", 0, 0x55D16D0}, {"UnityEngine.UIElements.IStyle.set_marginLeft", 1, 0x55D4050}},
-    {{"UnityEngine.UIElements.IStyle.get_marginTop", 0, 0x55D1750}, {"UnityEngine.UIElements.IStyle.set_marginTop", 1, 0x55D4190}},
-    {{"UnityEngine.UIElements.IStyle.get_left", 0, 0x55D1610}, {"UnityEngine.UIElements.IStyle.set_left", 1, 0x55D3EB0}},
-    {{"UnityEngine.UIElements.IStyle.get_top", 0, 0x55D1CD0}, {"UnityEngine.UIElements.IStyle.set_top", 1, 0x55D4F70}}};
+    {{"UnityEngine.UIElements.IStyle.get_width", 0, 0x5599F20}, {"UnityEngine.UIElements.IStyle.set_width", 1, 0x559DBD0}},
+    {{"UnityEngine.UIElements.IStyle.get_height", 0, 0x5598D20}, {"UnityEngine.UIElements.IStyle.set_height", 1, 0x559B540}},
+    {{"UnityEngine.UIElements.IStyle.get_minWidth", 0, 0x5599030}, {"UnityEngine.UIElements.IStyle.set_minWidth", 1, 0x559BBF0}},
+    {{"UnityEngine.UIElements.IStyle.get_minHeight", 0, 0x5598FF0}, {"UnityEngine.UIElements.IStyle.set_minHeight", 1, 0x559BB50}},
+    {{"UnityEngine.UIElements.IStyle.get_maxHeight", 0, 0x5598F70}, {"UnityEngine.UIElements.IStyle.set_maxHeight", 1, 0x559BA10}},
+    {{"UnityEngine.UIElements.IStyle.get_flexDirection", 0, 0x5598BA0}, {"UnityEngine.UIElements.IStyle.set_flexDirection", 1, 0x559B260}},
+    {{"UnityEngine.UIElements.IStyle.get_paddingLeft", 0, 0x5599150}, {"UnityEngine.UIElements.IStyle.set_paddingLeft", 1, 0x559BEB0}},
+    {{"UnityEngine.UIElements.IStyle.get_paddingTop", 0, 0x55991D0}, {"UnityEngine.UIElements.IStyle.set_paddingTop", 1, 0x559BFF0}},
+    {{"UnityEngine.UIElements.IStyle.get_paddingBottom", 0, 0x5599110}, {"UnityEngine.UIElements.IStyle.set_paddingBottom", 1, 0x559BE10}},
+    {{"UnityEngine.UIElements.IStyle.get_marginLeft", 0, 0x5598EB0}, {"UnityEngine.UIElements.IStyle.set_marginLeft", 1, 0x559B830}},
+    {{"UnityEngine.UIElements.IStyle.get_marginTop", 0, 0x5598F30}, {"UnityEngine.UIElements.IStyle.set_marginTop", 1, 0x559B970}},
+    {{"UnityEngine.UIElements.IStyle.get_left", 0, 0x5598DF0}, {"UnityEngine.UIElements.IStyle.set_left", 1, 0x559B690}},
+    {{"UnityEngine.UIElements.IStyle.get_top", 0, 0x55994B0}, {"UnityEngine.UIElements.IStyle.set_top", 1, 0x559C750}}};
 // The values compared to tell one still the mod's: StyleLength (its Length's
 // value and unit, then its keyword), StyleEnum<FlexDirection> (value, keyword).
 constexpr size_t LengthBytes = 12, EnumBytes = 8;
@@ -150,19 +150,19 @@ constexpr Written UxmlRule[] = {
 enum class Kind { Float, StyleFloat, Enum };
 struct Resolver { Contract get; Kind kind; };
 constexpr Resolver Resolvers[PropertyCount] = {
-    {{"UnityEngine.UIElements.IResolvedStyle.get_width", 0, 0x55EF140}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_height", 0, 0x55EDA70}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_minWidth", 0, 0x55EDE90}, Kind::StyleFloat},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_minHeight", 0, 0x55EDE30}, Kind::StyleFloat},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_maxHeight", 0, 0x55EDD70}, Kind::StyleFloat},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_flexDirection", 0, 0x55ED890}, Kind::Enum},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingLeft", 0, 0x55EDFB0}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingTop", 0, 0x55EE070}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingBottom", 0, 0x55EDF50}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_marginLeft", 0, 0x55EDC50}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_marginTop", 0, 0x55EDD10}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_left", 0, 0x55EDB30}, Kind::Float},
-    {{"UnityEngine.UIElements.IResolvedStyle.get_top", 0, 0x55EE3B0}, Kind::Float}};
+    {{"UnityEngine.UIElements.IResolvedStyle.get_width", 0, 0x55B6920}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_height", 0, 0x55B5250}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_minWidth", 0, 0x55B5670}, Kind::StyleFloat},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_minHeight", 0, 0x55B5610}, Kind::StyleFloat},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_maxHeight", 0, 0x55B5550}, Kind::StyleFloat},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_flexDirection", 0, 0x55B5070}, Kind::Enum},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingLeft", 0, 0x55B5790}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingTop", 0, 0x55B5850}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_paddingBottom", 0, 0x55B5730}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_marginLeft", 0, 0x55B5430}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_marginTop", 0, 0x55B54F0}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_left", 0, 0x55B5310}, Kind::Float},
+    {{"UnityEngine.UIElements.IResolvedStyle.get_top", 0, 0x55B5B90}, Kind::Float}};
 constexpr const char* PartNames[PartCount] = {"window", "ctr_main", "gaugeContainer", "gauge", "level", "lbl_value", "omega", "omegaBox",
     "btn_settings"};
 constexpr const char* PropertyNames[PropertyCount] = {"width", "height", "minWidth", "minHeight", "maxHeight", "flexDirection", "paddingLeft",
@@ -1261,46 +1261,46 @@ void Install() {
     n.topOff = RequireField(n.resizable, "m_disableTopHandle", 0x2CA);
     n.bottomOff = RequireField(n.resizable, "m_disableBottomHandle", 0x2CB);
     n.dragPosition = RequireField(n.resizable, "m_dragPosition", 0x350);
-    n.setVertical = api.FindVerified(n.resizable, "set_verticalResizable", 1, 0x15BFCF0);
-    n.setHorizontal = api.FindVerified(n.resizable, "set_horizontalResizable", 1, 0x15BFC40);
-    n.setCorner = api.FindVerified(n.resizable, "set_cornerResizable", 1, 0x15BF930);
-    n.enableHandle = api.FindVerified(n.resizable, "EnableResizeHandler", 1, 0x15BCB60);
-    n.disableHandle = api.FindVerified(n.resizable, "DisableResizeHandler", 1, 0x15BC990);
+    n.setVertical = api.FindVerified(n.resizable, "set_verticalResizable", 1, 0x15B18F0);
+    n.setHorizontal = api.FindVerified(n.resizable, "set_horizontalResizable", 1, 0x15B1840);
+    n.setCorner = api.FindVerified(n.resizable, "set_cornerResizable", 1, 0x15B1530);
+    n.enableHandle = api.FindVerified(n.resizable, "EnableResizeHandler", 1, 0x15AE760);
+    n.disableHandle = api.FindVerified(n.resizable, "DisableResizeHandler", 1, 0x15AE590);
     // The bar (ExtendedProgressBarLong): its orientation is BaseProgressBar<long, …>'s,
     // fully shared code with a plain signature (the enum by value).
     n.bar = api.Class(CoreImage, Components, "ExtendedProgressBarLong");
     const auto barBase = api.class_get_parent(n.bar);
     if (!barBase || std::string(api.class_get_name(barBase)) != "BaseProgressBar`2") throw std::runtime_error("Gauge bar base changed");
-    n.setOrientation = api.FindVerified(barBase, "set_gaugeOrientation", 1, 0x3C94C70);
-    n.getOrientation = api.FindVerified(barBase, "get_gaugeOrientation", 0, 0x3925FB0);
+    n.setOrientation = api.FindVerified(barBase, "set_gaugeOrientation", 1, 0x3C5C3A0);
+    n.getOrientation = api.FindVerified(barBase, "get_gaugeOrientation", 0, 0x38EDFB0);
     // The menu and its rows.
     n.menu = api.Class(CoreImage, Menus, "DofusContextualMenu");
     n.menuRoot = RequireField(n.menu, "dofusContextualMenuRoot", 0x38);
-    n.appendCheckbox = api.FindVerified(n.menu, "AppendCheckboxItem", 9, 0x16D63D0);
-    n.removeItemAt = api.FindVerified(n.menu, "RemoveItemAt", 1, 0x16D8BF0);
-    n.insertItem = api.FindVerified(n.menu, "InsertItem", 2, 0x16D8850);
-    n.menuItems = api.FindVerified(n.menu, "get_menuItems", 0, 0x68D2B0);
+    n.appendCheckbox = api.FindVerified(n.menu, "AppendCheckboxItem", 9, 0x16C7DC0);
+    n.removeItemAt = api.FindVerified(n.menu, "RemoveItemAt", 1, 0x16CA5E0);
+    n.insertItem = api.FindVerified(n.menu, "InsertItem", 2, 0x16CA240);
+    n.menuItems = api.FindVerified(n.menu, "get_menuItems", 0, 0x68E2B0);
     n.item = api.Class(CoreImage, Menus, "ContextMenuItem");
-    n.itemCallback = api.FindVerified(n.item, "get_m_callback", 0, 0x16CF040);
-    n.itemDisabled = api.FindVerified(n.item, "get_disabled", 0, 0x16CF020);
+    n.itemCallback = api.FindVerified(n.item, "get_m_callback", 0, 0x16C0A30);
+    n.itemDisabled = api.FindVerified(n.item, "get_disabled", 0, 0x16C0A10);
     n.view = api.NestedClass(n.item, "ContextMenuItemView");
-    n.itemData = api.FindVerified(n.view, "get_itemData", 0, 0x157EFD0);
+    n.itemData = api.FindVerified(n.view, "get_itemData", 0, 0x1570BD0);
     n.callback = api.NestedClass(n.item, "ClickCallbackHandler");
     n.root = api.NestedClass(n.menu, "DofusContextualMenuRoot");
-    n.menuData = api.FindVerified(n.root, "get_menuData", 0, 0x157EFE0);
-    n.removeMenu = api.FindVerified(n.root, "RemoveMenu", 1, 0x16D2AB0);
+    n.menuData = api.FindVerified(n.root, "get_menuData", 0, 0x1570BE0);
+    n.removeMenu = api.FindVerified(n.root, "RemoveMenu", 1, 0x16C44A0);
     n.separator = api.Class(CoreImage, Menus, "ContextMenuSeparatorItem");
     // Elements and their inline styles.
     n.element = api.Class(UiImage, UiSpace, "VisualElement");
-    n.parent = api.FindVerified(n.element, "get_parent", 0, 0x55F7180);
-    n.panel = api.FindVerified(n.element, "get_panel", 0, 0x55F7170);
-    n.layout = api.FindVerified(n.element, "get_layout", 0, 0x55F6930);
-    n.name = api.FindVerified(n.element, "get_name", 0, 0x3158710);
-    n.incrementVersion = api.FindVerified(n.element, "IncrementVersion", 1, 0x55E5580);
-    n.classListContains = api.FindVerified(n.element, "ClassListContains", 1, 0x55E1840);
+    n.parent = api.FindVerified(n.element, "get_parent", 0, 0x55BE960);
+    n.panel = api.FindVerified(n.element, "get_panel", 0, 0x55BE950);
+    n.layout = api.FindVerified(n.element, "get_layout", 0, 0x55BE110);
+    n.name = api.FindVerified(n.element, "get_name", 0, 0x31206D0);
+    n.incrementVersion = api.FindVerified(n.element, "IncrementVersion", 1, 0x55ACD60);
+    n.classListContains = api.FindVerified(n.element, "ClassListContains", 1, 0x55A9020);
     for (size_t property = 0; property < PropertyCount; ++property)
         n.resolve[property] = api.FindVerified(n.element, Resolvers[property].get.name, Resolvers[property].get.argc, Resolvers[property].get.rva);
-    n.getStyle = api.FindVerified(n.element, "get_style", 0, 0x55F74A0);
+    n.getStyle = api.FindVerified(n.element, "get_style", 0, 0x55BEC80);
     n.style = api.Class(UiImage, UiSpace, "InlineStyleAccess");
     for (size_t property = 0; property < PropertyCount; ++property) {
         const auto& accessor = Accessors[property];
@@ -1308,26 +1308,26 @@ void Install() {
         n.set[property] = api.FindVerified(n.style, accessor.set.name, accessor.set.argc, accessor.set.rva);
     }
     n.length = api.Class(UiImage, UiSpace, "Length");
-    api.FindVerified(n.length, ".ctor", 2, 0x561D3D0);
-    n.setLength = api.FindVerified(api.Class(UiImage, UiSpace, "StyleLength"), "set_value", 1, 0x5623940);
+    api.FindVerified(n.length, ".ctor", 2, 0x55E4BB0);
+    n.setLength = api.FindVerified(api.Class(UiImage, UiSpace, "StyleLength"), "set_value", 1, 0x55EB120);
     // The size and the place the game would apply: those saved for the gauge's
     // UI id; and the game's saves of them, left out for a vertical gauge.
     n.cachedData = api.Class(CoreImage, "Core.Services.Player.OptionsService", "CachedDataService");
-    n.presetContainer = api.FindVerified(n.cachedData, "get_uiPresetOptionsContainer", 0, 0x7E0890);
+    n.presetContainer = api.FindVerified(n.cachedData, "get_uiPresetOptionsContainer", 0, 0x7D2010);
     n.presets = api.Class(CoreImage, "Core.Engine.Options.OptionsContainers", "UiPresetOptionsContainer");
-    n.loadDimension = api.FindVerified(n.presets, "LoadUiDimensionById", 1, 0x20918C0);
-    n.loadPosition = api.FindVerified(n.presets, "LoadUiPositionById", 1, 0x2091B60);
-    n.savePosition = api.FindVerified(n.presets, "SaveUiPositionById", 4, 0x2092DE0);
-    n.saveDimension = api.FindVerified(n.presets, "SaveUiDimensionById", 2, 0x2092A80);
+    n.loadDimension = api.FindVerified(n.presets, "LoadUiDimensionById", 1, 0x20776A0);
+    n.loadPosition = api.FindVerified(n.presets, "LoadUiPositionById", 1, 0x2077940);
+    n.savePosition = api.FindVerified(n.presets, "SaveUiPositionById", 4, 0x2078BC0);
+    n.saveDimension = api.FindVerified(n.presets, "SaveUiDimensionById", 2, 0x2078860);
     n.coordinates = api.Class(CoreImage, "Core.UI", "UICoordinates");
     n.savedX = RequireField(n.coordinates, "x", 0x10);
     n.savedY = RequireField(n.coordinates, "y", 0x14);
     // Last: the detours. The layout's two saves (each runs the game's own unless
     // the UI id is a vertical gauge's), then the menu's builder (its only
     // caller, OpenGaugeMenu, shows the menu right after).
-    AddHook(n.savePosition, 0x2092DE0, reinterpret_cast<void*>(&SavePositionHook), reinterpret_cast<void**>(&originalSavePosition));
-    AddHook(n.saveDimension, 0x2092A80, reinterpret_cast<void*>(&SaveDimensionHook), reinterpret_cast<void**>(&originalSaveDimension));
-    AddHook(api.FindVerified(n.gaugeUi, "CreateGenericGaugeSection", 1, 0x2815820), 0x2815820,
+    AddHook(n.savePosition, 0x2078BC0, reinterpret_cast<void*>(&SavePositionHook), reinterpret_cast<void**>(&originalSavePosition));
+    AddHook(n.saveDimension, 0x2078860, reinterpret_cast<void*>(&SaveDimensionHook), reinterpret_cast<void**>(&originalSaveDimension));
+    AddHook(api.FindVerified(n.gaugeUi, "CreateGenericGaugeSection", 1, 0x27D21C0), 0x27D21C0,
         reinterpret_cast<void*>(&SectionHook), reinterpret_cast<void**>(&originalSection));
 }
 }

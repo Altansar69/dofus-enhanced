@@ -7,7 +7,7 @@ using namespace managed;
 void SizeMeasurements::Install() {
     library = api.Class("Ankama.Dofus.Core.Characters.dll", "", "mhy");
     resolveKey = api.Find(library, "dcdf", 3);
-    api.Native(resolveKey, 0x76F790);
+    api.Native(resolveKey, 0x763740);
     idle.reset(api.string_new("AnimStatique"));
 }
 std::optional<float> SizeMeasurements::Height(Obj look) {

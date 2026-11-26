@@ -6,7 +6,7 @@
 namespace {
 using namespace managed;
 // These are the DOColor calls in MapTransition.ugs/ugt's sprite-fade branches.
-constexpr uintptr_t FadeOutCall = 0x2696DFD, FadeInCall = 0x26971F8;
+constexpr uintptr_t FadeOutCall = 0x264FEAD, FadeInCall = 0x26502A8;
 constexpr float FastFadeSeconds = 0.01f;
 struct Color4 { float r, g, b, a; };
 static_assert(sizeof(Color4) == 16);
@@ -73,6 +73,6 @@ void InstallFastMapTransitions() {
     api.NativeAt(FadeOutCall);
     api.NativeAt(FadeInCall);
     auto type = api.Class("DOTween.Modules.dll", "DG.Tweening", "DOTweenModuleSprite");
-    AddHook(api.FindVerified(type, "DOColor", 3, 0x30AAEC0), 0x30AAEC0,
+    AddHook(api.FindVerified(type, "DOColor", 3, 0x3072E70), 0x3072E70,
         reinterpret_cast<void*>(&ColorHook), reinterpret_cast<void**>(&originalColor));
 }

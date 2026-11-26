@@ -145,25 +145,25 @@ Obj Invoke(Method method, Obj self, std::initializer_list<void*> arguments) {
     const auto& t = m.type->name;
     if (t == "CartographyTooltipBinding") {
         // A value type: the receiver is the binding inside its builder.
-        if (m.name == "get_lbl_coords" && m.rva == 0x2EA53C0) return *static_cast<Obj*>(self);
-        if (m.name == "get_lbl_zaapPrice" && m.rva == 0x2EA55D0) return priceLabel;
+        if (m.name == "get_lbl_coords" && m.rva == 0x2E6D360) return *static_cast<Obj*>(self);
+        if (m.name == "get_lbl_zaapPrice" && m.rva == 0x2E6D570) return priceLabel;
         throw std::runtime_error("Only the verified binding getters");
     }
     if (t == "StyleLength") {
-        Check(m.name == "set_value" && m.rva == 0x5623940, "Only the verified StyleLength.set_value");
+        Check(m.name == "set_value" && m.rva == 0x55EB120, "Only the verified StyleLength.set_value");
         auto& value = *static_cast<StyleLengthValue*>(self);
         const auto& length = *static_cast<LengthValue*>(args[0]);
         value = {length.value, length.unit, 0};
         return nullptr;
     }
     if (t == "StyleFloat") {
-        Check(m.name == "set_value" && m.rva == 0x5622C10, "Only the verified StyleFloat.set_value");
+        Check(m.name == "set_value" && m.rva == 0x55EA3F0, "Only the verified StyleFloat.set_value");
         *static_cast<StyleFloatValue*>(self) = {*static_cast<float*>(args[0]), 0};
         return nullptr;
     }
     auto& o = Get(self);
     if (t == "TextElement") {
-        Check(m.name == "MeasureTextSize" && m.rva == 0x5645AF0 && *static_cast<int*>(args[2]) == 0 && *static_cast<int*>(args[4]) == 0,
+        Check(m.name == "MeasureTextSize" && m.rva == 0x560D2D0 && *static_cast<int*>(args[2]) == 0 && *static_cast<int*>(args[4]) == 0,
             "Text is measured by the verified MeasureTextSize, without width or height limit");
         Check(o.type->name == "DofusLabel", "Each label measures its own text");
         const auto nan = std::numeric_limits<float>::quiet_NaN();
@@ -171,7 +171,7 @@ Obj Invoke(Method method, Obj self, std::initializer_list<void*> arguments) {
     }
     if (m.name == "get_isSingleLine" || m.name == "set_isSingleLine") {
         const bool getter = m.name == "get_isSingleLine";
-        Check(t == "DofusLabel" && m.rva == (getter ? 0x1593B70u : 0x1593FB0u), "Only the verified DofusLabel.isSingleLine");
+        Check(t == "DofusLabel" && m.rva == (getter ? 0x1585770u : 0x1585BB0u), "Only the verified DofusLabel.isSingleLine");
         if (getter) return Box(o.singleLine, "Boolean");
         // DofusLabel.set_isSingleLine: a change gives the one-line height
         // (single-line) or drops it (SetTextHeight).
@@ -242,8 +242,8 @@ void AddHook(managed::Method method, uintptr_t rva, void* hook, void** original)
     Check(m.rva == rva, "A hook goes through its verified method");
     if (failHook == rva) throw std::runtime_error("Injected hook failure");
     hookRvas.push_back(rva);
-    if (rva == 0x1BEF880) { Check(m.type->name == "fhw" && m.name == "berz" && m.argc == 2, "fhw.berz contract"); berzHook = reinterpret_cast<BerzFn>(hook); *original = reinterpret_cast<void*>(&NativeBerz); }
-    else if (rva == 0x15EFCA0) { Check(m.type->name == "CartographyTooltipBuilder" && m.name == "Update" && m.argc == 1, "Update contract"); updateHook = reinterpret_cast<UpdateFn>(hook); *original = reinterpret_cast<void*>(&NativeUpdate); }
+    if (rva == 0x1BDFD30) { Check(m.type->name == "fhw" && m.name == "berz" && m.argc == 2, "fhw.berz contract"); berzHook = reinterpret_cast<BerzFn>(hook); *original = reinterpret_cast<void*>(&NativeBerz); }
+    else if (rva == 0x15E18A0) { Check(m.type->name == "CartographyTooltipBuilder" && m.name == "Update" && m.argc == 1, "Update contract"); updateHook = reinterpret_cast<UpdateFn>(hook); *original = reinterpret_cast<void*>(&NativeUpdate); }
     else throw std::runtime_error("Unexpected map info hook");
 }
 
@@ -354,21 +354,21 @@ void Reset() {
 void Contracts() {
     InstallMapInfo();
     Check(mapInfo::s.installed && !logs.empty() && logs.back() == "MAP_INFO_READY", "Map info installs");
-    Check(hookRvas == std::vector<uintptr_t>{0x1BEF880, 0x15EFCA0}, "Exactly the tooltip creation and its Update are hooked");
-    Check(guards.at("fhw.berz") == 0x1BEF880 && guards.at("CartographyTooltipBuilder.Update") == 0x15EFCA0 &&
-        guards.at("CartographyTooltipBinding.get_lbl_coords") == 0x2EA53C0 && guards.at("CartographyTooltipBinding.get_lbl_zaapPrice") == 0x2EA55D0 &&
-        guards.at("DofusLabel.set_text") == 0x1594570 && guards.at("DofusLabel.get_text") == 0x1593FA0 &&
-        guards.at("DofusLabel.get_isSingleLine") == 0x1593B70 && guards.at("DofusLabel.set_isSingleLine") == 0x1593FB0 &&
-        guards.at("TextElement.MeasureTextSize") == 0x5645AF0 && guards.at("SubAreaData.get_name") == 0x7D0F60 &&
-        guards.at("WorldMapData.get_name") == 0x7D3DE0 && guards.at("VisualElement.get_parent") == 0x55F7180 &&
-        guards.at("VisualElement.get_name") == 0x3158710 && guards.at("VisualElement.get_panel") == 0x55F7170 &&
-        guards.at("VisualElement.get_style") == 0x55F74A0 &&
-        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.get_minWidth") == 0x55D1850 &&
-        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.set_minWidth") == 0x55D4410 &&
-        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.get_flexShrink") == 0x55D1460 &&
-        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.set_flexShrink") == 0x55D3BC0 &&
-        guards.at("Length..ctor") == 0x561D3D0 && guards.at("StyleLength.set_value") == 0x5623940 &&
-        guards.at("StyleFloat.set_value") == 0x5622C10, "Exact verified native contracts");
+    Check(hookRvas == std::vector<uintptr_t>{0x1BDFD30, 0x15E18A0}, "Exactly the tooltip creation and its Update are hooked");
+    Check(guards.at("fhw.berz") == 0x1BDFD30 && guards.at("CartographyTooltipBuilder.Update") == 0x15E18A0 &&
+        guards.at("CartographyTooltipBinding.get_lbl_coords") == 0x2E6D360 && guards.at("CartographyTooltipBinding.get_lbl_zaapPrice") == 0x2E6D570 &&
+        guards.at("DofusLabel.set_text") == 0x1586170 && guards.at("DofusLabel.get_text") == 0x1585BA0 &&
+        guards.at("DofusLabel.get_isSingleLine") == 0x1585770 && guards.at("DofusLabel.set_isSingleLine") == 0x1585BB0 &&
+        guards.at("TextElement.MeasureTextSize") == 0x560D2D0 && guards.at("SubAreaData.get_name") == 0x7C26E0 &&
+        guards.at("WorldMapData.get_name") == 0x7C5560 && guards.at("VisualElement.get_parent") == 0x55BE960 &&
+        guards.at("VisualElement.get_name") == 0x31206D0 && guards.at("VisualElement.get_panel") == 0x55BE950 &&
+        guards.at("VisualElement.get_style") == 0x55BEC80 &&
+        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.get_minWidth") == 0x5599030 &&
+        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.set_minWidth") == 0x559BBF0 &&
+        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.get_flexShrink") == 0x5598C40 &&
+        guards.at("InlineStyleAccess.UnityEngine.UIElements.IStyle.set_flexShrink") == 0x559B3A0 &&
+        guards.at("Length..ctor") == 0x55E4BB0 && guards.at("StyleLength.set_value") == 0x55EB120 &&
+        guards.at("StyleFloat.set_value") == 0x55EA3F0, "Exact verified native contracts");
     for (const auto& [name, rva] : guards)
         Check(std::any_of(std::begin(Signatures), std::end(Signatures), [&](const NativeSignature& g) { return g.rva == rva; }),
             "Every verified method has its 16-byte guard: " + name);
@@ -723,9 +723,9 @@ void InstallFailures() {
     Check(!mapInfo::s.installed && hookRvas.empty(), "A moved field disables only this module");
     offsets[{"CartographyTooltipInfos", "zaapPrice"}] = 0x2C;
     // The second hook fails: the first one stays a pass-through.
-    failHook = 0x15EFCA0;
+    failHook = 0x15E18A0;
     InstallMapInfo();
-    Check(!mapInfo::s.installed && hookRvas == std::vector<uintptr_t>{0x1BEF880}, "A failed second hook disables the module");
+    Check(!mapInfo::s.installed && hookRvas == std::vector<uintptr_t>{0x1BDFD30}, "A failed second hook disables the module");
     const auto calls = berzCalls;
     auto infos = Make("CartographyTooltipInfos");
     Get(infos).slots = {{"mapX", 1}, {"mapY", 2}, {"showMapCoords", 1}, {"zaapPrice", -1}};
