@@ -10,7 +10,23 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.21.0
+DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.22.0
+
+VERSION 1.22.0 : ÉCHANGES METAMOB
+- Nouvelle fenêtre « Échanges Metamob » (bouton aux deux flèches en haut à
+  droite, avec une clé Metamob enregistrée) : les propositions d’échange
+  que d’autres joueurs t’ont envoyées sur Metamob et qui attendent encore,
+  la plus récente en premier. Pour chacune : qui, depuis quand, où elle en
+  est, ce que tu reçois et ce que tu donnes.
+- Notifications : une ligne dans le chat, visible de toi seul, dès qu’une
+  nouvelle proposition arrive, et à la connexion le nombre de propositions
+  en attente. Bouton « Notifications : oui / non » dans la fenêtre (oui par
+  défaut).
+- Les propositions sont relues chaque minute ; « Actualiser » relit tout
+  de suite. « Ouvrir Metamob » ouvre tes messages sur metamob.fr.
+- Lecture seule : le mod n’accepte, ne refuse et n’envoie jamais de
+  proposition. Les noms des monstres viennent de ta quête Ocre Dofus
+  Unity ; sans elle, un monstre est désigné par son numéro Metamob.
 
 VERSION 1.21.0 : DOFUS 3.7.14.18
 - Adaptation au client 3.7.14.18 (mise à jour du jeu de novembre 2026).

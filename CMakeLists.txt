@@ -41,7 +41,7 @@ add_library(DofusMiniatures SHARED
   src/travel/chat-route.cpp src/travel/map-travel.cpp
   src/social/spouse-party-menu.cpp src/social/spouse-party-widget.cpp src/social/party-travel-widget.cpp
   src/metamob/metamob-data.cpp src/metamob/metamob-secret.cpp src/metamob/metamob-http.cpp
-  src/metamob/metamob-sync.cpp src/souls/capture-detect.cpp
+  src/metamob/metamob-sync.cpp src/metamob/trades-window.cpp src/souls/capture-detect.cpp
   src/maps/archi-zones.cpp src/metamob/calendar-kralove.cpp
   src/souls/chat-soul-status.cpp
   src/maps/resource-map-data.cpp src/maps/resource-map-policy.cpp src/maps/resource-map-ui.cpp

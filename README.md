@@ -63,6 +63,7 @@ Tout se règle dans les options du jeu, les panneaux du mod sont construits avec
 - **Alerte pierre d’âme** : au placement d’un combat contre un archimonstre ou un boss capturable, la tranche de pierre requise, ton stock et la pierre équipée. En combat, **Capture d’âme** passe au vert quand l’état Chercheur d’âmes est actif sur toi, au rouge sinon. Le vert ne garantit pas à lui seul la capture.
 - **Équipement automatique** de la bonne pierre pendant le placement (une seule tentative par combat), sinon un bouton **Équiper**.
 - **Synchro Metamob** (désactivée par défaut) : après chaque combat où ton personnage obtient l’âme d’un archimonstre ou d’un boss, +1 à ce monstre dans ta quête Ocre sur [metamob.fr](https://www.metamob.fr). Ta clé API personnelle est chiffrée pour ton compte Windows, jamais affichée ni journalisée.
+- **Échanges Metamob** (avec ta clé Metamob) : une fenêtre du jeu liste les propositions d’échange que d’autres joueurs t’ont envoyées sur Metamob (qui, depuis quand, ce que tu reçois et ce que tu donnes), relues chaque minute, et le chat te prévient dès qu’une nouvelle arrive. Lecture seule : accepter ou refuser se fait sur metamob.fr, ouvert par un bouton.
 
 ### Chat
 - À côté des positions et des archimonstres ou boss de L’éternelle moisson partagés dans le chat : bouton **TP**, **Âme en sac** / Pas en sac (sac uniquement, pas la banque), avancement **Ocre** (un clic ouvre la quête) et quantité **Metamob** (avec une clé enregistrée).

@@ -58,6 +58,30 @@ struct Kralove {
 // Openings in one answer (3 a day per server at most) and bytes of a
 // description kept for the tooltip; a longer description is cut (with « … »).
 constexpr size_t MaxKralove = 500, MaxDescription = 280;
+// GET /v1/trade-proposals: a trade another user proposes (the « Échanges
+// Metamob » window of metamob/trades-window.cpp). A monster is Metamob's id and
+// a quantity; its name is added by the reader from the user's quest list
+// (empty when that list does not hold it). Every text is display-safe.
+struct TradeMonster { int64_t id = 0; int quantity = 0; std::string name; };
+struct TradeProposal {
+    int64_t id = 0;
+    std::string sender;         // SafeUsername(sender); never empty
+    std::string character;      // sender_quest.character_name, SafeText; empty when null or absent
+    std::string server;         // server.name; empty when the server is null or its name unusable
+    bool halfApplied = false;   // status half_applied: one side has applied it
+    bool senderApplied = false; // applications lists the sender
+    bool read = false;          // read_at is a date
+    int64_t createdAt = 0;      // created_at (UTC), Unix seconds
+    // monsters_given and monsters_received are the sender's: the recipient
+    // receives the first and gives the second.
+    std::vector<TradeMonster> given, received;
+};
+// One answer: the open proposals of its page, newest first as Metamob sends
+// them, and whether older ones were left out (pagination.has_more).
+struct TradePage { std::vector<TradeProposal> proposals; bool more = false; };
+// Proposals in one answer (the API's largest page) and monsters on one side
+// (the API's own bound); bytes of a contact name kept for the window.
+constexpr size_t MaxTrades = 50, MaxTradeMonsters = 200, MaxTradeCharacter = 64;
 
 // GET /v1/me, GET /v1/quests, GET /v1/quests/{slug}/monsters and
 // PATCH /v1/quests/{slug}/monsters/{id} answers. Unknown fields are ignored,
@@ -71,6 +95,13 @@ QuantityUpdate ParseQuantityUpdate(std::string_view body);
 // and server may be null. Openings by time (then id), the order the API does
 // not document. Fixed errors as the other parsers.
 std::vector<Kralove> ParseKralove(std::string_view body);
+// GET /v1/trade-proposals: strict. Each proposal needs an id (unique in the
+// answer), a sender, a status, a created_at read by UtcSeconds and its two
+// monster lists (monster_id and a quantity from 1, each monster once a side);
+// server, sender_quest, its character_name and read_at may be null. A proposal
+// that is neither pending nor half_applied is left out (only the open ones are
+// asked for). The names stay empty. Fixed errors as the other parsers.
+TradePage ParseTradeProposals(std::string_view body);
 // Body of a single quantity update: {"quantity":N} (absolute value, 0..MaxQuantity).
 std::string QuantityBody(int quantity);
 // Retry-After as delay-seconds or as an HTTP date (relative to nowUnix),

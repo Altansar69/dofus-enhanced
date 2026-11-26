@@ -742,7 +742,7 @@ std::vector<ExpectedSection> Layout(OptionsUi& ui) {
             CheckRow(ui.githubOption, ui.githubSource, "Mises à jour GitHub", true),
             // 1.20.2: the relogin after an inactivity disconnection, on by default.
             CheckRow(ui.extraOptions[ReloginGuardExtra], ui.extraSources[ReloginGuardExtra], "Reconnexion après une déconnexion", true)}},
-        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.21.0 — par Altansar"), ButtonRow(ui.modFolderOption, "Dossier du mod")}}};
+        {"À propos", {ButtonRow(ui.creditsOption, "Dofus Enhanced 1.22.0 — par Altansar"), ButtonRow(ui.modFolderOption, "Dossier du mod")}}};
 }
 std::vector<Obj> Models(const ExpectedSection& section) {
     std::vector<Obj> models;
@@ -849,8 +849,8 @@ void Refresh(Fixture& f) { f.Ui().nextKeyFieldRefresh = 0; f.Ui().Tick(); }
 void CheckLayout(Fixture& f) {
     const auto parent = f.Categories().back();
     Check(Name(parent) == ModCategoryTitle, "Loaded revision missing from category");
-    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.21.0" && std::string(ModVersion) == "r127" &&
-        ModRevision == 127,
+    Check(std::string(ModCategoryTitle) == "Dofus Enhanced" && std::string(ModSemanticVersion) == "1.22.0" && std::string(ModVersion) == "r128" &&
+        ModRevision == 128,
         "Tab name carries no revision; version is x.y.z");
     const auto layout = Layout(f.Ui());
     Check(!Get(parent).booleans["isSubCategory"] && Rows(parent).empty() && Sections(parent).size() == SectionCount && layout.size() == SectionCount,
@@ -897,9 +897,9 @@ void CheckLayout(Fixture& f) {
     // « À propos »: the credits row alone, named after the x.y.z version.
     const auto credits = Rows(Section(parent, AboutSection)).at(0);
     const auto description = Description(credits);
-    Check(Label(credits).find("1.21.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
+    Check(Label(credits).find("1.22.0") != std::string::npos && description.find("Altansar") != std::string::npos &&
         description.find("https://github.com/Altansar69/dofus-enhanced") != std::string::npos &&
-        description.find("r127") == std::string::npos && description.find("révision") == std::string::npos,
+        description.find("r128") == std::string::npos && description.find("révision") == std::string::npos,
         "Credits must name the version, the author and the project page, without the revision");
     Check(ButtonText(credits) == "Ouvrir GitHub" && f.Ui().creditsMarker.get() == Get(credits).refs.at("description"),
         "Credits button opens the project page");
@@ -2848,7 +2848,7 @@ void ModFolderRow() {
         ui.modFolderMarker.get() != ui.metamobKeyMarker.get(), "« Dossier du mod » is an owned text button known by its own description reference");
     Check(Label(row) == "Dossier du mod" && ButtonText(row) == "Ouvrir", "Its button: « Ouvrir »");
     const auto text = Description(row);
-    for (const char* term : {"Ouvre dans l’Explorateur de Windows le dossier de cette version du mod", "DofusMiniatures-3.7.11.11-r127",
+    for (const char* term : {"Ouvre dans l’Explorateur de Windows le dossier de cette version du mod", "DofusMiniatures-3.7.11.11-r128",
             "DofusMiniatures.dll", "module.log", "DofusMiniatures-3.7.11.11-settings.ini", "dans le dossier au-dessus",
             "ne modifie ni ne supprime aucun fichier"})
         Check(text.find(term) != std::string::npos, std::string("« Dossier du mod » says: ") + term);

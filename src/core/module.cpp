@@ -30,6 +30,7 @@
 #include "maps/archi-zones.hpp"
 #include "stats/stats.hpp"
 #include "stats/stats-window.hpp"
+#include "metamob/trades-window.hpp"
 #include "stats/stats-travel.hpp"
 #include "stats/stats-economy.hpp"
 #include "stats/stats-fights.hpp"
@@ -318,6 +319,7 @@ void Module::Pump(Obj source) {
     startupStage("treasure-panel", [] { TickTreasurePanel(); });
     startupStage("notebook-panel", [] { TickNotebookPanel(); });
     startupStage("stats-window", [] { TickStatsWindow(); });
+    startupStage("trades-window", [] { TickTradesWindow(); });
     // After the panels: a window a layout opens is placed the pump its panel builds it.
     startupStage("preset-windows", [] { TickPresetWindows(); });
     startupStage("jobs-xp", [] { TickJobsXp(); });
@@ -384,6 +386,7 @@ void Module::Stop() {
     RestoreTreasurePanel();
     RestoreNotebookPanel();
     RestoreStatsWindow();
+    RestoreTradesWindow();
     RestorePresetWindows();
     toolsUi::Restore();
     RestoreJobsXp();
@@ -418,7 +421,7 @@ void Module::Stop() {
     Log("STOPPED miniatureConversions=" + std::to_string(features->miniatureCount));
     // The worker disables hooks; the DLL remains resident to avoid unloading code on an active stack.
     stopRequested.store(true);
-    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !PartyTravelWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending());
+    stopCompleted.store(!ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !PartyTravelWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !TradesWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending());
     if (!stopCompleted.load()) Log("STOPPING awaiting owned UI cleanup on main thread");
     try { WriteStartupStatus(folder, GetCurrentProcessId(), "STOPPED"); }
     catch (const std::exception& e) { Log(std::string("STATUS_ERROR ") + e.what()); }
@@ -463,6 +466,7 @@ static void UpdateHook(Obj self, Method method) {
             if (TreasurePanelCleanupPending()) RestoreTreasurePanel();
             if (NotebookPanelCleanupPending()) RestoreNotebookPanel();
             if (StatsWindowCleanupPending()) RestoreStatsWindow();
+            if (TradesWindowCleanupPending()) RestoreTradesWindow();
             if (toolsUi::CleanupPending()) toolsUi::Restore();
             if (JobsXpCleanupPending()) RestoreJobsXp();
             if (ArchiZonesCleanupPending()) RestoreArchiZones();
@@ -476,7 +480,7 @@ static void UpdateHook(Obj self, Method method) {
             if (PartyTravelWidgetCleanupPending()) RestorePartyTravelWidget();
             if (CustomCursorCleanupPending()) RestoreCustomCursor();
             if (VerticalGaugesCleanupPending()) RestoreVerticalGauges();
-            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !PartyTravelWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending()) module->stopCompleted.store(true);
+            if (!module->ui->CleanupPending() && !MonsterGlowCleanupPending() && !SoulHelperCleanupPending() && !SoulWidgetCleanupPending() && !ChatTpLinksCleanupPending() && !SpousePartyWidgetCleanupPending() && !PartyTravelWidgetCleanupPending() && !MapPreloadCleanupPending() && !resourceMap::UiCleanupPending() && !resourceMap::RenderCleanupPending() && !TreasurePanelCleanupPending() && !NotebookPanelCleanupPending() && !StatsWindowCleanupPending() && !TradesWindowCleanupPending() && !toolsUi::CleanupPending() && !JobsXpCleanupPending() && !ArchiZonesCleanupPending() && !CalendarKraloveCleanupPending() && !MapInfoCleanupPending() && !PerfOverlayCleanupPending() && !CustomCursorCleanupPending() && !VerticalGaugesCleanupPending()) module->stopCompleted.store(true);
         }
         return;
     }
@@ -542,6 +546,7 @@ static DWORD WINAPI Worker(void*) {
         treasure::InstallHunt();
         InstallNotebookPanel();
         InstallStatsWindow();
+        InstallTradesWindow(); // never throws: METAMOB_TRADES_WINDOW_DISABLED leaves the chat notices
         InstallPresetWindows(); // never throws: PRESET_WINDOWS_UNAVAILABLE leaves the game's layouts as they are
         InstallJobsXp();
         InstallArchiZones();

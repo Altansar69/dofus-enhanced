@@ -3216,6 +3216,184 @@ void KraloveThreaded() {
     Check(!MetamobKralove().usable && !MetamobKralove().read && Requested() == 2 && !KeyStored(), "Nothing kept, nothing more read");
     Finish("kralove forgotten while read");
 }
+// « Échanges Metamob »: the open proposals received.
+const std::string TradesPath = "/trade-proposals?direction=received&status=open&limit=50";
+std::string Side(const std::vector<std::pair<int64_t, int>>& monsters) {
+    std::string items;
+    for (const auto& [id, quantity] : monsters)
+        items += (items.empty() ? "" : ",") + ("{\"monster_id\":" + std::to_string(id) + ",\"quantity\":" + std::to_string(quantity) + "}");
+    return "[" + items + "]";
+}
+// A proposal as the API documents it, the private marker in its quests.
+std::string Proposal(int64_t id, const std::string& sender, const std::vector<std::pair<int64_t, int>>& given,
+    const std::vector<std::pair<int64_t, int>>& received, const char* status = "pending") {
+    return "{\"id\":" + std::to_string(id) + ",\"sender\":\"" + sender + "\",\"recipient\":\"" + Marker + "\",\"status\":\"" + status +
+        "\",\"server\":{\"id\":11,\"name\":\"Draconiros\",\"community\":\"France\",\"game_version\":{\"id\":1,\"name\":\"Dofus (Unity)\"}},"
+        "\"quest_template\":{\"id\":1,\"quest_type\":{\"id\":1,\"slug\":\"ocre\",\"name\":{\"fr\":\"Ocre\",\"en\":\"Ochre\",\"es\":\"Ocre\"}}},"
+        "\"sender_quest\":{\"slug\":\"" + OtherSlug + "\",\"character_name\":\"Iop-Main\"},\"recipient_quest\":null,"
+        "\"monsters_given\":" + Side(given) + ",\"monsters_received\":" + Side(received) + ",\"applications\":[],\"cancelled_at\":null,"
+        "\"cancelled_by\":null,\"created_at\":\"2026-10-22T09:00:00Z\",\"expires_at\":\"2026-11-21T09:00:00Z\",\"read_at\":null}";
+}
+std::string Proposals(const std::vector<std::string>& items, bool more = false) {
+    std::string body;
+    for (const auto& item : items) body += (body.empty() ? "" : ",") + item;
+    return "{\"data\":[" + body + "],\"pagination\":{\"has_more\":" + (more ? "true,\"next_before_id\":12" : "false,\"next_before_id\":null") + "}}";
+}
+void ExpectTrades(Response response) { Expect("GET", TradesPath, std::move(response)); }
+// A pump while the option is on: it asks for the proposals, then the sync ticks.
+void Trade(uint64_t advance = 0, bool notify = true) { fakeNow += advance; WantTrades(notify); TickSync(syncOn); }
+void TradeAt(uint64_t at, bool notify = true) { if (fakeNow.load() < at) fakeNow = at; WantTrades(notify); TickSync(syncOn); }
+std::string NewTrade(const std::string& sender, const std::string& receive, const std::string& give) {
+    return "Metamob : nouvelle proposition d’échange de « " + sender + " » : tu reçois " + receive + " ; tu donnes " + give + ".";
+}
+
+// Read at once when the option asks, named from the quest list, then every
+// minute; the first reading tells how many wait, the later ones the new ones.
+void TradesFirstLoad() {
+    Begin(Folder("trades"), true);
+    syncOn = false;
+    auto view = MetamobTrades();
+    Check(view.usable && view.status == TradesStatus::Loading && !view.read && view.proposals.empty() && MetamobKeyUsable(), "Before any reading: loading");
+    for (int i = 0; i < 5; ++i) Tick(60000);
+    Check(Sent() == 0 && MetamobTrades().version == view.version, "Nothing read until the option asks");
+    ExpectTrades(Json(Proposals({Proposal(71, "Bobby", {{Tofu.id, 2}}, {{Tiwa.id, 1}}), Proposal(70, "Carla", {}, {{Bouftou.id, 1}, {Mob.id, 3}}, "half_applied"),
+        Proposal(69, "Denis", {{Larva.id, 1}}, {}, "completed")})));
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    Trade();
+    Check(Sent() == 4 && Logged("METAMOB_TRADES proposals=2 named=1") && Logged("METAMOB_HTTP method=GET route=/trade-proposals status=200"),
+        "Read at once: the proposals, then the quest list for their names");
+    Said({"Metamob : 2 propositions d’échange en attente."}, "The first reading tells how many wait");
+    view = MetamobTrades();
+    Check(view.usable && view.status == TradesStatus::Ready && view.read && !view.more && view.proposals.size() == 2 &&
+        view.proposals[0].id == 71 && view.proposals[0].sender == "Bobby" && view.proposals[0].character == "Iop-Main" &&
+        view.proposals[0].server == "Draconiros" && !view.proposals[0].halfApplied && !view.proposals[0].read &&
+        view.proposals[0].given.size() == 1 && view.proposals[0].given[0].name == Tofu.name && view.proposals[0].given[0].quantity == 2 &&
+        view.proposals[0].received[0].name == Tiwa.name && view.proposals[1].id == 70 && view.proposals[1].halfApplied &&
+        view.proposals[1].given.empty() && view.proposals[1].received[1].name == Mob.name && view.readAt == fakeNow.load(),
+        "The open proposals, newest first, named; the completed one left out");
+    const auto version = view.version;
+    auto read = fakeNow.load();
+    for (int i = 0; i < 5; ++i) Trade(10000);
+    TradeAt(read + 59999);
+    Check(Sent() == 4 && MetamobTrades().version == version, "Not read again within a minute");
+    // A minute later: one more proposal. The names come from the list kept: one request.
+    ExpectTrades(Json(Proposals({Proposal(72, "Edgar", {{Abrakroc.id, 1}, {Larva.id, 2}, {Tofu.id, 1}, {Tiwa.id, 1}}, {{999999, 1}}),
+        Proposal(71, "Bobby", {{Tofu.id, 2}}, {{Tiwa.id, 1}}), Proposal(70, "Carla", {}, {{Bouftou.id, 1}}, "half_applied")})));
+    TradeAt(read + 60000);
+    Check(Sent() == 5 && MetamobTrades().proposals.size() == 3 && MetamobTrades().version != version, "Read again after a minute, alone");
+    Said({NewTrade("Edgar", Abrakroc.name + ", 2 × " + Larva.name + ", " + Tofu.name + " et 1 autre", "monstre n° 999999")},
+        "Only the new proposal is told: three monsters a side, an unnamed one by its number");
+    // The notices off: read, untold; on again: what was read meanwhile is not new.
+    read = fakeNow.load();
+    ExpectTrades(Json(Proposals({Proposal(73, "Fanny", {{Tofu.id, 1}}, {}), Proposal(72, "Edgar", {{Abrakroc.id, 1}}, {})})));
+    TradeAt(read + 60000, false);
+    Check(Sent() == 6 && MetamobTrades().proposals.size() == 2 && MetamobTrades().proposals[0].given[0].name == Tofu.name, "Read with the notices off");
+    Said({}, "Off: untold");
+    read = fakeNow.load();
+    ExpectTrades(Json(Proposals({Proposal(73, "Fanny", {{Tofu.id, 1}}, {}), Proposal(71, "Bobby", {{Tofu.id, 2}}, {{Tiwa.id, 1}})})));
+    TradeAt(read + 60000);
+    Said({}, "On again: a proposal read while off, and one seen before, are not new");
+    // Five at once: three told, the others counted.
+    read = fakeNow.load();
+    ExpectTrades(Json(Proposals({Proposal(78, "Gus", {}, {{Mob.id, 1}}), Proposal(77, "Hana", {}, {{Mob.id, 1}}), Proposal(76, "Ines", {}, {{Mob.id, 1}}),
+        Proposal(75, "Jules", {}, {{Mob.id, 1}}), Proposal(74, "Karl", {}, {{Mob.id, 1}}), Proposal(73, "Fanny", {{Tofu.id, 1}}, {})}, true)));
+    TradeAt(read + 60000);
+    Said({NewTrade("Gus", "rien", Mob.name), NewTrade("Hana", "rien", Mob.name), NewTrade("Ines", "rien", Mob.name),
+        "Metamob : 2 autres nouvelles propositions d’échange."}, "Three told, the others counted");
+    Check(MetamobTrades().more, "Older ones left out by Metamob");
+    // « Actualiser »: read at once, at most every five seconds.
+    read = fakeNow.load();
+    ExpectTrades(Json(Proposals({})));
+    RefreshTrades();
+    Trade(1000);
+    Check(Sent() == 9 && MetamobTrades().read && MetamobTrades().proposals.empty() && !MetamobTrades().more, "Refreshed at once; none left");
+    RefreshTrades();
+    Trade(1000);
+    Trade(3000);
+    Check(Sent() == 9, "A second refresh within five seconds waits for the minute");
+    // The option off (not asked for five seconds): nothing more is read; what was read stays.
+    read = fakeNow.load();
+    TickAt(read + 5000);
+    TickAt(read + 600000);
+    Check(Sent() == 9 && MetamobTrades().read, "Not asked any more: not read");
+    // A passing failure keeps what was read and is tried again 30 s later; no such list: 10 min.
+    ExpectTrades(Json(Proposals({Proposal(80, "Lola", {}, {{Mob.id, 1}})})));
+    Trade();
+    Said({NewTrade("Lola", "rien", Mob.name)}, "Asked again: read at once");
+    read = fakeNow.load();
+    ExpectTrades(Html(503));
+    TradeAt(read + 60000);
+    view = MetamobTrades();
+    Check(view.status == TradesStatus::Unreachable && view.read && view.proposals.size() == 1 && Logged("METAMOB_TRADES_FAILED reason=request"),
+        "A failed reading keeps the proposals");
+    read = fakeNow.load();
+    TradeAt(read + 29999);
+    Check(Sent() == 11, "Not tried again before 30 s");
+    ExpectTrades(Status(404));
+    TradeAt(read + 30000);
+    view = MetamobTrades();
+    Check(Sent() == 12 && view.status == TradesStatus::Unavailable && !view.read && view.proposals.empty(), "No such list: nothing shown");
+    read = fakeNow.load();
+    TradeAt(read + 599999);
+    Check(Sent() == 12, "Asked again 10 min later only");
+    // The key forgotten: nothing usable, and its proposals go.
+    ForgetStoredKey();
+    Check(!MetamobTrades().usable && !MetamobKeyUsable(), "Forgotten: nothing usable at once");
+    Tick();
+    Said({KeyForgotten}, "Forgotten");
+    Trade(60000);
+    Check(Sent() == 12 && !MetamobTrades().usable && MetamobTrades().proposals.empty(), "Nothing more read");
+    Finish("trades first load");
+}
+
+// No Unity Ocre quest: the proposals are shown unnamed, and the quests are not
+// asked again at each reading. A refused key, an answer that does not read.
+void TradesWithoutNames() {
+    Begin(Folder("trades-unnamed"), true);
+    syncOn = false;
+    ExpectTrades(Json(Proposals({Proposal(90, "Bobby", {{Tofu.id, 2}}, {})})));
+    ExpectQuests({});
+    Trade();
+    auto view = MetamobTrades();
+    Check(Sent() == 2 && view.read && view.proposals.size() == 1 && view.proposals[0].given[0].name.empty() &&
+        Logged("METAMOB_TRADES proposals=1 named=0"), "No quest: read, unnamed");
+    Said({"Metamob : 1 proposition d’échange en attente."}, "Told all the same");
+    auto read = fakeNow.load();
+    ExpectTrades(Json(Proposals({Proposal(91, "Carla", {}, {{Tofu.id, 1}}), Proposal(90, "Bobby", {{Tofu.id, 2}}, {})})));
+    TradeAt(read + 60000);
+    Check(Sent() == 3, "The quests are not asked again a minute later");
+    Said({NewTrade("Carla", "rien", "monstre n° " + std::to_string(Tofu.id))}, "A new one, unnamed");
+    // 10 min after that try: the quest is there now, and the names with it.
+    ExpectTrades(Json(Proposals({Proposal(91, "Carla", {}, {{Tofu.id, 1}})})));
+    ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
+    ExpectList(Slug);
+    TradeAt(read + 600000);
+    Check(Sent() == 7 && MetamobTrades().proposals[0].received[0].name == Tofu.name, "Named once the quest list reads");
+    Said({}, "Nothing new");
+    // An answer that is not the documented list, then Metamob's own refusal.
+    read = fakeNow.load();
+    ExpectTrades(Json("{\"data\":[{\"id\":92}]}"));
+    TradeAt(read + 60000);
+    view = MetamobTrades();
+    Check(view.status == TradesStatus::Unreadable && view.read && view.proposals.size() == 1 && Logged("METAMOB_BAD_ANSWER route=/trade-proposals"),
+        "An unreadable answer keeps the proposals");
+    read = fakeNow.load();
+    ExpectTrades(Status(403));
+    TradeAt(read + 30000);
+    Check(MetamobTrades().status == TradesStatus::Refused && MetamobTrades().usable, "Refused for this list only: the key stays usable");
+    read = fakeNow.load();
+    TradeAt(read + 599999);
+    Check(Sent() == 9, "A refusal waits 10 min");
+    Said({}, "Failures are silent");
+    Finish("trades without names");
+
+    Begin(Folder("trades-nokey"), false);
+    for (int i = 0; i < 3; ++i) Trade(60000);
+    Check(Sent() == 0 && !MetamobTrades().usable && !MetamobKeyUsable(), "No key: nothing read, nothing usable");
+    Finish("trades without key");
+}
+
 void Threaded() {
     Begin(Folder("thread"), false);
     metamob::testing::SetClock(nullptr, nullptr, nullptr);
@@ -3358,6 +3536,8 @@ int main() {
         KraloveChanges();
         KraloveWithChat();
         KraloveThreaded();
+        TradesFirstLoad();
+        TradesWithoutNames();
         Threaded();
         NoPrivateData();
         std::filesystem::remove_all(root);

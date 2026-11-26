@@ -368,6 +368,68 @@ std::vector<Kralove> ParseKralove(std::string_view body) {
         return openings;
     });
 }
+TradePage ParseTradeProposals(std::string_view body) {
+    return Read(body, [](const Json& json) {
+        const auto& data = Field(json, "data");
+        if (!data.is_array() || data.size() > MaxTrades) throw std::runtime_error("Réponse Metamob inattendue.");
+        const auto side = [](const Json& list) {
+            if (!list.is_array() || list.size() > MaxTradeMonsters) throw std::runtime_error("Réponse Metamob inattendue.");
+            std::vector<TradeMonster> monsters;
+            std::set<int64_t> ids;
+            for (const auto& item : list) {
+                TradeMonster monster;
+                monster.id = Id(Field(item, "monster_id"));
+                monster.quantity = Count(Field(item, "quantity"), 1);
+                if (!ids.insert(monster.id).second) throw std::runtime_error("Monstre Metamob en double.");
+                monsters.push_back(std::move(monster));
+            }
+            return monsters;
+        };
+        TradePage page;
+        std::set<int64_t> ids;
+        for (const auto& item : data) {
+            TradeProposal proposal;
+            proposal.id = Id(Field(item, "id"));
+            if (!ids.insert(proposal.id).second) throw std::runtime_error("Proposition Metamob en double.");
+            proposal.sender = SafeUsername(FreeText(Field(item, "sender")));
+            if (proposal.sender.empty()) throw std::runtime_error("Texte Metamob invalide.");
+            const auto& status = Field(item, "status");
+            if (!status.is_string()) throw std::runtime_error("Réponse Metamob inattendue.");
+            const auto& state = status.get_ref<const std::string&>();
+            const auto& created = Field(item, "created_at");
+            const auto at = created.is_string() ? UtcSeconds(created.get_ref<const std::string&>()) : std::nullopt;
+            if (!at) throw std::runtime_error("Date Metamob invalide.");
+            proposal.createdAt = *at;
+            proposal.given = side(Field(item, "monsters_given"));
+            proposal.received = side(Field(item, "monsters_received"));
+            if (const auto* server = Nullable(item, "server")) {
+                try { proposal.server = Label(Field(*server, "name"), 128); } catch (const std::runtime_error&) {}
+            }
+            if (const auto* quest = Nullable(item, "sender_quest")) {
+                if (const auto* name = Nullable(*quest, "character_name")) proposal.character = SafeText(FreeText(*name), MaxTradeCharacter);
+            }
+            if (const auto* applications = Nullable(item, "applications")) {
+                if (!applications->is_array() || applications->size() > 2) throw std::runtime_error("Réponse Metamob inattendue.");
+                for (const auto& application : *applications)
+                    if (SafeUsername(FreeText(Field(application, "username"))) == proposal.sender) proposal.senderApplied = true;
+            }
+            if (const auto* read = Nullable(item, "read_at")) {
+                if (!read->is_string()) throw std::runtime_error("Date Metamob invalide.");
+                proposal.read = true;
+            }
+            proposal.halfApplied = state == "half_applied";
+            if (state != "pending" && !proposal.halfApplied) continue; // completed or cancelled meanwhile: not an open one
+            page.proposals.push_back(std::move(proposal));
+        }
+        if (const auto* pagination = Nullable(json, "pagination")) {
+            if (const auto* more = Nullable(*pagination, "has_more")) {
+                if (!more->is_boolean()) throw std::runtime_error("Pagination Metamob incohérente.");
+                page.more = more->get<bool>();
+            }
+        }
+        return page;
+    });
+}
 std::string QuantityBody(int quantity) {
     if (quantity < 0 || quantity > MaxQuantity) throw std::runtime_error("Quantité Metamob hors limites.");
     return Json{{"quantity", quantity}}.dump();

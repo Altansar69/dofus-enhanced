@@ -175,6 +175,7 @@ Settings Settings::Read(const std::filesystem::path& path, bool* autoLoadSpecifi
             else if (key == "dimensionChoices" && value == 1) dimensionChoices = true;
             else if (key == "statsEnabled" && (value == 0 || value == 1)) settings.statsEnabled = value != 0;
             else if (key == "statsButton" && (value == 0 || value == 1)) settings.statsButton = value != 0;
+            else if (key == "metamobTradesNotify" && (value == 0 || value == 1)) settings.metamobTradesNotify = value != 0;
             else if (key == "perfOverlayX" && ValidPerfOverlayPlace(value)) settings.perfOverlayX = value;
             else if (key == "perfOverlayY" && ValidPerfOverlayPlace(value)) settings.perfOverlayY = value;
             else if (key == "perfOverlayScaleX" && ValidPerfOverlayScale(value)) { settings.perfOverlayScaleX = value; perfOverlayScaleXRead = true; }
@@ -339,6 +340,9 @@ void Settings::Save(const std::filesystem::path& path, bool withMetamobSync) con
              << "\ncoordsWorldMiniMapMode=" << coordsWorldMiniMapMode << "\ncoordsWorldMiniMap=" << (coordsWorldMiniMapMode != 0 ? 1 : 0)
              << "\ndimensionChoices=1";
         file << "\nstatsEnabled=" << (statsEnabled ? 1 : 0) << "\nstatsButton=" << (statsButton ? 1 : 0);
+        // 1.22.0 « Échanges Metamob »: the chat notices of the new trade proposals.
+        // A file without it (before 1.22.0) tells them.
+        file << "\nmetamobTradesNotify=" << (metamobTradesNotify ? 1 : 0);
         // 1.16.1: the top-bar buttons of Capture d’âme, the treasure hunt and the
         // notebook. A file without them (before 1.16.1) shows all three.
         file << "\nsoulButton=" << (soulButton ? 1 : 0) << "\ntreasureButton=" << (treasureButton ? 1 : 0)

@@ -1,6 +1,7 @@
 #include "metamob/metamob-sync.hpp"
 #include "souls/chat-soul-data.hpp"
 #include "metamob/metamob-data.hpp"
+#include "metamob/trades-format.hpp"
 #include <windows.h>
 #include <algorithm>
 #include <atomic>
@@ -113,6 +114,25 @@ constexpr int64_t KraloveDaysBack = 7;
 // The calendar asks at every pump while its row is shown: a second without it
 // is a closed calendar, never read for.
 constexpr uint64_t KraloveWantedMs = 1000;
+// « Échanges Metamob »: the open proposals received, the newest 50, read every
+// minute while the option asked within the last five seconds; « Actualiser »
+// at most every five seconds. The names of their monsters come from the quest
+// list: when it cannot be read, tried again 10 min later.
+constexpr char TradesRoute[] = "/trade-proposals", TradesPath[] = "/trade-proposals?direction=received&status=open&limit=50";
+constexpr uint64_t TradesRefreshMs = 60000, TradesWantedMs = 5000, TradesAgainMs = 5000;
+constexpr size_t MaxTradeNotices = 3, MaxTradeNames = 4000, MaxTradesSeen = 2000;
+// A new proposal as its notice tells it: each side's first three monsters.
+std::string NewTradeText(const TradeProposal& proposal) {
+    return "Metamob : nouvelle proposition d’échange de « " + proposal.sender + " » : tu reçois " + TradeSideText(proposal.given, 3) +
+        " ; tu donnes " + TradeSideText(proposal.received, 3) + ".";
+}
+std::string MoreTradesText(size_t count) {
+    return "Metamob : " + std::to_string(count) + (count > 1 ? " autres nouvelles propositions d’échange." : " autre nouvelle proposition d’échange.");
+}
+std::string WaitingTradesText(size_t count, bool more) {
+    if (count == 1 && !more) return "Metamob : 1 proposition d’échange en attente.";
+    return std::string("Metamob : ") + (more ? "plus de " : "") + std::to_string(count) + " propositions d’échange en attente.";
+}
 
 uint64_t RealNow() { return GetTickCount64(); }
 int64_t RealEpoch() {
@@ -270,6 +290,15 @@ struct KraloveRead {
     int64_t fromDay = 0;              // the first day asked
     std::vector<Kralove> openings;    // that server's only
 };
+// The reading of the trade proposals received, handed to the game thread with
+// the job like the calendar's (Loading: nothing learnt, no key then).
+struct TradesRead {
+    std::optional<KeyFile> file;      // the key file it was read with (read before the key)
+    TradesStatus status = TradesStatus::Loading;
+    std::vector<TradeProposal> proposals;
+    bool more = false;
+    bool namesTried = false, named = false; // the quest list was asked for their names; it was read
+};
 struct Job {
     Book book;
     std::optional<Secret> submit;   // a key to verify with GET /me, then store
@@ -281,6 +310,9 @@ struct Job {
     int64_t kraloveFromDay = 0;     // from that day (DayNumber), sent as kraloveFrom (YYYY-MM-DD)
     std::string kraloveFrom;
     std::optional<KraloveRead> kraloveRead; // what that reading found, taken once the worker has ended
+    bool trades = false;            // read the trade proposals received (never while a capture waits)
+    bool tradeNames = false;        // and name their monsters from the quest list
+    std::optional<TradesRead> tradesRead; // what that reading found, taken once the worker has ended
     std::optional<KeyFile> check;   // the key row's check of this key file (CheckStoredKey)
     bool told = false;              // that check told the key's status (read once the worker has ended)
     std::filesystem::path keyPath;
@@ -867,6 +899,85 @@ void ReadKralove(Job& job) {
     if (ok) Log("METAMOB_KRALOVE openings=" + std::to_string(count));
     else Log(std::string("METAMOB_KRALOVE_FAILED reason=") + failure);
 }
+// « Échanges Metamob »: the open proposals the account received, read afresh
+// and silently (fixed log codes; the game thread tells the new ones). Their
+// monsters are then named from the list of the character's Unity Ocre quest,
+// kept by the book for the session: no quest, or a list that cannot be read,
+// leaves them unnamed and never fails the reading. The game thread keeps what
+// it found (KeepTrades) and decides when to read again.
+void ReadTrades(Job& job) {
+    auto& book = job.book;
+    TradesRead read;
+    const char* failure = "error";
+    try {
+        read.file = Identity(job.keyPath); // read first: a key saved meanwhile is never taken for the one loaded
+        std::optional<Secret> key;
+        try { key = LoadKey(job.keyPath); }
+        catch (...) { job.Found(KeyStatus::Unreadable, read.file); read.status = TradesStatus::KeyUnreadable; }
+        if (!key) failure = "key"; // forgotten or unreadable: nothing is sent
+        else {
+            Session s{job, book, *key, read.file};
+            s.listing = true; // silent: a failure halts, untold; the game thread spaces the next try
+            try {
+                if (job.forgetting.load()) throw Halt{}; // nothing more is sent with a key being forgotten
+                ++s.requests;
+                auto response = Send(job, *key, "GET", TradesPath, TradesRoute);
+                if (job.cancelled.load()) throw Halt{};
+                const bool answered = response.status >= 200 && response.status < 300 && response.json;
+                const bool refused = KeyRefusal(response);
+                if (answered) Accepted(s);
+                else if (response.status == 429) Limit(s, response);
+                else if (!refused && (response.status != 404 || !response.json)) Backoff(s);
+                if (refused) {
+                    // Refused for this list only: the key itself is judged by the quests and the captures.
+                    read.status = TradesStatus::Refused;
+                    failure = "refused";
+                } else if (!answered) {
+                    read.status = TradesStatus::Unavailable; // Metamob's own 404: no such list on its API
+                    failure = "unavailable";
+                } else {
+                    std::optional<TradePage> page;
+                    try { page = ParseTradeProposals(response.body); } catch (...) {}
+                    if (!page) {
+                        Log(std::string("METAMOB_BAD_ANSWER route=") + TradesRoute);
+                        read.status = TradesStatus::Unreadable;
+                        failure = "answer";
+                    } else {
+                        read.proposals = std::move(page->proposals);
+                        read.more = page->more;
+                        read.status = TradesStatus::Ready;
+                    }
+                }
+            } catch (const Halt&) {
+                read.status = s.refused ? TradesStatus::Refused : s.limited ? TradesStatus::Busy :
+                    s.bad ? TradesStatus::Unreadable : TradesStatus::Unreachable;
+                failure = s.refused ? "refused" : s.limited ? "busy" : s.bad ? "answer" : "request";
+            }
+            if (read.status == TradesStatus::Ready && job.tradeNames && !read.proposals.empty() && !job.cancelled.load()) {
+                read.namesTried = true;
+                try {
+                    if (const auto slug = QuestSlug(s, job.character)) {
+                        std::map<int64_t, std::string> names;
+                        for (const auto& monster : Monsters(s, *slug)) names.emplace(monster.id, monster.name);
+                        for (auto& proposal : read.proposals)
+                            for (auto* side : {&proposal.given, &proposal.received})
+                                for (auto& monster : *side)
+                                    if (const auto found = names.find(monster.id); found != names.end()) monster.name = found->second;
+                        read.named = true;
+                    }
+                } catch (const Halt&) {
+                } catch (const QuestGone&) { book.quests.reset(); book.monsters.clear(); }
+            }
+            if (s.askQuestsAgain) book.quests.reset();
+        }
+    } catch (...) { read.status = TradesStatus::Unreachable; read.proposals.clear(); failure = "error"; }
+    const auto count = read.proposals.size();
+    const bool ok = read.status == TradesStatus::Ready;
+    const bool named = read.named;
+    job.tradesRead = std::move(read); // always handed back: the game thread spaces the next reading
+    if (ok) Log("METAMOB_TRADES proposals=" + std::to_string(count) + " named=" + (named ? "1" : "0"));
+    else Log(std::string("METAMOB_TRADES_FAILED reason=") + failure);
+}
 // Options › « Enregistrer »: GET /v1/me with the candidate key. Refused by
 // Metamob (its JSON 401/403): nothing stored. Otherwise stored, verified or not
 // (Metamob unreachable, or a page that is not its answer).
@@ -942,6 +1053,8 @@ void Work(Job& job) noexcept {
         if (job.listing && !job.cancelled.load() && !job.forgetting.load() && timing.now() >= job.book.notBefore) ReadCatalog(job);
         // The calendar's openings, likewise; after a 429 of the list just read, at its Retry-After.
         if (job.kralove && !job.cancelled.load() && !job.forgetting.load() && timing.now() >= job.book.notBefore) ReadKralove(job);
+        // The trade proposals received, likewise.
+        if (job.trades && !job.cancelled.load() && !job.forgetting.load() && timing.now() >= job.book.notBefore) ReadTrades(job);
     } catch (...) {
         try { Log("METAMOB_WORKER_ERROR"); } catch (...) {}
     }
@@ -982,6 +1095,26 @@ struct KraloveCache {
 };
 // Changes with the calendar's copy (KraloveView::version), across Install and Restore too.
 uint64_t kraloveVersion = 1;
+// The window's copy of the trade proposals received (game thread only), for
+// the current key file. seen: the proposals a reading already held, so a later
+// one tells only the new ones. names: the monsters named so far, for a reading
+// whose quest list could not be read.
+struct TradesCache {
+    TradesStatus status = TradesStatus::Loading;
+    bool read = false;                 // proposals read; kept through passing failures
+    std::vector<TradeProposal> proposals;
+    bool more = false;
+    std::set<int64_t> seen;
+    std::map<int64_t, std::string> names;
+    bool named = true;                 // the last try to name them read the quest list (true before any)
+    uint64_t namesNext = 0;            // after one that did not: no new try before
+    int failures = 0;                  // passing failures in a row: tried again 30 s later, twice longer each time
+    uint64_t next = 0, readAt = 0;     // no reading before; the last one kept
+    uint64_t refreshedAt = 0;          // « Actualiser » last obeyed
+    bool refreshed = false;
+};
+// Changes with that copy (TradesView::version), across Install and Restore too.
+uint64_t tradesVersion = 1;
 // Game-thread state. While a worker runs it owns the book; captures wait in the inbox.
 struct State {
     bool installed = false;
@@ -1015,6 +1148,11 @@ struct State {
     KraloveCache kralove;
     bool kraloveWanted = false;
     uint64_t kraloveWantedAt = 0;
+    // « Échanges Metamob »: the proposals received, when the option last asked
+    // for them and whether the new ones are told.
+    TradesCache trades;
+    bool tradesWanted = false, tradesNotify = false;
+    uint64_t tradesWantedAt = 0;
 };
 State state;
 // A cancelled worker that has not ended yet keeps a new one from starting:
@@ -1056,6 +1194,12 @@ void Unlist() {
     state.kralove = KraloveCache{};
     ++kraloveVersion;
 }
+// The trade proposals go with the key they were read with (another key file, a
+// forget), never with the character: they are the account's.
+void Untrade() {
+    state.trades = TradesCache{};
+    ++tradesVersion;
+}
 // The key file seen now. Another one than the known one (saved, replaced or
 // forgotten, here or by another client) is a key not checked yet, or none.
 void Track(const KeyFile& file) {
@@ -1063,6 +1207,7 @@ void Track(const KeyFile& file) {
     state.known = Known{file, file.present ? KeyStatus::Saved : KeyStatus::None};
     state.check = false;
     Unlist();
+    Untrade();
 }
 // What a worker learnt holds for the key file it read, if that file is still there.
 void Learn(const Known& found) {
@@ -1202,6 +1347,73 @@ void KeepKralove(KraloveRead read) {
     kralove.failures = std::min(kralove.failures + 1, 1000);
     kralove.next = now + std::min<uint64_t>(BackoffCapMs, BackoffMs << std::min(kralove.failures - 1, 5));
 }
+// The proposals are read while the option asked for them within the last five
+// seconds, with a usable key: at once the first time, then every minute.
+bool TradesDue(uint64_t now) {
+    if (!state.tradesWanted || (now >= state.tradesWantedAt && now - state.tradesWantedAt >= TradesWantedMs)) return false;
+    return Usable() && now >= state.trades.next;
+}
+// A reading of the proposals handed back by its worker. One made with another
+// key file than the one there now is dropped (Track cleared the copy). Read:
+// kept, read again a minute later; with the notices on, the first reading of a
+// key tells how many are waiting (nothing when none) and a later one tells each
+// proposal it is the first to hold (three at most, the others counted). No such
+// list on the API: asked again 10 min later; the key refused or unreadable
+// waits for a usable key. A passing failure keeps what was read: 30 s, then
+// twice longer up to 15 min (a 429 also holds every request until its Retry-After).
+void KeepTrades(TradesRead read) {
+    const auto file = Identity(state.keyPath);
+    if (file) Track(*file);
+    if (file && read.file && *read.file != *file) return;
+    const auto now = timing.now();
+    auto& trades = state.trades;
+    ++tradesVersion;
+    if (read.namesTried) {
+        trades.named = read.named;
+        if (!read.named) trades.namesNext = now + RefreshMs;
+    }
+    switch (read.status) {
+    case TradesStatus::Ready: {
+        if (trades.names.size() > MaxTradeNames) trades.names.clear();
+        for (auto& proposal : read.proposals)
+            for (auto* side : {&proposal.given, &proposal.received})
+                for (auto& monster : *side) {
+                    if (!monster.name.empty()) trades.names[monster.id] = monster.name;
+                    else if (const auto known = trades.names.find(monster.id); known != trades.names.end()) monster.name = known->second;
+                }
+        if (state.tradesNotify) {
+            if (!trades.read) {
+                if (!read.proposals.empty()) Post(WaitingTradesText(read.proposals.size(), read.more));
+            } else {
+                size_t told = 0, others = 0;
+                for (const auto& proposal : read.proposals) {
+                    if (trades.seen.count(proposal.id)) continue;
+                    if (told < MaxTradeNotices) { Post(NewTradeText(proposal)); ++told; }
+                    else ++others;
+                }
+                if (others) Post(MoreTradesText(others));
+            }
+        }
+        if (trades.seen.size() > MaxTradesSeen) trades.seen.clear();
+        for (const auto& proposal : read.proposals) trades.seen.insert(proposal.id);
+        trades.status = read.status; trades.read = true; trades.proposals = std::move(read.proposals); trades.more = read.more;
+        trades.failures = 0; trades.next = now + TradesRefreshMs; trades.readAt = now;
+        return;
+    }
+    case TradesStatus::Unavailable:
+        trades.status = read.status; trades.read = false; trades.proposals.clear(); trades.more = false;
+        trades.failures = 0; trades.next = now + RefreshMs;
+        return;
+    case TradesStatus::Refused: case TradesStatus::KeyUnreadable:
+        trades.status = read.status; trades.next = now + RefreshMs;
+        return;
+    default:
+        break;
+    }
+    if (read.status != TradesStatus::Loading) trades.status = read.status;
+    trades.failures = std::min(trades.failures + 1, 1000);
+    trades.next = now + std::min<uint64_t>(BackoffCapMs, BackoffMs << std::min(trades.failures - 1, 5));
+}
 // A game monster's chat part: none (outside L’éternelle moisson, unknown to the
 // game view, not in the quest, no usable key), unknown (« ? »: the list not read
 // yet, or its last reading failed, maybe for a lasting quest problem), or its
@@ -1289,6 +1501,7 @@ void Collect() {
         state.known.status = KeyStatus::Unverified;
     if (job->listed) Keep(std::move(*job->listed));
     if (job->kraloveRead) KeepKralove(std::move(*job->kraloveRead));
+    if (job->tradesRead) KeepTrades(std::move(*job->tradesRead));
     if (job->off.load()) Discard(false); // turned off while it ran: nothing of it is resumed
 }
 void Start(bool enabled) {
@@ -1304,7 +1517,9 @@ void Start(bool enabled) {
     // The key row's check: dropped once its key file's status is known, never before a pause ends.
     if (state.known.status != KeyStatus::Saved) state.check = false;
     const bool check = state.check && now >= state.book.notBefore;
-    if (!due && !check && !listing && !kralove && !state.submit && !state.forget) return;
+    // The trade proposals received: likewise.
+    const bool trades = Units(state.book) == 0 && !state.submit && !state.forget && now >= state.book.notBefore && TradesDue(now);
+    if (!due && !check && !listing && !kralove && !trades && !state.submit && !state.forget) return;
     if (activeJob && !activeJob->done.load()) return;
     auto job = std::make_shared<Job>();
     job->book = std::move(state.book);
@@ -1316,7 +1531,11 @@ void Start(bool enabled) {
     job->cycle = due;
     job->listing = listing;
     job->kralove = kralove;
-    if (listing || kralove) job->character = Character();
+    job->trades = trades;
+    // Their monsters' names: from the quest list while it reads (kept by the
+    // book), else tried again 10 min after the try that could not read it.
+    job->tradeNames = trades && (state.trades.named || now >= state.trades.namesNext);
+    if (listing || kralove || trades) job->character = Character();
     if (kralove) {
         job->kraloveFromDay = KraloveFromDay();
         job->kraloveFrom = DateText(job->kraloveFromDay);
@@ -1352,6 +1571,7 @@ void InstallSync(const std::filesystem::path& settingsPath, Transport transport,
         state.game = std::move(game);
         state.installed = static_cast<bool>(state.transport);
         ++kraloveVersion;
+        ++tradesVersion;
         if (const auto file = Identity(state.keyPath)) Track(*file); // a key file there: Saved until checked
         Log(state.installed ? "METAMOB_SYNC_READY" : "METAMOB_SYNC_UNAVAILABLE");
     } catch (...) {
@@ -1388,6 +1608,7 @@ void RestoreSync() {
         }
         state = State{}; // a key not verified yet is wiped; a running worker ends on its own
         ++kraloveVersion;
+        ++tradesVersion;
     } catch (...) {}
 }
 void EnqueueCapture(Capture capture) {
@@ -1431,6 +1652,7 @@ void ForgetStoredKey() {
         state.submit.reset(); // a key not verified yet is dropped as well
         state.forget = true;
         Unlist();             // and the chat part's list read with it
+        Untrade();            // and the trade proposals
         state.check = false;  // and a check not started yet
         if (state.job) state.job->forgetting.store(true); // a running cycle sends nothing more with that key
     } catch (...) { Error("METAMOB_KEY_ERROR"); }
@@ -1499,6 +1721,41 @@ KraloveView MetamobKralove() {
         view.fromDay = kralove.fromDay;
         view.openings = kralove.openings;
         view.version = kraloveVersion;
+        return view;
+    } catch (...) { return {}; }
+}
+bool MetamobKeyUsable() {
+    try { return state.installed && Usable(); } catch (...) { return false; }
+}
+void WantTrades(bool notify) {
+    if (!state.installed) return;
+    state.tradesWanted = true;
+    state.tradesNotify = notify;
+    state.tradesWantedAt = timing.now();
+}
+void RefreshTrades() {
+    try {
+        if (!state.installed) return;
+        auto& trades = state.trades;
+        const auto now = timing.now();
+        if (trades.refreshed && now >= trades.refreshedAt && now - trades.refreshedAt < TradesAgainMs) return;
+        trades.refreshed = true;
+        trades.refreshedAt = now;
+        trades.next = std::min(trades.next, now);
+    } catch (...) { Error("METAMOB_SYNC_ERROR"); }
+}
+TradesView MetamobTrades() {
+    try {
+        TradesView view;
+        if (!state.installed || !Usable()) return view;
+        const auto& trades = state.trades;
+        view.usable = true;
+        view.status = trades.status;
+        view.read = trades.read;
+        view.proposals = trades.proposals;
+        view.more = trades.more;
+        view.readAt = trades.readAt;
+        view.version = tradesVersion;
         return view;
     } catch (...) { return {}; }
 }

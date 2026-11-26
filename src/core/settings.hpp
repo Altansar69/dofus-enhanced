@@ -109,6 +109,9 @@ struct Settings {
     int coordsWorldMapMode = 1, coordsWorldMiniMapMode = 1;
     bool statsEnabled = true; // Statistiques : compter les statistiques de mes personnages (1.15.0)
     bool statsButton = true; // Statistiques : bouton de la fenêtre des statistiques dans la barre du haut (1.16.0)
+    // Échanges Metamob (1.22.0) : une ligne dans le chat pour chaque nouvelle
+    // proposition d'échange reçue. Se change dans la fenêtre « Échanges Metamob ».
+    bool metamobTradesNotify = true;
     // Performances : chaque case ajoute sa partie à l'affichage, qui apparaît dès
     // qu'une des trois est cochée (1.16.0 ; avant, le GPU et le disque ne
     // faisaient que compléter perfOverlay).

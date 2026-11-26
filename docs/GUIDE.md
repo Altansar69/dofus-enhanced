@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.14.18**, version **1.21.0**.
+Mod expérimental pour **Dofus Unity 3.7.14.18**, version **1.22.0**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -829,6 +829,42 @@ côté des réglages, et n’est jamais affichée, journalisée ni publiée. Sup
 avec la corbeille, elle reste valable sur Metamob : régénère-la sur le site pour
 la révoquer. Les captures faites pendant que Metamob est injoignable sont
 renvoyées automatiquement pendant la session.
+
+## Échanges Metamob
+
+Depuis la 1.22.0, avec une clé Metamob enregistrée (voir « Metamob »), un bouton
+**Échanges Metamob** (deux flèches) apparaît en haut à droite de l’écran, avec
+ceux du mod. Il ouvre une fenêtre du jeu, déplaçable et redimensionnable, qui
+liste les **propositions d’échange que d’autres joueurs t’ont envoyées** sur
+Metamob et qui attendent encore, la plus récente en premier :
+
+- qui la propose (son personnage à contacter et son serveur quand Metamob les
+  donne) et depuis quand ;
+- où elle en est : nouvelle, en attente de ta réponse, ou déjà appliquée d’un
+  côté ;
+- **Tu reçois** et **Tu donnes** : les monstres de chaque côté, avec leur
+  quantité. Les noms viennent de ta quête Ocre Dofus Unity ; sans cette quête,
+  un monstre est désigné par son numéro Metamob.
+
+La première ligne dit ce que la dernière lecture a trouvé, et pourquoi quand
+Metamob ne répond pas. Trois boutons :
+
+- **Actualiser** relit tout de suite (au plus une fois toutes les cinq
+  secondes) ; sinon les propositions sont relues seules chaque minute.
+- **Notifications : oui / non** (oui par défaut) : le chat t’écrit une ligne
+  pour chaque nouvelle proposition, par exemple « Metamob : nouvelle proposition
+  d’échange de « Bobby » : tu reçois 2 × Tofumanchou l’Empereur ; tu donnes
+  Tiwa’Missou le Gateux. », et à la connexion le nombre de propositions en
+  attente (rien s’il n’y en a pas). Ces lignes ne sont visibles que de toi.
+  Sur « non », les propositions ne sont lues que pendant que la fenêtre est
+  ouverte.
+- **Ouvrir Metamob** ouvre tes messages sur metamob.fr dans le navigateur.
+
+Le mod ne fait que lire : il **n’accepte, ne refuse et n’envoie jamais** de
+proposition, et ne marque rien comme lu. Tout cela se fait sur metamob.fr. Seules
+les 50 propositions les plus récentes sont listées. La fenêtre se ferme avec sa
+croix, son bouton, ou « Masquer le module » dans son menu ⋯ ; elle se ferme
+aussi à la déconnexion.
 
 ## Kralamoures dans le calendrier
 

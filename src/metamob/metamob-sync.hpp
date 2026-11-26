@@ -136,5 +136,46 @@ struct KraloveView {
 // every pump while it is shown, and only then.
 void WantKralove();
 KraloveView MetamobKralove();
+// « Échanges Metamob » (trades-window.cpp), game thread, cache only: the open
+// trade proposals other users sent to the account (GET /v1/trade-proposals,
+// direction=received, status=open, the newest 50), each monster named from the
+// quest list of the character's Unity Ocre quest when there is one (kept for
+// the session; unnamed otherwise). Read at once the first time, then every
+// minute while WantTrades was called within the last five seconds; never while
+// a capture waits, a key is being saved or forgotten, nor without a usable
+// key. Failures are silent: tried again 30 s later, twice longer each time up
+// to 15 min; a 429 also waits for its Retry-After. Nothing is ever written.
+enum class TradesStatus {
+    Loading,        // not read yet
+    Ready,          // read: proposals below
+    Unreachable,    // no answer, 5xx, or a page that is not Metamob's JSON
+    Busy,           // 429: read again after its Retry-After
+    Refused,        // the key refused (Metamob's JSON 401/403)
+    KeyUnreadable,  // the key file cannot be decrypted on this Windows account
+    Unavailable,    // Metamob's JSON 404: no such list on its API
+    Unreadable,     // a JSON answer that does not read as the documented list
+};
+struct TradesView {
+    bool usable = false;        // a usable key (see KraloveView): nothing below otherwise
+    TradesStatus status = TradesStatus::Loading; // the last reading's outcome
+    bool read = false;          // the proposals below come from a reading (kept through passing failures)
+    std::vector<TradeProposal> proposals; // newest first
+    bool more = false;          // older open proposals were left out
+    uint64_t readAt = 0;        // the sync's clock (milliseconds) at that reading
+    uint64_t version = 0;       // changes whenever the reading kept here changes
+};
+// The option is on and the character is in the world: keep the proposals fresh
+// (see above). notify: a proposal not seen by the previous reading is told in
+// the chat (« Metamob : nouvelle proposition d’échange de … »), and the first
+// reading of a key tells how many are waiting (nothing when none); off, the
+// readings stay silent. Called at every pump while the option is on.
+void WantTrades(bool notify);
+// A usable key is stored (the views' usable), its file looked at again at most
+// every second: the window's top-bar button is there with one.
+bool MetamobKeyUsable();
+// The window's « Actualiser »: the next reading comes as soon as the pauses
+// allow (at most one every five seconds).
+void RefreshTrades();
+TradesView MetamobTrades();
 bool SyncCleanupPending();
 }

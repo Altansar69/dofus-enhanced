@@ -6,6 +6,7 @@
 #include "notebook/notebook-panel.hpp"
 #include "souls/soul-helper.hpp"
 #include "stats/stats-window.hpp"
+#include "metamob/trades-window.hpp"
 #include "treasure/treasure-launch.hpp"
 #include "ui/perf-overlay.hpp"
 #include "ui/preset-windows.hpp"
@@ -18,6 +19,7 @@ std::vector<std::string> calls;
 void RestorePerfOverlay() { calls.push_back("perf-overlay"); }
 void RestoreTreasurePanel() { calls.push_back("treasure"); }
 void RestoreStatsWindow() { calls.push_back("stats"); }
+void RestoreTradesWindow() { calls.push_back("trades"); }
 void RestorePresetWindows() { calls.push_back("presets"); }
 void CloseNotebookPanelOffWorld() { calls.push_back("notebook"); }
 void HideSoulHelper() { calls.push_back("soul"); }
@@ -25,7 +27,7 @@ void HideSoulHelper() { calls.push_back("soul"); }
 int main() {
     try {
         CloseWindowsOffWorld();
-        const std::vector<std::string> expected{"perf-overlay", "treasure", "stats", "presets", "notebook", "soul"};
+        const std::vector<std::string> expected{"perf-overlay", "treasure", "stats", "trades", "presets", "notebook", "soul"};
         if (calls != expected) throw std::runtime_error("Every window of the mod must close off the world");
         CloseWindowsOffWorld();
         if (calls.size() != 2 * expected.size()) throw std::runtime_error("Each pump off the world closes them again (a failed cleanup retries)");

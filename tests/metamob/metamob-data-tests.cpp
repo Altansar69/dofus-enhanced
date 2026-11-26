@@ -1,4 +1,5 @@
 #include "metamob/metamob-data.hpp"
+#include "metamob/trades-format.hpp"
 #include <windows.h>
 #include <climits>
 #include <iostream>
@@ -17,7 +18,7 @@ const std::string FakeKey = "TEST-KEY-0123456789-NOT-REAL", Marker = "Zorglub-Co
 const std::set<std::string> Fixed{"Réponse Metamob trop volumineuse.", "Réponse Metamob illisible.",
     "Réponse Metamob inattendue.", "Nombre Metamob invalide.", "Texte Metamob invalide.", "Quête Metamob invalide.",
     "Pagination Metamob incohérente.", "Monstre Metamob en double.", "Quantité Metamob hors limites.", "Date Metamob invalide.",
-    "Ouverture Metamob en double."};
+    "Ouverture Metamob en double.", "Proposition Metamob en double."};
 const std::string NoQuest = "Metamob : aucune quête Ocre Dofus Unity sur ton compte, rien n’a été modifié.";
 const std::string SeveralQuests = "Metamob : plusieurs quêtes Ocre sur ton compte ; indique le nom de ce personnage dans "
     "« Personnage à contacter » de la bonne quête.";
@@ -594,9 +595,99 @@ void Times() {
         Check(mine.DynamicDaylightTimeDisabled || !mine.TimeZoneKeyName[0] || shown(LocalTime(at)) == shown(LocalTime(at, mine.TimeZoneKeyName)), "This PC's local time");
 }
 
+// GET /v1/trade-proposals as the API documents it (2026-11), and the window's texts.
+void Trades() {
+    const std::string one = R"json({"id":57,"sender":"player1","recipient":"player2","status":"pending",
+        "server":{"id":1,"name":"Draconiros","community":"France","game_version":{"id":1,"name":"Dofus (Unity)"}},
+        "quest_template":{"id":1,"quest_type":{"id":1,"slug":"ocre","name":{"fr":"Ocre","en":"Ochre","es":"Ocre"}}},
+        "sender_quest":{"slug":"a1b2c3d4","character_name":"Iop-Main"},"recipient_quest":null,
+        "monsters_given":[{"monster_id":861,"quantity":2}],"monsters_received":[{"monster_id":1024,"quantity":1}],
+        "applications":[],"cancelled_at":null,"cancelled_by":null,"created_at":"2026-01-27T14:20:00Z",
+        "expires_at":"2026-02-26T14:20:00Z","read_at":null})json";
+    const auto list = [](const std::string& items, const char* more = "false") {
+        return "{\"data\":[" + items + "],\"pagination\":{\"has_more\":" + more + ",\"next_before_id\":null}}";
+    };
+    auto page = ParseTradeProposals(list(one));
+    Check(page.proposals.size() == 1 && !page.more, "One documented proposal");
+    const auto first = page.proposals[0];
+    Check(first.id == 57 && first.sender == "player1" && first.character == "Iop-Main" && first.server == "Draconiros" &&
+        !first.halfApplied && !first.senderApplied && !first.read && first.createdAt == At(2026, 1, 27, 14, 20, 0) &&
+        first.given.size() == 1 && first.given[0].id == 861 && first.given[0].quantity == 2 && first.given[0].name.empty() &&
+        first.received.size() == 1 && first.received[0].id == 1024 && first.received[0].quantity == 1, "Proposal fields; the names stay empty");
+    // Half applied by the sender and read; nulls; a status that is not open is left out.
+    const auto applied = With(With(With(one, "\"pending\"", "\"half_applied\""), "\"applications\":[]",
+        "\"applications\":[{\"username\":\"player1\",\"created_at\":\"2026-01-27T14:30:00Z\"}]"), "\"read_at\":null", "\"read_at\":\"2026-01-27T14:21:00Z\"");
+    const auto bare = With(With(With(With(one, "\"id\":57", "\"id\":58"), "\"server\":{\"id\":1,\"name\":\"Draconiros\",\"community\":\"France\",\"game_version\":{\"id\":1,\"name\":\"Dofus (Unity)\"}}",
+        "\"server\":null"), "\"sender_quest\":{\"slug\":\"a1b2c3d4\",\"character_name\":\"Iop-Main\"}", "\"sender_quest\":null"),
+        "\"monsters_given\":[{\"monster_id\":861,\"quantity\":2}]", "\"monsters_given\":[]");
+    const auto done = With(With(one, "\"id\":57", "\"id\":59"), "\"pending\"", "\"cancelled\"");
+    page = ParseTradeProposals(list(applied + "," + bare + "," + done, "true"));
+    Check(page.more && page.proposals.size() == 2 && page.proposals[0].halfApplied && page.proposals[0].senderApplied && page.proposals[0].read &&
+        page.proposals[1].id == 58 && page.proposals[1].server.empty() && page.proposals[1].character.empty() && page.proposals[1].given.empty(),
+        "Applied by the sender, read; null server and quest, an empty side; a cancelled one left out; older ones left");
+    Check(ParseTradeProposals(R"json({"data":[]})json").proposals.empty(), "No proposal, no pagination");
+    // A sender made safe; the contact character cut and never rich text.
+    page = ParseTradeProposals(list(With(With(one, "\"player1\"", "\"<b>Bob</b>\""), "\"Iop-Main\"", "\"<color=red>" + std::string(200, 'x') + "\"")));
+    Check(page.proposals[0].sender == "bBob/b" && page.proposals[0].character.size() <= MaxTradeCharacter &&
+        page.proposals[0].character.find('<') == std::string::npos, "Display-safe sender and character");
+    // Strict: what the window relies on.
+    Reject([&] { ParseTradeProposals(list(one + "," + one)); }, "The same proposal twice");
+    Reject([&] { ParseTradeProposals(list(With(one, "\"id\":57", "\"id\":0"))); }, "A proposal without a usable id");
+    Reject([&] { ParseTradeProposals(list(With(one, "\"sender\":\"player1\"", "\"sender\":\"\""))); }, "An empty sender");
+    Reject([&] { ParseTradeProposals(list(With(one, "\"sender\":\"player1\"", "\"sender\":null"))); }, "A null sender");
+    Reject([&] { ParseTradeProposals(list(With(one, "\"status\":\"pending\"", "\"status\":1"))); }, "A status that is no text");
+    Reject([&] { ParseTradeProposals(list(With(one, "2026-01-27T14:20:00Z", "2026-02-30T14:20:00Z"))); }, "An impossible date");
+    Reject([&] { ParseTradeProposals(list(With(one, "\"quantity\":2", "\"quantity\":0"))); }, "A monster without a quantity");
+    Reject([&] { ParseTradeProposals(list(With(one, "[{\"monster_id\":861,\"quantity\":2}]", "[{\"monster_id\":861,\"quantity\":2},{\"monster_id\":861,\"quantity\":1}]"))); },
+        "The same monster twice on a side");
+    Reject([&] { ParseTradeProposals(list(With(one, "\"monsters_given\":[{\"monster_id\":861,\"quantity\":2}]", "\"monsters_given\":{}"))); }, "A side that is no list");
+    Reject([&] { ParseTradeProposals(list(one, "1")); }, "has_more that is no boolean");
+    Reject([&] { ParseTradeProposals(R"json({"data":{}})json"); }, "Data that is no list");
+    {
+        std::string many;
+        for (int i = 0; i < 50; ++i) many += (i ? "," : "") + With(one, "\"id\":57", "\"id\":" + std::to_string(i + 1));
+        Check(ParseTradeProposals(list(many)).proposals.size() == 50, "The API's largest page");
+        Reject([&] { ParseTradeProposals(list(many + "," + With(one, "\"id\":57", "\"id\":51"))); }, "Over 50 proposals accepted");
+    }
+    // The texts of the window and of the notices.
+    TradeProposal shown = first;
+    shown.given = {{861, 2, "Tofumanchou l’Empereur"}, {862, 1, ""}, {863, 1, "Mob l’Éponge"}, {864, 3, "Bouftou Royal"}};
+    shown.received.clear();
+    Check(TradeSideText(shown.given, 3) == "2 × Tofumanchou l’Empereur, monstre n° 862, Mob l’Éponge et 1 autre" &&
+        TradeSideText(shown.given, 2) == "2 × Tofumanchou l’Empereur, monstre n° 862 et 2 autres" && TradeSideText({}, 3) == "rien" &&
+        TradeSideCount(shown.given) == 7, "A side: quantities, an unnamed monster, the rest counted");
+    Check(TradeReceiveText(shown) == "Tu reçois (7) : 2 × Tofumanchou l’Empereur, monstre n° 862, Mob l’Éponge, 3 × Bouftou Royal" &&
+        TradeGiveText(shown) == "Tu donnes (0) : rien", "Both sides as the window shows them");
+    const auto at = first.createdAt;
+    Check(AgeText(at, at + 59) == "à l’instant" && AgeText(at, at - 500) == "à l’instant" && AgeText(at, at + 60) == "il y a 1 min" &&
+        AgeText(at, at + 3599) == "il y a 59 min" && AgeText(at, at + 3600) == "il y a 1 h" && AgeText(at, at + 86399) == "il y a 23 h" &&
+        AgeText(at, at + 3 * 86400) == "il y a 3 j", "Ages");
+    Check(TradeTitle(first, at + 120) == "player1 (Iop-Main) · Draconiros · il y a 2 min" &&
+        TradeTitle(ParseTradeProposals(list(bare)).proposals[0], at) == "player1 · à l’instant", "Titles, with and without character and server");
+    TradeProposal state = first;
+    Check(TradeStateText(state) == "Nouvelle : en attente de ta réponse.", "Unread");
+    state.read = true; Check(TradeStateText(state) == "En attente de ta réponse.", "Read");
+    state.halfApplied = true; Check(TradeStateText(state) == "Appliquée de ton côté : en attente du sien.", "Applied by the user");
+    state.senderApplied = true; Check(TradeStateText(state) == "Déjà appliquée de son côté : il ne manque que le tien.", "Applied by the sender");
+    TradesView view;
+    Check(TradesSummary(view, 0).starts_with("Aucune clé Metamob utilisable"), "No key");
+    view.usable = true;
+    Check(TradesSummary(view, 0) == "Lecture des propositions d’échange…", "Loading");
+    view.status = TradesStatus::Unreachable;
+    Check(TradesSummary(view, 0) == "Metamob est injoignable, nouvel essai automatique.", "Never read, unreachable");
+    view.status = TradesStatus::Ready; view.read = true; view.readAt = 10000;
+    Check(TradesSummary(view, 12000) == "Aucune proposition d’échange en attente. Lu à l’instant.", "None");
+    view.proposals = {first};
+    Check(TradesSummary(view, 10000 + 180000) == "1 proposition d’échange reçue. Lu il y a 3 min.", "One");
+    view.proposals = {first, state}; view.more = true; view.status = TradesStatus::Busy;
+    Check(TradesSummary(view, 10000) == "2 propositions d’échange reçues. Seules les 50 plus récentes sont listées. Lu à l’instant. "
+        "Metamob demande d’attendre, nouvel essai automatique.", "Several, more left out, a passing failure after a reading");
+}
+
 int main() {
     try {
         Answers();
+        Trades();
         Hostile();
         Headers();
         Validators();
