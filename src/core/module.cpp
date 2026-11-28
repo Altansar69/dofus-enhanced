@@ -6,6 +6,7 @@
 #include "appearance/mode-policy.hpp"
 #include "loader/autoload.hpp"
 #include "core/version.hpp"
+#include "core/compat.hpp"
 #include "appearance/display-shortcut.hpp"
 #include "appearance/context-display.hpp"
 #include "souls/soul-helper.hpp"
@@ -521,6 +522,11 @@ static DWORD WINAPI Worker(void*) {
         Log("RUNTIME_SELF_TEST_BEGIN");
         api.SelfTest();
         Log("RUNTIME_SELF_TEST_OK handleBits=" + std::to_string(sizeof(GCHandle) * 8));
+        {
+            // Measurement only (compat.hpp): the hooks below keep their pinned addresses.
+            compat::Shadow shadow;
+            Log(compat::TryShadowCheck(shadow) ? "COMPAT_SHADOW " + compat::Describe(shadow) : std::string("COMPAT_SHADOW_FAULT"));
+        }
         module = new Module(ModulePath(selfModule).parent_path());
         if (MH_Initialize() != MH_OK) throw std::runtime_error("Cannot initialize hook library");
         auto compositor = api.Class("Core.dll", "Core.Engine.Compositor", "Compositor");

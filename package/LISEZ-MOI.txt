@@ -10,7 +10,16 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.22.0
+DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.22.1
+
+VERSION 1.22.1 : CONVERSATIONS ARCHIVÉES
+- Échanges Metamob : les propositions d’une conversation que tu as
+  archivée sur Metamob ne sont plus affichées, ni comptées, ni annoncées
+  dans le chat. Elles reviennent si la conversation redevient active.
+- Préparation des futures mises à jour de Dofus : au démarrage, le mod
+  mesure s’il retrouverait les fonctions du jeu par leur nom plutôt que
+  par leur adresse (ligne COMPAT_SHADOW de module.log). Simple mesure :
+  rien ne change en jeu.
 
 VERSION 1.22.0 : ÉCHANGES METAMOB
 - Nouvelle fenêtre « Échanges Metamob » (bouton aux deux flèches en haut à

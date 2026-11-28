@@ -102,6 +102,13 @@ std::vector<Kralove> ParseKralove(std::string_view body);
 // that is neither pending nor half_applied is left out (only the open ones are
 // asked for). The names stay empty. Fixed errors as the other parsers.
 TradePage ParseTradeProposals(std::string_view body);
+// GET /v1/conversations?status=archived: one page of the users whose
+// conversation the account archived (SafeUsername, as a proposal's sender),
+// the entries the page held and the total Metamob counts. A proposal lives in
+// the conversation with its sender: archived with it. Fixed errors as above.
+struct ArchivedPage { std::vector<std::string> users; size_t listed = 0; int total = 0; };
+constexpr size_t MaxConversations = 50; // the API's largest page
+ArchivedPage ParseArchivedConversations(std::string_view body);
 // Body of a single quantity update: {"quantity":N} (absolute value, 0..MaxQuantity).
 std::string QuantityBody(int quantity);
 // Retry-After as delay-seconds or as an HTTP date (relative to nowUnix),

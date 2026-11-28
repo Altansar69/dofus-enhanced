@@ -430,6 +430,20 @@ TradePage ParseTradeProposals(std::string_view body) {
         return page;
     });
 }
+ArchivedPage ParseArchivedConversations(std::string_view body) {
+    return Read(body, [](const Json& json) {
+        const auto& data = Field(json, "data");
+        if (!data.is_array() || data.size() > MaxConversations) throw std::runtime_error("Réponse Metamob inattendue.");
+        ArchivedPage page;
+        page.listed = data.size();
+        page.total = Count(Field(Field(json, "pagination"), "total"), 0);
+        for (const auto& item : data) {
+            auto user = SafeUsername(FreeText(Field(item, "username")));
+            if (!user.empty()) page.users.push_back(std::move(user));
+        }
+        return page;
+    });
+}
 std::string QuantityBody(int quantity) {
     if (quantity < 0 || quantity > MaxQuantity) throw std::runtime_error("Quantité Metamob hors limites.");
     return Json{{"quantity", quantity}}.dump();

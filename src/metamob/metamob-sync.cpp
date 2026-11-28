@@ -119,6 +119,11 @@ constexpr uint64_t KraloveWantedMs = 1000;
 // at most every five seconds. The names of their monsters come from the quest
 // list: when it cannot be read, tried again 10 min later.
 constexpr char TradesRoute[] = "/trade-proposals", TradesPath[] = "/trade-proposals?direction=received&status=open&limit=50";
+// A proposal lives in the conversation with its sender: those of a conversation
+// the account archived are left out, as on the site. The archived conversations
+// are read after the proposals, when there are any (ten pages at most).
+constexpr char ArchivedRoute[] = "/conversations", ArchivedPath[] = "/conversations?status=archived&limit=50&offset=";
+constexpr size_t MaxArchivedPages = 10;
 constexpr uint64_t TradesRefreshMs = 60000, TradesWantedMs = 5000, TradesAgainMs = 5000;
 constexpr size_t MaxTradeNotices = 3, MaxTradeNames = 4000, MaxTradesSeen = 2000;
 // A new proposal as its notice tells it: each side's first three monsters.
@@ -909,6 +914,7 @@ void ReadTrades(Job& job) {
     auto& book = job.book;
     TradesRead read;
     const char* failure = "error";
+    size_t hidden = 0; // proposals of archived conversations, left out
     try {
         read.file = Identity(job.keyPath); // read first: a key saved meanwhile is never taken for the one loaded
         std::optional<Secret> key;
@@ -918,10 +924,11 @@ void ReadTrades(Job& job) {
         else {
             Session s{job, book, *key, read.file};
             s.listing = true; // silent: a failure halts, untold; the game thread spaces the next try
-            try {
+            // One list of this reading: its answer, or nothing with the reading's status told.
+            const auto ask = [&](std::string path, const char* route) -> std::optional<Response> {
                 if (job.forgetting.load()) throw Halt{}; // nothing more is sent with a key being forgotten
                 ++s.requests;
-                auto response = Send(job, *key, "GET", TradesPath, TradesRoute);
+                auto response = Send(job, *key, "GET", std::move(path), route);
                 if (job.cancelled.load()) throw Halt{};
                 const bool answered = response.status >= 200 && response.status < 300 && response.json;
                 const bool refused = KeyRefusal(response);
@@ -932,20 +939,46 @@ void ReadTrades(Job& job) {
                     // Refused for this list only: the key itself is judged by the quests and the captures.
                     read.status = TradesStatus::Refused;
                     failure = "refused";
-                } else if (!answered) {
+                    return std::nullopt;
+                }
+                if (!answered) {
                     read.status = TradesStatus::Unavailable; // Metamob's own 404: no such list on its API
                     failure = "unavailable";
-                } else {
+                    return std::nullopt;
+                }
+                return response;
+            };
+            const auto unreadable = [&](const char* route) {
+                Log(std::string("METAMOB_BAD_ANSWER route=") + route);
+                read.status = TradesStatus::Unreadable;
+                failure = "answer";
+            };
+            try {
+                if (const auto response = ask(TradesPath, TradesRoute)) {
                     std::optional<TradePage> page;
-                    try { page = ParseTradeProposals(response.body); } catch (...) {}
-                    if (!page) {
-                        Log(std::string("METAMOB_BAD_ANSWER route=") + TradesRoute);
-                        read.status = TradesStatus::Unreadable;
-                        failure = "answer";
-                    } else {
-                        read.proposals = std::move(page->proposals);
-                        read.more = page->more;
-                        read.status = TradesStatus::Ready;
+                    try { page = ParseTradeProposals(response->body); } catch (...) {}
+                    if (!page) unreadable(TradesRoute);
+                    else {
+                        // The archived conversations, all of them: a reading that cannot tell
+                        // them shows nothing new (what was read before stays).
+                        std::set<std::string> archived;
+                        bool told = page->proposals.empty();
+                        for (size_t offset = 0, pages = 0; !told; ++pages) {
+                            const auto answer = ask(ArchivedPath + std::to_string(offset), ArchivedRoute);
+                            if (!answer) break;
+                            std::optional<ArchivedPage> list;
+                            try { list = ParseArchivedConversations(answer->body); } catch (...) {}
+                            if (!list) { unreadable(ArchivedRoute); break; }
+                            archived.insert(list->users.begin(), list->users.end());
+                            offset += list->listed;
+                            told = list->listed < MaxConversations || offset >= static_cast<size_t>(list->total) || pages + 1 == MaxArchivedPages;
+                        }
+                        if (told) {
+                            hidden = std::erase_if(page->proposals, [&](const TradeProposal& proposal) { return archived.contains(proposal.sender); });
+                            read.proposals = std::move(page->proposals);
+                            read.more = page->more;
+                            read.status = TradesStatus::Ready;
+                        }
                     }
                 }
             } catch (const Halt&) {
@@ -975,7 +1008,8 @@ void ReadTrades(Job& job) {
     const bool ok = read.status == TradesStatus::Ready;
     const bool named = read.named;
     job.tradesRead = std::move(read); // always handed back: the game thread spaces the next reading
-    if (ok) Log("METAMOB_TRADES proposals=" + std::to_string(count) + " named=" + (named ? "1" : "0"));
+    if (ok) Log("METAMOB_TRADES proposals=" + std::to_string(count) + " named=" + (named ? "1" : "0") +
+        (hidden ? " archived=" + std::to_string(hidden) : ""));
     else Log(std::string("METAMOB_TRADES_FAILED reason=") + failure);
 }
 // Options › « Enregistrer »: GET /v1/me with the candidate key. Refused by

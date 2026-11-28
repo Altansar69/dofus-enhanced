@@ -3239,7 +3239,22 @@ std::string Proposals(const std::vector<std::string>& items, bool more = false) 
     for (const auto& item : items) body += (body.empty() ? "" : ",") + item;
     return "{\"data\":[" + body + "],\"pagination\":{\"has_more\":" + (more ? "true,\"next_before_id\":12" : "false,\"next_before_id\":null") + "}}";
 }
-void ExpectTrades(Response response) { Expect("GET", TradesPath, std::move(response)); }
+const std::string ArchivedPath = "/conversations?status=archived&limit=50&offset=";
+// A page of archived conversations as the API documents it.
+std::string Archived(const std::vector<std::string>& users, size_t total, size_t offset = 0) {
+    std::string items;
+    for (const auto& user : users)
+        items += (items.empty() ? "" : ",") + ("{\"username\":\"" + user + "\",\"message_count\":3,\"unread_count\":0,"
+            "\"has_priority_unread\":false,\"last_message_at\":\"2026-10-20T09:00:00Z\"}");
+    return "{\"data\":[" + items + "],\"pagination\":{\"total\":" + std::to_string(total) + ",\"limit\":50,\"offset\":" + std::to_string(offset) + "}}";
+}
+void ExpectArchived(Response response, size_t offset = 0) { Expect("GET", ArchivedPath + std::to_string(offset), std::move(response)); }
+// The proposals, then (when some are open) the archived conversations: none unless said.
+void ExpectTrades(Response response, bool open = true) {
+    Expect("GET", TradesPath, std::move(response));
+    if (open) ExpectArchived(Json(Archived({}, 0)));
+}
+void ExpectTradesOnly(Response response) { ExpectTrades(std::move(response), false); }
 // A pump while the option is on: it asks for the proposals, then the sync ticks.
 void Trade(uint64_t advance = 0, bool notify = true) { fakeNow += advance; WantTrades(notify); TickSync(syncOn); }
 void TradeAt(uint64_t at, bool notify = true) { if (fakeNow.load() < at) fakeNow = at; WantTrades(notify); TickSync(syncOn); }
@@ -3261,7 +3276,7 @@ void TradesFirstLoad() {
     ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
     ExpectList(Slug);
     Trade();
-    Check(Sent() == 4 && Logged("METAMOB_TRADES proposals=2 named=1") && Logged("METAMOB_HTTP method=GET route=/trade-proposals status=200"),
+    Check(Sent() == 5 && Logged("METAMOB_TRADES proposals=2 named=1") && Logged("METAMOB_HTTP method=GET route=/trade-proposals status=200"),
         "Read at once: the proposals, then the quest list for their names");
     Said({"Metamob : 2 propositions d’échange en attente."}, "The first reading tells how many wait");
     view = MetamobTrades();
@@ -3276,19 +3291,19 @@ void TradesFirstLoad() {
     auto read = fakeNow.load();
     for (int i = 0; i < 5; ++i) Trade(10000);
     TradeAt(read + 59999);
-    Check(Sent() == 4 && MetamobTrades().version == version, "Not read again within a minute");
+    Check(Sent() == 5 && MetamobTrades().version == version, "Not read again within a minute");
     // A minute later: one more proposal. The names come from the list kept: one request.
     ExpectTrades(Json(Proposals({Proposal(72, "Edgar", {{Abrakroc.id, 1}, {Larva.id, 2}, {Tofu.id, 1}, {Tiwa.id, 1}}, {{999999, 1}}),
         Proposal(71, "Bobby", {{Tofu.id, 2}}, {{Tiwa.id, 1}}), Proposal(70, "Carla", {}, {{Bouftou.id, 1}}, "half_applied")})));
     TradeAt(read + 60000);
-    Check(Sent() == 5 && MetamobTrades().proposals.size() == 3 && MetamobTrades().version != version, "Read again after a minute, alone");
+    Check(Sent() == 7 && MetamobTrades().proposals.size() == 3 && MetamobTrades().version != version, "Read again after a minute, alone");
     Said({NewTrade("Edgar", Abrakroc.name + ", 2 × " + Larva.name + ", " + Tofu.name + " et 1 autre", "monstre n° 999999")},
         "Only the new proposal is told: three monsters a side, an unnamed one by its number");
     // The notices off: read, untold; on again: what was read meanwhile is not new.
     read = fakeNow.load();
     ExpectTrades(Json(Proposals({Proposal(73, "Fanny", {{Tofu.id, 1}}, {}), Proposal(72, "Edgar", {{Abrakroc.id, 1}}, {})})));
     TradeAt(read + 60000, false);
-    Check(Sent() == 6 && MetamobTrades().proposals.size() == 2 && MetamobTrades().proposals[0].given[0].name == Tofu.name, "Read with the notices off");
+    Check(Sent() == 9 && MetamobTrades().proposals.size() == 2 && MetamobTrades().proposals[0].given[0].name == Tofu.name, "Read with the notices off");
     Said({}, "Off: untold");
     read = fakeNow.load();
     ExpectTrades(Json(Proposals({Proposal(73, "Fanny", {{Tofu.id, 1}}, {}), Proposal(71, "Bobby", {{Tofu.id, 2}}, {{Tiwa.id, 1}})})));
@@ -3304,47 +3319,105 @@ void TradesFirstLoad() {
     Check(MetamobTrades().more, "Older ones left out by Metamob");
     // « Actualiser »: read at once, at most every five seconds.
     read = fakeNow.load();
-    ExpectTrades(Json(Proposals({})));
+    ExpectTradesOnly(Json(Proposals({})));
     RefreshTrades();
     Trade(1000);
-    Check(Sent() == 9 && MetamobTrades().read && MetamobTrades().proposals.empty() && !MetamobTrades().more, "Refreshed at once; none left");
+    Check(Sent() == 14 && MetamobTrades().read && MetamobTrades().proposals.empty() && !MetamobTrades().more, "Refreshed at once; none left");
     RefreshTrades();
     Trade(1000);
     Trade(3000);
-    Check(Sent() == 9, "A second refresh within five seconds waits for the minute");
+    Check(Sent() == 14, "A second refresh within five seconds waits for the minute");
     // The option off (not asked for five seconds): nothing more is read; what was read stays.
     read = fakeNow.load();
     TickAt(read + 5000);
     TickAt(read + 600000);
-    Check(Sent() == 9 && MetamobTrades().read, "Not asked any more: not read");
+    Check(Sent() == 14 && MetamobTrades().read, "Not asked any more: not read");
     // A passing failure keeps what was read and is tried again 30 s later; no such list: 10 min.
     ExpectTrades(Json(Proposals({Proposal(80, "Lola", {}, {{Mob.id, 1}})})));
     Trade();
     Said({NewTrade("Lola", "rien", Mob.name)}, "Asked again: read at once");
     read = fakeNow.load();
-    ExpectTrades(Html(503));
+    ExpectTradesOnly(Html(503));
     TradeAt(read + 60000);
     view = MetamobTrades();
     Check(view.status == TradesStatus::Unreachable && view.read && view.proposals.size() == 1 && Logged("METAMOB_TRADES_FAILED reason=request"),
         "A failed reading keeps the proposals");
     read = fakeNow.load();
     TradeAt(read + 29999);
-    Check(Sent() == 11, "Not tried again before 30 s");
-    ExpectTrades(Status(404));
+    Check(Sent() == 17, "Not tried again before 30 s");
+    ExpectTradesOnly(Status(404));
     TradeAt(read + 30000);
     view = MetamobTrades();
-    Check(Sent() == 12 && view.status == TradesStatus::Unavailable && !view.read && view.proposals.empty(), "No such list: nothing shown");
+    Check(Sent() == 18 && view.status == TradesStatus::Unavailable && !view.read && view.proposals.empty(), "No such list: nothing shown");
     read = fakeNow.load();
     TradeAt(read + 599999);
-    Check(Sent() == 12, "Asked again 10 min later only");
+    Check(Sent() == 18, "Asked again 10 min later only");
     // The key forgotten: nothing usable, and its proposals go.
     ForgetStoredKey();
     Check(!MetamobTrades().usable && !MetamobKeyUsable(), "Forgotten: nothing usable at once");
     Tick();
     Said({KeyForgotten}, "Forgotten");
     Trade(60000);
-    Check(Sent() == 12 && !MetamobTrades().usable && MetamobTrades().proposals.empty(), "Nothing more read");
+    Check(Sent() == 18 && !MetamobTrades().usable && MetamobTrades().proposals.empty(), "Nothing more read");
     Finish("trades first load");
+}
+
+// The proposals of a conversation the account archived are left out, as on the
+// site: neither listed, nor counted, nor told. Archived conversations that
+// cannot be read keep what was read before.
+void TradesArchived() {
+    Begin(Folder("trades-archived"), true);
+    syncOn = false;
+    ExpectTradesOnly(Json(Proposals({Proposal(71, "Bobby", {{Tofu.id, 2}}, {}), Proposal(70, "Carla", {}, {{Mob.id, 1}}), Proposal(69, "Denis", {{Larva.id, 1}}, {})})));
+    ExpectArchived(Json(Archived({"Carla", "Zoe"}, 2)));
+    ExpectQuests({});
+    Trade();
+    auto view = MetamobTrades();
+    Check(Sent() == 3 && view.status == TradesStatus::Ready && view.proposals.size() == 2 && view.proposals[0].sender == "Bobby" &&
+        view.proposals[1].sender == "Denis" && Logged("METAMOB_TRADES proposals=2 named=0 archived=1") &&
+        Logged("METAMOB_HTTP method=GET route=/conversations status=200"), "The archived conversation's proposal is left out");
+    Said({"Metamob : 2 propositions d’échange en attente."}, "And not counted");
+    // A new proposal in an archived conversation is not told; two pages of archived conversations.
+    auto read = fakeNow.load();
+    std::vector<std::string> page(50, "Zoe");
+    ExpectTradesOnly(Json(Proposals({Proposal(73, "Edgar", {}, {{Mob.id, 1}}), Proposal(72, "Carla", {}, {{Mob.id, 2}}), Proposal(71, "Bobby", {{Tofu.id, 2}}, {})})));
+    ExpectArchived(Json(Archived(page, 52)));
+    ExpectArchived(Json(Archived({"Denis", "Carla"}, 52, 50)), 50);
+    TradeAt(read + 60000);
+    view = MetamobTrades();
+    Check(Sent() == 6 && view.proposals.size() == 2 && view.proposals[0].sender == "Edgar" && view.proposals[1].sender == "Bobby", "Read over two pages");
+    Said({NewTrade("Edgar", "rien", "monstre n° " + std::to_string(Mob.id))}, "Only the proposal of a conversation that is not archived is told");
+    // Archived conversations that do not read: nothing new is shown, what was read stays.
+    read = fakeNow.load();
+    const auto version = view.version;
+    ExpectTradesOnly(Json(Proposals({Proposal(74, "Carla", {}, {{Mob.id, 1}}), Proposal(73, "Edgar", {}, {{Mob.id, 1}})})));
+    ExpectArchived(Json("{\"data\":[{\"username\":7}],\"pagination\":{\"total\":1,\"limit\":50,\"offset\":0}}"));
+    TradeAt(read + 60000);
+    view = MetamobTrades();
+    Check(Sent() == 8 && view.status == TradesStatus::Unreadable && view.read && view.proposals.size() == 2 && view.proposals[0].sender == "Edgar" &&
+        Logged("METAMOB_BAD_ANSWER route=/conversations"), "Unreadable archived conversations keep the proposals");
+    read = fakeNow.load();
+    ExpectTradesOnly(Json(Proposals({Proposal(74, "Carla", {}, {{Mob.id, 1}})})));
+    ExpectArchived(Html(503));
+    TradeAt(read + 30000);
+    view = MetamobTrades();
+    Check(Sent() == 10 && view.status == TradesStatus::Unreachable && view.proposals.size() == 2, "Unreachable too");
+    Said({}, "Failures are silent");
+    // Every open proposal archived: none shown.
+    read = fakeNow.load();
+    ExpectTradesOnly(Json(Proposals({Proposal(74, "Carla", {}, {{Mob.id, 1}})})));
+    ExpectArchived(Json(Archived({"Carla"}, 1)));
+    TradeAt(read + 600000);
+    view = MetamobTrades();
+    Check(view.status == TradesStatus::Ready && view.proposals.empty() && view.version != version, "All archived: none shown");
+    // The conversation back among the active ones: its proposal is a new one.
+    read = fakeNow.load();
+    ExpectTrades(Json(Proposals({Proposal(74, "Carla", {}, {{Mob.id, 1}})})));
+    ExpectQuests({}); // the names, tried again 10 min after the first try
+    TradeAt(read + 60000);
+    Check(MetamobTrades().proposals.size() == 1, "Shown once the conversation is active again");
+    Said({NewTrade("Carla", "rien", "monstre n° " + std::to_string(Mob.id))}, "And told");
+    Finish("trades archived");
 }
 
 // No Unity Ocre quest: the proposals are shown unnamed, and the quests are not
@@ -3356,35 +3429,35 @@ void TradesWithoutNames() {
     ExpectQuests({});
     Trade();
     auto view = MetamobTrades();
-    Check(Sent() == 2 && view.read && view.proposals.size() == 1 && view.proposals[0].given[0].name.empty() &&
+    Check(Sent() == 3 && view.read && view.proposals.size() == 1 && view.proposals[0].given[0].name.empty() &&
         Logged("METAMOB_TRADES proposals=1 named=0"), "No quest: read, unnamed");
     Said({"Metamob : 1 proposition d’échange en attente."}, "Told all the same");
     auto read = fakeNow.load();
     ExpectTrades(Json(Proposals({Proposal(91, "Carla", {}, {{Tofu.id, 1}}), Proposal(90, "Bobby", {{Tofu.id, 2}}, {})})));
     TradeAt(read + 60000);
-    Check(Sent() == 3, "The quests are not asked again a minute later");
+    Check(Sent() == 5, "The quests are not asked again a minute later");
     Said({NewTrade("Carla", "rien", "monstre n° " + std::to_string(Tofu.id))}, "A new one, unnamed");
     // 10 min after that try: the quest is there now, and the names with it.
     ExpectTrades(Json(Proposals({Proposal(91, "Carla", {}, {{Tofu.id, 1}})})));
     ExpectQuests({Quest(Slug, Character.c_str(), "ocre", 1)});
     ExpectList(Slug);
     TradeAt(read + 600000);
-    Check(Sent() == 7 && MetamobTrades().proposals[0].received[0].name == Tofu.name, "Named once the quest list reads");
+    Check(Sent() == 10 && MetamobTrades().proposals[0].received[0].name == Tofu.name, "Named once the quest list reads");
     Said({}, "Nothing new");
     // An answer that is not the documented list, then Metamob's own refusal.
     read = fakeNow.load();
-    ExpectTrades(Json("{\"data\":[{\"id\":92}]}"));
+    ExpectTradesOnly(Json("{\"data\":[{\"id\":92}]}"));
     TradeAt(read + 60000);
     view = MetamobTrades();
     Check(view.status == TradesStatus::Unreadable && view.read && view.proposals.size() == 1 && Logged("METAMOB_BAD_ANSWER route=/trade-proposals"),
         "An unreadable answer keeps the proposals");
     read = fakeNow.load();
-    ExpectTrades(Status(403));
+    ExpectTradesOnly(Status(403));
     TradeAt(read + 30000);
     Check(MetamobTrades().status == TradesStatus::Refused && MetamobTrades().usable, "Refused for this list only: the key stays usable");
     read = fakeNow.load();
     TradeAt(read + 599999);
-    Check(Sent() == 9, "A refusal waits 10 min");
+    Check(Sent() == 12, "A refusal waits 10 min");
     Said({}, "Failures are silent");
     Finish("trades without names");
 
@@ -3538,6 +3611,7 @@ int main() {
         KraloveThreaded();
         TradesFirstLoad();
         TradesWithoutNames();
+        TradesArchived();
         Threaded();
         NoPrivateData();
         std::filesystem::remove_all(root);

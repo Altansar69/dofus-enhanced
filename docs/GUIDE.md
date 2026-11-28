@@ -1,6 +1,6 @@
 # Guide détaillé (français)
 
-Mod expérimental pour **Dofus Unity 3.7.14.18**, version **1.22.0**.
+Mod expérimental pour **Dofus Unity 3.7.14.18**, version **1.22.1**.
 
 Miniatures au choix, animations à la carte, surbrillance, curseurs dans le style
 de Dofus, jauges à la verticale, aide à la capture d’âmes, trajets rapides
@@ -859,6 +859,10 @@ Metamob ne répond pas. Trois boutons :
   Sur « non », les propositions ne sont lues que pendant que la fenêtre est
   ouverte.
 - **Ouvrir Metamob** ouvre tes messages sur metamob.fr dans le navigateur.
+
+Depuis la 1.22.1, les propositions d’une **conversation que tu as archivée**
+sur Metamob sont ignorées, comme sur le site : ni listées, ni comptées, ni
+annoncées dans le chat. Elles reviennent si la conversation redevient active.
 
 Le mod ne fait que lire : il **n’accepte, ne refuse et n’envoie jamais** de
 proposition, et ne marque rien comme lu. Tout cela se fait sur metamob.fr. Seules

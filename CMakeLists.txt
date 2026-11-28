@@ -52,7 +52,8 @@ add_library(DofusMiniatures SHARED
   src/stats/stats-format.cpp src/stats/stats-window.cpp
   src/ui/cursor-art.cpp src/ui/custom-cursor.cpp
   src/ui/vertical-gauges.cpp src/ui/game-theme.cpp
-  src/ui/preset-windows-store.cpp src/ui/preset-windows.cpp src/ui/mod-folder.cpp)
+  src/ui/preset-windows-store.cpp src/ui/preset-windows.cpp src/ui/mod-folder.cpp
+  src/core/compat.cpp)
 target_link_libraries(DofusMiniatures PRIVATE bcrypt minhook advapi32 winhttp normaliz user32 crypt32 pdh shell32 ole32)
 
 # Loader (console and silent automatic variants) and the runtime probe.
@@ -103,6 +104,7 @@ endfunction()
 # Core, loader and updater.
 dofus_test(OfflineTests tests/core/offline-tests.cpp src/core/settings.cpp src/core/common.cpp LIBS bcrypt minhook)
 dofus_test(RuntimeTests tests/core/runtime-tests.cpp src/core/runtime.cpp src/core/common.cpp LIBS bcrypt)
+dofus_test(CompatTests tests/core/compat-tests.cpp src/core/compat.cpp src/core/runtime.cpp src/core/common.cpp LIBS bcrypt)
 dofus_test(WorldExitTests tests/core/world-exit-tests.cpp src/core/world-exit.cpp)
 dofus_test(ReloginGuardTests tests/core/relogin-guard-tests.cpp)
 dofus_test(ReleasePolicyTests tests/core/release-policy-tests.cpp src/core/common.cpp LIBS bcrypt advapi32)

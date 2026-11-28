@@ -649,6 +649,21 @@ void Trades() {
         Check(ParseTradeProposals(list(many)).proposals.size() == 50, "The API's largest page");
         Reject([&] { ParseTradeProposals(list(many + "," + With(one, "\"id\":57", "\"id\":51"))); }, "Over 50 proposals accepted");
     }
+    // The archived conversations, whose proposals are left out.
+    {
+        const auto archived = ParseArchivedConversations(R"json({"data":[
+            {"username":"player1","message_count":12,"unread_count":2,"has_priority_unread":false,"last_message_at":"2026-01-27T14:22:00Z"},
+            {"username":"<b>Bob</b>","message_count":1,"unread_count":0,"has_priority_unread":false,"last_message_at":"2026-01-26T14:22:00Z"}],
+            "pagination":{"total":37,"limit":50,"offset":0}})json");
+        Check(archived.listed == 2 && archived.total == 37 && archived.users.size() == 2 && archived.users[0] == "player1" &&
+            archived.users[1] == ParseTradeProposals(list(With(one, "\"player1\"", "\"<b>Bob</b>\""))).proposals[0].sender,
+            "Archived conversations: their users, written as a proposal's sender");
+        Check(ParseArchivedConversations(R"json({"data":[],"pagination":{"total":0,"limit":50,"offset":0}})json").users.empty(), "No archived conversation");
+        Reject([&] { ParseArchivedConversations(R"json({"data":[]})json"); }, "Archived conversations without their total");
+        Reject([&] { ParseArchivedConversations(R"json({"data":{},"pagination":{"total":0}})json"); }, "Archived conversations that are no list");
+        Reject([&] { ParseArchivedConversations(R"json({"data":[{"username":7}],"pagination":{"total":1}})json"); }, "A user that is no text");
+        Reject([&] { ParseArchivedConversations(R"json({"data":[{"message_count":1}],"pagination":{"total":1}})json"); }, "A conversation without its user");
+    }
     // The texts of the window and of the notices.
     TradeProposal shown = first;
     shown.given = {{861, 2, "Tofumanchou l’Empereur"}, {862, 1, ""}, {863, 1, "Mob l’Éponge"}, {864, 3, "Bouftou Royal"}};

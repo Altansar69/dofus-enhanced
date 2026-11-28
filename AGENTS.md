@@ -54,6 +54,12 @@
   The updater distributes a port; it does not generate one.
 - Every native method goes through a 16-byte guard in `src/core/signatures.hpp`
   and `FindVerified`; every native field through a checked offset.
+- `src/core/contracts.hpp` is generated: after adding, removing or moving a
+  `"name", argc, 0xRVA` literal, run `python tools/generate-contracts.py
+  --contracts <contracts-new.json of the pinned client>` (`--check` before a
+  release). `src/core/compat.cpp` resolves these declarations by name as a
+  shadow check only (`COMPAT_SHADOW` in module.log): no hook or call may depend
+  on it while the rule above on pinned hashes and guards stands.
 - Do not click, type, focus, inject into, terminate or restart an already open
   game without a fresh explicit request. Offline tests and read-only file checks
   are the default. The watcher ignores every game open when it starts.
