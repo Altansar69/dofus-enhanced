@@ -11,11 +11,11 @@ const char* TypeName(const void* type) {
     return name ? name : "?";
 }
 // "Outer+Inner" under its namespace; null when any part is absent.
-Klass DeclaredClass(const MethodContract& contract) {
+Klass DeclaredClass(const char* image, const char* space, const char* type) {
     try {
-        std::string chain = contract.type;
+        std::string chain = type;
         auto cut = chain.find('+');
-        auto klass = api.Class(contract.image, contract.space, chain.substr(0, cut).c_str());
+        auto klass = api.Class(image, space, chain.substr(0, cut).c_str());
         while (cut != std::string::npos) {
             const auto next = chain.find('+', cut + 1);
             klass = api.NestedClass(klass, chain.substr(cut + 1, next == std::string::npos ? next : next - cut - 1).c_str());
@@ -24,9 +24,11 @@ Klass DeclaredClass(const MethodContract& contract) {
         return klass;
     } catch (const std::exception&) { return nullptr; }
 }
+void Sample(Shadow& shadow, const std::string& what) {
+    if (shadow.samples.size() <= 900) shadow.samples += " [" + what + "]";
+}
 void Sample(Shadow& shadow, const MethodContract& contract, const std::string& what) {
-    if (shadow.samples.size() > 900) return;
-    shadow.samples += std::string(" [") + contract.type + "." + contract.name + "/" + std::to_string(contract.argc) + " " + what + "]";
+    Sample(shadow, std::string(contract.type) + "." + contract.name + "/" + std::to_string(contract.argc) + " " + what);
 }
 }
 std::string Signature(Method method) {
@@ -40,7 +42,7 @@ std::string Signature(Method method) {
     return text + ')';
 }
 Resolution Resolve(const MethodContract& contract) {
-    const auto klass = DeclaredClass(contract);
+    const auto klass = DeclaredClass(contract.image, contract.space, contract.type);
     if (!klass) return {};
     std::vector<Method> named;
     void* iterator = nullptr;
@@ -77,6 +79,18 @@ Shadow ShadowCheck() {
         const auto signature = Signature(resolution.method);
         if (signature != contract.signature) { ++shadow.signatureDiffers; Sample(shadow, contract, "signature " + signature); }
     }
+    for (const auto& contract : FieldContracts) {
+        if (!contract.name) break;
+        ++shadow.fields;
+        const auto klass = DeclaredClass(contract.image, contract.space, contract.type);
+        const auto field = klass ? api.class_get_field_from_name(klass, contract.name) : nullptr;
+        if (!field) { ++shadow.fieldsMissing; Sample(shadow, std::string(contract.type) + "." + contract.name + " missing"); continue; }
+        const auto offset = api.field_get_offset(field);
+        if (offset != contract.offset) {
+            ++shadow.fieldsMoved;
+            Sample(shadow, std::string(contract.type) + "." + contract.name + " at " + std::to_string(offset));
+        }
+    }
     return shadow;
 }
 namespace {
@@ -96,6 +110,7 @@ std::string Describe(const Shadow& shadow) {
         " bySignature=" + std::to_string(shadow.bySignature) + " generic=" + std::to_string(shadow.generic) +
         " missing=" + std::to_string(shadow.missing) + " ambiguous=" + std::to_string(shadow.ambiguous) +
         " wrongAddress=" + std::to_string(shadow.wrongAddress) + " signatureDiffers=" + std::to_string(shadow.signatureDiffers) +
-        shadow.samples;
+        " fields=" + std::to_string(shadow.fields) + " fieldsMissing=" + std::to_string(shadow.fieldsMissing) +
+        " fieldsMoved=" + std::to_string(shadow.fieldsMoved) + shadow.samples;
 }
 }

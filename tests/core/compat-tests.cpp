@@ -96,6 +96,8 @@ void TestShadow() {
     Require(shadow.total == std::size(MethodContracts) && shadow.total > 500, "Every generated declaration is visited");
     Require(shadow.missing + shadow.generic == shadow.total && !shadow.byName && !shadow.bySignature && !shadow.wrongAddress,
             "Absent classes are counted as missing, never as resolved");
+    Require(shadow.fields + 1 == std::size(FieldContracts) && shadow.fieldsMissing == shadow.fields && !shadow.fieldsMoved,
+            "Every named field is visited; a field of an absent class is missing, never moved");
     Require(compat::Describe(shadow).find("total=" + std::to_string(shadow.total)) == 0 &&
             compat::Describe(shadow).size() < 1400, "The log line is bounded");
     // A fault inside the runtime is reported, not propagated to the game.

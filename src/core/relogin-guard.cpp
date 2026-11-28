@@ -10,7 +10,7 @@ constexpr uintptr_t HandlerRva = 0x19B9280;
 // cvf..ctor: the shared empty constructor (no field initializer).
 constexpr uintptr_t DetailsCtorRva = 0x65BD00;
 // cvg: dhzm the launcher's error code, dhzn the account details parsed from its answer.
-constexpr size_t ErrorCodeOffset = 0x18, DetailsOffset = 0x20;
+constexpr size_t ErrorCodeOffset = FieldAt("cvg", "dhzm", 0x18), DetailsOffset = FieldAt("cvg", "dhzn", 0x20);
 using HandlerFn = void (*)(Obj, Obj, Method);
 HandlerFn originalHandler = nullptr;
 Klass detailsClass = nullptr;

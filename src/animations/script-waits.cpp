@@ -38,13 +38,13 @@ bool ScriptWaitCaller(uintptr_t caller) {
 Obj CurrentScriptFight(Obj context) {
     if (!context || !api.class_is_assignable_from(scriptContextClass, api.object_get_class(context)) ||
         !module || !module->fight.get()) return nullptr;
-    auto state = Read<Obj>(module->fight.get(), 0x18);
+    auto state = Read<Obj>(module->fight.get(), FieldAt("fxc", "dvzu", 0x18));
     return state && api.object_get_class(state) == scriptFightClass &&
-        Read<Obj>(state, 0xE0) == context ? state : nullptr;
+        Read<Obj>(state, FieldAt("fyb", "<dwjn>k__BackingField", 0xE0)) == context ? state : nullptr;
 }
 void RememberScriptWait(Obj step, Obj context, uintptr_t caller) {
     if (!ScriptWaitCaller(caller) || !step || !InstantWaitsEnabled() ||
-        api.object_get_class(step) != scriptWaitClass || Read<Obj>(step, 0x40) != context) return;
+        api.object_get_class(step) != scriptWaitClass || Read<Obj>(step, FieldAt("gqe", "eaiy", 0x40)) != context) return;
     auto fight = CurrentScriptFight(context);
     if (!fight) return;
     const auto now = GetTickCount64();
@@ -81,15 +81,15 @@ void ScriptStartHook(Obj step, Method method) {
     Ref heldStep;
     try {
         if (step && InstantWaitsEnabled() && api.object_get_class(step) == scriptWaitClass) {
-            if (Read<bool>(step, 0x1D)) return;
+            if (Read<bool>(step, FieldAt("gpa", "<eacr>k__BackingField", 0x1D))) return;
             // Never intervene after the native pause has scheduled its timer.
-            if (!Read<Obj>(step, 0x30) && !Read<Obj>(step, 0x38)) {
+            if (!Read<Obj>(step, FieldAt("gpa", "eada", 0x30)) && !Read<Obj>(step, FieldAt("gpa", "eadb", 0x38))) {
                 ExpireScriptWaits(GetTickCount64());
                 for (auto& item : scriptWaits) {
                     if (item.step.get() != step) continue;
                     if (item.consumed) return;
                     auto context = item.context.get();
-                    finish = Read<Obj>(step, 0x40) == context && CurrentScriptFight(context) == item.fight.get();
+                    finish = Read<Obj>(step, FieldAt("gqe", "eaiy", 0x40)) == context && CurrentScriptFight(context) == item.fight.get();
                     if (finish) {
                         heldStep.reset(step); // Native callbacks can clear the history.
                         item.consumed = true;

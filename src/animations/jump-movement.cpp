@@ -50,11 +50,11 @@ struct JumpFinish {
     bool IsCurrent() const {
         auto currentEntity = entity.get(), currentState = state.get();
         return InstantMovementEnabled() && IsCurrentFightEntity(currentEntity) &&
-            Read<Obj>(behavior.get(), 0x18) == dictionary.get() &&
+            Read<Obj>(behavior.get(), FieldAt("xu", "dhlw", 0x18)) == dictionary.get() &&
             FindState(dictionary.get(), lookup, id) == currentState &&
-            Read<Obj>(currentState, 0x28) == currentEntity &&
-            Read<Obj>(currentState, 0x40) == route.get() &&
-            Read<Obj>(currentState, 0x38) == callback.get();
+            Read<Obj>(currentState, FieldAt("xu+xt", "dhlk", 0x28)) == currentEntity &&
+            Read<Obj>(currentState, FieldAt("xu+xt", "dhlo", 0x40)) == route.get() &&
+            Read<Obj>(currentState, FieldAt("xu+xt", "dhln", 0x38)) == callback.get();
     }
 };
 
@@ -99,18 +99,18 @@ void FinishJump(const std::shared_ptr<JumpFinish>& context) {
         ActiveJump active(entity);
         for (int remaining = context->segmentCount + 2; remaining > 0; --remaining) {
             if (active.reentered || !context->IsCurrent()) return;
-            const float rate = Read<float>(state, 0x20);
+            const float rate = Read<float>(state, FieldAt("xu+xt", "dhlj", 0x20));
             if (!std::isfinite(rate) || rate <= 0.0f) return;
             const double duration = std::ceil(1.0 / static_cast<double>(rate)) + 2.0;
             if (!std::isfinite(duration) || duration > 60000.0) return;
             const auto required = static_cast<uint64_t>(duration);
             const auto now = clockMilliseconds(nullptr);
-            const auto started = Read<uint64_t>(state, 0x48);
+            const auto started = Read<uint64_t>(state, FieldAt("xu+xt", "dhlp", 0x48));
             if (now < required || started > now) return;
             // Only this xt's elapsed time changes. rko itself performs native
             // position, registry-cell, rotation, scale and route completion.
             const auto terminalStart = now - required;
-            *reinterpret_cast<uint64_t*>(static_cast<char*>(state) + 0x48) =
+            *reinterpret_cast<uint64_t*>(static_cast<char*>(state) + FieldAt("xu+xt", "dhlp", 0x48)) =
                 started < terminalStart ? started : terminalStart;
             TerminalFrame terminal(*context, active);
             advanceJump(behavior, state, nullptr);
@@ -133,9 +133,9 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
         if (InstantMovementEnabled() && behavior && entity && route && !nested &&
             api.object_get_class(behavior) == jumpClass && api.object_get_class(route) == routeClass &&
             IsCurrentFightEntity(entity)) {
-            auto points = Read<Obj>(route, 0x20);
+            auto points = Read<Obj>(route, FieldAt("enw", "<dodi>k__BackingField", 0x20));
             if (points) {
-                const int count = Read<int>(points, 0x18);
+                const int count = Read<int>(points, GenericFieldAt("System.Collections.Generic.List`1", "_size", 0x18));
                 if (count >= 0 && count <= maxSegments) segmentCount = count;
             }
         }
@@ -147,13 +147,13 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     originalStart(behavior, entity, speed, route, callback, first, second, third, entitySpeed, method);
     if (segmentCount < 0 || active.reentered) return;
     try {
-        auto dictionary = Read<Obj>(behavior, 0x18);
+        auto dictionary = Read<Obj>(behavior, FieldAt("xu", "dhlw", 0x18));
         if (!dictionary) return;
         auto lookup = api.Find(api.object_get_class(dictionary), "TryGetValue", 2);
-        const auto id = Read<int64_t>(entity, 0x1C8);
+        const auto id = Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
         auto state = FindState(dictionary, lookup, id);
-        if (!state || Read<Obj>(state, 0x28) != entity || Read<Obj>(state, 0x40) != route ||
-            Read<Obj>(state, 0x38) != callback) return;
+        if (!state || Read<Obj>(state, FieldAt("xu+xt", "dhlk", 0x28)) != entity || Read<Obj>(state, FieldAt("xu+xt", "dhlo", 0x40)) != route ||
+            Read<Obj>(state, FieldAt("xu+xt", "dhln", 0x38)) != callback) return;
         auto context = std::make_shared<JumpFinish>(behavior, entity, route, callback, dictionary, state,
                                                   lookup, id, segmentCount);
         DeferInstantMovement([context] { FinishJump(context); });

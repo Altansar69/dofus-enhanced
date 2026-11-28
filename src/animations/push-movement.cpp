@@ -42,10 +42,10 @@ Obj FindState(Obj dictionary, Method lookup, int64_t id) {
 bool SameState(Obj behavior, Obj dictionary, Method lookup, int64_t id,
                Obj state, Obj entity, Obj route, Obj callback, int easing) {
     return InstantMovementEnabled() && IsCurrentFightEntity(entity) &&
-        Read<int>(behavior, 0x38) == 6 && Read<Obj>(behavior, 0x28) == dictionary &&
-        FindState(dictionary, lookup, id) == state && Read<int>(state, 0x10) == easing &&
-        Read<Obj>(state, 0x28) == entity && Read<Obj>(state, 0x48) == route &&
-        Read<Obj>(state, 0x40) == callback;
+        Read<int>(behavior, FieldAt("xy", "<dhmu>k__BackingField", 0x38)) == 6 && Read<Obj>(behavior, FieldAt("xy", "dhms", 0x28)) == dictionary &&
+        FindState(dictionary, lookup, id) == state && Read<int>(state, FieldAt("xy+xw", "dhlz", 0x10)) == easing &&
+        Read<Obj>(state, FieldAt("xy+xw", "dhmc", 0x28)) == entity && Read<Obj>(state, FieldAt("xy+xw", "dhmh", 0x48)) == route &&
+        Read<Obj>(state, FieldAt("xy+xw", "dhmg", 0x40)) == callback;
 }
 
 struct PushFinish {
@@ -73,8 +73,8 @@ void FinishPush(const std::shared_ptr<PushFinish>& context) {
             // Exact terminal-progress operations from xy.Update:
             // 2620DE4 sets progress=1; 2620E0C calls rfv; 2620E2D calls rkv.
             // xy has no tween to kill and does not turn the pushed character.
-            *reinterpret_cast<float*>(static_cast<char*>(state) + 0x34) = 1.0f;
-            finishCell(entity, Read<int>(entity, 0x348), Read<int>(state, 0x38), 1.0f, nullptr);
+            *reinterpret_cast<float*>(static_cast<char*>(state) + FieldAt("xy+xw", "dhme", 0x34)) = 1.0f;
+            finishCell(entity, Read<int>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "<dhhw>k__BackingField", 0x348)), Read<int>(state, FieldAt("xy+xw", "dhmf", 0x38)), 1.0f, nullptr);
             if (active.reentered || !SameState(behavior, dictionary, context->lookup, context->id,
                                                state, entity, route, callback, context->easing)) return;
             // rkv chooses the next cell, or rkz removes the state and invokes
@@ -99,12 +99,12 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     const int easing = parameter == 0 ? 1 : parameter;
     try {
         if (InstantMovementEnabled() && behavior && entity && route && !nested &&
-            api.object_get_class(behavior) == pushClass && Read<int>(behavior, 0x38) == 6 &&
+            api.object_get_class(behavior) == pushClass && Read<int>(behavior, FieldAt("xy", "<dhmu>k__BackingField", 0x38)) == 6 &&
             api.object_get_class(route) == routeClass && (easing == 1 || easing == 2) &&
             IsCurrentFightEntity(entity)) {
-            auto points = Read<Obj>(route, 0x20);
+            auto points = Read<Obj>(route, FieldAt("enw", "<dodi>k__BackingField", 0x20));
             if (points) {
-                const int count = Read<int>(points, 0x18);
+                const int count = Read<int>(points, GenericFieldAt("System.Collections.Generic.List`1", "_size", 0x18));
                 if (count >= 0 && count <= maxSegments) segmentCount = count;
             }
         }
@@ -120,13 +120,13 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     if (segmentCount < 0 || active.reentered) return;
 
     try {
-        auto dictionary = Read<Obj>(behavior, 0x28);
+        auto dictionary = Read<Obj>(behavior, FieldAt("xy", "dhms", 0x28));
         if (!dictionary) return;
         auto lookup = api.Find(api.object_get_class(dictionary), "TryGetValue", 2);
-        const auto id = Read<int64_t>(entity, 0x1C8);
+        const auto id = Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
         auto state = FindState(dictionary, lookup, id);
-        if (!state || Read<Obj>(state, 0x28) != entity || Read<Obj>(state, 0x48) != route ||
-            Read<Obj>(state, 0x40) != callback || Read<int>(state, 0x10) != easing) return;
+        if (!state || Read<Obj>(state, FieldAt("xy+xw", "dhmc", 0x28)) != entity || Read<Obj>(state, FieldAt("xy+xw", "dhmh", 0x48)) != route ||
+            Read<Obj>(state, FieldAt("xy+xw", "dhmg", 0x40)) != callback || Read<int>(state, FieldAt("xy+xw", "dhlz", 0x10)) != easing) return;
         auto context = std::make_shared<PushFinish>(behavior, entity, route, callback, dictionary, state,
                                                   lookup, id, segmentCount, easing);
         // Capture this exact xw now, but finish only after native rfw has run

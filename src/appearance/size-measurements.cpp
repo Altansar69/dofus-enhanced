@@ -15,7 +15,7 @@ std::optional<float> SizeMeasurements::Height(Obj look) {
     // Never call the library loader: only read definitions already in its cache.
     Ref cache(api.StaticField(library, "fhod"));
     if (!cache.get()) return std::nullopt;
-    if (Read<int>(look, 0x1C) == 1 && (!api.StaticField(library, "fhns") ||
+    if (Read<int>(look, FieldAt("Core.Rendering.Look.EntityLook", "fhyt", 0x1C)) == 1 && (!api.StaticField(library, "fhns") ||
         !api.StaticField(library, "fhnr"))) return std::nullopt;
     Obj rawKey = nullptr;
     if (!api.Value<bool>(api.Invoke(resolveKey, nullptr, {look, idle.get(), &rawKey})) || !rawKey) return std::nullopt;
@@ -38,11 +38,11 @@ std::optional<float> SizeMeasurements::Height(Obj look) {
         // idle over combat/exploration poses; take the maximum across directions.
         float alternate = 0;
         for (int i = 0; i < count; ++i) {
-            auto animation = Read<Obj>(animations.get(), 0x20 + sizeof(Obj) * i);
+            auto animation = Read<Obj>(animations.get(), ArrayItemsAt + sizeof(Obj) * i);
             if (!animation) continue;
             const auto label = api.String(api.Field(animation, "name"));
             if (label.rfind("AnimStatique", 0) != 0) continue;
-            const float height = Read<float>(animation, 0x34); // Rect at +0x28, height +12.
+            const float height = Read<float>(animation, FieldAt("Ankama.Animations.Animation", "bounds", 0x28) + 0xC); // Rect at +0x28, height +12.
             if (!std::isfinite(height) || height <= 0) continue;
             if (label == "AnimStatique" || label.rfind("AnimStatique_", 0) == 0)
                 authoredHeight = std::max(authoredHeight, height);
@@ -54,14 +54,14 @@ std::optional<float> SizeMeasurements::Height(Obj look) {
         if (authoredHeight <= 0) return std::nullopt;
         if (heights.size() < 4096) heights.emplace(name, authoredHeight);
     }
-    const float scaled = authoredHeight * std::abs(Read<float>(look, 0x30));
+    const float scaled = authoredHeight * std::abs(Read<float>(look, FieldAt("Core.Rendering.Look.EntityLook", "fhyx", 0x30)));
     if (!std::isfinite(scaled) || scaled <= 0) return std::nullopt;
     return scaled;
 }
 std::optional<float> SizeMeasurements::Measure(Obj look, bool player, bool defer) {
     const auto height = Height(look);
     // The root bone 1 is the unmounted player body. A mount's root is excluded.
-    bool referencePlayer = height && player && Read<int>(look, 0x1C) == 1 && playerHeight == 0;
+    bool referencePlayer = height && player && Read<int>(look, FieldAt("Core.Rendering.Look.EntityLook", "fhyt", 0x1C)) == 1 && playerHeight == 0;
     if (referencePlayer) {
         Ref children(api.Field(look, "fhyu"));
         int riderSlot = 2;

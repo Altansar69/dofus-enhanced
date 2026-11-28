@@ -51,7 +51,7 @@ bool WasSkipped(Obj animation) {
     Expire(GetTickCount64());
     for (const auto& item : skipped)
         if (item.step.get() == animation)
-            return IsCurrentFightEntity(Read<Obj>(animation, 0x78));
+            return IsCurrentFightEntity(Read<Obj>(animation, FieldAt("gpy", "<eagz>k__BackingField", 0x78)));
     return false;
 }
 void WaitStartHook(Obj waiter, Method method) {
@@ -59,8 +59,8 @@ void WaitStartHook(Obj waiter, Method method) {
     bool finish = false;
     try {
         if (waiter && InstantWaitsEnabled() && api.object_get_class(waiter) == waiterClass) {
-            if (Read<bool>(waiter, 0x1D)) return;
-            finish = WasSkipped(Read<Obj>(waiter, 0x40));
+            if (Read<bool>(waiter, FieldAt("gpa", "<eacr>k__BackingField", 0x1D))) return;
+            finish = WasSkipped(Read<Obj>(waiter, FieldAt("gqf", "eaiz", 0x40)));
         }
     } catch (const std::exception& error) {
         Log(std::string("INSTANT_WAIT_MEMBERSHIP_ERROR ") + error.what());
@@ -70,7 +70,7 @@ void WaitStartHook(Obj waiter, Method method) {
     WaitFrame completing(waiter);
     // Native event-seen branch removes this waiter's own listener, clears its
     // gpy reference, then completes through the native sequence callback chain.
-    *reinterpret_cast<bool*>(static_cast<char*>(waiter) + 0x48) = true;
+    *reinterpret_cast<bool*>(static_cast<char*>(waiter) + FieldAt("gqf", "eaja", 0x48)) = true;
     try { originalWaitStart(waiter, method); }
     catch (...) {
         if (module) module->stopRequested.store(true);

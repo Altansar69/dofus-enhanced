@@ -54,8 +54,11 @@
   The updater distributes a port; it does not generate one.
 - Every native method goes through a 16-byte guard in `src/core/signatures.hpp`
   and `FindVerified`; every native field through a checked offset.
+- A field read or written by offset names its declaration:
+  `FieldAt("type", "field", 0xNN)` (`UnboxedFieldAt`, `GenericFieldAt`,
+  `ArrayLengthAt`, `ArrayItemsAt`: `src/core/runtime.hpp`), never a bare number.
 - `src/core/contracts.hpp` is generated: after adding, removing or moving a
-  `"name", argc, 0xRVA` literal, run `python tools/generate-contracts.py
+  `"name", argc, 0xRVA` literal or a named field offset, run `python tools/generate-contracts.py
   --contracts <contracts-new.json of the pinned client>` (`--check` before a
   release). `src/core/compat.cpp` resolves these declarations by name as a
   shadow check only (`COMPAT_SHADOW` in module.log): no hook or call may depend

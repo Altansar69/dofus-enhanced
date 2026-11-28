@@ -22,6 +22,8 @@ Resolution Resolve(const MethodContract& contract);
 struct Shadow {
     unsigned total = 0, generic = 0, byName = 0, bySignature = 0, missing = 0, ambiguous = 0;
     unsigned wrongAddress = 0, signatureDiffers = 0;
+    // Named field offsets: declared in their class at the offset the sources read.
+    unsigned fields = 0, fieldsMissing = 0, fieldsMoved = 0;
     std::string samples; // the first differences, for module.log
 };
 Shadow ShadowCheck();

@@ -156,7 +156,7 @@ Position Here() {
         if (!Is(info.get(), mapInfoClass)) return p;
         Ref area(api.Invoke(mapSubArea, info.get()));
         if (!Is(area.get(), subAreaClass)) return p;
-        p.x = Read<int16_t>(info.get(), 0x18); p.y = Read<int16_t>(info.get(), 0x1A);
+        p.x = Read<int16_t>(info.get(), FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posX", 0x18)); p.y = Read<int16_t>(info.get(), FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posY", 0x1A));
         p.world = api.Value<int>(api.Invoke(subAreaWorld, area.get()));
         p.known = p.world >= 0;
     } catch (const std::exception& e) { DataError("PARTY_TRAVEL_HERE_ERROR", e); p = {}; }

@@ -92,6 +92,20 @@ struct Ref {
         handle = next;
     }
 };
+// A raw field offset, named after its managed declaration: the declaring type
+// as the game declares it ("fxc", "Core.UILogic.Inventory.Inventory",
+// "xq+xm"; "Assembly.dll:Type" when two assemblies declare the name) and the
+// field. They compile to the offset alone; the release checks read them and
+// compare each with the declarations of the pinned client.
+constexpr size_t FieldAt(const char*, const char*, size_t offset) { return offset; }
+// Inside an unboxed value (a struct read through a pointer to its first
+// field): the declared offset less the 0x10 object header.
+constexpr size_t UnboxedFieldAt(const char*, const char*, size_t offset) { return offset; }
+// A field of a generic type (List`1, Dictionary`2...): laid out per instance,
+// so only its name is checked.
+constexpr size_t GenericFieldAt(const char*, const char*, size_t offset) { return offset; }
+// Managed arrays: element count, then the elements.
+inline constexpr size_t ArrayLengthAt = 0x18, ArrayItemsAt = 0x20;
 template<class T> T Read(Obj obj, size_t offset) {
     if (!obj) throw std::runtime_error("Null managed field owner");
     return *reinterpret_cast<T*>(static_cast<char*>(obj) + offset);

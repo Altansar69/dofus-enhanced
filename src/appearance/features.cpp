@@ -61,7 +61,7 @@ static Obj CreatureLookHook(Obj entity, Method method) {
             generation = module->features->PrepareCreatureLook(entity);
             // An empty cache is rebuilt by this native call: only its result
             // may be an NPC's fresh look.
-            rebuilt = generation && !Read<Obj>(entity, 0x310);
+            rebuilt = generation && !Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhhm", 0x310));
             if (!module->stopped) {
                 if (auto look = module->features->SubentityLook(entity)) return look;
             }
@@ -150,12 +150,12 @@ void Features::InvalidateLookCache() {
 void Features::SyncLookCachePolicy() {
     LookCachePolicy current;
     current.service = module->creatures.get();
-    current.context = current.service ? Read<Obj>(current.service, 0x10) : nullptr;
+    current.context = current.service ? Read<Obj>(current.service, FieldAt("exf", "drig", 0x10)) : nullptr;
     current.combat = module->InCombat();
     current.mode = ActiveDisplayMode(module->settings, current.combat);
     current.categories = MiniatureCategoryMask(module->settings);
     current.stopped = module->stopped.load();
-    current.active = current.service && Read<bool>(current.service, 0x48);
+    current.active = current.service && Read<bool>(current.service, FieldAt("exf", "<drio>k__BackingField", 0x48));
     if (!lookCachePolicyKnown || !(current == lookCachePolicy)) {
         InvalidateLookCache();
         lookCachePolicy = current;
@@ -165,12 +165,12 @@ void Features::SyncLookCachePolicy() {
 bool Features::IsRootEntity(Obj entity) const {
     return module->servicesReady && lookCachePolicy.context && entity &&
         api.class_is_assignable_from(lookAnimatedEntityClass, api.object_get_class(entity)) &&
-        Read<Obj>(entity, 0x1A8) == entity && Read<Obj>(entity, 0x398) == lookCachePolicy.context;
+        Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "<fhsz>k__BackingField", 0x1A8)) == entity && Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhiv", 0x398)) == lookCachePolicy.context;
 }
 uint64_t Features::PrepareCreatureLook(Obj entity) {
     SyncLookCachePolicy();
     if (!IsRootEntity(entity)) return 0;
-    const auto cachedLook = Read<Obj>(entity, 0x310);
+    const auto cachedLook = Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhhm", 0x310));
     // rez returns +0x310 before inspecting the mode or source appearance. A
     // preloaded or previous-generation cache must be cleared through native rfa.
     if (cachedLook && !lookCacheStamps.contains(cachedLook))
@@ -180,7 +180,7 @@ uint64_t Features::PrepareCreatureLook(Obj entity) {
 void Features::RememberCreatureLook(Obj entity, uint64_t generation) {
     SyncLookCachePolicy();
     if (lookCachePolicy.stopped || generation != lookCacheGeneration || !IsRootEntity(entity)) return;
-    const auto cachedLook = Read<Obj>(entity, 0x310);
+    const auto cachedLook = Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhhm", 0x310));
     if (!cachedLook || lookCacheStamps.contains(cachedLook)) return;
     if (!api.class_is_assignable_from(entityLookClass, api.object_get_class(cachedLook))) return;
     if (lookCacheStamps.size() >= MaxLookCacheStamps) lookCacheStamps.erase(lookCacheStamps.begin());
@@ -192,20 +192,20 @@ Obj Features::SubentityLook(Obj entity) const {
     if (!module->servicesReady || ActiveDisplayMode(module->settings, module->InCombat()) != 2)
         return nullptr;
     auto service = module->creatures.get();
-    if (!service || !Read<bool>(service, 0x48)) return nullptr;
+    if (!service || !Read<bool>(service, FieldAt("exf", "<drio>k__BackingField", 0x48))) return nullptr;
     const auto is = [](Obj object, Klass type) {
         return object && api.class_is_assignable_from(type, api.object_get_class(object));
     };
     if (!is(entity, lookAnimatedEntityClass)) return nullptr;
-    Ref root(Read<Obj>(entity, 0x1A8));
+    Ref root(Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "<fhsz>k__BackingField", 0x1A8)));
     if (root.get() == entity || !is(root.get(), lookAnimatedEntityClass) ||
-        Read<Obj>(root.get(), 0x1A8) != root.get()) return nullptr;
+        Read<Obj>(root.get(), FieldAt("CoreAnimated.Animated", "<fhsz>k__BackingField", 0x1A8)) != root.get()) return nullptr;
     // An attachment must belong to this compositor's root and creature service.
-    const auto context = Read<Obj>(service, 0x10);
-    if (!context || Read<Obj>(entity, 0x398) != context || Read<Obj>(root.get(), 0x398) != context)
+    const auto context = Read<Obj>(service, FieldAt("exf", "drig", 0x10));
+    if (!context || Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhiv", 0x398)) != context || Read<Obj>(root.get(), FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhiv", 0x398)) != context)
         return nullptr;
-    auto rootId = Read<int64_t>(root.get(), 0x1C8);
-    if (Read<int64_t>(entity, 0x1C8) == rootId) return nullptr;
+    auto rootId = Read<int64_t>(root.get(), FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
+    if (Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8)) == rootId) return nullptr;
     Ref registry(module->FindService("fso"));
     if (!is(registry.get(), lookEntityRegistryClass)) return nullptr;
     Obj found = nullptr;
@@ -214,9 +214,9 @@ Obj Features::SubentityLook(Obj entity) const {
     Ref info(found);
     int exclusion = 9;
     if (api.Value<bool>(api.Invoke(excludedTest, info.get(), {&exclusion}))) return nullptr;
-    auto look = Read<Obj>(entity, 0x170);
-    if (!is(look, entityLookClass) || Read<int>(look, 0x1C) <= 0) return nullptr;
-    const float x = Read<float>(look, 0x2C), y = Read<float>(look, 0x30);
+    auto look = Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "fhst", 0x170));
+    if (!is(look, entityLookClass) || Read<int>(look, FieldAt("Core.Rendering.Look.EntityLook", "fhyt", 0x1C)) <= 0) return nullptr;
+    const float x = Read<float>(look, FieldAt("Core.Rendering.Look.EntityLook", "fhyw", 0x2C)), y = Read<float>(look, FieldAt("Core.Rendering.Look.EntityLook", "fhyx", 0x30));
     if (!std::isfinite(x) || !std::isfinite(y) || x == 0.0f || y == 0.0f)
         return nullptr;
     // Native rez substitutes root.daxq() for every attachment: correct only for
@@ -238,7 +238,7 @@ bool Features::PreserveMiniatureAttachmentVisibility(Obj entity, uintptr_t calle
 bool Features::Convert(Obj service, Obj info, Obj* look) {
     const bool combat = module->InCombat();
     if (ActiveDisplayMode(module->settings, combat) != 2 || !service || !info || !look || !*look) return false;
-    if (service != module->creatures.get() || !Read<bool>(service, 0x48)) return false;
+    if (service != module->creatures.get() || !Read<bool>(service, FieldAt("exf", "<drio>k__BackingField", 0x48))) return false;
     int exclusion = 9;
     if (api.Value<bool>(api.Invoke(excludedTest, info, {&exclusion}))) return false;
     int playerFlag = 0x80, monsterFlag = 8, summonKey = 1;
@@ -270,8 +270,8 @@ bool Features::Convert(Obj service, Obj info, Obj* look) {
 // dbex), keeping the signs of its scales: the source is never modified.
 Ref Features::ScaledCopy(Obj look, float factor) {
     Ref copy(api.Invoke(cloneLook, look));
-    float x = Read<float>(copy.get(), 0x2C) * factor;
-    float y = Read<float>(copy.get(), 0x30) * factor;
+    float x = Read<float>(copy.get(), FieldAt("Core.Rendering.Look.EntityLook", "fhyw", 0x2C)) * factor;
+    float y = Read<float>(copy.get(), FieldAt("Core.Rendering.Look.EntityLook", "fhyx", 0x30)) * factor;
     if (!std::isfinite(x) || !std::isfinite(y)) throw std::runtime_error("Non-finite entity scale");
     api.Invoke(scaleX, copy.get(), {&x});
     api.Invoke(scaleY, copy.get(), {&y});
@@ -300,12 +300,12 @@ Obj Features::RoleplayNpcLook(Obj entity, Obj look) {
     if (!look || module->stopped || module->InCombat() || ActiveDisplayMode(settings, false) != 2 ||
         !MiniatureGroupEnabled(settings, MiniatureGroup::Npc)) return look;
     auto service = module->creatures.get();
-    if (!service || !Read<bool>(service, 0x48) || Read<Obj>(entity, 0x310) != look ||
+    if (!service || !Read<bool>(service, FieldAt("exf", "<drio>k__BackingField", 0x48)) || Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhhm", 0x310)) != look ||
         !api.class_is_assignable_from(entityLookClass, api.object_get_class(look))) return look;
     Ref registry(module->FindService("fso"));
     if (!registry.get() || !api.class_is_assignable_from(lookEntityRegistryClass, api.object_get_class(registry.get())))
         return look;
-    auto id = Read<int64_t>(entity, 0x1C8);
+    auto id = Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
     Obj found = nullptr;
     if (!api.Value<bool>(api.Invoke(fighterTryGet, registry.get(), {&id, &found})) || !found) return look;
     Ref info(found);
@@ -316,7 +316,7 @@ Obj Features::RoleplayNpcLook(Obj entity, Obj look) {
     const auto factor = SizeFactor(SimpleReducedPercent, SimpleMinimumMonsterPercent, false, 0, sizes.playerHeight);
     if (!factor || *factor == 1.0f) return look;
     auto copy = ScaledCopy(look, *factor);
-    api.gc_wbarrier_set_field(entity, reinterpret_cast<Obj*>(static_cast<char*>(entity) + 0x310), copy.get());
+    api.gc_wbarrier_set_field(entity, reinterpret_cast<Obj*>(static_cast<char*>(entity) + FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhhm", 0x310)), copy.get());
     ++miniatureCount;
     return copy.get();
 }
@@ -345,15 +345,15 @@ void Features::Refresh(bool active) {
 Features::LocalFighterIdentity Features::LocalFighter() const {
     LocalFighterIdentity unknown;
     if (!module->InCombat()) return unknown;
-    auto state = Read<Obj>(module->fight.get(), 0x18); // fxc.dvzu : fyb
+    auto state = Read<Obj>(module->fight.get(), FieldAt("fxc", "dvzu", 0x18)); // fxc.dvzu : fyb
     if (!state) return unknown;
     if (std::string(api.class_get_name(api.object_get_class(state))) != "fyb") return unknown;
-    auto character = Read<Obj>(state, 0xF0);
-    auto fighters = Read<Obj>(state, 0x58);
+    auto character = Read<Obj>(state, FieldAt("fyb", "<dwjp>k__BackingField", 0xF0));
+    auto fighters = Read<Obj>(state, FieldAt("fyb", "<dwiw>k__BackingField", 0x58));
     if (!character || !fighters) return unknown;
     if (std::string(api.class_get_name(api.object_get_class(character))) != "esg" ||
         std::string(api.class_get_name(api.object_get_class(fighters))) != "evv") return unknown;
-    if (!Read<Obj>(character, 0x128)) return unknown;
+    if (!Read<Obj>(character, FieldAt("esg", "dpzj", 0x128))) return unknown;
     auto id = api.Value<int64_t>(api.Invoke(localIdGet, character));
     Obj local = nullptr;
     if (!api.Value<bool>(api.Invoke(fighterTryGet, fighters, {&id, &local})) || !local) return unknown;
@@ -392,7 +392,7 @@ MiniatureGroup Features::Group(Obj info) const {
 Features::RoleplayIdentity Features::ReadRoleplayIdentity() const {
     RoleplayIdentity identity;
     Ref character(module->FindService("fng"));
-    if (character.get() && api.object_get_class(character.get()) == characterClass && Read<Obj>(character.get(), 0x128))
+    if (character.get() && api.object_get_class(character.get()) == characterClass && Read<Obj>(character.get(), FieldAt("esg", "dpzj", 0x128)))
         identity.self = api.Value<int64_t>(api.Invoke(localIdGet, character.get()));
     Ref party(module->FindService("fne"));
     if (!party.get() || api.object_get_class(party.get()) != partyClass) return identity;
@@ -403,7 +403,7 @@ Features::RoleplayIdentity Features::ReadRoleplayIdentity() const {
     for (int index = 0; index < count; ++index) {
         Ref member(api.Call(members.get(), "get_Item", {&index}));
         // Accepted members only (lg.ddku): an invited guest is not in the party.
-        if (!member.get() || api.object_get_class(member.get()) != partyMemberClass || !Read<bool>(member.get(), 0x20)) continue;
+        if (!member.get() || api.object_get_class(member.get()) != partyMemberClass || !Read<bool>(member.get(), FieldAt("lg", "ddku", 0x20))) continue;
         const auto id = api.Value<int64_t>(api.Invoke(partyMemberIdGet, member.get()));
         if (id > 0) identity.party.push_back(id);
     }

@@ -30,13 +30,13 @@ CaptureState ReadCurrent(Obj fight, Obj cached, int64_t* participant = nullptr) 
         (api.Value<uint32_t>(api.Invoke(methods.flags, information.get())) & 8) != 0)
         return CaptureState::Unknown;
 
-    Ref context(Read<Obj>(fight, 0x18));
+    Ref context(Read<Obj>(fight, FieldAt("fxc", "dvzu", 0x18)));
     if (!Is(context.get(), "fyb")) return CaptureState::Unknown;
-    Ref character(Read<Obj>(context.get(), 0xF0)), entities(Read<Obj>(context.get(), 0x58));
-    Ref stateService(Read<Obj>(context.get(), 0x60));
+    Ref character(Read<Obj>(context.get(), FieldAt("fyb", "<dwjp>k__BackingField", 0xF0))), entities(Read<Obj>(context.get(), FieldAt("fyb", "<dwiw>k__BackingField", 0x58)));
+    Ref stateService(Read<Obj>(context.get(), FieldAt("fyb", "<dwix>k__BackingField", 0x60)));
     if (!Is(character.get(), "esg") || !Is(entities.get(), "evv") ||
-        !Is(stateService.get(), "ebs") || !Read<Obj>(character.get(), 0x128) ||
-        Read<Obj>(stateService.get(), 0x20) != context.get())
+        !Is(stateService.get(), "ebs") || !Read<Obj>(character.get(), FieldAt("esg", "dpzj", 0x128)) ||
+        Read<Obj>(stateService.get(), FieldAt("ebs", "dlmp", 0x20)) != context.get())
         return CaptureState::Unknown;
 
     int64_t localId = api.Value<int64_t>(api.Invoke(methods.localId, character.get()));

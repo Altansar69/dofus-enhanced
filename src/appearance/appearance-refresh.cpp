@@ -23,12 +23,12 @@ struct Owners {
     bool Current() const {
         return module && module->servicesReady && module->fight.get() == fight.get() &&
             module->creatures.get() == creature.get() && module->InCombat() &&
-            Read<Obj>(fight.get(), 0x18) == context.get() &&
-            Read<Obj>(context.get(), 0x58) == fighters.get() &&
-            Read<Obj>(context.get(), 0x68) == rendered.get() &&
-            Read<Obj>(rendered.get(), 0x150) == registry.get() &&
-            Read<Obj>(rendered.get(), 0x20) == services.get() &&
-            Read<Obj>(creature.get(), 0x10) == services.get();
+            Read<Obj>(fight.get(), FieldAt("fxc", "dvzu", 0x18)) == context.get() &&
+            Read<Obj>(context.get(), FieldAt("fyb", "<dwiw>k__BackingField", 0x58)) == fighters.get() &&
+            Read<Obj>(context.get(), FieldAt("fyb", "<dwiy>k__BackingField", 0x68)) == rendered.get() &&
+            Read<Obj>(rendered.get(), FieldAt("fxw", "<dwfl>k__BackingField", 0x150)) == registry.get() &&
+            Read<Obj>(rendered.get(), FieldAt("exx", "drmi", 0x20)) == services.get() &&
+            Read<Obj>(creature.get(), FieldAt("exf", "drig", 0x10)) == services.get();
     }
 };
 struct Target {
@@ -37,9 +37,9 @@ struct Target {
     Target(int64_t value, Obj information, Obj rendered) : id(value), info(information), entity(rendered) {}
 };
 bool Root(Obj entity, int64_t id, Obj services) {
-    return Is(entity, methods.entity) && Read<Obj>(entity, 0x1A8) == entity &&
-        Read<Obj>(entity, 0x398) == services && Read<int64_t>(entity, 0x1C8) == id &&
-        Read<Obj>(entity, 0x170) && Read<Obj>(entity, 0xA8) && Read<Obj>(entity, 0x1E0);
+    return Is(entity, methods.entity) && Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "<fhsz>k__BackingField", 0x1A8)) == entity &&
+        Read<Obj>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhiv", 0x398)) == services && Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8)) == id &&
+        Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "fhst", 0x170)) && Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "fhro", 0xA8)) && Read<Obj>(entity, FieldAt("CoreAnimated.Animated", "fhtf", 0x1E0));
 }
 bool CurrentTarget(const Owners& owners, const Target& target) {
     auto id = target.id;
@@ -82,13 +82,13 @@ void RefreshCombatAppearance() {
     try {
         Owners owners;
         owners.fight.reset(module->fight.get()); owners.creature.reset(module->creatures.get());
-        owners.context.reset(Read<Obj>(owners.fight.get(), 0x18));
+        owners.context.reset(Read<Obj>(owners.fight.get(), FieldAt("fxc", "dvzu", 0x18)));
         if (!Is(owners.context.get(), methods.context)) return;
-        owners.fighters.reset(Read<Obj>(owners.context.get(), 0x58));
-        owners.rendered.reset(Read<Obj>(owners.context.get(), 0x68));
+        owners.fighters.reset(Read<Obj>(owners.context.get(), FieldAt("fyb", "<dwiw>k__BackingField", 0x58)));
+        owners.rendered.reset(Read<Obj>(owners.context.get(), FieldAt("fyb", "<dwiy>k__BackingField", 0x68)));
         if (!Is(owners.fighters.get(), methods.fighters) || !Is(owners.rendered.get(), methods.rendered)) return;
-        owners.registry.reset(Read<Obj>(owners.rendered.get(), 0x150));
-        owners.services.reset(Read<Obj>(owners.creature.get(), 0x10));
+        owners.registry.reset(Read<Obj>(owners.rendered.get(), FieldAt("fxw", "<dwfl>k__BackingField", 0x150)));
+        owners.services.reset(Read<Obj>(owners.creature.get(), FieldAt("exf", "drig", 0x10)));
         if (!Is(owners.registry.get(), methods.registry) || !owners.services.get() || !owners.Current()) return;
         Ref list(api.Invoke(methods.list, owners.fighters.get()));
         if (!list.get()) return;

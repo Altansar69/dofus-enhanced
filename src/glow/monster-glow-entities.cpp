@@ -85,12 +85,12 @@ struct Owners {
         if (!module || !module->servicesReady || module->stopped ||
             module->compositor.get() != compositor.get() || module->creatures.get() != creature.get() ||
             module->fight.get() != fight.get() || module->InCombat() != combat ||
-            Read<Obj>(creature.get(), 0x10) != services.get()) return false;
-        if (combat) return Read<Obj>(fight.get(), 0x18) == context.get() &&
-            Read<Obj>(context.get(), 0x58) == registry.get() && Read<Obj>(context.get(), 0x68) == rendered.get() &&
-            Read<Obj>(rendered.get(), 0x20) == services.get() &&
-            Read<Obj>(rendered.get(), 0x150) == world.get();
-        return Read<Obj>(world.get(), 0x20) == services.get();
+            Read<Obj>(creature.get(), FieldAt("exf", "drig", 0x10)) != services.get()) return false;
+        if (combat) return Read<Obj>(fight.get(), FieldAt("fxc", "dvzu", 0x18)) == context.get() &&
+            Read<Obj>(context.get(), FieldAt("fyb", "<dwiw>k__BackingField", 0x58)) == registry.get() && Read<Obj>(context.get(), FieldAt("fyb", "<dwiy>k__BackingField", 0x68)) == rendered.get() &&
+            Read<Obj>(rendered.get(), FieldAt("exx", "drmi", 0x20)) == services.get() &&
+            Read<Obj>(rendered.get(), FieldAt("fxw", "<dwfl>k__BackingField", 0x150)) == world.get();
+        return Read<Obj>(world.get(), FieldAt("eun", "dqpp", 0x20)) == services.get();
     }
     Obj Find(int64_t id) const {
         if (combat) return api.Invoke(methods.findFight, world.get(), {&id});
@@ -103,20 +103,20 @@ bool VisiblePart(Obj part, Obj root, Obj services, Ref& renderer, const char*& r
     rejectedAlpha = -1;
     reason = "part-type";
     if (!Is(part, methods.entity)) return false;
-    reason = "part-root"; if (Read<Obj>(part, 0x1A8) != root) return false;
-    reason = "part-services"; if (Read<Obj>(part, 0x398) != services) return false;
+    reason = "part-root"; if (Read<Obj>(part, FieldAt("CoreAnimated.Animated", "<fhsz>k__BackingField", 0x1A8)) != root) return false;
+    reason = "part-services"; if (Read<Obj>(part, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhiv", 0x398)) != services) return false;
     reason = "part-hidden"; if (!api.Value<bool>(api.Invoke(methods.visible, part))) return false;
     reason = "part-alpha";
     rejectedAlpha = api.Value<float>(api.Invoke(methods.alpha, part));
     if (!VisibleOpacity(rejectedAlpha)) return false;
     rejectedAlpha = -1;
-    Ref animator(Read<Obj>(part, 0xA8));
-    renderer.reset(Read<Obj>(part, 0x1E8));
+    Ref animator(Read<Obj>(part, FieldAt("CoreAnimated.Animated", "fhro", 0xA8)));
+    renderer.reset(Read<Obj>(part, FieldAt("CoreAnimated.Animated", "fhtg", 0x1E8)));
     reason = "animator-type"; if (!Is(animator.get(), methods.animator)) return false;
     reason = "renderer-type"; if (!Is(renderer.get(), methods.renderer)) return false;
     reason = "destroyed-source"; if (!Exists(animator.get()) || !Exists(renderer.get())) return false;
     reason = "animator-alpha";
-    rejectedAlpha = Read<float>(animator.get(), 0x40);
+    rejectedAlpha = Read<float>(animator.get(), FieldAt("Ankama.Animations.Animator2D", "colorModifier", 0x34) + 0xC);
     if (!VisibleOpacity(rejectedAlpha)) return false;
     rejectedAlpha = -1;
     reason = "renderer-disabled"; if (!api.Value<bool>(api.Invoke(methods.enabled, renderer.get()))) return false;
@@ -149,8 +149,8 @@ bool Collect(Obj root, Obj services, Target& target, const char*& lastRejected, 
             while (api.Value<bool>(api.Call(iterator.get(), "MoveNext"))) {
                 if (++count > MaxParts) { api.Call(iterator.get(), "Dispose"); return false; }
                 Ref child(api.Call(iterator.get(), "get_Current"));
-                if (!Is(child.get(), methods.entity) || Read<Obj>(child.get(), 0x1A8) != root ||
-                    Read<Obj>(child.get(), 0x398) != services || !parts.insert(child.get()).second) continue;
+                if (!Is(child.get(), methods.entity) || Read<Obj>(child.get(), FieldAt("CoreAnimated.Animated", "<fhsz>k__BackingField", 0x1A8)) != root ||
+                    Read<Obj>(child.get(), FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "dhiv", 0x398)) != services || !parts.insert(child.get()).second) continue;
                 if (parts.size() > MaxParts) { api.Call(iterator.get(), "Dispose"); return false; }
                 pending.push_back(std::move(child));
             }
@@ -212,18 +212,18 @@ Snapshot ReadEntities() {
         owners.compositor.reset(module->compositor.get()); owners.creature.reset(module->creatures.get());
         owners.fight.reset(module->fight.get()); owners.combat = module->InCombat();
         result.combat = owners.combat;
-        owners.services.reset(Read<Obj>(owners.creature.get(), 0x10));
+        owners.services.reset(Read<Obj>(owners.creature.get(), FieldAt("exf", "drig", 0x10)));
         result.reason = "services";
         if (!owners.services.get()) return result;
         if (owners.combat) {
-            owners.context.reset(Read<Obj>(owners.fight.get(), 0x18));
+            owners.context.reset(Read<Obj>(owners.fight.get(), FieldAt("fxc", "dvzu", 0x18)));
             result.reason = "fight-context";
             if (!Is(owners.context.get(), methods.context)) return result;
-            owners.registry.reset(Read<Obj>(owners.context.get(), 0x58));
-            owners.rendered.reset(Read<Obj>(owners.context.get(), 0x68));
+            owners.registry.reset(Read<Obj>(owners.context.get(), FieldAt("fyb", "<dwiw>k__BackingField", 0x58)));
+            owners.rendered.reset(Read<Obj>(owners.context.get(), FieldAt("fyb", "<dwiy>k__BackingField", 0x68)));
             result.reason = "fight-render-context";
             if (!Is(owners.rendered.get(), methods.rendered)) return result;
-            owners.world.reset(Read<Obj>(owners.rendered.get(), 0x150));
+            owners.world.reset(Read<Obj>(owners.rendered.get(), FieldAt("fxw", "<dwfl>k__BackingField", 0x150)));
             result.reason = "fight-render-registry";
             if (!Is(owners.world.get(), methods.combatRegistry)) return result;
         } else {
@@ -281,7 +281,7 @@ Snapshot ReadEntities() {
             if (!api.Value<bool>(api.Invoke(methods.findInfo, owners.registry.get(), {&id, &current})) ||
                 current != info) continue;
             Ref entity(owners.Find(id));
-            if (!Is(entity.get(), methods.entity) || Read<int64_t>(entity.get(), 0x1C8) != id ||
+            if (!Is(entity.get(), methods.entity) || Read<int64_t>(entity.get(), FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8)) != id ||
                 !roots.insert(entity.get()).second) continue;
             ++result.matchedRoots;
             Target target; target.id = id; target.category = candidate.category; target.entity = std::move(entity);

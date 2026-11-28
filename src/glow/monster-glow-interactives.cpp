@@ -32,13 +32,13 @@ struct Owners {
         return module && module->servicesReady && !module->stopped && !module->stopRequested &&
             !module->InCombat() && module->compositor.get() == compositor.get() &&
             module->FindService("fro") == service.get() && module->FindService("fpm") == mapService.get() &&
-            Read<Obj>(service.get(), 0x40) == mapService.get() &&
-            Read<Obj>(service.get(), 0xC8) == registry.get() &&
+            Read<Obj>(service.get(), FieldAt("wp", "dhbg", 0x40)) == mapService.get() &&
+            Read<Obj>(service.get(), FieldAt("wp", "dhbx", 0xC8)) == registry.get() &&
             *static_cast<int*>(api.FieldAddress(registry.get(), "_version")) == version &&
             Count(registry.get()) == count &&
             api.Value<bool>(api.Invoke(methods.ready, mapService.get())) &&
             api.Invoke(methods.mapData, mapService.get()) == map.get() &&
-            Exists(map.get()) && Read<int>(map.get(), 0x18) == mapId;
+            Exists(map.get()) && Read<int>(map.get(), FieldAt("AleCore.Data.UnityClient.ClientMapData", "id", 0x18)) == mapId;
     }
     bool Contains(int64_t id, Obj wrapper) const {
         Obj current = nullptr;
@@ -52,9 +52,9 @@ bool CollectAnimated(Obj root, Target& target) {
     for (size_t at = 0; at < pending.size(); ++at) {
         const auto part = pending[at].get();
         if (!part || !api.class_is_assignable_from(methods.animated, api.object_get_class(part))) return false;
-        Ref animator(Read<Obj>(part, 0xA8)), renderer(Read<Obj>(part, 0x1E8));
+        Ref animator(Read<Obj>(part, FieldAt("CoreAnimated.Animated", "fhro", 0xA8))), renderer(Read<Obj>(part, FieldAt("CoreAnimated.Animated", "fhtg", 0x1E8)));
         const float alpha = Is(animator.get(), methods.animator) && Exists(animator.get()) ?
-            Read<float>(animator.get(), 0x40) : 0;
+            Read<float>(animator.get(), FieldAt("Ankama.Animations.Animator2D", "colorModifier", 0x34) + 0xC) : 0;
         if (!std::isfinite(alpha) || alpha <= GlowAlphaClip || alpha > 1.001f || !Visible(renderer.get())) {
             if (part == root) return false;
             continue;
@@ -85,19 +85,19 @@ bool CollectAnimated(Obj root, Target& target) {
 }
 bool Collect(Obj focus, uint32_t id, Target& target) {
     if (Is(focus, methods.fixed)) {
-        if (Read<uint32_t>(focus, 0x30) != id) return false;
-        Ref element(Read<Obj>(focus, 0x20));
+        if (Read<uint32_t>(focus, FieldAt("wl", "<dhap>k__BackingField", 0x30)) != id) return false;
+        Ref element(Read<Obj>(focus, FieldAt("wl", "dham", 0x20)));
         if (!Is(element.get(), methods.element) || !Exists(element.get())) return false;
-        Ref renderer(Read<Obj>(element.get(), 0x20));
+        Ref renderer(Read<Obj>(element.get(), FieldAt("Core.Rendering.GameObjects.MapElement", "meshRenderer", 0x20)));
         if (!Visible(renderer.get())) return false;
         target.renderers.push_back(std::move(renderer));
         return true;
     }
     if (Is(focus, methods.moving)) {
-        if (Read<uint32_t>(focus, 0x20) != id) return false;
-        Ref animation(Read<Obj>(focus, 0x10));
+        if (Read<uint32_t>(focus, FieldAt("wk", "<dhad>k__BackingField", 0x20)) != id) return false;
+        Ref animation(Read<Obj>(focus, FieldAt("wk", "dhaa", 0x10)));
         if (!Is(animation.get(), methods.animation)) return false;
-        Ref root(Read<Obj>(animation.get(), 0x18));
+        Ref root(Read<Obj>(animation.get(), FieldAt("wq", "dhcd", 0x18)));
         return CollectAnimated(root.get(), target);
     }
     return false; // Unknown displayable types are never treated as raw renderers.
@@ -166,8 +166,8 @@ Snapshot ReadGlowInteractives() {
         if (!api.Value<bool>(api.Invoke(methods.ready, owners.mapService.get()))) return result;
         owners.map.reset(api.Invoke(methods.mapData, owners.mapService.get()));
         if (!Is(owners.map.get(), methods.map) || !Exists(owners.map.get())) return result;
-        owners.mapId = Read<int>(owners.map.get(), 0x18);
-        owners.registry.reset(Read<Obj>(owners.service.get(), 0xC8));
+        owners.mapId = Read<int>(owners.map.get(), FieldAt("AleCore.Data.UnityClient.ClientMapData", "id", 0x18));
+        owners.registry.reset(Read<Obj>(owners.service.get(), FieldAt("wp", "dhbx", 0xC8)));
         if (!owners.mapId || !owners.registry.get()) return result;
         owners.count = Count(owners.registry.get());
         owners.version = *static_cast<int*>(api.FieldAddress(owners.registry.get(), "_version"));
@@ -181,18 +181,18 @@ Snapshot ReadGlowInteractives() {
             if (!owners.Current()) return {};
             Ref wrapper(api.Call(list.get(), "get_Item", {&i}));
             if (!Is(wrapper.get(), methods.wrapper)) continue;
-            const auto id = Read<int64_t>(wrapper.get(), 0x10);
+            const auto id = Read<int64_t>(wrapper.get(), FieldAt("wm", "dhat", 0x10));
             if (id <= 0 || id > UINT32_MAX || !seen.insert(id).second || !owners.Contains(id, wrapper.get())) continue;
-            Ref data(Read<Obj>(wrapper.get(), 0x20)), focus(Read<Obj>(wrapper.get(), 0x18));
-            if (!Is(data.get(), methods.data) || static_cast<uint32_t>(Read<int>(data.get(), 0x10)) != id) continue;
-            Ref skills(Read<Obj>(data.get(), 0x18));
+            Ref data(Read<Obj>(wrapper.get(), FieldAt("wm", "dhav", 0x20))), focus(Read<Obj>(wrapper.get(), FieldAt("wm", "dhau", 0x18)));
+            if (!Is(data.get(), methods.data) || static_cast<uint32_t>(Read<int>(data.get(), FieldAt("dq", "dcan", 0x10))) != id) continue;
+            Ref skills(Read<Obj>(data.get(), FieldAt("dq", "dcap", 0x18)));
             const int skillCount = Count(skills.get());
             if (skillCount <= 0 || skillCount > MaxSkills) continue;
             Target target; target.id = id; target.category = GlowCategory::Interactive; target.entity.reset(focus.get());
             if (!Collect(focus.get(), static_cast<uint32_t>(id), target)) continue;
             if (!owners.Current()) return {};
-            if (!owners.Contains(id, wrapper.get()) || Read<Obj>(wrapper.get(), 0x18) != focus.get() ||
-                Read<Obj>(wrapper.get(), 0x20) != data.get()) continue;
+            if (!owners.Contains(id, wrapper.get()) || Read<Obj>(wrapper.get(), FieldAt("wm", "dhau", 0x18)) != focus.get() ||
+                Read<Obj>(wrapper.get(), FieldAt("wm", "dhav", 0x20)) != data.get()) continue;
             result.targets.push_back(std::move(target));
         }
         if (!owners.Current()) return {};

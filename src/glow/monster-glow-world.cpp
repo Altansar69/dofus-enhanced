@@ -35,11 +35,11 @@ bool Current(const WorldFrame& f) {
         module->compositor.get() == f.compositor.get() && module->FindService("fpm") == f.service.get() &&
         api.Value<bool>(api.Invoke(methods.ready, f.service.get())) &&
         api.Invoke(methods.mapData, f.service.get()) == f.map.get() && Exists(f.map.get()) &&
-        Read<int>(f.map.get(), 0x18) == f.mapId &&
-        Read<Obj>(f.service.get(), 0x110) == f.loader.get() &&
-        Read<Obj>(f.loader.get(), 0x80) == f.resources.get() &&
-        Read<int64_t>(f.resources.get(), 0x10) == f.mapId &&
-        Read<Obj>(f.resources.get(), 0x20) == f.sprites.get() &&
+        Read<int>(f.map.get(), FieldAt("AleCore.Data.UnityClient.ClientMapData", "id", 0x18)) == f.mapId &&
+        Read<Obj>(f.service.get(), FieldAt("epf", "doqa", 0x110)) == f.loader.get() &&
+        Read<Obj>(f.loader.get(), FieldAt("ue", "dgjz", 0x80)) == f.resources.get() &&
+        Read<int64_t>(f.resources.get(), FieldAt("tt", "dgfm", 0x10)) == f.mapId &&
+        Read<Obj>(f.resources.get(), FieldAt("tt", "dgfo", 0x20)) == f.sprites.get() &&
         Count(f.sprites.get()) == f.count && Version(f.sprites.get()) == f.version;
 }
 bool Valid(ScreenRect r) {
@@ -134,15 +134,15 @@ WorldFrame ReadGlowWorld() {
         f.reason = "map-loading"; if (!api.Value<bool>(api.Invoke(methods.ready, f.service.get()))) return f;
         f.map.reset(api.Invoke(methods.mapData, f.service.get()));
         f.reason = "map-data"; if (!Is(f.map.get(), methods.map) || !Exists(f.map.get())) return f;
-        f.mapId = Read<int>(f.map.get(), 0x18);
-        f.loader.reset(Read<Obj>(f.service.get(), 0x110));
+        f.mapId = Read<int>(f.map.get(), FieldAt("AleCore.Data.UnityClient.ClientMapData", "id", 0x18));
+        f.loader.reset(Read<Obj>(f.service.get(), FieldAt("epf", "doqa", 0x110)));
         f.reason = "map-loader"; if (!Is(f.loader.get(), methods.loader)) return f;
         // qjh retains the map resources in ue.dgjz. At load completion qhw
         // replaces ue.dgjy.dggz with a fresh build buffer, so that buffer must
         // never be interpreted as the active rendered map.
-        f.resources.reset(Read<Obj>(f.loader.get(), 0x80));
+        f.resources.reset(Read<Obj>(f.loader.get(), FieldAt("ue", "dgjz", 0x80)));
         f.reason = "map-resources"; if (!Is(f.resources.get(), methods.resources)) return f;
-        f.sprites.reset(Read<Obj>(f.resources.get(), 0x20));
+        f.sprites.reset(Read<Obj>(f.resources.get(), FieldAt("tt", "dgfo", 0x20)));
         f.reason = "map-elements"; if (!f.sprites.get()) return f;
         f.count = Count(f.sprites.get()); f.version = Version(f.sprites.get());
         f.reason = "decor-limit"; if (f.count < 0 || f.count > MaxDecor) return f;
@@ -153,7 +153,7 @@ WorldFrame ReadGlowWorld() {
             if (!element.get()) continue;
             if (!Is(element.get(), methods.element)) throw std::runtime_error("Unexpected map element type");
             if (!Exists(element.get())) continue;
-            Ref renderer(Read<Obj>(element.get(), 0x20));
+            Ref renderer(Read<Obj>(element.get(), FieldAt("Core.Rendering.GameObjects.MapElement", "meshRenderer", 0x20)));
             if (!Visible(renderer.get()) || !seen.insert(renderer.get()).second) continue;
             const int layer = Layer(renderer.get()), order = Order(renderer.get());
             WorldDecor item; item.element = std::move(element); item.renderer = std::move(renderer);
@@ -186,7 +186,7 @@ WorldSelection ForegroundGlowDecor(const WorldFrame& world, const UiFrame& ui,
                 orderedAhead = orderedAhead && (decor.layer > target.layer ||
                     (decor.layer == target.layer && decor.order > target.order));
             if (!orderedAhead) continue;
-            if (!Exists(decor.element.get()) || Read<Obj>(decor.element.get(), 0x20) != decor.renderer.get() ||
+            if (!Exists(decor.element.get()) || Read<Obj>(decor.element.get(), FieldAt("Core.Rendering.GameObjects.MapElement", "meshRenderer", 0x20)) != decor.renderer.get() ||
                 !Visible(decor.renderer.get())) continue;
             if (!decor.projection || decor.serial != ui.serial || decor.generation != ui.generation) {
                 auto projection = ProjectGlowRenderers(ui, {decor.renderer.get()}, true);

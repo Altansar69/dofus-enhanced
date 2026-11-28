@@ -49,13 +49,13 @@ struct Finishing {
           lookup(find), contains(has), id(value), previous(current) { current = this; }
     ~Finishing() { current = previous; }
     bool OwnsState() const {
-        return Read<Obj>(behavior, 0x20) == dictionary && FindState(dictionary, lookup, id) == state &&
-            Read<int64_t>(entity, 0x1C8) == id && Read<int64_t>(state, 0x10) == id &&
-            Read<Obj>(state, 0x18) == entity && Read<Obj>(state, 0x38) == route &&
-            Read<Obj>(state, 0x40) == callback;
+        return Read<Obj>(behavior, FieldAt("yd", "dhoc", 0x20)) == dictionary && FindState(dictionary, lookup, id) == state &&
+            Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8)) == id && Read<int64_t>(state, FieldAt("ye", "dhof", 0x10)) == id &&
+            Read<Obj>(state, FieldAt("ye", "dhog", 0x18)) == entity && Read<Obj>(state, FieldAt("ye", "dhol", 0x38)) == route &&
+            Read<Obj>(state, FieldAt("ye", "dhom", 0x40)) == callback;
     }
     bool Cancelled() const {
-        auto pending = Read<Obj>(behavior, 0x28);
+        auto pending = Read<Obj>(behavior, FieldAt("yd", "dhod", 0x28));
         if (!pending) throw std::runtime_error("Missing throw cancellation registry");
         auto value = id;
         return api.Value<bool>(api.Invoke(contains, pending, {&value}));
@@ -66,13 +66,13 @@ thread_local Finishing* Finishing::current = nullptr;
 struct WithoutBounce {
     Obj state;
     bool previous;
-    explicit WithoutBounce(Obj value) : state(value), previous(Read<bool>(value, 0x30)) {
-        *reinterpret_cast<bool*>(static_cast<char*>(state) + 0x30) = false;
+    explicit WithoutBounce(Obj value) : state(value), previous(Read<bool>(value, FieldAt("ye", "dhok", 0x30))) {
+        *reinterpret_cast<bool*>(static_cast<char*>(state) + FieldAt("ye", "dhok", 0x30)) = false;
     }
     ~WithoutBounce() {
         // ye is freshly allocated by rjn, not pooled. Only this held object is
         // restored, even if its ID now belongs to a different movement.
-        *reinterpret_cast<bool*>(static_cast<char*>(state) + 0x30) = previous;
+        *reinterpret_cast<bool*>(static_cast<char*>(state) + FieldAt("ye", "dhok", 0x30)) = previous;
     }
 };
 
@@ -121,11 +121,11 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
 
     try {
         if (!InstantMovementEnabled() || !IsCurrentFightEntity(entity)) return;
-        auto dictionary = Read<Obj>(behavior, 0x20), pending = Read<Obj>(behavior, 0x28);
+        auto dictionary = Read<Obj>(behavior, FieldAt("yd", "dhoc", 0x20)), pending = Read<Obj>(behavior, FieldAt("yd", "dhod", 0x28));
         if (!dictionary || !pending) return;
         auto lookup = api.Find(api.object_get_class(dictionary), "TryGetValue", 2);
         auto contains = api.Find(api.object_get_class(pending), "Contains", 1);
-        const auto id = Read<int64_t>(entity, 0x1C8);
+        const auto id = Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
         auto state = FindState(dictionary, lookup, id);
         if (!state || api.object_get_class(state) != stateClass) return;
         Finishing finishing(behavior, dictionary, state, entity, route, callback, lookup, contains, id);
@@ -139,11 +139,11 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
             Finishing finishing(behavior, dictionary, state, entity, route, callback, lookup, contains, id);
             if (!InstantMovementEnabled() || !IsCurrentFightEntity(entity) ||
                 !finishing.OwnsState() || finishing.Cancelled()) return;
-            auto tween = Read<Obj>(state, 0x48);
+            auto tween = Read<Obj>(state, FieldAt("ye", "dhon", 0x48));
             // Only the initial arc. rly installs no OnKill subscriber; existing
             // async bounces and unexpected tweens stay on their native path.
-            if (!tween || Read<Obj>(state, 0x50) || Read<Obj>(tween, 0x88) ||
-                !Read<bool>(tween, 0xE8) || Read<bool>(tween, 0xE9) || Read<bool>(tween, 0x111)) return;
+            if (!tween || Read<Obj>(state, FieldAt("ye", "dhoo", 0x50)) || Read<Obj>(tween, FieldAt("DG.Tweening.Tween", "onKill", 0x88)) ||
+                !Read<bool>(tween, FieldAt("DG.Tweening.Tween", "<active>k__BackingField", 0xE8)) || Read<bool>(tween, FieldAt("DG.Tweening.Tween", "isSequenced", 0xE9)) || Read<bool>(tween, FieldAt("DG.Tweening.Tween", "isComplete", 0x111))) return;
             // Exact yd+ya.rll order, after rfw has finished notifying its start.
             stopFlight(state, nullptr);
             if (!finishing.OwnsState()) return;

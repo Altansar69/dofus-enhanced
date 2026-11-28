@@ -135,7 +135,7 @@ bool ListHook(Obj service,Obj message,Method method) {
     try {
         if (!message || journey.phase!=Phase::Destinations || service!=teleports.get() || !SameSession() ||
             Map()!=journey.sourceMap || journey.Expired(GetTickCount64())) return result;
-        const int source=Read<int>(message,0x28);
+        const int source=Read<int>(message,FieldAt("hgq", "ecig", 0x28));
         if (source==1 || source<0 || source>4) return result;
         freshList.reset(api.Field(service,"dspc")); freshSource=source;
     } catch (const std::exception& e) { Log(std::string("CHAT_TRAVEL_LIST_ERROR ")+e.what()); RestoreChatTravel(); }
@@ -146,9 +146,9 @@ bool QuoteHook(Obj service,Obj message,Method method) {
     try {
         if (!message || journey.phase!=Phase::DirectQuote || service!=cartography.get() || !SameSession() ||
             Map()!=journey.sourceMap || journey.Expired(GetTickCount64()) || quoteReceived ||
-            Read<int64_t>(message,0x28)!=quotedMap) return result;
+            Read<int64_t>(message,FieldAt("hgu", "ecji", 0x28))!=quotedMap) return result;
         // hgu is the native map tooltip reply. A positive price is required by fhw.betw.
-        quotedCost=Read<int>(message,0x30); quoteReceived=true;
+        quotedCost=Read<int>(message,FieldAt("hgu", "ecjk", 0x30)); quoteReceived=true;
     } catch (const std::exception& e) { Log(std::string("CHAT_TRAVEL_QUOTE_ERROR ")+e.what()); RestoreChatTravel(); }
     return result; // Never teleport from a receive callback.
 }
@@ -156,7 +156,7 @@ bool Locate(chat_travel::Destination& value) {
     Ref info(api.Invoke(mapInfo,nullptr,{&value.map})); if (!info.get()) return false;
     Ref area(api.Invoke(subarea,info.get())); if (!area.get()) return false;
     value.world=api.Value<int>(api.Invoke(world,area.get()));
-    value.x=Read<int16_t>(info.get(),0x18); value.y=Read<int16_t>(info.get(),0x1A);
+    value.x=Read<int16_t>(info.get(),FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posX", 0x18)); value.y=Read<int16_t>(info.get(),FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posY", 0x1A));
     return true;
 }
 void RequestTeleport(int source,int64_t map,int price) {

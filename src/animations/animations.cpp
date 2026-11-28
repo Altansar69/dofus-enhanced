@@ -44,16 +44,16 @@ bool InstantWaitsEnabled() {
 
 bool IsCurrentFightEntity(Obj entity) {
     if (!entity || !api.class_is_assignable_from(animatedEntityClass, api.object_get_class(entity))) return false;
-    auto state = Read<Obj>(module->fight.get(), 0x18);
+    auto state = Read<Obj>(module->fight.get(), FieldAt("fxc", "dvzu", 0x18));
     if (!state || api.object_get_class(state) != fightStateClass) return false;
-    auto fighters = Read<Obj>(state, 0x58);
-    auto rendered = Read<Obj>(state, 0x68);
+    auto fighters = Read<Obj>(state, FieldAt("fyb", "<dwiw>k__BackingField", 0x58));
+    auto rendered = Read<Obj>(state, FieldAt("fyb", "<dwiy>k__BackingField", 0x68));
     if (!fighters || api.object_get_class(fighters) != fighterRegistryClass ||
         !rendered || api.object_get_class(rendered) != renderedEntitiesClass) return false;
-    auto registry = Read<Obj>(rendered, 0x150);
+    auto registry = Read<Obj>(rendered, FieldAt("fxw", "<dwfl>k__BackingField", 0x150));
     if (!registry || api.object_get_class(registry) != entityRegistryClass) return false;
 
-    auto id = Read<int64_t>(entity, 0x1C8);
+    auto id = Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
     Obj info = nullptr;
     if (!api.Value<bool>(api.Invoke(module->features->fighterTryGet, fighters, {&id, &info})) || !info) return false;
     Ref heldInfo(info);
@@ -70,7 +70,7 @@ static void AnimationStartHook(Obj step, Method method) {
         // « Sans animations d'attaque et de sort » / « Sans animations de mort »:
         // the step's recorded provenance decides (see SkipFighterAnimation).
         if (step && CombatVisualsActive() && AnyFighterAnimationSkipped(module->settings) &&
-            module->InCombat() && IsCurrentFightEntity(Read<Obj>(step, 0x78))) {
+            module->InCombat() && IsCurrentFightEntity(Read<Obj>(step, FieldAt("gpy", "<eagz>k__BackingField", 0x78)))) {
             skip = SkipFighterAnimation(module->settings, ClassifyAnimationStep(step));
             remember = skip && module->settings.noVisualWaits;
         }
@@ -84,7 +84,7 @@ static void AnimationStartHook(Obj step, Method method) {
         originalAnimationStart(step, method);
         return;
     }
-    if (Read<bool>(step, 0x1D)) return;
+    if (Read<bool>(step, FieldAt("gpa", "<eacr>k__BackingField", 0x1D))) return;
 
     // Only « Sans attentes visuelles » may release an independent waiter for
     // this exact skipped animation. Record it before synchronous callbacks run.
@@ -103,7 +103,7 @@ static void AnimationStartHook(Obj step, Method method) {
         // The constructor also subscribes a disposal callback. The normal
         // nonblocking exit sets this marker before completion (2075C45); keep
         // that callback from completing the already skipped step again later.
-        *reinterpret_cast<bool*>(static_cast<char*>(step) + 0x71) = true;
+        *reinterpret_cast<bool*>(static_cast<char*>(step) + FieldAt("gpy", "eagy", 0x71)) = true;
         // gpy.bmat already uses this exact completion before playing an
         // invisible fighter's animation (20758C8 -> 2075C49). It runs the
         // native cleanup slot, cancels the watchdog, and advances the sequence.

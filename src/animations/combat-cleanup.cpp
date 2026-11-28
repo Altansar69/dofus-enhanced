@@ -23,7 +23,7 @@ std::vector<RecordedAnimation> animations;
 void RemoveCompletedAnimations() {
     std::erase_if(animations, [](const RecordedAnimation& item) {
         auto step = item.step.get();
-        return !step || Read<bool>(step, 0x1D);
+        return !step || Read<bool>(step, FieldAt("gpa", "<eacr>k__BackingField", 0x1D));
     });
 }
 

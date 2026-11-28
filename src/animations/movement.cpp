@@ -55,7 +55,7 @@ Obj FindState(Obj dictionary, Method lookup, int64_t id) {
 }
 
 bool OrdinaryBehavior(Obj behavior, Obj entity, bool allowLanding) {
-    const int kind = Read<int>(behavior, 0x48);
+    const int kind = Read<int>(behavior, FieldAt("xq", "<dhkt>k__BackingField", 0x48));
     if (kind == 2 || kind == 3 || kind == 7) return true;
     if (kind != 5) return false;
     // A known rfw transaction may omit a landing not yet engaged by native
@@ -78,13 +78,13 @@ thread_local LandingScope* LandingScope::current = nullptr;
 bool AllowLandingOverride(Obj behavior, Obj state) {
     const auto frame = Draining::current;
     if (!frame || !frame->allowLanding || frame->reentered || behavior != frame->behavior || !state ||
-        api.object_get_class(state) != stateClass || Read<int>(behavior, 0x48) != 5 ||
-        (frame->state && state != frame->state) || Read<Obj>(state, 0x20) != frame->entity ||
-        Read<int64_t>(frame->entity, 0x1C8) != frame->id ||
-        Read<Obj>(state, 0x38) != frame->route || Read<Obj>(state, 0x30) != frame->callback) return false;
+        api.object_get_class(state) != stateClass || Read<int>(behavior, FieldAt("xq", "<dhkt>k__BackingField", 0x48)) != 5 ||
+        (frame->state && state != frame->state) || Read<Obj>(state, FieldAt("xq+xm", "dhjx", 0x20)) != frame->entity ||
+        Read<int64_t>(frame->entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8)) != frame->id ||
+        Read<Obj>(state, FieldAt("xq+xm", "dhkb", 0x38)) != frame->route || Read<Obj>(state, FieldAt("xq+xm", "dhka", 0x30)) != frame->callback) return false;
     if (!frame->committed && (!InstantMovementEnabled() || !IsCurrentFightEntity(frame->entity) ||
-        Read<bool>(frame->entity, 0xB8))) return false;
-    const auto dictionary = Read<Obj>(behavior, 0x38);
+        Read<bool>(frame->entity, FieldAt("CoreAnimated.Animated", "fhrr", 0xB8)))) return false;
+    const auto dictionary = Read<Obj>(behavior, FieldAt("xq", "dhkn", 0x38));
     if (!dictionary) return false;
     const auto lookup = api.Find(api.object_get_class(dictionary), "TryGetValue", 2);
     return FindState(dictionary, lookup, frame->id) == state;
@@ -124,11 +124,11 @@ void FinishHook(Obj behavior, Obj state, Method method) {
 bool SameState(Obj behavior, Obj dictionary, Method lookup, int64_t id,
                Obj state, Obj entity, Obj route, Obj callback, const Draining& frame) {
     return (frame.committed || (InstantMovementEnabled() && IsCurrentFightEntity(entity) &&
-            (!frame.allowLanding || !Read<bool>(entity, 0xB8)))) &&
-        OrdinaryBehavior(behavior, entity, frame.allowLanding) && Read<int64_t>(entity, 0x1C8) == id &&
-        Read<Obj>(behavior, 0x38) == dictionary &&
+            (!frame.allowLanding || !Read<bool>(entity, FieldAt("CoreAnimated.Animated", "fhrr", 0xB8))))) &&
+        OrdinaryBehavior(behavior, entity, frame.allowLanding) && Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8)) == id &&
+        Read<Obj>(behavior, FieldAt("xq", "dhkn", 0x38)) == dictionary &&
         FindState(dictionary, lookup, id) == state &&
-        Read<Obj>(state, 0x20) == entity && Read<Obj>(state, 0x38) == route && Read<Obj>(state, 0x30) == callback;
+        Read<Obj>(state, FieldAt("xq+xm", "dhjx", 0x20)) == entity && Read<Obj>(state, FieldAt("xq+xm", "dhkb", 0x38)) == route && Read<Obj>(state, FieldAt("xq+xm", "dhka", 0x30)) == callback;
 }
 
 void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
@@ -141,11 +141,11 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
             api.object_get_class(behavior) == walkClass && api.object_get_class(route) == routeClass &&
             IsCurrentFightEntity(entity)) {
             // Slides, jumps and carried-character throws use other classes.
-            allowLanding = Read<int>(behavior, 0x48) == 5 && CanDeferInstantMovement();
+            allowLanding = Read<int>(behavior, FieldAt("xq", "<dhkt>k__BackingField", 0x48)) == 5 && CanDeferInstantMovement();
             if (OrdinaryBehavior(behavior, entity, allowLanding)) {
-                auto points = Read<Obj>(route, 0x20);
+                auto points = Read<Obj>(route, FieldAt("enw", "<dodi>k__BackingField", 0x20));
                 if (points) {
-                    const int count = Read<int>(points, 0x18);
+                    const int count = Read<int>(points, GenericFieldAt("System.Collections.Generic.List`1", "_size", 0x18));
                     if (count >= 0 && count <= maxSegments) segmentCount = count;
                 }
             }
@@ -164,13 +164,13 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
     if (segmentCount < 0 || starting.reentered) return;
 
     try {
-        auto dictionary = Read<Obj>(behavior, 0x38);
+        auto dictionary = Read<Obj>(behavior, FieldAt("xq", "dhkn", 0x38));
         if (!dictionary) return;
         auto lookup = api.Find(api.object_get_class(dictionary), "TryGetValue", 2);
-        const auto id = Read<int64_t>(entity, 0x1C8);
+        const auto id = Read<int64_t>(entity, FieldAt("CoreAnimated.Animated", "fhtc", 0x1C8));
         auto state = FindState(dictionary, lookup, id);
-        if (!state || Read<Obj>(state, 0x20) != entity || Read<Obj>(state, 0x38) != route ||
-            Read<Obj>(state, 0x30) != callback) return;
+        if (!state || Read<Obj>(state, FieldAt("xq+xm", "dhjx", 0x20)) != entity || Read<Obj>(state, FieldAt("xq+xm", "dhkb", 0x38)) != route ||
+            Read<Obj>(state, FieldAt("xq+xm", "dhka", 0x30)) != callback) return;
         auto held = std::make_shared<std::array<Ref, 5>>();
         (*held)[0].reset(behavior); (*held)[1].reset(entity); (*held)[2].reset(route);
         (*held)[3].reset(dictionary); (*held)[4].reset(state);
@@ -183,8 +183,8 @@ void StartHook(Obj behavior, Obj entity, float speed, Obj route, Obj callback,
             // These are the exact terminal-progress operations in xq.Update
             // (2616D99..2616DE1). Native rfv updates cell registration, hitboxes
             // and position; rjr consumes the next route segment or calls rjw.
-            *reinterpret_cast<float*>(static_cast<char*>(state) + 0x28) = 1.0f;
-            finishCell(entity, Read<int>(entity, 0x348), Read<int>(state, 0x2C), 1.0f, nullptr);
+            *reinterpret_cast<float*>(static_cast<char*>(state) + FieldAt("xq+xm", "dhjy", 0x28)) = 1.0f;
+            finishCell(entity, Read<int>(entity, FieldAt("Core.Rendering.Entity.CoreAnimatedEntity.AnimatedEntity", "<dhhw>k__BackingField", 0x348)), Read<int>(state, FieldAt("xq+xm", "dhjz", 0x2C)), 1.0f, nullptr);
             // Cell notifications can replace/cancel this movement synchronously.
             if (!SameState(behavior, dictionary, lookup, id, state, entity, route, callback, draining)) return;
             NextHook(behavior, state, true, nullptr);

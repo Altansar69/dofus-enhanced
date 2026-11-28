@@ -59,13 +59,13 @@ Step CurrentStep() {
     for (int i = count; i-- > 0;) {
         Ref entry(api.Call(steps.get(), "get_Item", {&i}));
         if (!entry.get() || api.object_get_class(entry.get()) != stepClass) continue;
-        const int type = Read<int>(entry.get(), 0x14);
+        const int type = Read<int>(entry.get(), FieldAt("gz", "dcmk", 0x14));
         if (type != PoiStep && type != DirectionStep && type != HintStep) continue;
-        step.active = true; step.index = int(Read<uint32_t>(entry.get(), 0x10)); step.type = type;
-        step.direction = Read<int>(entry.get(), 0x18);
-        if (type == PoiStep) step.poiId = Read<uint32_t>(entry.get(), 0x20);
-        else if (type == HintStep) step.npcId = Read<uint32_t>(entry.get(), 0x28);
-        else step.mapCount = Read<uint32_t>(entry.get(), 0x28);
+        step.active = true; step.index = int(Read<uint32_t>(entry.get(), FieldAt("gz", "dcmj", 0x10))); step.type = type;
+        step.direction = Read<int>(entry.get(), FieldAt("gz", "dcml", 0x18));
+        if (type == PoiStep) step.poiId = Read<uint32_t>(entry.get(), FieldAt("gz", "dcmn", 0x20));
+        else if (type == HintStep) step.npcId = Read<uint32_t>(entry.get(), FieldAt("gz", "dcmp", 0x28));
+        else step.mapCount = Read<uint32_t>(entry.get(), FieldAt("gz", "dcmp", 0x28));
         break;
     }
     if (step.active && step.poiId) {

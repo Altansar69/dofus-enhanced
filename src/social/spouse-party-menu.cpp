@@ -108,8 +108,8 @@ std::string DistanceCaption(const Menu& m) {
         if (fromWorld < 0 || toWorld < 0) return "distance inconnue";
         if (fromWorld != toWorld) return "autre carte du monde";
         // Distance on the world-map grid, not route length or teleport eligibility.
-        const int dx = int(Read<int16_t>(from.get(), 0x18)) - int(Read<int16_t>(to.get(), 0x18));
-        const int dy = int(Read<int16_t>(from.get(), 0x1A)) - int(Read<int16_t>(to.get(), 0x1A));
+        const int dx = int(Read<int16_t>(from.get(), FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posX", 0x18))) - int(Read<int16_t>(to.get(), FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posX", 0x18)));
+        const int dy = int(Read<int16_t>(from.get(), FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posY", 0x1A))) - int(Read<int16_t>(to.get(), FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posY", 0x1A)));
         const int distance = std::abs(dx) + std::abs(dy);
         return std::to_string(distance) + (distance > 1 ? " cases" : " case");
     } catch (const std::exception& e) {

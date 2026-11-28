@@ -434,7 +434,7 @@ public:
     bool Locate(int64_t map, int& x, int& y) override {
         Ref data(api.Invoke(mapInfo, nullptr, {&map}));
         if (!data.get()) return false;
-        x = managed::Read<int16_t>(data.get(), 0x18); y = managed::Read<int16_t>(data.get(), 0x1A);
+        x = managed::Read<int16_t>(data.get(), managed::FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posX", 0x18)); y = managed::Read<int16_t>(data.get(), managed::FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posY", 0x1A));
         return true;
     }
     int FindNpc(int npc, int64_t& entity) override {

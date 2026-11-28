@@ -118,7 +118,7 @@ Module::Module(std::filesystem::path path) : folder(std::move(path)), settingsPa
     if (sharedMetamobSync) settings.metamobSync = *sharedMetamobSync;
 }
 bool Module::InCombat() const {
-    return servicesReady && fight.get() && Read<bool>(fight.get(), 0xB0);
+    return servicesReady && fight.get() && Read<bool>(fight.get(), FieldAt("fxc", "dwan", 0xB0));
 }
 Obj Module::FindService(const char* name) const {
     if (!servicesReady || !compositor.get() || stopped) return nullptr;
@@ -127,7 +127,7 @@ Obj Module::FindService(const char* name) const {
 }
 void Module::Discover(Obj source) {
     if (servicesReady) return;
-    if (!Read<bool>(source, 0x48)) return;
+    if (!Read<bool>(source, FieldAt("Core.Engine.Compositor.Compositor", "isRunning", 0x48))) return;
     auto dictionary = api.Field(source, "eavv");
     if (!dictionary) return;
     auto found = Service(dictionary, "fsl", !waitingForAccountOptions);

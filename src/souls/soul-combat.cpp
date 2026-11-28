@@ -54,7 +54,7 @@ void PhaseHook(Obj information, Method method) {
     // bhyl writes this verified int field before publishing the native phase event.
     // Observing every transition also invalidates a click if leave/rejoin occurs
     // entirely between two UI refreshes. No managed call is made from this hook.
-    Observe(information, Read<int>(information, 0x64));
+    Observe(information, Read<int>(information, FieldAt("fxj", "<dwcr>k__BackingField", 0x64)));
 }
 bool Is(Obj object, const char* name) {
     return object && std::string(api.class_get_name(api.object_get_class(object))) == name;
@@ -153,7 +153,7 @@ CombatSnapshot ReadCombat(Obj fight, Obj cached) {
     // are obfuscated. Never guess PvP/PvM from numeric values alone.
     if (fightType < 0 || fightType > 10) return Snapshot(CombatState::Hidden);
 
-    Ref context(Read<Obj>(fight, 0x18));
+    Ref context(Read<Obj>(fight, FieldAt("fxc", "dvzu", 0x18)));
     if (state.observedContext != context.get()) {
         state.observedContext = context.get();
         ClearClassification();
@@ -162,8 +162,8 @@ CombatSnapshot ReadCombat(Obj fight, Obj cached) {
     }
     const auto unavailable = [&] { return Snapshot(CombatState::Hidden); };
     if (!Is(context.get(), "fyb")) return unavailable();
-    Ref character(Read<Obj>(context.get(), 0xF0)), entities(Read<Obj>(context.get(), 0x58));
-    if (!Is(character.get(), "esg") || !Is(entities.get(), "evv") || !Read<Obj>(character.get(), 0x128))
+    Ref character(Read<Obj>(context.get(), FieldAt("fyb", "<dwjp>k__BackingField", 0xF0))), entities(Read<Obj>(context.get(), FieldAt("fyb", "<dwiw>k__BackingField", 0x58)));
+    if (!Is(character.get(), "esg") || !Is(entities.get(), "evv") || !Read<Obj>(character.get(), FieldAt("esg", "dpzj", 0x128)))
         return unavailable();
     // This is the participant's current map, not a chat/world-map selection.
     // Re-read the native capability even after a previously eligible roster.

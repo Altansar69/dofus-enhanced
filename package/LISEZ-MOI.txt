@@ -10,7 +10,12 @@ all game rights belong to Ankama. I do not know whether using this mod is
 allowed by Ankama's terms: a ban cannot be completely ruled out. Use it at
 your own risk; the software is provided "as is", without any warranty.
 
-DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.22.1
+DOFUS ENHANCED — Dofus Unity 3.7.14.18 — VERSION 1.22.2
+
+VERSION 1.22.2 : PRÉPARATION DES MISES À JOUR DE DOFUS (SUITE)
+- Les champs du jeu que le mod lit sont maintenant désignés par leur nom,
+  et le mod mesure au démarrage s’il les retrouverait par ce nom (ligne
+  COMPAT_SHADOW de module.log). Simple mesure : rien ne change en jeu.
 
 VERSION 1.22.1 : CONVERSATIONS ARCHIVÉES
 - Échanges Metamob : les propositions d’une conversation que tu as

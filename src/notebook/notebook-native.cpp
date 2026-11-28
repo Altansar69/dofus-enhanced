@@ -144,19 +144,19 @@ Entry CurrentPosition() {
         throw std::runtime_error("Position actuelle indisponible.");
     Ref location(api.Invoke(currentMap, character.get()));
     if (!location.get()) throw std::runtime_error("Position actuelle indisponible.");
-    auto map = managed::Read<int64_t>(location.get(), 0x10);
+    auto map = managed::Read<int64_t>(location.get(), managed::FieldAt("Core.DataCenter.Metadata.World.WorldPoint", "m_mapId", 0x10));
     if (map <= 0) throw std::runtime_error("Carte actuelle indisponible.");
     Ref info(api.Invoke(mapInfo, nullptr, {&map}));
     if (!info.get()) throw std::runtime_error("Cette carte ne possède pas de coordonnées publiques.");
     Ref area(api.Invoke(subarea, info.get()));
     if (!area.get()) throw std::runtime_error("Monde de cette carte indisponible.");
     Entry result;
-    result.map = map; result.x = managed::Read<int16_t>(info.get(), 0x18); result.y = managed::Read<int16_t>(info.get(), 0x1A);
+    result.map = map; result.x = managed::Read<int16_t>(info.get(), managed::FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posX", 0x18)); result.y = managed::Read<int16_t>(info.get(), managed::FieldAt("Core.DataCenter.Metadata.World.MapInformationData", "posY", 0x1A));
     result.world = api.Value<int>(api.Invoke(world, area.get()));
     Ready();
     Ref after(api.Invoke(currentMap, character.get()));
     if (module->compositor.get() != compositor.get() || module->FindService("fng") != character.get() ||
-        !after.get() || managed::Read<int64_t>(after.get(), 0x10) != map)
+        !after.get() || managed::Read<int64_t>(after.get(), managed::FieldAt("Core.DataCenter.Metadata.World.WorldPoint", "m_mapId", 0x10)) != map)
         throw std::runtime_error("La carte a changé. Réessaie.");
     return result;
 }
